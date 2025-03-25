@@ -259,24 +259,24 @@ export async function createWorkoutFromExisting(workoutData: any): Promise<strin
 }
 
 // Calculate total weight lifted in a workout
-export function calculateTotalWeightLifted(workout: any): number {
+export async function calculateTotalWeightLifted(workout: any): Promise<number> {
   if (!workout?.exercises || !Array.isArray(workout.exercises)) {
     return 0;
   }
-  
-  return workout.exercises.reduce((total: number, exercise: any) => {
-    if (!exercise.sets || !Array.isArray(exercise.sets)) {
-      return total;
+
+  let totalWeight = 0;
+
+  for (const exercise of workout.exercises) {
+    if (exercise.sets && Array.isArray(exercise.sets)) {
+      for (const set of exercise.sets) {
+        if (set.weight && set.reps) {
+          totalWeight += set.weight * set.reps;
+        }
+      }
     }
-    
-    const exerciseTotal = exercise.sets.reduce((setTotal: number, set: any) => {
-      const weight = set.weight || 0;
-      const reps = set.reps || 0;
-      return setTotal + (weight * reps);
-    }, 0);
-    
-    return total + exerciseTotal;
-  }, 0);
+  }
+
+  return totalWeight;
 }
 
 // Create a cardio workout
