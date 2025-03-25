@@ -25,7 +25,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile" className="mb-8">
-        <TabsList className="grid w-full max-w-md grid-cols-3">
+        <TabsList className="grid w-full max-w-md grid-cols-4">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
@@ -457,21 +457,14 @@ export default function SettingsPage() {
         <TabsContent value="integrations" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Integrations</CardTitle>
+              <CardTitle>Connected Services</CardTitle>
               <CardDescription>Manage your connected apps and services</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-medium">Strava Import</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Import your workouts from Strava</p>
+                  <h3 className="text-lg font-medium mb-4">Strava</h3>
                   <div className="space-y-4">
-                    <div className="flex flex-col gap-2">
-                      <Label>Maximum Upload Size</Label>
-                      <p className="text-sm text-muted-foreground">
-                        The maximum file size for Strava archive imports is {process.env.MAX_UPLOAD_SIZE || '100mb'}
-                      </p>
-                    </div>
                     <StravaImport />
                   </div>
                 </div>
