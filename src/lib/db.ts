@@ -6,12 +6,13 @@ export async function getUserWorkouts(userId: string): Promise<WorkoutData[]> {
   // For now, we'll return mock data
   return [
     {
-      id: "1",
+      _id: "1",
       userId,
       name: "Upper Body",
       date: new Date("2025-06-08"),
       duration: 65,
       intensity: "High",
+      type: "strength",
       volume: 3240,
       exercises: [
         {
@@ -25,6 +26,8 @@ export async function getUserWorkouts(userId: string): Promise<WorkoutData[]> {
         },
         // More exercises...
       ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     // More workouts...
   ]
