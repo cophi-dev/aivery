@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,9 +9,11 @@ import { useToast } from "@/components/ui/use-toast"
 
 export function StravaImport() {
   const [isUploading, setIsUploading] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -25,11 +27,24 @@ export function StravaImport() {
       return
     }
 
+    setSelectedFile(file)
+  }
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select a Strava archive file to import",
+        variant: "destructive"
+      })
+      return
+    }
+
     try {
       setIsUploading(true)
 
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', selectedFile)
 
       const response = await fetch('/api/strava/import', {
         method: 'POST',
@@ -46,6 +61,12 @@ export function StravaImport() {
         title: "Import successful",
         description: `Imported ${data.count} workouts from your Strava archive`,
       })
+
+      // Reset the file input and selected file
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      setSelectedFile(null)
     } catch (error) {
       console.error('Import error:', error)
       toast({
@@ -70,13 +91,17 @@ export function StravaImport() {
       <CardContent>
         <div className="flex items-center gap-4">
           <Input
+            ref={fileInputRef}
             type="file"
             accept=".zip"
-            onChange={handleFileUpload}
+            onChange={handleFileSelect}
             disabled={isUploading}
             className="max-w-sm"
           />
-          <Button disabled={isUploading}>
+          <Button 
+            onClick={handleUpload}
+            disabled={isUploading || !selectedFile}
+          >
             {isUploading ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />

@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { LucideArrowLeft, LucideSave } from "lucide-react"
 import { createCardioWorkout } from "@/lib/workout-actions"
+import { StravaImport } from "@/components/strava-import"
 
 export default function NewRunningActivityPage() {
   const router = useRouter()
@@ -311,19 +312,7 @@ export default function NewRunningActivityPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                <div className="rounded-lg border p-4">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-muted rounded-full p-2">
-                      <img src="/placeholder.svg?height=40&width=40" alt="Strava" className="h-10 w-10" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold">Strava</h3>
-                      <p className="text-sm text-muted-foreground">Connect to import your activities from Strava</p>
-                    </div>
-                    <Button>Connect</Button>
-                  </div>
-                </div>
-
+                <StravaImport />
                 <div className="rounded-lg border p-4">
                   <div className="flex items-center gap-4">
                     <div className="bg-muted rounded-full p-2">
