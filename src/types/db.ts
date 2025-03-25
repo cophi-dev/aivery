@@ -1,3 +1,15 @@
+export interface Set {
+  weight: number;
+  reps: number;
+  notes?: string;
+}
+
+export interface Exercise {
+  name: string;
+  sets: Set[];
+  notes?: string;
+}
+
 export interface WorkoutData {
   _id: string;
   userId: string;
@@ -10,13 +22,7 @@ export interface WorkoutData {
   notes?: string;
   intensity?: string;
   volume?: number;
-  exercises?: Array<{
-    name: string;
-    sets: number;
-    reps: number;
-    weight?: number;
-    notes?: string;
-  }>;
+  exercises?: Exercise[];
   cardioDetails?: {
     pace?: number;
     elevation?: number;
