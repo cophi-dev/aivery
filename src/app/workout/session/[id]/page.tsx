@@ -22,6 +22,7 @@ import {
 import { fetchWorkout, completeWorkout } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
 import type { WorkoutData } from "@/types/db"
+import { Label } from "@/components/ui/label"
 
 export default function WorkoutSessionPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -37,23 +38,29 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
     const loadWorkout = async () => {
       try {
         const data = await fetchWorkout(params.id)
-        setWorkout(data)
-
-        // Initialize all exercises as not completed
-        const initialCompletedState: Record<number, boolean> = {}
-        data.exercises.forEach((_, index) => {
-          initialCompletedState[index] = false
-        })
-        setCompletedExercises(initialCompletedState)
+        if (data) {
+          setWorkout(data)
+          // Initialize all exercises as not completed
+          const initialCompletedState: Record<number, boolean> = {}
+          data.exercises?.forEach((_, index) => {
+            initialCompletedState[index] = false
+          })
+          setCompletedExercises(initialCompletedState)
+        } else {
+          // Handle case where workout is not found
+          console.error("Workout not found")
+          router.push("/workout") // Redirect to workouts list
+        }
       } catch (error) {
         console.error("Failed to load workout:", error)
+        router.push("/workout") // Redirect to workouts list on error
       } finally {
         setIsLoading(false)
       }
     }
 
     loadWorkout()
-  }, [params.id])
+  }, [params.id, router])
 
   // Timer effect
   useEffect(() => {
@@ -70,50 +77,48 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
     }
   }, [isTimerRunning])
 
-  // Format time (seconds to MM:SS)
+  // Format time helper
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
   }
 
   // Toggle exercise completion
   const toggleExerciseCompletion = (index: number) => {
-    setCompletedExercises((prev) => ({
+    if (!workout) return
+    setCompletedExercises(prev => ({
       ...prev,
-      [index]: !prev[index],
+      [index]: !prev[index]
     }))
   }
 
-  // Calculate progress percentage
+  // Calculate progress
   const calculateProgress = () => {
-    if (!workout) return 0
+    if (!workout?.exercises) return 0
     const totalExercises = workout.exercises.length
-    if (totalExercises === 0) return 100
-
+    if (totalExercises === 0) return 0
     const completedCount = Object.values(completedExercises).filter(Boolean).length
-    return Math.round((completedCount / totalExercises) * 100)
+    return (completedCount / totalExercises) * 100
   }
 
-  // Complete workout
+  // Handle workout completion
   const handleCompleteWorkout = async () => {
     if (!workout) return
 
     try {
       setIsCompleting(true)
-
-      // Update workout with completion data
-      await completeWorkout(workout.id, {
+      await completeWorkout(workout._id, {
         duration: Math.round(elapsedTime / 60), // Convert seconds to minutes
         completedExercises: Object.entries(completedExercises).map(([index, completed]) => ({
           index: Number.parseInt(index),
           completed,
         })),
       })
-
-      router.push(`/workout/${workout.id}?completed=true`)
+      router.push("/workout")
     } catch (error) {
       console.error("Failed to complete workout:", error)
+    } finally {
       setIsCompleting(false)
     }
   }
@@ -140,7 +145,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
               The workout you're looking for doesn't exist or has been deleted.
             </p>
             <Button asChild className="mt-4">
-              <Link href="/planner">Back to Planner</Link>
+              <Link href="/workout">Back to Workouts</Link>
             </Button>
           </div>
         </div>
@@ -223,54 +228,48 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
                 <CardTitle>Exercise Checklist</CardTitle>
                 <CardDescription>Check off exercises as you complete them</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {workout.exercises.map((exercise, index) => (
-                    <div key={index} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                          <Checkbox
-                            id={`exercise-${index}`}
-                            checked={completedExercises[index]}
-                            onCheckedChange={() => toggleExerciseCompletion(index)}
-                          />
-                          <label
-                            htmlFor={`exercise-${index}`}
-                            className={`text-lg font-semibold ${completedExercises[index] ? "line-through text-muted-foreground" : ""}`}
-                          >
-                            {exercise.name}
-                          </label>
-                        </div>
-                        <Badge variant={completedExercises[index] ? "default" : "outline"}>
-                          {completedExercises[index] ? (
-                            <LucideCheck className="h-3 w-3 mr-1" />
-                          ) : (
-                            <LucideX className="h-3 w-3 mr-1" />
-                          )}
-                          {completedExercises[index] ? "Completed" : "Pending"}
-                        </Badge>
+              <CardContent className="space-y-4">
+                {(workout.exercises || []).map((exercise, index) => (
+                  <div key={index} className="space-y-4 p-4 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`exercise-${index}`}
+                          checked={completedExercises[index]}
+                          onCheckedChange={() => toggleExerciseCompletion(index)}
+                        />
+                        <Label htmlFor={`exercise-${index}`} className="text-lg">
+                          {exercise.name}
+                        </Label>
                       </div>
-
-                      <Separator className="my-2" />
-
-                      <div className="mt-3">
-                        <div className="grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground mb-2">
-                          <div className="col-span-2">Set</div>
-                          <div className="col-span-5">Weight (kg)</div>
-                          <div className="col-span-5">Reps</div>
-                        </div>
-
-                        {exercise.sets.map((set, setIndex) => (
-                          <div key={setIndex} className="grid grid-cols-12 gap-2 py-2 border-t">
-                            <div className="col-span-2 font-medium">{setIndex + 1}</div>
-                            <div className="col-span-5">{set.weight} kg</div>
-                            <div className="col-span-5">{set.reps}</div>
-                          </div>
-                        ))}
-                      </div>
+                      <Badge variant={completedExercises[index] ? "default" : "secondary"}>
+                        {completedExercises[index] ? "Completed" : "Pending"}
+                      </Badge>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="space-y-2">
+                      {(exercise.sets || []).map((set, setIndex) => (
+                        <div key={setIndex} className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <Label>Weight (kg)</Label>
+                            <div className="text-lg font-medium">{set.weight}</div>
+                          </div>
+                          <div className="flex-1">
+                            <Label>Reps</Label>
+                            <div className="text-lg font-medium">{set.reps}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {completedExercises[index] ? (
+                              <LucideCheckCircle className="h-5 w-5 text-green-500" />
+                            ) : (
+                              <LucideDumbbell className="h-5 w-5 text-muted-foreground" />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>
