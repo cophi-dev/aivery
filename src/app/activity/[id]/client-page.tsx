@@ -53,7 +53,7 @@ export default function ActivityDetailClient({ id }: { id: string }) {
 
     try {
       setIsDeleting(true)
-      await deleteWorkout(workout.id)
+      await deleteWorkout(workout._id)
       router.push("/planner")
     } catch (error) {
       console.error("Failed to delete workout:", error)
