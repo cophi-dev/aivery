@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  password      String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workouts      Workout[]
+  preferences   UserPreferences?
+}
+
+model Workout {
+  id            String    @id @default(cuid())
+  name          String
+  date          DateTime
+  type          String
+  duration      Int
+  intensity     String
+  distance      Float?
+  calories      Int?
+  notes         String?
+  cardioDetails Json?
+  strengthDetails Json?
+  flexibilityDetails Json?
+  importedFrom  String?
+  importId      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+}
+
+model UserPreferences {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id])
+  preferredWeightUnit String @default("kg")
+  preferredHeightUnit String @default("cm")
+  preferredDistanceUnit String @default("km")
+  restTimerEnabled  Boolean  @default(true)
+  defaultRestTime   Int      @default(60)
+  workoutReminders  Boolean  @default(true)
+  weeklyWorkoutGoal Int      @default(3)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+} 
