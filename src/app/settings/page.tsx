@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -7,8 +10,11 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser } from "lucide-react"
+import { StravaImport } from "@/components/strava-import"
 
 export default function SettingsPage() {
+  const [isLoading, setIsLoading] = useState(false)
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row items-start justify-between mb-8">
@@ -447,6 +453,8 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <StravaImport />
     </div>
   )
 }
