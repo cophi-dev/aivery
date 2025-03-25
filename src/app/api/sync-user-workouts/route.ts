@@ -5,7 +5,6 @@ import { getCollection } from "@/lib/db/mongodb"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 
-export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 // This endpoint will sync all workouts in the workouts collection with their respective users
