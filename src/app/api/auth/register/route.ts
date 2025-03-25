@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { hash } from "bcrypt"
+import { hash } from "bcryptjs"
 import dbConnect from "@/lib/db/mongoose"
 import UserModel from "@/lib/db/models/user"
 

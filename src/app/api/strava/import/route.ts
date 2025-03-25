@@ -11,7 +11,7 @@ import { promisify } from 'util'
 const gunzipAsync = promisify(gunzip)
 
 // New App Router configuration
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
