@@ -153,6 +153,30 @@ export default function NewWorkoutPage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="workout-type">Type</Label>
+                  <Select 
+                    defaultValue="strength"
+                    onValueChange={(value) => {
+                      // Redirect to the appropriate activity page if not strength
+                      if (value !== "strength") {
+                        router.push(`/activity/${value}/new`);
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="workout-type">
+                      <SelectValue placeholder="Select workout type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="strength">Strength Training</SelectItem>
+                      <SelectItem value="running">Running</SelectItem>
+                      <SelectItem value="cycling">Cycling</SelectItem>
+                      <SelectItem value="swimming">Swimming</SelectItem>
+                      <SelectItem value="hiit">HIIT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="workout-date">Date</Label>
                   <Input 
                     id="workout-date" 

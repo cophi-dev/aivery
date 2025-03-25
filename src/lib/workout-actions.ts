@@ -54,13 +54,27 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       throw new Error("User not authenticated")
     }
 
-    const newWorkout = await createWorkoutDb({
-      ...workoutData,
+    // Format the workout data
+    const formattedWorkoutData = {
+      name: workoutData.name,
+      date: workoutData.date ? new Date(workoutData.date) : new Date(),
+      duration: workoutData.duration,
+      intensity: workoutData.intensity,
+      notes: workoutData.notes,
+      type: workoutData.type || "strength", // Default to strength if type not provided
+      exercises: workoutData.exercises?.map(exercise => ({
+        name: exercise.name,
+        sets: exercise.sets.map(set => ({
+          weight: set.weight,
+          reps: set.reps
+        }))
+      })),
       userId: user.id,
-      date: new Date(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    })
+    }
+
+    const newWorkout = await createWorkoutDb(formattedWorkoutData)
 
     revalidatePath("/planner")
     revalidatePath("/workout")
