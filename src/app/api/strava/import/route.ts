@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
             } : undefined
           },
           importedFrom: 'strava',
-          importId: activity.id.toString()
+          importId: activity.id.toString(),
+          userId: session.user.id // Add the user ID to associate the workout
         }
 
         await createWorkout(workout)
