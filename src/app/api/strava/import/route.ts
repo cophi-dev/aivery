@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
 import { createWorkout } from "@/lib/workout-actions"
 import { revalidatePath } from "next/cache"
 import JSZip from "jszip"
@@ -8,13 +10,23 @@ import { promisify } from 'util'
 
 const gunzipAsync = promisify(gunzip)
 
-// New App Router configuration
-export const runtime = 'edge'
+// Use Node.js runtime instead of Edge
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const session = await getServerSession(authOptions)
+    if (!session?.user) {
+      console.error('Strava import: No authenticated session')
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Store user ID for later use
+    const userId = session.user.id
+
     // Get the form data using the ReadableStream API
     const contentType = request.headers.get('content-type') || ''
     if (!contentType.includes('multipart/form-data')) {
@@ -120,7 +132,7 @@ export async function POST(request: NextRequest) {
           },
           importedFrom: 'strava',
           importId: file.name, // Use filename as unique identifier
-          userId: 'anonymous' // We'll handle user association later
+          userId: userId // Use the authenticated user's ID
         }
 
         await createWorkout(workout)
