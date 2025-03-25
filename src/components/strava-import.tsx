@@ -27,6 +27,12 @@ export function StravaImport() {
       return
     }
 
+    console.log('Selected file:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    })
+
     setSelectedFile(file)
   }
 
@@ -42,20 +48,33 @@ export function StravaImport() {
 
     try {
       setIsUploading(true)
+      console.log('Starting upload of file:', selectedFile.name)
 
       const formData = new FormData()
       formData.append('file', selectedFile)
 
+      console.log('Sending request to /api/strava/import')
       const response = await fetch('/api/strava/import', {
         method: 'POST',
         body: formData
       })
 
+      console.log('Response status:', response.status)
+      const data = await response.json()
+      console.log('Response data:', data)
+
       if (!response.ok) {
-        throw new Error('Failed to import data')
+        throw new Error(data.error || 'Failed to import data')
       }
 
-      const data = await response.json()
+      if (data.count === 0) {
+        toast({
+          title: "No activities found",
+          description: "No activities were found in the Strava archive. Make sure you're uploading the correct file.",
+          variant: "destructive"
+        })
+        return
+      }
 
       toast({
         title: "Import successful",
@@ -69,9 +88,17 @@ export function StravaImport() {
       setSelectedFile(null)
     } catch (error) {
       console.error('Import error:', error)
+      // Log the full error details
+      if (error instanceof Error) {
+        console.log('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        })
+      }
       toast({
         title: "Import failed",
-        description: "There was an error importing your Strava data. Please try again.",
+        description: error instanceof Error ? error.message : "There was an error importing your Strava data. Please try again.",
         variant: "destructive"
       })
     } finally {
@@ -86,6 +113,7 @@ export function StravaImport() {
         <CardDescription>
           Upload your Strava archive to import all your historical workouts.
           You can download your archive from your Strava Settings page.
+          The file should be a ZIP file containing activities.json.
         </CardDescription>
       </CardHeader>
       <CardContent>

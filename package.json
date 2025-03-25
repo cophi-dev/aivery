@@ -30,6 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
+    "fit-file-parser": "^1.21.0",
     "lucide-react": "^0.483.0",
     "mongodb": "^6.15.0",
     "mongoose": "^8.12.1",

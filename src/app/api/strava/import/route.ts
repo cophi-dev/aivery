@@ -4,21 +4,33 @@ import { authOptions } from "@/lib/auth"
 import { createWorkout } from "@/lib/workout-actions"
 import { revalidatePath } from "next/cache"
 import AdmZip from "adm-zip"
+import { FitParser, FitData, FitSession } from 'fit-file-parser'
+import { gunzip } from 'zlib'
+import { promisify } from 'util'
+
+const gunzipAsync = promisify(gunzip)
 
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
     const session = await getServerSession(authOptions)
     if (!session?.user) {
+      console.error('Strava import: No authenticated session')
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+
+    // Store user ID for later use
+    const userId = session.user.id
 
     // Get the form data
     const formData = await request.formData()
     const file = formData.get('file') as File
     if (!file) {
+      console.error('Strava import: No file provided in form data')
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
+
+    console.log('Strava import: Processing file:', file.name, 'size:', file.size)
 
     // Convert File to Buffer
     const arrayBuffer = await file.arrayBuffer()
@@ -27,68 +39,98 @@ export async function POST(request: NextRequest) {
     // Extract the ZIP file
     const zip = new AdmZip(buffer)
     const zipEntries = zip.getEntries()
+    console.log('Strava import: ZIP entries found:', zipEntries.length)
 
-    // Find the activities.json file
-    const activitiesEntry = zipEntries.find(entry => entry.entryName.includes('activities.json'))
-    if (!activitiesEntry) {
-      return NextResponse.json({ error: "No activities.json found in archive" }, { status: 400 })
+    // Find all .fit.gz files in the activities folder
+    const activityEntries = zipEntries.filter(entry => 
+      entry.entryName.startsWith('activities/') && 
+      entry.entryName.endsWith('.fit.gz')
+    )
+
+    console.log('Strava import: Found activity files:', activityEntries.map(e => e.entryName))
+
+    if (activityEntries.length === 0) {
+      console.error('Strava import: No .fit.gz files found in activities folder')
+      return NextResponse.json({ 
+        error: "No activity files found. Make sure your Strava archive contains .fit.gz files in the activities folder." 
+      }, { status: 400 })
     }
 
-    // Parse the activities JSON
-    const activitiesJson = JSON.parse(activitiesEntry.getData().toString('utf8'))
-    
-    // Process each activity
+    // Process each activity file
     let importedCount = 0
-    for (const activity of activitiesJson) {
+    const fitParser = new FitParser({
+      force: true,
+      speedUnit: 'km/h',
+      lengthUnit: 'km',
+      temperatureUnit: 'celsius',
+      elapsedRecordField: true,
+      mode: 'cascade',
+    })
+
+    for (const entry of activityEntries) {
       try {
-        // Convert Strava activity to our workout format
+        console.log('Processing activity:', entry.entryName)
+        
+        // Get the compressed data
+        const compressedData = entry.getData()
+        
+        // Decompress the .gz file
+        const fitData = await gunzipAsync(compressedData)
+        
+        // Parse the FIT file
+        const activity = await new Promise<FitData>((resolve, reject) => {
+          fitParser.parse(fitData, (error: Error | null, data: FitData) => {
+            if (error) {
+              reject(error)
+            } else {
+              resolve(data)
+            }
+          })
+        })
+
+        if (!activity?.sessions?.[0]) {
+          console.log('Skipping activity - no session data:', entry.entryName)
+          continue
+        }
+
+        const session = activity.sessions[0]
+        const startTime = new Date(session.start_time)
+        const sport = session.sport || 'other'
+
+        // Convert the activity data to our workout format
         const workout = {
-          name: activity.name,
-          date: new Date(activity.start_date),
-          type: mapStravaType(activity.type),
-          duration: Math.round(activity.elapsed_time / 60), // Convert seconds to minutes
-          intensity: calculateIntensity(activity),
-          distance: activity.distance / 1000, // Convert meters to kilometers
-          calories: activity.calories,
-          notes: `Imported from Strava Archive\nOriginal activity: ${activity.name}\nDistance: ${(activity.distance / 1000).toFixed(2)}km`,
+          name: `${sport} Activity`,
+          date: startTime,
+          type: mapStravaType(sport),
+          duration: Math.round(session.total_elapsed_time / 60), // Convert seconds to minutes
+          intensity: calculateIntensityFromSession(session),
+          distance: session.total_distance, // Already in kilometers
+          calories: session.total_calories,
+          notes: `Imported from Strava Archive\nActivity from ${startTime.toLocaleDateString()}`,
           cardioDetails: {
-            distance: activity.distance / 1000,
-            duration: activity.elapsed_time / 60,
-            pace: activity.average_speed,
-            elevationGain: activity.total_elevation_gain,
-            heartRate: activity.has_heartrate ? {
-              average: activity.average_heartrate,
-              max: activity.max_heartrate,
-              zones: activity.has_heartrate ? {
-                easy: activity.heartrate_zones?.[0]?.max,
-                moderate: activity.heartrate_zones?.[1]?.max,
-                hard: activity.heartrate_zones?.[2]?.max,
-                peak: activity.heartrate_zones?.[3]?.max
-              } : undefined
+            distance: session.total_distance,
+            duration: session.total_elapsed_time / 60,
+            pace: session.enhanced_avg_speed || session.avg_speed,
+            elevationGain: session.total_ascent,
+            heartRate: session.avg_heart_rate ? {
+              average: session.avg_heart_rate,
+              max: session.max_heart_rate
             } : undefined,
-            power: activity.has_power ? {
-              average: activity.average_watts,
-              max: activity.max_watts
-            } : undefined,
-            bikeType: activity.device_type === 'bike' ? activity.device_name : undefined,
-            strokeType: activity.type === 'Swim' ? activity.stroke_type : undefined,
-            poolLength: activity.type === 'Swim' ? activity.pool_length : undefined,
-            laps: activity.laps?.map((lap: any, index: number) => ({
-              number: index + 1,
-              distance: lap.distance / 1000,
-              duration: lap.elapsed_time / 60,
-              pace: lap.average_speed
-            }))
+            power: session.avg_power ? {
+              average: session.avg_power,
+              max: session.max_power
+            } : undefined
           },
           importedFrom: 'strava',
-          importId: activity.id.toString(),
-          userId: session.user.id
+          importId: entry.entryName, // Use filename as unique identifier
+          userId: userId // Use the authenticated user's ID
         }
 
         await createWorkout(workout)
         importedCount++
+        console.log('Successfully imported activity:', entry.entryName)
       } catch (error) {
-        console.error('Error importing activity:', error)
+        console.error('Error processing activity:', entry.entryName, error)
         // Continue with next activity even if one fails
       }
     }
@@ -98,14 +140,39 @@ export async function POST(request: NextRequest) {
     revalidatePath("/activity")
     revalidatePath("/dashboard")
 
+    console.log('Successfully imported', importedCount, 'activities')
     return NextResponse.json({ success: true, count: importedCount })
+
   } catch (error) {
-    console.error('Import error:', error)
+    console.error('Strava import: Fatal error:', error)
     return NextResponse.json(
       { error: "Failed to process Strava archive" },
       { status: 500 }
     )
   }
+}
+
+function calculateIntensityFromSession(session: FitSession): "Low" | "Medium" | "High" {
+  // Calculate intensity based on heart rate if available
+  if (session.avg_heart_rate && session.max_heart_rate) {
+    const maxHr = session.max_heart_rate
+    const avgHr = session.avg_heart_rate
+    
+    if (avgHr > maxHr * 0.85) return "High"
+    if (avgHr > maxHr * 0.7) return "Medium"
+    return "Low"
+  }
+  
+  // Fallback to speed-based intensity
+  if (session.enhanced_avg_speed && session.enhanced_max_speed) {
+    const relativeEffort = session.enhanced_avg_speed / session.enhanced_max_speed
+    
+    if (relativeEffort > 0.8) return "High"
+    if (relativeEffort > 0.6) return "Medium"
+    return "Low"
+  }
+  
+  return "Medium" // Default to medium if no data available
 }
 
 function mapStravaType(stravaType: string): string {
