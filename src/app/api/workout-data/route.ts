@@ -2,7 +2,6 @@ import { NextResponse } from "next/server"
 import { fetchUserWorkouts, getWorkoutStats } from "@/lib/actions"
 
 // This endpoint will be used by the AI to fetch workout data
-export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
