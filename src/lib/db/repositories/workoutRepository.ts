@@ -18,7 +18,7 @@ export async function getWorkoutsByUserId(userId: string, limit = 20, skip = 0):
       .toArray()
 
     return workouts.map((workout) => ({
-      id: workout._id.toString(),
+      _id: workout._id.toString(),
       userId: workout.userId.toString(),
       name: workout.name,
       date: workout.date,
@@ -30,8 +30,8 @@ export async function getWorkoutsByUserId(userId: string, limit = 20, skip = 0):
       exercises: workout.exercises,
       cardioDetails: workout.cardioDetails,
       notes: workout.notes,
-      completed: workout.completed,
-      completedAt: workout.completedAt,
+      createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
     }))
   } catch (error) {
     console.error("Error getting user workouts:", error)
@@ -51,7 +51,7 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
     }
 
     return {
-      id: workout._id.toString(),
+      _id: workout._id.toString(),
       userId: workout.userId.toString(),
       name: workout.name,
       date: workout.date,
@@ -63,8 +63,8 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
       exercises: workout.exercises,
       cardioDetails: workout.cardioDetails,
       notes: workout.notes,
-      completed: workout.completed,
-      completedAt: workout.completedAt,
+      createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
     }
   } catch (error) {
     console.error(`Error getting workout ${id}:`, error)
@@ -77,61 +77,60 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
   try {
     const collection = await getCollection(DB_NAME, COLLECTION_NAME)
 
-    // Calculate volume based on exercises if not provided
-    let volume = workoutData.volume || 0
-    if (!volume && workoutData.exercises) {
-      for (const exercise of workoutData.exercises) {
-        for (const set of exercise.sets) {
-          volume += set.weight * set.reps
-        }
-      }
-    }
-
     const workout = {
-      ...workoutData,
       userId: new ObjectId(workoutData.userId),
-      volume,
+      name: workoutData.name || "",
+      date: workoutData.date || new Date(),
+      duration: workoutData.duration || 0,
+      intensity: workoutData.intensity || "",
+      type: workoutData.type || "strength",
+      volume: workoutData.volume || 0,
+      distance: workoutData.distance || undefined,
+      exercises: workoutData.exercises || [],
+      cardioDetails: workoutData.cardioDetails || undefined,
+      notes: workoutData.notes || "",
       createdAt: new Date(),
       updatedAt: new Date(),
     }
 
     const result = await collection.insertOne(workout)
-    
-    // Manually create a clean response without MongoDB-specific objects
-    const cleanWorkout = {
-      ...workout,
-      id: result.insertedId.toString(),
-      userId: workout.userId.toString(),
-      _id: undefined // Remove the _id field to prevent serialization issues
-    }
-    
-    // Delete the _id property to ensure it's not included
-    delete cleanWorkout._id;
 
-    return cleanWorkout as WorkoutData
+    return {
+      _id: result.insertedId.toString(),
+      userId: workout.userId.toString(),
+      name: workout.name,
+      date: workout.date,
+      duration: workout.duration,
+      intensity: workout.intensity,
+      type: workout.type,
+      volume: workout.volume,
+      distance: workout.distance,
+      exercises: workout.exercises,
+      cardioDetails: workout.cardioDetails,
+      notes: workout.notes,
+      createdAt: workout.createdAt.toISOString(),
+      updatedAt: workout.updatedAt.toISOString(),
+    }
   } catch (error) {
     console.error("Error creating workout:", error)
     throw new Error("Failed to create workout")
   }
 }
 
-// Update a workout
+// Update an existing workout
 export async function updateWorkout(id: string, workoutData: Partial<WorkoutData>): Promise<WorkoutData | null> {
   try {
     const collection = await getCollection(DB_NAME, COLLECTION_NAME)
 
-    // Remove fields that shouldn't be updated
-    const { id: _, userId, createdAt, ...updateData } = workoutData
+    const workout = {
+      ...workoutData,
+      updatedAt: new Date(),
+    }
 
     const result = await collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
-      {
-        $set: {
-          ...updateData,
-          updatedAt: new Date(),
-        },
-      },
-      { returnDocument: "after" },
+      { $set: workout },
+      { returnDocument: "after" }
     )
 
     if (!result) {
@@ -139,7 +138,7 @@ export async function updateWorkout(id: string, workoutData: Partial<WorkoutData
     }
 
     return {
-      id: result._id.toString(),
+      _id: result._id.toString(),
       userId: result.userId.toString(),
       name: result.name,
       date: result.date,
@@ -151,8 +150,8 @@ export async function updateWorkout(id: string, workoutData: Partial<WorkoutData
       exercises: result.exercises,
       cardioDetails: result.cardioDetails,
       notes: result.notes,
-      completed: result.completed,
-      completedAt: result.completedAt,
+      createdAt: result.createdAt.toISOString(),
+      updatedAt: result.updatedAt.toISOString(),
     }
   } catch (error) {
     console.error(`Error updating workout ${id}:`, error)
@@ -174,64 +173,47 @@ export async function deleteWorkout(id: string): Promise<boolean> {
   }
 }
 
-// Get workout stats for a user
+// Get workout statistics
 export async function getWorkoutStats(userId: string) {
   try {
     const collection = await getCollection(DB_NAME, COLLECTION_NAME)
 
-    // Get total workouts
-    const totalWorkouts = await collection.countDocuments({ userId: new ObjectId(userId) })
-
-    // Get total volume (for strength workouts)
-    const volumeStats = await collection
-      .aggregate([
-        { $match: { userId: new ObjectId(userId), type: "strength" } },
-        { $group: { _id: null, totalVolume: { $sum: "$volume" } } },
-      ])
-      .toArray()
-
-    // Get total distance (for cardio workouts)
-    const distanceStats = await collection
-      .aggregate([
-        {
-          $match: {
-            userId: new ObjectId(userId),
-            type: { $in: ["running", "swimming", "cycling"] },
-          },
+    const stats = await collection.aggregate([
+      { $match: { userId: new ObjectId(userId) } },
+      {
+        $group: {
+          _id: null,
+          totalWorkouts: { $sum: 1 },
+          totalDuration: { $sum: "$duration" },
+          totalVolume: { $sum: "$volume" },
+          averageDuration: { $avg: "$duration" },
+          averageVolume: { $avg: "$volume" },
         },
-        { $group: { _id: null, totalDistance: { $sum: "$distance" } } },
-      ])
-      .toArray()
+      },
+    ]).toArray()
 
-    // Get workouts by type
-    const workoutsByType = await collection
-      .aggregate([{ $match: { userId: new ObjectId(userId) } }, { $group: { _id: "$type", count: { $sum: 1 } } }])
-      .toArray()
-
-    return {
-      totalWorkouts,
-      totalVolume: volumeStats.length > 0 ? volumeStats[0].totalVolume : 0,
-      totalDistance: distanceStats.length > 0 ? distanceStats[0].totalDistance : 0,
-      workoutsByType: workoutsByType.reduce((acc, curr) => {
-        acc[curr._id] = curr.count
-        return acc
-      }, {}),
+    return stats[0] || {
+      totalWorkouts: 0,
+      totalDuration: 0,
+      totalVolume: 0,
+      averageDuration: 0,
+      averageVolume: 0,
     }
   } catch (error) {
-    console.error(`Error getting workout stats for user ${userId}:`, error)
+    console.error("Error getting workout stats:", error)
     throw new Error("Failed to get workout stats")
   }
 }
 
-// Get previous workouts of the same type
-export async function getPreviousWorkouts(userId: string, workoutName: string, currentDate: Date, limit = 3) {
+// Get previous workouts for a specific exercise
+export async function getPreviousWorkouts(userId: string, exerciseName: string, currentDate: Date, limit = 3): Promise<WorkoutData[]> {
   try {
     const collection = await getCollection(DB_NAME, COLLECTION_NAME)
 
     const workouts = await collection
       .find({
         userId: new ObjectId(userId),
-        name: workoutName,
+        "exercises.name": exerciseName,
         date: { $lt: currentDate },
       })
       .sort({ date: -1 })
@@ -239,15 +221,24 @@ export async function getPreviousWorkouts(userId: string, workoutName: string, c
       .toArray()
 
     return workouts.map((workout) => ({
-      id: workout._id.toString(),
+      _id: workout._id.toString(),
+      userId: workout.userId.toString(),
+      name: workout.name,
       date: workout.date,
       duration: workout.duration,
+      intensity: workout.intensity,
+      type: workout.type,
       volume: workout.volume,
+      distance: workout.distance,
       exercises: workout.exercises,
+      cardioDetails: workout.cardioDetails,
+      notes: workout.notes,
+      createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
     }))
   } catch (error) {
-    console.error(`Error getting previous workouts for user ${userId}:`, error)
-    throw new Error("Failed to get previous workouts")
+    console.error(`Error getting previous workouts for ${exerciseName}:`, error)
+    throw new Error(`Failed to get previous workouts for ${exerciseName}`)
   }
 }
 

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import {
-  getUserWorkouts,
+  getWorkoutsByUserId,
   getWorkoutById,
   createWorkout as createWorkoutDb,
   updateWorkout as updateWorkoutDb,
@@ -11,15 +11,16 @@ import {
   getPreviousWorkouts,
 } from "./db/repositories/workoutRepository"
 import type { WorkoutData } from "@/types/db"
+import { getCurrentUser } from "./auth"
 
-// Mock user ID for demo purposes
-// In a real app, you would get this from the session
-const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
-
-// Fetch all workouts
+// Fetch all workouts for the current user
 export async function fetchWorkouts(): Promise<WorkoutData[]> {
   try {
-    return await getUserWorkouts(MOCK_USER_ID)
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+    return await getWorkoutsByUserId(user.id)
   } catch (error) {
     console.error("Error fetching workouts:", error)
     throw new Error("Failed to fetch workouts")
@@ -29,7 +30,16 @@ export async function fetchWorkouts(): Promise<WorkoutData[]> {
 // Fetch a single workout
 export async function fetchWorkout(id: string): Promise<WorkoutData | null> {
   try {
-    return await getWorkoutById(id)
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+    const workout = await getWorkoutById(id)
+    // Only return the workout if it belongs to the current user
+    if (workout && workout.userId !== user.id) {
+      return null
+    }
+    return workout
   } catch (error) {
     console.error(`Error fetching workout ${id}:`, error)
     throw new Error(`Failed to fetch workout ${id}`)
@@ -39,22 +49,23 @@ export async function fetchWorkout(id: string): Promise<WorkoutData | null> {
 // Create a new workout
 export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<WorkoutData> {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+
     const newWorkout = await createWorkoutDb({
       ...workoutData,
-      userId: MOCK_USER_ID,
+      userId: user.id,
+      date: new Date(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
 
     revalidatePath("/planner")
     revalidatePath("/workout")
-    
-    // Serialize dates to ISO strings to prevent serialization issues
-    return {
-      ...newWorkout,
-      date: newWorkout.date instanceof Date ? newWorkout.date.toISOString() : newWorkout.date,
-      createdAt: newWorkout.createdAt instanceof Date ? newWorkout.createdAt.toISOString() : newWorkout.createdAt,
-      updatedAt: newWorkout.updatedAt instanceof Date ? newWorkout.updatedAt.toISOString() : newWorkout.updatedAt,
-      completedAt: newWorkout.completedAt instanceof Date ? newWorkout.completedAt.toISOString() : newWorkout.completedAt,
-    } as WorkoutData
+
+    return newWorkout
   } catch (error) {
     console.error("Error creating workout:", error)
     throw new Error("Failed to create workout")
@@ -64,25 +75,50 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
 // Update an existing workout
 export async function updateWorkout(workoutData: WorkoutData): Promise<WorkoutData> {
   try {
-    const updatedWorkout = await updateWorkoutDb(workoutData.id, workoutData)
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+
+    // Check if the workout belongs to the current user
+    const existingWorkout = await getWorkoutById(workoutData._id)
+    if (!existingWorkout || existingWorkout.userId !== user.id) {
+      throw new Error("Workout not found or unauthorized")
+    }
+
+    const updatedWorkout = await updateWorkoutDb(workoutData._id, {
+      ...workoutData,
+      updatedAt: new Date().toISOString(),
+    })
 
     if (!updatedWorkout) {
       throw new Error("Workout not found or not updated")
     }
 
     revalidatePath("/planner")
-    revalidatePath(`/workout/${workoutData.id}`)
+    revalidatePath(`/workout/${workoutData._id}`)
 
     return updatedWorkout
   } catch (error) {
-    console.error(`Error updating workout ${workoutData.id}:`, error)
-    throw new Error(`Failed to update workout ${workoutData.id}`)
+    console.error(`Error updating workout ${workoutData._id}:`, error)
+    throw new Error(`Failed to update workout ${workoutData._id}`)
   }
 }
 
 // Delete a workout
 export async function deleteWorkout(id: string): Promise<void> {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+
+    // Check if the workout belongs to the current user
+    const existingWorkout = await getWorkoutById(id)
+    if (!existingWorkout || existingWorkout.userId !== user.id) {
+      throw new Error("Workout not found or unauthorized")
+    }
+
     const success = await deleteWorkoutDb(id)
 
     if (!success) {
@@ -99,23 +135,29 @@ export async function deleteWorkout(id: string): Promise<void> {
 // Copy a workout to today's date
 export async function copyWorkoutToToday(id: string): Promise<string> {
   try {
-    const workout = await getWorkoutById(id)
-
-    if (!workout) {
-      throw new Error("Workout not found")
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
     }
 
-    const { id: _, date, createdAt, updatedAt, ...rest } = workout
+    const workout = await getWorkoutById(id)
+    if (!workout || workout.userId !== user.id) {
+      throw new Error("Workout not found or unauthorized")
+    }
 
+    const { _id, ...rest } = workout
     const newWorkout = await createWorkoutDb({
       ...rest,
-      userId: MOCK_USER_ID,
+      userId: user.id,
       date: new Date(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
 
     revalidatePath("/planner")
+    revalidatePath("/workout")
 
-    return newWorkout.id
+    return newWorkout._id
   } catch (error) {
     console.error(`Error copying workout ${id}:`, error)
     throw new Error(`Failed to copy workout ${id}`)
@@ -123,28 +165,33 @@ export async function copyWorkoutToToday(id: string): Promise<string> {
 }
 
 // Complete a workout
-export async function completeWorkout(
-  id: string,
-  completionData: {
-    duration: number
-    completedExercises: { index: number; completed: boolean }[]
-  },
-): Promise<void> {
+export async function completeWorkout(id: string, completionData: { duration: number; completedExercises: Array<{ index: number; completed: boolean }> }): Promise<WorkoutData> {
   try {
-    const workout = await getWorkoutById(id)
-
-    if (!workout) {
-      throw new Error("Workout not found")
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
     }
 
-    await updateWorkoutDb(id, {
+    // Check if the workout belongs to the current user
+    const existingWorkout = await getWorkoutById(id)
+    if (!existingWorkout || existingWorkout.userId !== user.id) {
+      throw new Error("Workout not found or unauthorized")
+    }
+
+    const updatedWorkout = await updateWorkoutDb(id, {
+      ...existingWorkout,
       duration: completionData.duration,
-      completed: true,
-      completedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     })
+
+    if (!updatedWorkout) {
+      throw new Error("Workout not found or not updated")
+    }
 
     revalidatePath("/planner")
     revalidatePath(`/workout/${id}`)
+
+    return updatedWorkout
   } catch (error) {
     console.error(`Error completing workout ${id}:`, error)
     throw new Error(`Failed to complete workout ${id}`)
@@ -156,7 +203,7 @@ export async function createWorkoutFromExisting(workoutData: any): Promise<strin
   try {
     const newWorkout = await createWorkoutDb({
       ...workoutData,
-      userId: MOCK_USER_ID,
+      userId: workoutData.userId,
     })
 
     revalidatePath("/planner")
@@ -173,7 +220,7 @@ export async function createCardioWorkout(workoutData: any): Promise<string> {
   try {
     const newWorkout = await createWorkoutDb({
       ...workoutData,
-      userId: MOCK_USER_ID,
+      userId: workoutData.userId,
     })
 
     revalidatePath("/planner")
@@ -208,10 +255,28 @@ export async function fetchWorkoutForAI(id: string): Promise<any> {
   }
 }
 
-// Get workout statistics
+// Get previous workouts for a specific exercise
+export async function getPreviousWorkoutsAction(exerciseName: string): Promise<WorkoutData[]> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+    return await getPreviousWorkouts(user.id, exerciseName, new Date())
+  } catch (error) {
+    console.error(`Error getting previous workouts for ${exerciseName}:`, error)
+    throw new Error(`Failed to get previous workouts for ${exerciseName}`)
+  }
+}
+
+// Get workout stats for the current user
 export async function getWorkoutStatsAction() {
   try {
-    return await getWorkoutStats(MOCK_USER_ID)
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+    return await getWorkoutStats(user.id)
   } catch (error) {
     console.error("Error getting workout stats:", error)
     throw new Error("Failed to get workout stats")
