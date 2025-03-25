@@ -91,7 +91,8 @@ function createDbInterface(client: MongoClient, db: any): DbClient {
 
 // Create a mock client for when MongoDB is unavailable
 function createMockClient(): DbClient {
-  let workouts: Array<{id: string, [key: string]: any}> = [...mockData.workouts as any[]];
+  // Initialize with empty array - no need to map since mockData.workouts is empty
+  let workouts: Array<{_id: string, [key: string]: any}> = [];
   console.warn("Using mock database client - no real database connection")
 
   return {
@@ -99,22 +100,22 @@ function createMockClient(): DbClient {
       return workouts
     },
     findWorkoutById: async (id: string) => {
-      return workouts.find((w) => w.id === id) || null
+      return workouts.find((w) => w._id === id) || null
     },
     insertWorkout: async (workout: any) => {
       const id = Date.now().toString()
-      workouts.push({ ...workout, id })
+      workouts.push({ ...workout, _id: id })
       return { id }
     },
     updateWorkout: async (id: string, workout: any) => {
-      const index = workouts.findIndex((w) => w.id === id)
+      const index = workouts.findIndex((w) => w._id === id)
       if (index === -1) return false
       workouts[index] = { ...workouts[index], ...workout }
       return true
     },
     deleteWorkout: async (id: string) => {
       const initialLength = workouts.length
-      workouts = workouts.filter((w) => w.id !== id)
+      workouts = workouts.filter((w) => w._id !== id)
       return workouts.length < initialLength
     },
     // Add more methods as needed
