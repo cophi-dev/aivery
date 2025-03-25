@@ -15,10 +15,28 @@ import { authOptions } from "@/lib/auth"
 import dbConnect from "@/lib/db/mongoose"
 import { ObjectId } from "mongodb"
 import { getCollection } from "@/lib/db/mongodb"
-import { calculateTotalWeightLifted } from "@/lib/workout-actions"
 
 // Allow responses up to 30 seconds
 export const maxDuration = 30
+
+// Helper function to calculate total weight lifted for strength workouts
+function calculateTotalWeightLifted(workout: any): number {
+  if (!workout?.exercises || !Array.isArray(workout.exercises)) {
+    return 0
+  }
+  
+  return workout.exercises.reduce((total: number, exercise: any) => {
+    if (!exercise.sets || !Array.isArray(exercise.sets)) {
+      return total
+    }
+    
+    const exerciseTotal = exercise.sets.reduce((setTotal: number, set: any) => {
+      return setTotal + (set.weight || 0) * (set.reps || 0)
+    }, 0)
+    
+    return total + exerciseTotal
+  }, 0)
+}
 
 export async function POST(req: Request) {
   const { messages, workoutId } = await req.json()
