@@ -9,6 +9,14 @@ export interface WorkoutData {
   calories?: number;
   notes?: string;
   intensity?: string;
+  volume?: number;
+  exercises?: Array<{
+    name: string;
+    sets: number;
+    reps: number;
+    weight?: number;
+    notes?: string;
+  }>;
   cardioDetails?: {
     pace?: number;
     elevation?: number;

@@ -27,10 +27,15 @@ export async function POST(req: Request) {
       const workout = await getWorkoutById(workoutId)
       if (workout) {
         // Get previous workouts of the same type for comparison
-        const previousWorkouts = await getPreviousWorkouts(workout.userId, workout.name, new Date(workout.date), 3)
+        const previousWorkouts = await getPreviousWorkouts(
+          workout.userId,
+          workout.name || workout.type, // Fallback to type if name is not available
+          new Date(workout.date),
+          3
+        )
 
         systemPrompt += `
-          The user is asking about their ${workout.name} workout from ${new Date(workout.date).toLocaleDateString()}.
+          The user is asking about their ${workout.name || workout.type} workout from ${new Date(workout.date).toLocaleDateString()}.
           
           Quick workout summary:
           - Duration: ${workout.duration} minutes
