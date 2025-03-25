@@ -10,7 +10,6 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       environmentCheck: {
         nodeEnv: process.env.NODE_ENV || "not set",
-        mongodbUri: process.env.MONGODB_URI ? "set" : "not set",
       },
     })
   } catch (error) {
@@ -24,7 +23,6 @@ export async function GET() {
         timestamp: new Date().toISOString(),
         environmentCheck: {
           nodeEnv: process.env.NODE_ENV || "not set",
-          mongodbUri: process.env.MONGODB_URI ? "set" : "not set",
         },
       },
       { status: 500 },

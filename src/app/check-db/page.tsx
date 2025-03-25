@@ -17,7 +17,6 @@ export default function CheckDbPage() {
     timestamp?: string
     environmentCheck?: {
       nodeEnv: string
-      mongodbUri: string
     }
   } | null>(null)
 
@@ -102,21 +101,6 @@ export default function CheckDbPage() {
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="font-medium">NODE_ENV:</div>
                       <div>{dbStatus.environmentCheck.nodeEnv}</div>
-
-                      <div className="font-medium">MONGODB_URI:</div>
-                      <div className="flex items-center gap-1">
-                        {dbStatus.environmentCheck.mongodbUri === "not set" ? (
-                          <>
-                            <LucideAlertTriangle className="h-4 w-4 text-amber-500" />
-                            <span className="text-amber-700">Not set</span>
-                          </>
-                        ) : (
-                          <>
-                            <LucideCheck className="h-4 w-4 text-green-500" />
-                            <span className="text-green-700">Set</span>
-                          </>
-                        )}
-                      </div>
                     </div>
                   </div>
                 )}
@@ -156,8 +140,7 @@ export default function CheckDbPage() {
                     <strong>MONGODB_URI:</strong> {process.env.MONGODB_URI ? "Set ✓" : "Not set ✗"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    The MONGODB_URI should be in the format:
-                    mongodb+srv://username:password@cluster.mongodb.net/database
+                    The MONGODB_URI should be configured in your environment variables
                   </p>
                 </div>
               </div>
