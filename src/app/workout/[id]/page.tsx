@@ -267,9 +267,11 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                 volume: Number(workout.volume),
                 exercises: workout.exercises.map(exercise => ({
                   name: exercise.name,
-                  sets: exercise.sets.length,
-                  reps: exercise.sets[0]?.reps || 0,
-                  weight: exercise.sets[0]?.weight || 0,
+                  sets: exercise.sets.map(set => ({
+                    weight: set.weight,
+                    reps: set.reps,
+                    notes: ""
+                  })),
                   notes: ""
                 })),
                 notes: workout.notes,
