@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
           duration: Math.round(activity.elapsed_time / 60), // Convert seconds to minutes
           intensity: calculateIntensity(activity),
           distance: activity.distance / 1000, // Convert meters to kilometers
+          calories: activity.calories,
           notes: `Imported from Strava Archive\nOriginal activity: ${activity.name}\nDistance: ${(activity.distance / 1000).toFixed(2)}km`,
           cardioDetails: {
             distance: activity.distance / 1000,
@@ -57,12 +58,31 @@ export async function POST(request: NextRequest) {
             elevationGain: activity.total_elevation_gain,
             heartRate: activity.has_heartrate ? {
               average: activity.average_heartrate,
-              max: activity.max_heartrate
-            } : undefined
+              max: activity.max_heartrate,
+              zones: activity.has_heartrate ? {
+                easy: activity.heartrate_zones?.[0]?.max,
+                moderate: activity.heartrate_zones?.[1]?.max,
+                hard: activity.heartrate_zones?.[2]?.max,
+                peak: activity.heartrate_zones?.[3]?.max
+              } : undefined
+            } : undefined,
+            power: activity.has_power ? {
+              average: activity.average_watts,
+              max: activity.max_watts
+            } : undefined,
+            bikeType: activity.device_type === 'bike' ? activity.device_name : undefined,
+            strokeType: activity.type === 'Swim' ? activity.stroke_type : undefined,
+            poolLength: activity.type === 'Swim' ? activity.pool_length : undefined,
+            laps: activity.laps?.map((lap: any, index: number) => ({
+              number: index + 1,
+              distance: lap.distance / 1000,
+              duration: lap.elapsed_time / 60,
+              pace: lap.average_speed
+            }))
           },
           importedFrom: 'strava',
           importId: activity.id.toString(),
-          userId: session.user.id // Add the user ID to associate the workout
+          userId: session.user.id
         }
 
         await createWorkout(workout)
