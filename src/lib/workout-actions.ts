@@ -86,7 +86,7 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       { $push: { workouts: newWorkout._id } }
     );
 
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/workout")
     revalidatePath("/workouts")
     revalidatePath("/dashboard")
@@ -122,7 +122,7 @@ export async function updateWorkout(workoutData: WorkoutData): Promise<WorkoutDa
       throw new Error("Workout not found or not updated")
     }
 
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath(`/workout/${workoutData._id}`)
     revalidatePath(`/activity/${workoutData._id}`)
     revalidatePath('/activity')
@@ -165,7 +165,7 @@ export async function deleteWorkout(id: string): Promise<void> {
       { $pull: { workouts: id } }
     );
 
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/workouts")
     revalidatePath("/dashboard")
     revalidatePath("/activity")
@@ -197,7 +197,7 @@ export async function copyWorkoutToToday(id: string): Promise<string> {
       updatedAt: new Date().toISOString(),
     })
 
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/workout")
 
     return newWorkout._id
@@ -231,7 +231,7 @@ export async function completeWorkout(id: string, completionData: { duration: nu
       throw new Error("Workout not found or not updated")
     }
 
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath(`/workout/${id}`)
 
     return updatedWorkout
@@ -249,13 +249,34 @@ export async function createWorkoutFromExisting(workoutData: any): Promise<strin
       userId: workoutData.userId,
     })
 
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
 
     return newWorkout._id
   } catch (error) {
     console.error("Error creating workout from existing:", error)
     throw new Error("Failed to create workout from existing")
   }
+}
+
+// Calculate total weight lifted in a workout
+export function calculateTotalWeightLifted(workout: any): number {
+  if (!workout?.exercises || !Array.isArray(workout.exercises)) {
+    return 0;
+  }
+  
+  return workout.exercises.reduce((total: number, exercise: any) => {
+    if (!exercise.sets || !Array.isArray(exercise.sets)) {
+      return total;
+    }
+    
+    const exerciseTotal = exercise.sets.reduce((setTotal: number, set: any) => {
+      const weight = set.weight || 0;
+      const reps = set.reps || 0;
+      return setTotal + (weight * reps);
+    }, 0);
+    
+    return total + exerciseTotal;
+  }, 0);
 }
 
 // Create a cardio workout
@@ -268,12 +289,20 @@ export async function createCardioWorkout(workoutData: any): Promise<string> {
       throw new Error("User not authenticated")
     }
 
-    const newWorkout = await createWorkoutDb({
+    // Ensure distance is a number or null, not undefined
+    const cleanedWorkoutData = {
       ...workoutData,
       userId: user.id,
-    })
+      distance: workoutData.distance !== undefined ? workoutData.distance : null,
+      cardioDetails: workoutData.cardioDetails ? {
+        ...workoutData.cardioDetails,
+        distance: workoutData.cardioDetails.distance !== undefined ? workoutData.cardioDetails.distance : null
+      } : null
+    };
 
-    revalidatePath("/planner")
+    const newWorkout = await createWorkoutDb(cleanedWorkoutData)
+
+    revalidatePath("/calendar")
     revalidatePath("/activity")
     revalidatePath("/dashboard")
     revalidatePath("/")

@@ -20,7 +20,7 @@ export async function connectStravaAction(authCode: string) {
 export async function syncStravaWorkoutsAction() {
   try {
     const result = await syncStravaWorkouts(MOCK_USER_ID)
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/activity")
     revalidatePath("/integrations")
     return { success: true, count: result.count }

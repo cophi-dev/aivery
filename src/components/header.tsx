@@ -35,8 +35,11 @@ export function Header() {
                   <Link href="/" className="px-2 py-1 hover:underline">
                     Dashboard
                   </Link>
-                  <Link href="/planner" className="px-2 py-1 hover:underline">
-                    Workout Planner
+                  <Link href="/calendar" className="px-2 py-1 hover:underline">
+                    Calendar
+                  </Link>
+                  <Link href="/plan" className="px-2 py-1 hover:underline">
+                    Plans
                   </Link>
                   <Link href="/chat" className="px-2 py-1 hover:underline">
                     AI Coach

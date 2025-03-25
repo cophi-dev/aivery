@@ -55,7 +55,7 @@ export async function connectStravaAction(authCode: string) {
 export async function syncGarminWorkoutsAction() {
   try {
     const count = await syncGarminWorkouts(MOCK_USER_ID)
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/activity")
     return { success: true, count }
   } catch (error) {
@@ -67,7 +67,7 @@ export async function syncGarminWorkoutsAction() {
 export async function syncCorosWorkoutsAction() {
   try {
     const count = await syncCorosWorkouts(MOCK_USER_ID)
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/activity")
     return { success: true, count }
   } catch (error) {
@@ -79,7 +79,7 @@ export async function syncCorosWorkoutsAction() {
 export async function syncStravaWorkoutsAction() {
   try {
     const count = await syncStravaWorkouts(MOCK_USER_ID)
-    revalidatePath("/planner")
+    revalidatePath("/calendar")
     revalidatePath("/activity")
     return { success: true, count }
   } catch (error) {
@@ -102,6 +102,18 @@ export async function getUserIntegrationsAction() {
   } catch (error) {
     console.error("Error getting user integrations:", error)
     return { success: false, error: "Failed to get user integrations" }
+  }
+}
+
+export async function disconnectStravaAction() {
+  try {
+    await connectStrava(MOCK_USER_ID, "disconnect")
+    revalidatePath("/settings")
+    revalidatePath("/integrations")
+    return { success: true }
+  } catch (error) {
+    console.error("Error disconnecting Strava:", error)
+    return { success: false, error: "Failed to disconnect Strava" }
   }
 }
 

@@ -42,7 +42,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
         
         if (!data) {
           console.error("Workout not found")
-          router.push("/planner")
+          router.push("/calendar")
           return
         }
         
@@ -69,7 +69,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
         }
       } catch (error) {
         console.error("Failed to load workout:", error)
-        router.push("/planner")
+        router.push("/calendar")
       } finally {
         setIsLoading(false)
       }
@@ -114,7 +114,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
 
       console.log("Saving workout:", updatedWorkout);
       await updateWorkout(updatedWorkout)
-      router.push(`/activity/${workout._id}`)
+      router.push("/calendar")
     } catch (error) {
       console.error("Failed to update workout:", error)
       alert("Error updating workout. Please try again.")
@@ -132,19 +132,8 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
   }
 
   if (!workout) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">Workout not found</h1>
-          <p className="mt-2 text-muted-foreground">
-            The workout you're looking for doesn't exist or has been deleted.
-          </p>
-          <Button asChild className="mt-4">
-            <Link href="/planner">Back to Planner</Link>
-          </Button>
-        </div>
-      </div>
-    )
+    router.push("/calendar")
+    return null
   }
 
   return (
@@ -308,6 +297,10 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
           </Button>
         </div>
       </form>
+      <div className="flex justify-between mt-8">
+        <Link href="/calendar">Back to Calendar</Link>
+        <Button type="submit">Update Workout</Button>
+      </div>
     </div>
   )
 } 

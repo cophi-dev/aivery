@@ -46,13 +46,14 @@ export function MainHeader({ user }: MainHeaderProps) {
                 Plans
               </Link>
               <Link
-                href="/planner"
+                href="/calendar"
                 className={cn(
-                  "transition-colors hover:text-foreground/80",
-                  pathname.startsWith("/planner") ? "text-foreground" : "text-foreground/60"
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:text-foreground",
+                  pathname.startsWith("/calendar") ? "text-foreground" : "text-foreground/60"
                 )}
               >
-                Planner
+                <Calendar className="h-4 w-4" />
+                <span>Calendar</span>
               </Link>
               <Link
                 href="/chat"

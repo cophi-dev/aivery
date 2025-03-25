@@ -31,6 +31,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
   })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   // Load workout data
   useEffect(() => {
@@ -159,7 +160,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
             The workout you're looking for doesn't exist or has been deleted.
           </p>
           <Button asChild className="mt-4">
-            <Link href="/planner">Back to Planner</Link>
+            <Link href="/calendar">Back to Calendar</Link>
           </Button>
         </div>
       </div>
@@ -303,6 +304,18 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
               </Button>
             </CardContent>
           </Card>
+
+          <div className="flex justify-between items-center mb-4">
+            <Link href="/calendar">Back to Calendar</Link>
+            <Button 
+              variant="ghost"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            >
+              <LucideTrash className="mr-2 h-4 w-4" />
+              Delete Workout
+            </Button>
+          </div>
 
           <div className="flex justify-end gap-4">
             <Button variant="outline" onClick={() => router.push("/workout")}>

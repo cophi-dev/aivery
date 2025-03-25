@@ -241,6 +241,28 @@ export default function ActivityDetailClient({ id }: { id: string }) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <div className="mt-8 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+        <Link href="/calendar">Back to Calendar</Link>
+        <div className="flex gap-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/activity/${workout.type}/edit/${workout._id}`)}
+          >
+            <LucidePencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDelete} disabled={isDeleting}>
+            {isDeleting ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+            ) : (
+              <LucideTrash className="h-4 w-4 mr-2" />
+            )}
+            Delete
+          </Button>
+        </div>
+      </div>
     </div>
   )
 } 

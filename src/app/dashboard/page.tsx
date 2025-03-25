@@ -95,7 +95,7 @@ export default async function DashboardPage() {
                 <p className="text-muted-foreground">Active training plans</p>
               </CardContent>
               <CardFooter>
-                <Link href="/planner" className="w-full">
+                <Link href="/calendar" className="w-full">
                   <Button className="w-full" variant="outline">
                     {planCount > 0 ? "View Plans" : "Create a Plan"}
                   </Button>
@@ -271,7 +271,7 @@ export default async function DashboardPage() {
               ) : (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground mb-4">You don't have any training plans yet</p>
-                  <Link href="/planner">
+                  <Link href="/calendar">
                     <Button>Create Your First Plan</Button>
                   </Link>
                 </div>
