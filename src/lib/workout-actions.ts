@@ -75,9 +75,22 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
     }
 
     const newWorkout = await createWorkoutDb(formattedWorkoutData)
+    
+    // Update the user's workouts array
+    const dbConnect = (await import("@/lib/db/mongoose")).default;
+    const UserModel = (await import("@/lib/db/models/user")).default;
+    
+    await dbConnect();
+    await UserModel.findByIdAndUpdate(
+      user.id,
+      { $push: { workouts: newWorkout._id } }
+    );
 
     revalidatePath("/planner")
     revalidatePath("/workout")
+    revalidatePath("/workouts")
+    revalidatePath("/dashboard")
+    revalidatePath("/activity")
 
     return newWorkout
   } catch (error) {
@@ -111,6 +124,9 @@ export async function updateWorkout(workoutData: WorkoutData): Promise<WorkoutDa
 
     revalidatePath("/planner")
     revalidatePath(`/workout/${workoutData._id}`)
+    revalidatePath(`/activity/${workoutData._id}`)
+    revalidatePath('/activity')
+    revalidatePath('/dashboard')
 
     return updatedWorkout
   } catch (error) {
@@ -138,8 +154,21 @@ export async function deleteWorkout(id: string): Promise<void> {
     if (!success) {
       throw new Error("Workout not found or not deleted")
     }
+    
+    // Remove workout from user's workouts array
+    const dbConnect = (await import("@/lib/db/mongoose")).default;
+    const UserModel = (await import("@/lib/db/models/user")).default;
+    
+    await dbConnect();
+    await UserModel.findByIdAndUpdate(
+      user.id,
+      { $pull: { workouts: id } }
+    );
 
     revalidatePath("/planner")
+    revalidatePath("/workouts")
+    revalidatePath("/dashboard")
+    revalidatePath("/activity")
   } catch (error) {
     console.error(`Error deleting workout ${id}:`, error)
     throw new Error(`Failed to delete workout ${id}`)
@@ -232,18 +261,27 @@ export async function createWorkoutFromExisting(workoutData: any): Promise<strin
 // Create a cardio workout
 export async function createCardioWorkout(workoutData: any): Promise<string> {
   try {
+    console.log("Creating workout with data:", JSON.stringify(workoutData));
+    
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+
     const newWorkout = await createWorkoutDb({
       ...workoutData,
-      userId: workoutData.userId,
+      userId: user.id,
     })
 
     revalidatePath("/planner")
     revalidatePath("/activity")
+    revalidatePath("/dashboard")
+    revalidatePath("/")
 
     return newWorkout._id
   } catch (error) {
-    console.error("Error creating cardio workout:", error)
-    throw new Error("Failed to create cardio workout")
+    console.error("Detailed error in createCardioWorkout:", error);
+    throw error;
   }
 }
 

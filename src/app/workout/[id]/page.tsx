@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -15,114 +15,51 @@ import {
   LucideCalendarDays,
   LucideCopy,
 } from "lucide-react"
-import { createWorkoutFromExisting } from "@/lib/workout-actions"
+import { createWorkoutFromExisting, fetchWorkout } from "@/lib/workout-actions"
 import { Header } from "@/components/header"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
+import { format } from "date-fns"
 
 export default function WorkoutDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const [isCopying, setIsCopying] = useState(false)
+  const [workout, setWorkout] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Mock data for a workout
-  const workout = {
-    id: params.id,
-    name: "Upper Body",
-    date: "June 8, 2025",
-    duration: "65 min",
-    intensity: "High",
-    volume: "3,240 kg",
-    exercises: [
-      {
-        name: "Bench Press",
-        sets: [
-          { weight: 80, reps: 10 },
-          { weight: 85, reps: 8 },
-          { weight: 90, reps: 6 },
-          { weight: 85, reps: 8 },
-        ],
-      },
-      {
-        name: "Incline Dumbbell Press",
-        sets: [
-          { weight: 30, reps: 12 },
-          { weight: 32, reps: 10 },
-          { weight: 34, reps: 8 },
-        ],
-      },
-      {
-        name: "Lat Pulldown",
-        sets: [
-          { weight: 70, reps: 12 },
-          { weight: 75, reps: 10 },
-          { weight: 80, reps: 8 },
-        ],
-      },
-      {
-        name: "Seated Cable Row",
-        sets: [
-          { weight: 65, reps: 12 },
-          { weight: 70, reps: 10 },
-          { weight: 75, reps: 8 },
-        ],
-      },
-      {
-        name: "Shoulder Press",
-        sets: [
-          { weight: 60, reps: 10 },
-          { weight: 65, reps: 8 },
-          { weight: 70, reps: 6 },
-        ],
-      },
-      {
-        name: "Lateral Raises",
-        sets: [
-          { weight: 12, reps: 15 },
-          { weight: 14, reps: 12 },
-          { weight: 16, reps: 10 },
-        ],
-      },
-      {
-        name: "Bicep Curls",
-        sets: [
-          { weight: 20, reps: 12 },
-          { weight: 22, reps: 10 },
-          { weight: 24, reps: 8 },
-        ],
-      },
-      {
-        name: "Tricep Pushdowns",
-        sets: [
-          { weight: 25, reps: 12 },
-          { weight: 30, reps: 10 },
-          { weight: 35, reps: 8 },
-        ],
-      },
-    ],
-    notes: "Felt strong today. Increased weight on bench press and hit a new PR.",
-  }
+  // Fetch real workout data
+  useEffect(() => {
+    const loadWorkout = async () => {
+      try {
+        setIsLoading(true)
+        const workoutData = await fetchWorkout(params.id)
+        
+        if (workoutData) {
+          setWorkout(workoutData)
+        } else {
+          console.error("Workout not found")
+        }
+      } catch (error) {
+        console.error("Error loading workout:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadWorkout()
+  }, [params.id])
 
   // Function to copy workout to today and start it
   const handleStartWorkout = async () => {
+    if (!workout) return
+
     try {
       setIsCopying(true)
 
-      // Since we're using mock data in this component, create a copy directly
-      // This is a workaround for the demo - in a real app, you'd use the server action
-      const workoutData = {
-        name: workout.name,
-        date: new Date(),
-        duration: Number.parseInt(workout.duration),
-        intensity: workout.intensity,
-        volume: Number.parseInt(workout.volume.replace(/,/g, "")),
-        exercises: workout.exercises.map((exercise) => ({
-          name: exercise.name,
-          sets: exercise.sets,
-        })),
-        notes: workout.notes,
-      }
-
       // Call the server action with the workout data
-      const newWorkoutId = await createWorkoutFromExisting(workoutData)
+      const newWorkoutId = await createWorkoutFromExisting({
+        ...workout,
+        date: new Date(),
+      })
 
       // Navigate to the workout session page
       router.push(`/workout/session/${newWorkoutId}`)
@@ -131,6 +68,94 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
       setIsCopying(false)
     }
   }
+
+  if (isLoading) {
+    return (
+      <>
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center mb-6">
+            <Link href="/workouts">
+              <Button variant="ghost" size="sm" className="mr-4">
+                <LucideArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+            </Link>
+            <div className="h-8 w-32 bg-gray-200 animate-pulse rounded"></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <div className="h-6 w-24 bg-gray-200 animate-pulse rounded"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-8 w-32 bg-gray-200 animate-pulse rounded"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <div className="h-6 w-24 bg-gray-200 animate-pulse rounded"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="border-b pb-4">
+                    <div className="h-6 w-32 bg-gray-200 animate-pulse rounded mb-4"></div>
+                    <div className="space-y-2">
+                      {[1, 2, 3].map((j) => (
+                        <div key={j} className="grid grid-cols-12 gap-2 py-2 border-t">
+                          <div className="col-span-2 h-4 bg-gray-200 animate-pulse rounded"></div>
+                          <div className="col-span-5 h-4 bg-gray-200 animate-pulse rounded"></div>
+                          <div className="col-span-5 h-4 bg-gray-200 animate-pulse rounded"></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    )
+  }
+
+  if (!workout) {
+    return (
+      <>
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center mb-6">
+            <Link href="/workouts">
+              <Button variant="ghost" size="sm" className="mr-4">
+                <LucideArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+            </Link>
+            <h1 className="text-3xl font-bold tracking-tight">Workout not found</h1>
+          </div>
+          <Card>
+            <CardContent className="py-8">
+              <p className="text-center text-muted-foreground">
+                The workout you are looking for could not be found or you don't have permission to view it.
+              </p>
+              <div className="flex justify-center mt-4">
+                <Link href="/workouts">
+                  <Button>View All Workouts</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    )
+  }
+
+  const workoutDate = new Date(workout.date)
+  const formattedDate = format(workoutDate, "MMMM d, yyyy")
 
   return (
     <>
@@ -143,7 +168,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
               Back
             </Button>
           </Link>
-          <h1 className="text-3xl font-bold tracking-tight">{workout.name}</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{workout.name || workout.type}</h1>
           <Badge className="ml-4">{workout.intensity}</Badge>
         </div>
 
@@ -156,7 +181,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-medium">{workout.date}</div>
+              <div className="text-2xl font-medium">{formattedDate}</div>
             </CardContent>
           </Card>
 
@@ -168,7 +193,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-medium">{workout.duration}</div>
+              <div className="text-2xl font-medium">{workout.duration} min</div>
             </CardContent>
           </Card>
 
@@ -180,7 +205,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-medium">{workout.volume}</div>
+              <div className="text-2xl font-medium">{workout.volume ? `${workout.volume} kg` : 'N/A'}</div>
             </CardContent>
           </Card>
         </div>
@@ -192,10 +217,12 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                 <div className="flex items-center justify-between">
                   <CardTitle>Exercises</CardTitle>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <LucidePencil className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
+                    <Link href={`/workout/edit/${workout._id}`}>
+                      <Button variant="outline" size="sm">
+                        <LucidePencil className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                    </Link>
                     <Button size="sm" onClick={handleStartWorkout} disabled={isCopying}>
                       {isCopying ? (
                         <>
@@ -211,36 +238,40 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                     </Button>
                   </div>
                 </div>
-                <CardDescription>{workout.exercises.length} exercises performed</CardDescription>
+                <CardDescription>{workout.exercises?.length || 0} exercises performed</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
-                  {workout.exercises.map((exercise, index) => (
-                    <div key={index} className="border-b pb-6 last:border-0 last:pb-0">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold">{exercise.name}</h3>
-                        <div className="flex items-center">
-                          <LucideDumbbell className="h-4 w-4 mr-1 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">{exercise.sets.length} sets</span>
+                {workout.exercises && workout.exercises.length > 0 ? (
+                  <div className="space-y-6">
+                    {workout.exercises.map((exercise, index) => (
+                      <div key={index} className="border-b pb-6 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold">{exercise.name}</h3>
+                          <div className="flex items-center">
+                            <LucideDumbbell className="h-4 w-4 mr-1 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">{exercise.sets?.length || 0} sets</span>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground mb-2">
-                        <div className="col-span-2">Set</div>
-                        <div className="col-span-5">Weight (kg)</div>
-                        <div className="col-span-5">Reps</div>
-                      </div>
-
-                      {exercise.sets.map((set, setIndex) => (
-                        <div key={setIndex} className="grid grid-cols-12 gap-2 py-2 border-t">
-                          <div className="col-span-2 font-medium">{setIndex + 1}</div>
-                          <div className="col-span-5">{set.weight} kg</div>
-                          <div className="col-span-5">{set.reps}</div>
+                        <div className="grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground mb-2">
+                          <div className="col-span-2">Set</div>
+                          <div className="col-span-5">Weight (kg)</div>
+                          <div className="col-span-5">Reps</div>
                         </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
+
+                        {exercise.sets && exercise.sets.map((set, setIndex) => (
+                          <div key={setIndex} className="grid grid-cols-12 gap-2 py-2 border-t">
+                            <div className="col-span-2 font-medium">{setIndex + 1}</div>
+                            <div className="col-span-5">{set.weight} kg</div>
+                            <div className="col-span-5">{set.reps}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground py-4">No exercise data available for this workout.</p>
+                )}
               </CardContent>
             </Card>
 
@@ -249,36 +280,17 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                 <CardTitle>Notes</CardTitle>
               </CardHeader>
               <CardContent>
-                <p>{workout.notes}</p>
+                {workout.notes ? (
+                  <p className="whitespace-pre-wrap">{workout.notes}</p>
+                ) : (
+                  <p className="text-muted-foreground">No notes for this workout.</p>
+                )}
               </CardContent>
             </Card>
           </div>
 
           <div>
-            <WorkoutAnalysis
-              workout={{
-                _id: workout.id,
-                userId: "user123", // This should be replaced with actual user ID
-                type: "strength",
-                name: workout.name,
-                date: new Date(workout.date),
-                duration: Number(workout.duration),
-                intensity: workout.intensity,
-                volume: Number(workout.volume),
-                exercises: workout.exercises.map(exercise => ({
-                  name: exercise.name,
-                  sets: exercise.sets.map(set => ({
-                    weight: set.weight,
-                    reps: set.reps,
-                    notes: ""
-                  })),
-                  notes: ""
-                })),
-                notes: workout.notes,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-              }}
-            />
+            <WorkoutAnalysis workout={workout} />
           </div>
         </div>
       </div>

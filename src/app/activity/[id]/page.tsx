@@ -55,7 +55,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
     try {
       setIsDeleting(true)
-      await deleteWorkout(workout.id)
+      await deleteWorkout(workout._id)
       router.push("/planner")
     } catch (error) {
       console.error("Failed to delete workout:", error)
@@ -132,7 +132,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
           <Button
             variant="outline"
             size="sm"
-            onClick={() => router.push(`/activity/${workout.type}/edit/${workout.id}`)}
+            onClick={() => router.push(`/activity/edit/${workout._id}`)}
           >
             <LucidePencil className="h-4 w-4 mr-2" />
             Edit
@@ -181,7 +181,13 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-medium">{workout.distance ? `${workout.distance} km` : "N/A"}</div>
+            <div className="text-2xl font-medium">
+              {workout.distance ? 
+                `${workout.distance} km` : 
+                (workout.cardioDetails?.distance ? 
+                  `${workout.cardioDetails.distance} km` : 
+                  "N/A")}
+            </div>
           </CardContent>
         </Card>
       </div>

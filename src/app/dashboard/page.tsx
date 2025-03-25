@@ -8,6 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare } from "lucide-react"
 import dbConnect from "@/lib/db/mongoose"
 import UserModel from "@/lib/db/models/user"
+import { getWorkoutsByUserId } from "@/lib/db/repositories/workoutRepository"
+import { format } from "date-fns"
+import { Badge } from "@/components/ui/badge"
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions)
@@ -24,10 +30,18 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
+  // Fetch workouts directly from the workouts collection
+  const workouts = await getWorkoutsByUserId(session.user.id)
+  const workoutCount = workouts.length
+  
+  // Sort workouts by date (newest first) and take the 3 most recent
+  const recentWorkouts = workouts
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 3)
+
   // Get some user-specific data (basic version for now)
-  const hasWorkouts = user.workouts?.length > 0
+  const hasWorkouts = workoutCount > 0
   const hasPlans = user.plans?.length > 0
-  const workoutCount = hasWorkouts ? user.workouts.length : 0
   const planCount = hasPlans ? user.plans.length : 0
 
   return (
@@ -60,7 +74,7 @@ export default async function DashboardPage() {
                 <p className="text-muted-foreground">Total workouts logged</p>
               </CardContent>
               <CardFooter>
-                <Link href="/workout" className="w-full">
+                <Link href="/workouts" className="w-full">
                   <Button className="w-full">
                     {workoutCount > 0 ? "View Workouts" : "Start First Workout"}
                   </Button>
@@ -150,8 +164,18 @@ export default async function DashboardPage() {
                 <CardDescription>Your latest workouts</CardDescription>
               </CardHeader>
               <CardContent>
-                {workoutCount > 0 ? (
-                  <p>View your recent workouts in the workouts tab</p>
+                {hasWorkouts ? (
+                  <div className="space-y-3">
+                    {recentWorkouts.map((workout) => (
+                      <div key={workout._id} className="flex items-center justify-between border-b pb-2 last:border-0">
+                        <div>
+                          <h3 className="font-medium">{workout.name || `${workout.type} workout`}</h3>
+                          <p className="text-sm text-muted-foreground">{format(new Date(workout.date), 'MMM d, yyyy')}</p>
+                        </div>
+                        <Badge variant="outline">{workout.duration} min</Badge>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <p className="text-muted-foreground">No workouts logged yet</p>
                 )}
@@ -198,8 +222,24 @@ export default async function DashboardPage() {
               <CardDescription>View and manage your workout history</CardDescription>
             </CardHeader>
             <CardContent>
-              {workoutCount > 0 ? (
-                <p>Your workout history will be displayed here</p>
+              {hasWorkouts ? (
+                <div className="space-y-4">
+                  {workouts.slice(0, 10).map((workout) => (
+                    <div key={workout._id} className="flex items-center justify-between border-b pb-3 last:border-0">
+                      <div>
+                        <h3 className="font-medium">{workout.name || `${workout.type} workout`}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-sm text-muted-foreground">{format(new Date(workout.date), 'MMM d, yyyy')}</span>
+                          <Badge variant="outline">{workout.duration} min</Badge>
+                          <Badge variant="outline">{workout.type}</Badge>
+                        </div>
+                      </div>
+                      <Link href={`/workout/${workout._id}`}>
+                        <Button variant="ghost" size="sm">View</Button>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground mb-4">You haven't logged any workouts yet</p>
@@ -209,6 +249,13 @@ export default async function DashboardPage() {
                 </div>
               )}
             </CardContent>
+            {hasWorkouts && (
+              <CardFooter>
+                <Link href="/workouts" className="w-full">
+                  <Button className="w-full" variant="outline">View All Workouts</Button>
+                </Link>
+              </CardFooter>
+            )}
           </Card>
         </TabsContent>
 

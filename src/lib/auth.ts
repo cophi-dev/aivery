@@ -84,12 +84,20 @@ export async function getSession() {
   return await getServerSession(authOptions);
 }
 
-// Use this on the client side to get the current user
+// Use this to get the current user in both client and server contexts
 export async function getCurrentUser() {
   try {
-    const session = await fetch("/api/auth/session");
-    const data = await session.json();
-    return data?.user;
+    // If we're on the server side (RSC or server action)
+    if (typeof window === 'undefined') {
+      const session = await getServerSession(authOptions);
+      return session?.user;
+    } 
+    // If we're on the client side
+    else {
+      const session = await fetch("/api/auth/session");
+      const data = await session.json();
+      return data?.user;
+    }
   } catch (error) {
     console.error("Error getting current user:", error);
     return null;

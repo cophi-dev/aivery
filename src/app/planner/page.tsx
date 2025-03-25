@@ -316,7 +316,7 @@ export default function WorkoutPlannerPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => router.push(`/activity/${workout.type}/edit/${workout._id}`)}
+                              onClick={() => router.push(`/activity/edit/${workout._id}`)}
                             >
                               <LucidePencil className="h-4 w-4 mr-2" />
                               Edit
@@ -344,7 +344,7 @@ export default function WorkoutPlannerPage() {
                       </div>
                     </div>
                     <div className="mt-4 flex gap-2">
-                      <Button variant="default" size="sm" onClick={() => router.push(`/workout/${workout._id}`)}>
+                      <Button variant="default" size="sm" onClick={() => router.push(`/activity/${workout._id}`)}>
                         View Details
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => router.push(`/workout/start/${workout._id}`)}>

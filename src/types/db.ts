@@ -24,14 +24,28 @@ export interface WorkoutData {
   volume?: number;
   exercises?: Exercise[];
   cardioDetails?: {
+    distance?: number;
+    duration?: number;
     pace?: number;
-    elevation?: number;
-    heartRate?: number;
+    elevationGain?: number;
+    heartRate?: {
+      average?: number;
+      max?: number;
+    };
     laps?: Array<{
-      time: number;
-      distance: number;
-      pace: number;
+      number?: number;
+      time?: number;
+      distance?: number;
+      pace?: number;
+      duration?: number;
     }>;
+    poolLength?: number;
+    strokeType?: string;
+    bikeType?: string;
+    power?: {
+      average?: number;
+      max?: number;
+    };
   };
   createdAt: string;
   updatedAt: string;

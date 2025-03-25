@@ -65,31 +65,39 @@ export default function NewRunningActivityPage() {
     try {
       setIsLoading(true)
 
+      // Create a clean object to avoid potential issues
+      const parsedDistance = distance ? Number.parseFloat(distance) : null
+      const parsedElevationGain = elevationGain ? Number.parseFloat(elevationGain) : null
+      const parsedAvgHR = avgHeartRate ? Number.parseInt(avgHeartRate) : null
+      const parsedMaxHR = maxHeartRate ? Number.parseInt(maxHeartRate) : null
+      
       const workoutData = {
         name: activityName,
-        date: new Date(activityDate),
-        type: "running" as const,
+        date: new Date(activityDate), // Ensure proper date format
+        type: "running",
         duration: calculateTotalDuration(),
-        intensity: intensity as "Low" | "Medium" | "High",
+        intensity: intensity,
+        distance: parsedDistance, // Use the parsed values
+        // Avoid undefined values that might cause validation errors
         cardioDetails: {
-          distance: Number.parseFloat(distance),
+          distance: parsedDistance,
           duration: calculateTotalDuration(),
-          pace: Number.parseFloat(distance) > 0 ? calculateTotalDuration() / Number.parseFloat(distance) : 0,
-          elevationGain: elevationGain ? Number.parseFloat(elevationGain) : undefined,
-          heartRate: includeHeartRate
-            ? {
-                average: Number.parseInt(avgHeartRate),
-                max: Number.parseInt(maxHeartRate),
-              }
-            : undefined,
+          pace: parsedDistance && parsedDistance > 0 ? calculateTotalDuration() / parsedDistance : 0,
+          elevationGain: parsedElevationGain,
+          heartRate: includeHeartRate && (parsedAvgHR || parsedMaxHR) ? {
+            average: parsedAvgHR,
+            max: parsedMaxHR
+          } : null
         },
-        notes,
+        notes: notes || "",
       }
 
+      console.log("Saving workout:", JSON.stringify(workoutData));
       const newWorkoutId = await createCardioWorkout(workoutData)
       router.push(`/activity/${newWorkoutId}`)
     } catch (error) {
       console.error("Failed to create running activity:", error)
+      alert("Failed to save workout. Please try again.")
     } finally {
       setIsLoading(false)
     }
