@@ -22,8 +22,5 @@
     "env": {
       "VERCEL_BODY_SIZE_LIMIT": "100mb"
     }
-  },
-  "bodyParser": {
-    "sizeLimit": "100mb"
   }
 } 

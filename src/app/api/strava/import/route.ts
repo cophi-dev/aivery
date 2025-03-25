@@ -15,6 +15,14 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// Configure the route to handle large files
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: '100mb'
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -27,12 +35,7 @@ export async function POST(request: NextRequest) {
     // Store user ID for later use
     const userId = session.user.id
 
-    // Get the form data using the ReadableStream API
-    const contentType = request.headers.get('content-type') || ''
-    if (!contentType.includes('multipart/form-data')) {
-      return NextResponse.json({ error: "Invalid content type" }, { status: 400 })
-    }
-
+    // Get the form data
     const formData = await request.formData()
     const file = formData.get('file') as File
     if (!file) {
