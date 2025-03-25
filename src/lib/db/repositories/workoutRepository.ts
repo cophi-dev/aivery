@@ -242,6 +242,185 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
   }
 }
 
+// Get monthly workout distance by type
+export async function getMonthlyWorkoutDistanceByType(userId: string, workoutType: string, year: number, month: number): Promise<number> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Create date range for the specified month
+    const startDate = new Date(year, month - 1, 1) // Month is 0-indexed in JS Date
+    const endDate = new Date(year, month, 0) // Last day of the month
+    
+    // Query workouts of the specified type within the date range
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        type: workoutType,
+        date: { $gte: startDate, $lte: endDate }
+      })
+      .toArray()
+    
+    // Calculate total distance, checking both top-level distance and cardioDetails.distance
+    let totalDistance = 0
+    workouts.forEach(workout => {
+      // Use top-level distance field if available
+      if (workout.distance) {
+        totalDistance += workout.distance
+      } 
+      // Otherwise fallback to cardioDetails.distance if available
+      else if (workout.cardioDetails?.distance) {
+        totalDistance += workout.cardioDetails.distance
+      }
+    })
+    
+    return totalDistance
+  } catch (error) {
+    console.error(`Error getting monthly ${workoutType} distance:`, error)
+    throw new Error(`Failed to get monthly ${workoutType} distance`)
+  }
+}
+
+// Get workout distance for a date range
+export async function getWorkoutDistanceForDateRange(
+  userId: string, 
+  workoutType: string, 
+  startDate: Date, 
+  endDate: Date
+): Promise<number> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Query workouts of the specified type within the date range
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        type: workoutType,
+        date: { $gte: startDate, $lte: endDate }
+      })
+      .toArray()
+    
+    // Calculate total distance, checking both top-level distance and cardioDetails.distance
+    let totalDistance = 0
+    workouts.forEach(workout => {
+      // Use top-level distance field if available
+      if (workout.distance) {
+        totalDistance += workout.distance
+      } 
+      // Otherwise fallback to cardioDetails.distance if available
+      else if (workout.cardioDetails?.distance) {
+        totalDistance += workout.cardioDetails.distance
+      }
+    })
+    
+    return totalDistance
+  } catch (error) {
+    console.error(`Error getting ${workoutType} distance for date range:`, error)
+    throw new Error(`Failed to get ${workoutType} distance for date range`)
+  }
+}
+
+// Get monthly workout duration by type
+export async function getMonthlyWorkoutDurationByType(userId: string, workoutType: string, year: number, month: number): Promise<number> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Create date range for the specified month
+    const startDate = new Date(year, month - 1, 1) // Month is 0-indexed in JS Date
+    const endDate = new Date(year, month, 0) // Last day of the month
+    
+    // Query workouts of the specified type within the date range
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        type: workoutType,
+        date: { $gte: startDate, $lte: endDate }
+      })
+      .toArray()
+    
+    // Calculate total duration
+    let totalDuration = 0
+    workouts.forEach(workout => {
+      if (workout.duration) {
+        totalDuration += workout.duration
+      }
+    })
+    
+    return totalDuration
+  } catch (error) {
+    console.error(`Error getting monthly ${workoutType} duration:`, error)
+    throw new Error(`Failed to get monthly ${workoutType} duration`)
+  }
+}
+
+// Get workout durations for a date range
+export async function getWorkoutDurationForDateRange(
+  userId: string, 
+  workoutType: string, 
+  startDate: Date, 
+  endDate: Date
+): Promise<number> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Query workouts of the specified type within the date range
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        type: workoutType,
+        date: { $gte: startDate, $lte: endDate }
+      })
+      .toArray()
+    
+    // Calculate total duration
+    let totalDuration = 0
+    workouts.forEach(workout => {
+      if (workout.duration) {
+        totalDuration += workout.duration
+      }
+    })
+    
+    return totalDuration
+  } catch (error) {
+    console.error(`Error getting ${workoutType} duration for date range:`, error)
+    throw new Error(`Failed to get ${workoutType} duration for date range`)
+  }
+}
+
+// Get workout notes for analysis
+export async function getWorkoutNotesByType(
+  userId: string,
+  workoutType: string,
+  startDate: Date,
+  endDate: Date
+): Promise<{ notes: string[], count: number }> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Query workouts of the specified type within the date range
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        type: workoutType,
+        date: { $gte: startDate, $lte: endDate }
+      })
+      .sort({ date: -1 })
+      .toArray()
+    
+    // Extract notes from workouts
+    const notes = workouts
+      .filter(workout => workout.notes && workout.notes.trim() !== '')
+      .map(workout => workout.notes as string)
+    
+    return {
+      notes,
+      count: workouts.length
+    }
+  } catch (error) {
+    console.error(`Error getting ${workoutType} notes:`, error)
+    throw new Error(`Failed to get ${workoutType} notes`)
+  }
+}
+
 // Export alias for getUserWorkouts (for backward compatibility)
 export const getUserWorkouts = getWorkoutsByUserId
 
