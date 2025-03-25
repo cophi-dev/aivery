@@ -1,6 +1,6 @@
 {
   "functions": {
-    "/api/strava/import": {
+    "api/strava/import": {
       "memory": 1024,
       "maxDuration": 60
     }
