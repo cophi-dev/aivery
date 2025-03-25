@@ -3,90 +3,19 @@
 
 import * as React from "react"
 
+import type {
+  ToastActionElement,
+  ToastProps,
+} from "@/components/ui/toast"
+
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
 
-export type Toast = {
+type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
-  action?: React.ReactElement
-  variant?: "default" | "destructive"
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
-}
-
-type State = {
-  toasts: Toast[]
-}
-
-const ToastContext = React.createContext<{
-  toasts: Toast[]
-  addToast: (toast: Omit<Toast, "id">) => void
-  removeToast: (id: string) => void
-} | undefined>(undefined)
-
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = React.useState<Toast[]>([])
-
-  const addToast = React.useCallback((toast: Omit<Toast, "id">) => {
-    const id = Math.random().toString(36).slice(2, 11)
-    setToasts((prev) => [...prev, { ...toast, id }].slice(-TOAST_LIMIT))
-
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, TOAST_REMOVE_DELAY)
-  }, [])
-
-  const removeToast = React.useCallback((id: string) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id))
-  }, [])
-
-  const value = React.useMemo(
-    () => ({
-      toasts,
-      addToast,
-      removeToast,
-    }),
-    [toasts, addToast, removeToast]
-  )
-
-  return (
-    <ToastContext.Provider value={value}>
-      {children}
-    </ToastContext.Provider>
-  )
-}
-
-export function useToast() {
-  const context = React.useContext(ToastContext)
-  if (!context) {
-    throw new Error("useToast must be used within a ToastProvider")
-  }
-  return {
-    toast: context.addToast,
-    dismiss: context.removeToast,
-    toasts: context.toasts,
-  }
-}
-
-export { ToastProvider }
-export const toast = {
-  // Simple implementation for direct use
-  error: (message: string) => {
-    if (typeof window !== 'undefined') {
-      alert(`Error: ${message}`)
-    }
-  },
-  success: (message: string) => {
-    if (typeof window !== 'undefined') {
-      alert(`Success: ${message}`)
-    }
-  },
-  // Simplified interface for our component
-  title: "",
-  description: "",
-  variant: "default" as "default" | "destructive",
+  action?: ToastActionElement
 }
 
 const actionTypes = {
@@ -96,31 +25,35 @@ const actionTypes = {
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const
 
-type ActionType = typeof actionTypes
-
-type Action =
-  | {
-      type: ActionType["ADD_TOAST"]
-      toast: Toast
-    }
-  | {
-      type: ActionType["UPDATE_TOAST"]
-      toast: Partial<Toast>
-    }
-  | {
-      type: ActionType["DISMISS_TOAST"]
-      toastId?: Toast["id"]
-    }
-  | {
-      type: ActionType["REMOVE_TOAST"]
-      toastId?: Toast["id"]
-    }
-
 let count = 0
 
 function genId() {
   count = (count + 1) % Number.MAX_VALUE
   return count.toString()
+}
+
+type ActionType = typeof actionTypes
+
+type Action =
+  | {
+      type: ActionType["ADD_TOAST"]
+      toast: ToasterToast
+    }
+  | {
+      type: ActionType["UPDATE_TOAST"]
+      toast: Partial<ToasterToast>
+    }
+  | {
+      type: ActionType["DISMISS_TOAST"]
+      toastId?: ToasterToast["id"]
+    }
+  | {
+      type: ActionType["REMOVE_TOAST"]
+      toastId?: ToasterToast["id"]
+    }
+
+interface State {
+  toasts: ToasterToast[]
 }
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
@@ -205,12 +138,12 @@ function dispatch(action: Action) {
   })
 }
 
-type Toast = Omit<Toast, "id">
+type Toast = Omit<ToasterToast, "id">
 
 function toast({ ...props }: Toast) {
   const id = genId()
 
-  const update = (props: Toast) =>
+  const update = (props: ToasterToast) =>
     dispatch({
       type: "UPDATE_TOAST",
       toast: { ...props, id },
@@ -236,7 +169,7 @@ function toast({ ...props }: Toast) {
   }
 }
 
-export function useToast() {
+function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
   React.useEffect(() => {
@@ -254,4 +187,6 @@ export function useToast() {
     toast,
     dismiss: (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId }),
   }
-} 
+}
+
+export { useToast, toast } 
