@@ -317,10 +317,8 @@ export default function CalendarPage() {
                             {workout.exercises.map((exercise, idx) => (
                               <li key={idx} className="text-sm">
                                 <span className="font-medium">{exercise.name}</span>:{" "}
-                                {exercise.sets && exercise.reps
-                                  ? `${exercise.sets} × ${exercise.reps}`
-                                  : exercise.duration
-                                  ? `${exercise.duration} minutes`
+                                {exercise.sets && exercise.sets.length > 0
+                                  ? `${exercise.sets.length} sets`
                                   : "No details"}
                               </li>
                             ))}
