@@ -10,6 +10,8 @@ import {
   syncStravaWorkouts,
 } from "./services/integrationService"
 import { getUserIntegrations } from "./db/repositories/integrationRepository"
+import type { IIntegration } from "./db/models/integration"
+import type { Document } from "mongoose"
 
 // Mock user ID for demo purposes
 const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
@@ -91,8 +93,8 @@ export async function getUserIntegrationsAction() {
     const integrations = await getUserIntegrations(MOCK_USER_ID)
     return {
       success: true,
-      integrations: integrations.map((integration) => ({
-        id: integration._id.toString(),
+      integrations: integrations.map((integration: IIntegration & Document) => ({
+        id: (integration._id as { toString: () => string }).toString(),
         provider: integration.provider,
         lastSynced: integration.lastSynced,
       })),
