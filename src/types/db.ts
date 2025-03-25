@@ -44,4 +44,14 @@ export interface UserData {
   image?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChatMessage {
+  _id: string;
+  userId: string;
+  content: string;
+  role: "user" | "assistant";
+  workoutId?: string;
+  createdAt: string;
+  updatedAt: string;
 } 
