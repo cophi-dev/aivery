@@ -255,7 +255,28 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
           </div>
 
           <div>
-            <WorkoutAnalysis workout={workout} />
+            <WorkoutAnalysis
+              workout={{
+                _id: workout.id,
+                userId: "user123", // This should be replaced with actual user ID
+                type: "strength",
+                name: workout.name,
+                date: new Date(workout.date),
+                duration: Number(workout.duration),
+                intensity: workout.intensity,
+                volume: Number(workout.volume),
+                exercises: workout.exercises.map(exercise => ({
+                  name: exercise.name,
+                  sets: exercise.sets.length,
+                  reps: exercise.sets[0]?.reps || 0,
+                  weight: exercise.sets[0]?.weight || 0,
+                  notes: ""
+                })),
+                notes: workout.notes,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              }}
+            />
           </div>
         </div>
       </div>
