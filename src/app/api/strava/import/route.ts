@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { createWorkout } from "@/lib/workout-actions"
 import { revalidatePath } from "next/cache"
-import AdmZip from "adm-zip"
+import JSZip from "jszip"
 import { FitParser, FitData, FitSession } from 'fit-file-parser'
 import { gunzip } from 'zlib'
 import { promisify } from 'util'
@@ -42,24 +42,23 @@ export async function POST(request: NextRequest) {
 
     console.log('Strava import: Processing file:', file.name, 'size:', file.size)
 
-    // Convert File to Buffer
+    // Convert File to ArrayBuffer
     const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
 
-    // Extract the ZIP file
-    const zip = new AdmZip(buffer)
-    const zipEntries = zip.getEntries()
-    console.log('Strava import: ZIP entries found:', zipEntries.length)
+    // Load the ZIP file
+    const zip = new JSZip()
+    const zipContent = await zip.loadAsync(arrayBuffer)
+    console.log('Strava import: ZIP entries found:', Object.keys(zipContent.files).length)
 
     // Find all .fit.gz files in the activities folder
-    const activityEntries = zipEntries.filter(entry => 
-      entry.entryName.startsWith('activities/') && 
-      entry.entryName.endsWith('.fit.gz')
+    const activityFiles = Object.values(zipContent.files).filter(file => 
+      file.name.startsWith('activities/') && 
+      file.name.endsWith('.fit.gz')
     )
 
-    console.log('Strava import: Found activity files:', activityEntries.map(e => e.entryName))
+    console.log('Strava import: Found activity files:', activityFiles.map(f => f.name))
 
-    if (activityEntries.length === 0) {
+    if (activityFiles.length === 0) {
       console.error('Strava import: No .fit.gz files found in activities folder')
       return NextResponse.json({ 
         error: "No activity files found. Make sure your Strava archive contains .fit.gz files in the activities folder." 
@@ -77,12 +76,12 @@ export async function POST(request: NextRequest) {
       mode: 'cascade',
     })
 
-    for (const entry of activityEntries) {
+    for (const file of activityFiles) {
       try {
-        console.log('Processing activity:', entry.entryName)
+        console.log('Processing activity:', file.name)
         
         // Get the compressed data
-        const compressedData = entry.getData()
+        const compressedData = await file.async('nodebuffer')
         
         // Decompress the .gz file
         const fitData = await gunzipAsync(compressedData)
@@ -99,7 +98,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (!activity?.sessions?.[0]) {
-          console.log('Skipping activity - no session data:', entry.entryName)
+          console.log('Skipping activity - no session data:', file.name)
           continue
         }
 
@@ -132,15 +131,15 @@ export async function POST(request: NextRequest) {
             } : undefined
           },
           importedFrom: 'strava',
-          importId: entry.entryName, // Use filename as unique identifier
+          importId: file.name, // Use filename as unique identifier
           userId: userId // Use the authenticated user's ID
         }
 
         await createWorkout(workout)
         importedCount++
-        console.log('Successfully imported activity:', entry.entryName)
+        console.log('Successfully imported activity:', file.name)
       } catch (error) {
-        console.error('Error processing activity:', entry.entryName, error)
+        console.error('Error processing activity:', file.name, error)
         // Continue with next activity even if one fails
       }
     }
