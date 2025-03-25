@@ -39,16 +39,21 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
         const data = await fetchWorkout(params.id)
         if (data) {
           setWorkout(data)
+        } else {
+          // Handle case where workout is not found
+          console.error("Workout not found")
+          router.push("/workout") // Redirect to workouts list
         }
       } catch (error) {
         console.error("Failed to load workout:", error)
+        router.push("/workout") // Redirect to workouts list on error
       } finally {
         setIsLoading(false)
       }
     }
 
     loadWorkout()
-  }, [params.id])
+  }, [params.id, router])
 
   // Handle form changes
   const updateWorkoutField = (field: keyof WorkoutData, value: any) => {
