@@ -243,7 +243,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
               <CardContent>
                 {workout.exercises && workout.exercises.length > 0 ? (
                   <div className="space-y-6">
-                    {workout.exercises.map((exercise, index) => (
+                    {workout.exercises.map((exercise: any, index: number) => (
                       <div key={index} className="border-b pb-6 last:border-0 last:pb-0">
                         <div className="flex items-center justify-between mb-4">
                           <h3 className="text-lg font-semibold">{exercise.name}</h3>
@@ -259,7 +259,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                           <div className="col-span-5">Reps</div>
                         </div>
 
-                        {exercise.sets && exercise.sets.map((set, setIndex) => (
+                        {exercise.sets && exercise.sets.map((set: any, setIndex: number) => (
                           <div key={setIndex} className="grid grid-cols-12 gap-2 py-2 border-t">
                             <div className="col-span-2 font-medium">{setIndex + 1}</div>
                             <div className="col-span-5">{set.weight} kg</div>
