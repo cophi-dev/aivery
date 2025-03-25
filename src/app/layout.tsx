@@ -6,6 +6,7 @@ import { MainHeader } from "@/components/main-header";
 import { PersistentChat } from "@/components/persistent-chat";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -34,6 +35,7 @@ export default async function RootLayout({
           </main>
           {session?.user && <PersistentChat />}
         </AuthProvider>
+        <Toaster />
       </body>
     </html>
   );
