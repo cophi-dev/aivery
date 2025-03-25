@@ -19,9 +19,10 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { LucideClock, LucideDumbbell, LucidePlus, LucideTrash, LucideEdit } from "lucide-react"
+import { LucideClock, LucideDumbbell, LucidePlus, LucideTrash, LucideEdit, LucidePencil, LucideTrash2 } from "lucide-react"
 import { fetchWorkouts, createWorkout, deleteWorkout } from "@/lib/workout-actions"
 import type { WorkoutData } from "@/types/db"
+import { EditWorkoutForm } from "@/components/forms/edit-workout-form"
 
 export default function WorkoutPlannerPage() {
   const router = useRouter()
@@ -102,7 +103,7 @@ export default function WorkoutPlannerPage() {
     try {
       setIsLoading(true)
       await deleteWorkout(id)
-      setWorkouts(workouts.filter((workout) => workout.id !== id))
+      setWorkouts(workouts.filter((workout) => workout._id !== id))
     } catch (error) {
       console.error("Failed to delete workout:", error)
     } finally {
@@ -281,7 +282,7 @@ export default function WorkoutPlannerPage() {
             ) : (
               <div className="space-y-4">
                 {workoutsForSelectedDate.map((workout) => (
-                  <div key={workout.id} className="border rounded-lg p-4 hover:border-primary transition-colors">
+                  <div key={workout._id} className="border rounded-lg p-4 hover:border-primary transition-colors">
                     <div className="flex justify-between items-start">
                       <div>
                         <h3 className="font-semibold text-lg">{workout.name}</h3>
@@ -310,23 +311,43 @@ export default function WorkoutPlannerPage() {
                         {workout.notes && <p className="mt-2 text-sm text-muted-foreground">{workout.notes}</p>}
                       </div>
                       <div className="flex gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => router.push(`/activity/${workout.type}/edit/${workout._id}`)}
+                            >
+                              <LucidePencil className="h-4 w-4 mr-2" />
+                              Edit
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Edit Workout</DialogTitle>
+                              <DialogDescription>
+                                Make changes to your workout here. Click save when you're done.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <EditWorkoutForm workout={workout} onSuccess={() => router.refresh()} />
+                          </DialogContent>
+                        </Dialog>
                         <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => router.push(`/workout/edit/${workout.id}`)}
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteWorkout(workout._id)}
+                          disabled={isLoading}
                         >
-                          <LucideEdit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="icon" onClick={() => handleDeleteWorkout(workout.id)}>
-                          <LucideTrash className="h-4 w-4" />
+                          <LucideTrash2 className="h-4 w-4 mr-2" />
+                          Delete
                         </Button>
                       </div>
                     </div>
                     <div className="mt-4 flex gap-2">
-                      <Button variant="default" size="sm" onClick={() => router.push(`/workout/${workout.id}`)}>
+                      <Button variant="default" size="sm" onClick={() => router.push(`/workout/${workout._id}`)}>
                         View Details
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => router.push(`/workout/start/${workout.id}`)}>
+                      <Button variant="outline" size="sm" onClick={() => router.push(`/workout/start/${workout._id}`)}>
                         Start Workout
                       </Button>
                     </div>
