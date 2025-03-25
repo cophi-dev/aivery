@@ -208,7 +208,7 @@ export async function createWorkoutFromExisting(workoutData: any): Promise<strin
 
     revalidatePath("/planner")
 
-    return newWorkout.id
+    return newWorkout._id
   } catch (error) {
     console.error("Error creating workout from existing:", error)
     throw new Error("Failed to create workout from existing")
@@ -226,7 +226,7 @@ export async function createCardioWorkout(workoutData: any): Promise<string> {
     revalidatePath("/planner")
     revalidatePath("/activity")
 
-    return newWorkout.id
+    return newWorkout._id
   } catch (error) {
     console.error("Error creating cardio workout:", error)
     throw new Error("Failed to create cardio workout")
@@ -243,7 +243,12 @@ export async function fetchWorkoutForAI(id: string): Promise<any> {
     }
 
     // Get previous workouts of the same type for comparison
-    const previousWorkouts = await getPreviousWorkouts(workout.userId, workout.name, new Date(workout.date), 3)
+    const previousWorkouts = await getPreviousWorkouts(
+      workout.userId, 
+      workout.name || 'Unknown', // Provide a default value if name is undefined
+      new Date(workout.date), 
+      3
+    )
 
     return {
       ...workout,
