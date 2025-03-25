@@ -13,7 +13,7 @@ export async function fetchUserWorkouts(userId: string = MOCK_USER_ID): Promise<
   try {
     const workouts = await getWorkoutsByUserId(userId)
     return workouts.map((workout) => ({
-      id: workout._id.toString(),
+      _id: workout._id.toString(),
       userId: workout.userId.toString(),
       name: workout.name,
       date: workout.date,
@@ -25,8 +25,8 @@ export async function fetchUserWorkouts(userId: string = MOCK_USER_ID): Promise<
       exercises: workout.exercises,
       cardioDetails: workout.cardioDetails,
       notes: workout.notes,
-      completed: workout.completed,
-      completedAt: workout.completedAt,
+      createdAt: workout.createdAt,
+      updatedAt: workout.updatedAt,
     }))
   } catch (error) {
     console.error("Error fetching user workouts:", error)
@@ -48,34 +48,25 @@ export async function saveUserChatMessage(message: Omit<ChatMessage, "id" | "tim
 // Example server action to get workout statistics
 export async function getWorkoutStats(userId: string = MOCK_USER_ID) {
   try {
-    return await getWorkoutStatsDb(userId)
+    const stats = await getWorkoutStatsDb(userId)
+    return stats
   } catch (error) {
     console.error("Error getting workout stats:", error)
-    throw new Error("Failed to get workout statistics")
+    throw new Error("Failed to get workout stats")
   }
 }
 
-// Get user profile and stats
+// Example server action to get user profile
 export async function getUserProfile(userId: string = MOCK_USER_ID) {
   try {
     const user = await getUserById(userId)
-    if (!user) {
-      throw new Error("User not found")
-    }
-
     const stats = await getUserStats(userId)
     const integrations = await getUserIntegrations(userId)
 
     return {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email,
+      user,
       stats,
-      integrations: integrations.map((integration) => ({
-        id: integration._id.toString(),
-        provider: integration.provider,
-        lastSynced: integration.lastSynced,
-      })),
+      integrations,
     }
   } catch (error) {
     console.error("Error getting user profile:", error)
