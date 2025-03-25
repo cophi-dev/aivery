@@ -10,11 +10,10 @@ import { promisify } from 'util'
 
 const gunzipAsync = promisify(gunzip)
 
-export const config = {
-  api: {
-    bodyParser: false
-  }
-}
+// New App Router configuration
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
