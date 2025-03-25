@@ -7,7 +7,7 @@ export const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
 // Mock workouts data
 export const mockWorkouts: WorkoutData[] = [
   {
-    id: "1",
+    _id: "1",
     userId: MOCK_USER_ID,
     name: "Upper Body",
     date: new Date("2025-06-08"),
@@ -43,35 +43,39 @@ export const mockWorkouts: WorkoutData[] = [
       },
     ],
     notes: "Felt strong today. Increased weight on bench press and hit a new PR.",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
   {
-    id: "2",
+    _id: "2",
     userId: MOCK_USER_ID,
     name: "Lower Body",
     date: new Date("2025-06-10"),
     duration: 75,
-    intensity: "High",
+    intensity: "Medium",
     type: "strength",
-    volume: 4560,
+    volume: 2800,
     exercises: [
       {
         name: "Squats",
         sets: [
-          { weight: 100, reps: 10 },
-          { weight: 110, reps: 8 },
-          { weight: 120, reps: 6 },
+          { weight: 100, reps: 8 },
+          { weight: 105, reps: 6 },
+          { weight: 110, reps: 4 },
         ],
       },
       {
-        name: "Deadlifts",
+        name: "Romanian Deadlifts",
         sets: [
-          { weight: 120, reps: 8 },
-          { weight: 130, reps: 6 },
-          { weight: 140, reps: 4 },
+          { weight: 80, reps: 10 },
+          { weight: 85, reps: 8 },
+          { weight: 90, reps: 6 },
         ],
       },
     ],
-    notes: "Focus on form for deadlifts.",
+    notes: "Focusing on form today. Reduced weight to work on technique.",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 ]
 
@@ -105,29 +109,21 @@ export const mockIntegrations = [
   },
 ]
 
-// Function to create a mock workout
+// Helper function to create a mock workout
 export function createMockWorkout(workoutData: Partial<WorkoutData>): WorkoutData {
-  // Calculate volume based on exercises
-  let volume = workoutData.volume || 0
-  if (!volume && workoutData.exercises) {
-    for (const exercise of workoutData.exercises) {
-      for (const set of exercise.sets) {
-        volume += set.weight * set.reps
-      }
-    }
-  }
-
   return {
-    id: Date.now().toString(),
+    _id: new ObjectId().toString(),
     userId: MOCK_USER_ID,
-    name: workoutData.name || "Untitled Workout",
+    name: workoutData.name || "New Workout",
     date: workoutData.date || new Date(),
-    duration: workoutData.duration || 60,
+    duration: workoutData.duration || 0,
     intensity: workoutData.intensity || "Medium",
     type: workoutData.type || "strength",
-    volume,
+    volume: workoutData.volume || 0,
     exercises: workoutData.exercises || [],
     notes: workoutData.notes || "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   }
 }
 
