@@ -4,5 +4,22 @@
       "memory": 3008,
       "maxDuration": 60
     }
+  },
+  "routes": [
+    {
+      "src": "/api/strava/import",
+      "methods": ["POST"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST",
+        "Access-Control-Allow-Headers": "Content-Type"
+      },
+      "continue": true
+    }
+  ],
+  "build": {
+    "env": {
+      "VERCEL_BODY_SIZE_LIMIT": "100mb"
+    }
   }
 } 

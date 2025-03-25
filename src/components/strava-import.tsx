@@ -56,7 +56,10 @@ export function StravaImport() {
       console.log('Sending request to /api/strava/import')
       const response = await fetch('/api/strava/import', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+        }
       })
 
       console.log('Response status:', response.status)

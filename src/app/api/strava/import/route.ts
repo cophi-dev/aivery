@@ -10,6 +10,12 @@ import { promisify } from 'util'
 
 const gunzipAsync = promisify(gunzip)
 
+export const config = {
+  api: {
+    bodyParser: false
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -22,7 +28,12 @@ export async function POST(request: NextRequest) {
     // Store user ID for later use
     const userId = session.user.id
 
-    // Get the form data
+    // Get the form data using the ReadableStream API
+    const contentType = request.headers.get('content-type') || ''
+    if (!contentType.includes('multipart/form-data')) {
+      return NextResponse.json({ error: "Invalid content type" }, { status: 400 })
+    }
+
     const formData = await request.formData()
     const file = formData.get('file') as File
     if (!file) {
