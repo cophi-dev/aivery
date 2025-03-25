@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { LucideCalendarDays, LucideClock, LucideDumbbell, LucidePlus } from "lucide-react"
+import { LucideCalendarDays, LucideClock, LucideDumbbell, LucidePlus, LucideRuler } from "lucide-react"
 import Link from "next/link"
 import { getWorkoutsByUserId } from "@/lib/db/repositories/workoutRepository"
 import { getServerSession } from "next-auth"
@@ -50,7 +50,9 @@ export default async function WorkoutsPage() {
       name: workout.name,
       date: format(new Date(workout.date), 'MMM d, yyyy'),
       duration: `${workout.duration} min`,
-      volume: workout.volume ? `${workout.volume} kg` : 'N/A'
+      volume: workout.volume ? `${workout.volume} kg` : undefined,
+      distance: workout.distance || workout.cardioDetails?.distance,
+      type: workout.type
     }))
 
   return (
@@ -149,10 +151,19 @@ export default async function WorkoutsPage() {
                           <LucideClock className="h-3 w-3 mr-1" />
                           {workout.duration}
                         </Badge>
-                        <Badge variant="outline" className="flex items-center">
-                          <LucideDumbbell className="h-3 w-3 mr-1" />
-                          {workout.volume}
-                        </Badge>
+                        {workout.type === 'strength' ? (
+                          <Badge variant="outline" className="flex items-center">
+                            <LucideDumbbell className="h-3 w-3 mr-1" />
+                            {workout.volume || 'N/A'}
+                          </Badge>
+                        ) : (
+                          workout.distance && (
+                            <Badge variant="outline" className="flex items-center">
+                              <LucideRuler className="h-3 w-3 mr-1" />
+                              {workout.distance} km
+                            </Badge>
+                          )
+                        )}
                         <Link href={`/workout/${workout.id}`}>
                           <Button variant="ghost" size="sm">
                             View Details

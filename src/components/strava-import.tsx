@@ -57,23 +57,22 @@ export function StravaImport() {
       const response = await fetch('/api/strava/import', {
         method: 'POST',
         body: formData,
-        headers: {
-          'Accept': 'application/json',
-        }
       })
 
       console.log('Response status:', response.status)
       const data = await response.json()
       console.log('Response data:', data)
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import data')
+      if (!response.ok || !data.success) {
+        const errorMessage = data.details || data.error || 'Failed to import data'
+        const errorDetails = data.file ? `File: ${data.file}\n${errorMessage}` : errorMessage
+        throw new Error(errorDetails)
       }
 
       if (data.count === 0) {
         toast({
-          title: "No activities found",
-          description: "No activities were found in the Strava archive. Make sure you're uploading the correct file.",
+          title: "No activities imported",
+          description: data.message || "No activities were successfully imported from the Strava archive.",
           variant: "destructive"
         })
         return
@@ -81,7 +80,7 @@ export function StravaImport() {
 
       toast({
         title: "Import successful",
-        description: `Imported ${data.count} workouts from your Strava archive`,
+        description: data.message || `Imported ${data.count} workouts from your Strava archive`,
       })
 
       // Reset the file input and selected file

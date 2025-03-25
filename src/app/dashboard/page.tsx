@@ -34,10 +34,10 @@ export default async function DashboardPage() {
   const workouts = await getWorkoutsByUserId(session.user.id)
   const workoutCount = workouts.length
   
-  // Sort workouts by date (newest first) and take the 3 most recent
+  // Sort workouts by date (newest first) and take the 5 most recent
   const recentWorkouts = workouts
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 3)
+    .slice(0, 5)
 
   // Get some user-specific data (basic version for now)
   const hasWorkouts = workoutCount > 0
@@ -224,7 +224,7 @@ export default async function DashboardPage() {
             <CardContent>
               {hasWorkouts ? (
                 <div className="space-y-4">
-                  {workouts.slice(0, 10).map((workout) => (
+                  {workouts.slice(0, 20).map((workout) => (
                     <div key={workout._id} className="flex items-center justify-between border-b pb-3 last:border-0">
                       <div>
                         <h3 className="font-medium">{workout.name || `${workout.type} workout`}</h3>

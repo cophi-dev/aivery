@@ -6,7 +6,7 @@ const DB_NAME = "aivery"
 const COLLECTION_NAME = "workouts"
 
 // Get all workouts for a user
-export async function getWorkoutsByUserId(userId: string, limit = 20, skip = 0): Promise<WorkoutData[]> {
+export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0): Promise<WorkoutData[]> {
   try {
     const collection = await getCollection(DB_NAME, COLLECTION_NAME)
 
@@ -85,9 +85,9 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       intensity: workoutData.intensity || "",
       type: workoutData.type || "strength",
       volume: workoutData.volume || 0,
-      distance: workoutData.distance || undefined,
+      distance: workoutData.distance ?? undefined,
       exercises: workoutData.exercises || [],
-      cardioDetails: workoutData.cardioDetails || undefined,
+      cardioDetails: workoutData.cardioDetails ?? undefined,
       notes: workoutData.notes || "",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -423,4 +423,246 @@ export async function getWorkoutNotesByType(
 
 // Export alias for getUserWorkouts (for backward compatibility)
 export const getUserWorkouts = getWorkoutsByUserId
+
+// Get total running distance for a user
+export async function getTotalRunningDistance(userId: string): Promise<number> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    const workouts = await collection
+      .find({ 
+        userId: new ObjectId(userId),
+        type: "running"
+      })
+      .toArray()
+    
+    let totalDistance = 0
+    workouts.forEach(workout => {
+      // Use either top-level distance or cardioDetails.distance
+      const distance = workout.distance || workout.cardioDetails?.distance || 0
+      totalDistance += distance
+    })
+    
+    return totalDistance
+  } catch (error) {
+    console.error("Error getting total running distance:", error)
+    throw new Error("Failed to get total running distance")
+  }
+}
+
+// Get total distance for a specific workout type
+export async function getTotalDistanceByType(userId: string, workoutType: string): Promise<number> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    const result = await collection.aggregate([
+      {
+        $match: {
+          userId: new ObjectId(userId),
+          type: workoutType,
+          $or: [
+            { distance: { $exists: true, $ne: null } },
+            { "cardioDetails.distance": { $exists: true, $ne: null } }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalDistance: {
+            $sum: {
+              $cond: [
+                { $gt: ["$distance", 0] },
+                "$distance",
+                { $cond: [{ $gt: ["$cardioDetails.distance", 0] }, "$cardioDetails.distance", 0] }
+              ]
+            }
+          }
+        }
+      }
+    ]).toArray()
+
+    return result[0]?.totalDistance || 0
+  } catch (error) {
+    console.error(`Error getting total ${workoutType} distance:`, error)
+    throw new Error(`Failed to get total ${workoutType} distance`)
+  }
+}
+
+// Get comprehensive workout statistics for any workout type
+export async function getWorkoutTypeStats(userId: string, workoutType: string): Promise<{
+  totalDistance: number;
+  totalSessions: number;
+  fastestPace?: number;
+  fastestSession?: {
+    date: Date;
+    distance: number;
+    duration: number;
+    pace: number;
+  };
+  longestSession?: {
+    date: Date;
+    distance: number;
+    duration: number;
+    pace: number;
+  };
+  averagePace?: number;
+  averageDistance?: number;
+  averageDuration?: number;
+  totalDuration: number;
+}> {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        type: workoutType,
+        $or: [
+          { distance: { $exists: true, $ne: null } },
+          { "cardioDetails.distance": { $exists: true, $ne: null } }
+        ]
+      })
+      .toArray()
+
+    if (workouts.length === 0) {
+      return {
+        totalDistance: 0,
+        totalSessions: 0,
+        totalDuration: 0
+      }
+    }
+
+    let totalDistance = 0
+    let totalDuration = 0
+    let fastestPace = Infinity
+    let fastestSession: {
+      date: Date;
+      distance: number;
+      duration: number;
+      pace: number;
+    } | undefined = undefined
+    let longestSession: {
+      date: Date;
+      distance: number;
+      duration: number;
+      pace: number;
+    } | undefined = undefined
+    let totalPace = 0
+    let sessionsWithPace = 0
+
+    workouts.forEach(workout => {
+      const distance = workout.distance || workout.cardioDetails?.distance || 0
+      const duration = workout.duration || workout.cardioDetails?.duration || 0
+      
+      // Calculate pace in min/km for distance-based workouts
+      const pace = distance > 0 ? duration / distance : 0
+
+      totalDistance += distance
+      totalDuration += duration
+
+      if (distance > 0 && duration > 0) {
+        // Track fastest pace
+        if (pace > 0 && pace < fastestPace) {
+          fastestPace = pace
+          fastestSession = {
+            date: workout.date,
+            distance,
+            duration,
+            pace
+          }
+        }
+
+        // Track longest session
+        if (!longestSession || distance > longestSession.distance) {
+          longestSession = {
+            date: workout.date,
+            distance,
+            duration,
+            pace
+          }
+        }
+
+        // Add to average pace calculation
+        if (pace > 0) {
+          totalPace += pace
+          sessionsWithPace++
+        }
+      }
+    })
+
+    return {
+      totalDistance,
+      totalSessions: workouts.length,
+      totalDuration,
+      fastestPace: fastestPace !== Infinity ? fastestPace : undefined,
+      fastestSession,
+      longestSession,
+      averagePace: sessionsWithPace > 0 ? totalPace / sessionsWithPace : undefined,
+      averageDistance: totalDistance / workouts.length,
+      averageDuration: totalDuration / workouts.length
+    }
+  } catch (error) {
+    console.error(`Error getting ${workoutType} statistics:`, error)
+    throw new Error(`Failed to get ${workoutType} statistics`)
+  }
+}
+
+// Alias for backward compatibility
+export const getRunningStats = (userId: string) => getWorkoutTypeStats(userId, 'running')
+
+export async function getWorkoutsByDate(userId: string, date: Date) {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Create start and end of the day
+    const startOfDay = new Date(date)
+    startOfDay.setHours(0, 0, 0, 0)
+    
+    const endOfDay = new Date(date)
+    endOfDay.setHours(23, 59, 59, 999)
+    
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        date: {
+          $gte: startOfDay,
+          $lte: endOfDay
+        }
+      })
+      .sort({ date: 1 })
+      .toArray()
+      
+    return workouts
+  } catch (error) {
+    console.error("Error getting workouts by date:", error)
+    throw new Error("Failed to get workouts by date")
+  }
+}
+
+export async function getWorkoutDatesForMonth(userId: string, date: Date) {
+  try {
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    
+    // Create start and end of the month
+    const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1)
+    const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
+    
+    const workouts = await collection
+      .find({
+        userId: new ObjectId(userId),
+        date: {
+          $gte: startOfMonth,
+          $lte: endOfMonth
+        }
+      })
+      .project({ date: 1 })
+      .toArray()
+      
+    return workouts.map(w => new Date(w.date))
+  } catch (error) {
+    console.error("Error getting workout dates:", error)
+    throw new Error("Failed to get workout dates")
+  }
+}
 

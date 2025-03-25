@@ -293,12 +293,23 @@ export async function createCardioWorkout(workoutData: any): Promise<string> {
     const cleanedWorkoutData = {
       ...workoutData,
       userId: user.id,
-      distance: workoutData.distance !== undefined ? workoutData.distance : null,
+      distance: typeof workoutData.distance === 'number' ? workoutData.distance : null,
       cardioDetails: workoutData.cardioDetails ? {
         ...workoutData.cardioDetails,
-        distance: workoutData.cardioDetails.distance !== undefined ? workoutData.cardioDetails.distance : null
+        distance: typeof workoutData.cardioDetails.distance === 'number' ? workoutData.cardioDetails.distance : null,
+        duration: workoutData.cardioDetails.duration,
+        pace: workoutData.cardioDetails.pace,
+        speed: workoutData.cardioDetails.speed,
+        elevationGain: workoutData.cardioDetails.elevationGain,
+        heartRate: workoutData.cardioDetails.heartRate,
+        power: workoutData.cardioDetails.power
       } : null
     };
+
+    console.log('Cleaned workout data:', {
+      distance: cleanedWorkoutData.distance,
+      cardioDetails: cleanedWorkoutData.cardioDetails
+    });
 
     const newWorkout = await createWorkoutDb(cleanedWorkoutData)
 

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { LucideChevronRight } from "lucide-react"
+import { LucideChevronRight, LucideClock, LucideDumbbell, LucideRuler } from "lucide-react"
 import { fetchWorkouts } from "@/lib/workout-actions"
 import { format } from "date-fns"
 import type { WorkoutData } from "@/types/db"
@@ -13,12 +13,22 @@ import type { WorkoutData } from "@/types/db"
 export default function RecentWorkouts() {
   const [workouts, setWorkouts] = useState<WorkoutData[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [totalRunningDistance, setTotalRunningDistance] = useState(0)
 
   useEffect(() => {
     const loadWorkouts = async () => {
       try {
         const data = await fetchWorkouts()
         setWorkouts(data)
+        
+        // Calculate total running distance
+        const runningDistance = data
+          .filter(w => w.type === 'running')
+          .reduce((total, workout) => {
+            const distance = workout.distance || workout.cardioDetails?.distance || 0
+            return total + distance
+          }, 0)
+        setTotalRunningDistance(runningDistance)
       } catch (error) {
         console.error("Failed to load workouts:", error)
       } finally {
@@ -71,43 +81,54 @@ export default function RecentWorkouts() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
-            {recentWorkouts.map((workout) => (
-              <div key={workout._id} className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{workout.name}</h3>
-                    <Badge
-                      variant={
-                        workout.intensity === "High"
-                          ? "default"
-                          : workout.intensity === "Medium"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
-                      {workout.intensity}
-                    </Badge>
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {formatDate(workout.date)} • {workout.duration} min
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {workout.exercises?.slice(0, 4).map((exercise, i) => (
-                      <Badge key={i} variant="outline" className="font-normal">
-                        {exercise.name}
-                      </Badge>
-                    ))}
-                  </div>
+          <>
+            {totalRunningDistance > 0 && (
+              <div className="mb-4 p-4 bg-secondary/10 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <LucideRuler className="h-5 w-5 text-primary" />
+                  <span className="font-medium">Total Running Distance:</span>
+                  <span>{totalRunningDistance.toFixed(2)} km</span>
                 </div>
-                <Link href={`/workout/${workout._id}`}>
-                  <Button variant="ghost" size="icon">
-                    <LucideChevronRight className="h-4 w-4" />
-                  </Button>
-                </Link>
               </div>
-            ))}
-          </div>
+            )}
+            <div className="space-y-4">
+              {recentWorkouts.map((workout) => (
+                <div key={workout._id} className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold">{workout.name}</h3>
+                      <Badge
+                        variant={
+                          workout.intensity === "High"
+                            ? "default"
+                            : workout.intensity === "Medium"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {workout.intensity}
+                      </Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {formatDate(workout.date)} • {workout.duration} min
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {workout.exercises?.slice(0, 4).map((exercise, i) => (
+                        <Badge key={i} variant="outline" className="font-normal">
+                          {exercise.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <Link href={`/workout/${workout._id}`}>
+                    <Button variant="ghost" size="icon">
+                      <LucideChevronRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

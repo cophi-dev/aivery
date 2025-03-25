@@ -104,6 +104,8 @@ const CardioDetailsSchema = new Schema({
   distance: { type: Number, required: true },
   duration: { type: Number, required: true },
   pace: { type: Number },
+  speed: { type: Number },
+  maxSpeed: { type: Number },
   elevationGain: { type: Number },
   heartRate: { type: HeartRateDataSchema },
   laps: [LapSchema],
@@ -111,6 +113,10 @@ const CardioDetailsSchema = new Schema({
   strokeType: { type: String },
   bikeType: { type: String },
   power: { type: PowerDataSchema },
+  sportDetails: {
+    sport: { type: String },
+    subSport: { type: String }
+  }
 })
 
 const WorkoutSchema: Schema = new Schema(
