@@ -18,7 +18,7 @@ export function WorkoutAnalysis({ workout, variant = "card" }: WorkoutAnalysisPr
 
   const handleAnalyze = () => {
     setIsLoading(true)
-    router.push(`/chat?analyze=${workout.id}`)
+    router.push(`/chat?analyze=${workout._id}`)
   }
 
   if (variant === "inline") {
