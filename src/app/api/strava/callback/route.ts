@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth"
 import { exchangeCodeForToken } from "@/lib/strava/config"
 import { connectStrava } from "@/lib/services/stravaService"
 
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     // Check authentication
