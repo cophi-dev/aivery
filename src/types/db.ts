@@ -3,7 +3,7 @@ export interface WorkoutData {
   userId: string;
   type: string;
   name?: string;
-  date: string;
+  date: Date;
   duration: number;
   distance?: number;
   calories?: number;
@@ -13,6 +13,11 @@ export interface WorkoutData {
     pace?: number;
     elevation?: number;
     heartRate?: number;
+    laps?: Array<{
+      time: number;
+      distance: number;
+      pace: number;
+    }>;
   };
   createdAt: string;
   updatedAt: string;

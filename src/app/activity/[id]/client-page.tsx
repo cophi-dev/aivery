@@ -151,7 +151,7 @@ export default function ActivityDetailClient({ id }: { id: string }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => router.push(`/activity/${workout.type}/edit/${workout.id}`)}
+            onClick={() => router.push(`/activity/${workout.type}/edit/${workout._id}`)}
           >
             <LucidePencil className="h-4 w-4 mr-2" />
             Edit
