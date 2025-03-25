@@ -1,55 +1,72 @@
 // Adapted from shadcn/ui toast implementation
 // https://ui.shadcn.com/docs/components/toast
 
-import { useState, useEffect, createContext, useContext } from "react"
+import * as React from "react"
 
-const TOAST_TIMEOUT = 5000
+const TOAST_LIMIT = 1
+const TOAST_REMOVE_DELAY = 1000000
 
-type ToastType = {
+export type Toast = {
   id: string
-  title?: string
-  description?: string
-  action?: React.ReactNode
+  title?: React.ReactNode
+  description?: React.ReactNode
+  action?: React.ReactElement
   variant?: "default" | "destructive"
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-type ToastContextType = {
-  toasts: ToastType[]
-  addToast: (toast: Omit<ToastType, "id">) => void
+type State = {
+  toasts: Toast[]
+}
+
+const ToastContext = React.createContext<{
+  toasts: Toast[]
+  addToast: (toast: Omit<Toast, "id">) => void
   removeToast: (id: string) => void
-}
-
-const ToastContext = createContext<ToastContextType | undefined>(undefined)
+} | undefined>(undefined)
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<ToastType[]>([])
+  const [toasts, setToasts] = React.useState<Toast[]>([])
 
-  const addToast = (toast: Omit<ToastType, "id">) => {
+  const addToast = React.useCallback((toast: Omit<Toast, "id">) => {
     const id = Math.random().toString(36).slice(2, 11)
-    setToasts((prev) => [...prev, { id, ...toast }])
-  }
+    setToasts((prev) => [...prev, { ...toast, id }].slice(-TOAST_LIMIT))
 
-  const removeToast = (id: string) => {
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, TOAST_REMOVE_DELAY)
+  }, [])
+
+  const removeToast = React.useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id))
-  }
+  }, [])
+
+  const value = React.useMemo(
+    () => ({
+      toasts,
+      addToast,
+      removeToast,
+    }),
+    [toasts, addToast, removeToast]
+  )
 
   return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
+    <ToastContext.Provider value={value}>
       {children}
     </ToastContext.Provider>
   )
 }
 
 export function useToast() {
-  const context = useContext(ToastContext)
-  
+  const context = React.useContext(ToastContext)
   if (!context) {
     throw new Error("useToast must be used within a ToastProvider")
   }
-  
   return {
     toast: context.addToast,
     dismiss: context.removeToast,
+    toasts: context.toasts,
   }
 }
 
@@ -72,24 +89,6 @@ export const toast = {
   variant: "default" as "default" | "destructive",
 }
 
-// Inspired by react-hot-toast library
-import * as React from "react"
-
-import type {
-  ToastActionElement,
-  ToastProps,
-} from "@/components/ui/toast"
-
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
-
-type ToasterToast = ToastProps & {
-  id: string
-  title?: React.ReactNode
-  description?: React.ReactNode
-  action?: ToastActionElement
-}
-
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",
@@ -97,35 +96,31 @@ const actionTypes = {
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const
 
-let count = 0
-
-function genId() {
-  count = (count + 1) % Number.MAX_VALUE
-  return count.toString()
-}
-
 type ActionType = typeof actionTypes
 
 type Action =
   | {
       type: ActionType["ADD_TOAST"]
-      toast: ToasterToast
+      toast: Toast
     }
   | {
       type: ActionType["UPDATE_TOAST"]
-      toast: Partial<ToasterToast>
+      toast: Partial<Toast>
     }
   | {
       type: ActionType["DISMISS_TOAST"]
-      toastId?: ToasterToast["id"]
+      toastId?: Toast["id"]
     }
   | {
       type: ActionType["REMOVE_TOAST"]
-      toastId?: ToasterToast["id"]
+      toastId?: Toast["id"]
     }
 
-interface State {
-  toasts: ToasterToast[]
+let count = 0
+
+function genId() {
+  count = (count + 1) % Number.MAX_VALUE
+  return count.toString()
 }
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
@@ -165,8 +160,6 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
@@ -212,12 +205,12 @@ function dispatch(action: Action) {
   })
 }
 
-type Toast = Omit<ToasterToast, "id">
+type Toast = Omit<Toast, "id">
 
 function toast({ ...props }: Toast) {
   const id = genId()
 
-  const update = (props: ToasterToast) =>
+  const update = (props: Toast) =>
     dispatch({
       type: "UPDATE_TOAST",
       toast: { ...props, id },
@@ -243,7 +236,7 @@ function toast({ ...props }: Toast) {
   }
 }
 
-function useToast() {
+export function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
   React.useEffect(() => {
@@ -261,6 +254,4 @@ function useToast() {
     toast,
     dismiss: (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId }),
   }
-}
-
-export { useToast, toast } 
+} 
