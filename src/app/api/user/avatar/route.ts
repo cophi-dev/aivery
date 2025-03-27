@@ -39,6 +39,10 @@ export async function GET(request: NextRequest) {
     // Use a type assertion to handle the document
     const user = userDoc as any
     
+    // Enhanced logging to debug issues
+    console.log(`User found: id=${userId}, name=${user.name || 'unknown'}`)
+    console.log(`Has image property: ${user.hasOwnProperty('image')}`)
+    
     // Log image information
     if (user.image) {
       console.log(`Found avatar image: ${user.image.substring(0, 30)}... (${Math.round(user.image.length / 1024)}KB)`)

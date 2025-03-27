@@ -26,7 +26,7 @@ export const authOptions: NextAuthOptions = {
           console.log('Connected to database for auth')
 
           // Find user by email with fresh data
-          const user = await UserModel.findOne({ email: credentials.email }).select('+password').lean(false)
+          const user = await UserModel.findOne({ email: credentials.email }).select('+password image name').lean(false)
           console.log('Found user:', user ? 'Yes' : 'No')
 
           // Check for user existence first, then validate password
@@ -60,6 +60,7 @@ export const authOptions: NextAuthOptions = {
             id: typedUser._id.toString(),
             email: typedUser.email,
             name: typedUser.name,
+            image: typedUser.image || null,
           }
         } catch (error) {
           console.error('Authorization error:', error)

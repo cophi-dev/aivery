@@ -28,10 +28,19 @@ export function AvatarLoader({ userId, name, size = "md", refreshKey }: AvatarLo
         const response = await fetch(`/api/user/avatar${userId ? `?userId=${userId}` : ''}`);
         
         if (!response.ok) {
+          console.error(`Avatar API responded with status: ${response.status}`);
           throw new Error(`Failed to load avatar: ${response.status}`);
         }
         
         const data = await response.json();
+        
+        // Better debugging of response data
+        console.log('Avatar API response:', {
+          hasImage: !!data.image,
+          imageSize: data.image ? Math.round(data.image.length / 1024) + 'KB' : 'N/A',
+          name: data.name,
+          error: data.error || 'none'
+        });
         
         if (data.image) {
           console.log(`Avatar loaded successfully: ${data.image.substring(0, 30)}... (${Math.round(data.image.length / 1024)}KB)`);
