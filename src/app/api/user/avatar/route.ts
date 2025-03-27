@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import dbConnect from "@/lib/db/mongoose"
+import { withDatabase } from "@/lib/db/middleware"
 import User from "@/lib/db/models/user"
 
 // Simple API endpoint that returns the user's avatar image
-export async function GET(request: NextRequest) {
+export const GET = (request: NextRequest) => withDatabase(request, async (request: NextRequest) => {
   try {
     const session = await getServerSession(authOptions)
     
@@ -25,10 +25,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User ID not found" }, { status: 400 })
     }
     
-    // Connect to database
-    await dbConnect()
-    
-    // Find user
+    // Find user (no need to call dbConnect() manually, it's handled by the middleware)
     const userDoc = await User.findById(userId).select("image name").lean()
     
     if (!userDoc) {
@@ -59,4 +56,4 @@ export async function GET(request: NextRequest) {
     console.error("Error getting avatar:", error)
     return NextResponse.json({ error: "Failed to get avatar" }, { status: 500 })
   }
-} 
+}) 

@@ -21,7 +21,8 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Invalid credentials")
           }
 
-          // Connect to MongoDB
+          // Connect to MongoDB - this only needs to be done once
+          // The connection will be cached for subsequent calls
           await dbConnect()
           console.log('Connected to database for auth')
 

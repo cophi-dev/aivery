@@ -1,36 +1,31 @@
-import dbConnect from "../mongoose"
+import { withDbConnection } from "../middleware"
 import User, { type IUser } from "../models/user"
 import { ObjectId } from "mongodb"
 
-export async function createUser(userData: Partial<IUser>): Promise<IUser> {
-  await dbConnect()
+// Original functions wrapped with withDbConnection middleware
+export const createUser = withDbConnection(async (userData: Partial<IUser>): Promise<IUser> => {
   const user = new User(userData)
   return await user.save()
-}
+})
 
-export async function getUserById(id: string): Promise<IUser | null> {
-  await dbConnect()
+export const getUserById = withDbConnection(async (id: string): Promise<IUser | null> => {
   return await User.findById(id)
-}
+})
 
-export async function getUserByEmail(email: string): Promise<IUser | null> {
-  await dbConnect()
+export const getUserByEmail = withDbConnection(async (email: string): Promise<IUser | null> => {
   return await User.findOne({ email })
-}
+})
 
-export async function updateUser(id: string, userData: Partial<IUser>): Promise<IUser | null> {
-  await dbConnect()
+export const updateUser = withDbConnection(async (id: string, userData: Partial<IUser>): Promise<IUser | null> => {
   return await User.findByIdAndUpdate(id, userData, { new: true })
-}
+})
 
-export async function deleteUser(id: string): Promise<boolean> {
-  await dbConnect()
+export const deleteUser = withDbConnection(async (id: string): Promise<boolean> => {
   const result = await User.deleteOne({ _id: new ObjectId(id) })
   return result.deletedCount === 1
-}
+})
 
-export async function getUserStats(id: string): Promise<any> {
-  await dbConnect()
+export const getUserStats = withDbConnection(async (id: string): Promise<any> => {
   const user = await User.findById(id)
   if (!user) return null
 
@@ -42,5 +37,5 @@ export async function getUserStats(id: string): Promise<any> {
     activityLevel: user.activityLevel,
     goals: user.goals,
   }
-}
+})
 
