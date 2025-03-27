@@ -19,7 +19,7 @@ export async function GET() {
     await dbConnect()
     
     // Get all workouts
-    const workoutsCollection = await getCollection("aivery", "workouts")
+    const workoutsCollection = await getCollection("workouts")
     const workouts = await workoutsCollection.find({}).toArray()
     
     // Group workouts by userId
