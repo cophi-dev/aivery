@@ -12,6 +12,8 @@ import type { WorkoutData } from "@/types/db"
 import { format } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { AvatarLoader } from "@/components/avatar-loader"
+import { signOut } from "next-auth/react"
+import { UserAvatar } from "@/components/user-avatar"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,8 +22,8 @@ export default async function DashboardPage() {
   // Server-side auth check
   const session = await getServerSession(authOptions)
 
-  // Simple redirect if no session
-  if (!session?.user?.id) {
+  // Simple redirect if no session or invalid user
+  if (!session?.user?.id || session.user.id === '') {
     console.log("No valid session found in dashboard - redirecting to login")
     redirect("/login?error=session_required")
   }
@@ -31,11 +33,25 @@ export default async function DashboardPage() {
     await dbConnect()
 
     // Get user and handle errors
-    const user = await UserModel.findOne({ email: session.user.email })
+    const user = await UserModel.findOne({ _id: session.user.id })
 
     if (!user) {
       console.log("User not found in database despite valid session")
-      redirect("/login?error=user_not_found")
+      // Instead of redirecting, we'll show an error state
+      return (
+        <div className="container mx-auto px-4 py-6">
+          <div className="bg-destructive/10 text-destructive p-6 rounded-lg">
+            <h2 className="text-xl font-bold mb-2">Account Error</h2>
+            <p className="mb-4">Your account appears to have been deleted or is no longer accessible.</p>
+            <Button 
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              variant="destructive"
+            >
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      )
     }
 
     // Simple empty array for workouts if we can't fetch them
@@ -64,7 +80,11 @@ export default async function DashboardPage() {
       <div className="container mx-auto px-4 py-6">
         <section className="mb-8 p-6 bg-card rounded-xl">
           <div className="flex items-center gap-4">
-            <AvatarLoader name={user.name} size="lg" />
+            <UserAvatar 
+              name={user.name} 
+              imageUrl={user.image}
+              size="lg"
+            />
             <div>
               <h2 className="text-2xl font-bold">{user.name}</h2>
               <p className="text-muted-foreground">Welcome to your fitness dashboard</p>

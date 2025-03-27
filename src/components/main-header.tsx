@@ -33,6 +33,9 @@ export function MainHeader() {
               <span className="font-bold text-xl">Aivery</span>
             </Link>
           </div>
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-primary/10 animate-pulse" />
+          </div>
         </div>
       </header>
     );
@@ -85,7 +88,7 @@ export function MainHeader() {
         </div>
         
         <div className="flex items-center gap-3">
-          {user ? (
+          {isAuthenticated ? (
             <UserNavigation />
           ) : (
             <div className="flex items-center gap-3">

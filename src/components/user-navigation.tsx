@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
 import {
   DropdownMenu,
@@ -19,13 +19,14 @@ import {
 import { usePathname } from "next/navigation";
 import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideSettings, LucideUser } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AvatarLoader } from "./avatar-loader";
-import { useSession } from "next-auth/react";
+import { UserAvatar } from "./user-avatar";
+import { useEffect, useState } from "react";
 
 export function UserNavigation() {
   const { setTheme } = useTheme();
   const { data: session } = useSession();
   const pathname = usePathname();
+  const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   
   // Don't render on auth pages at all
   const isAuthPage = 
@@ -38,6 +39,25 @@ export function UserNavigation() {
     return null;
   }
 
+  // Fetch user avatar
+  useEffect(() => {
+    async function fetchAvatar() {
+      try {
+        const response = await fetch('/api/user/avatar');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.image) {
+            setImageUrl(data.image);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching avatar:', error);
+      }
+    }
+    
+    fetchAvatar();
+  }, [session.user.id]);
+
   // Handle logout safely - direct to URL, don't use callback
   const handleLogout = async () => {
     await signOut({ redirect: false });
@@ -47,11 +67,14 @@ export function UserNavigation() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 p-0 rounded-full overflow-hidden">
-          <AvatarLoader 
-            name={session.user.name as string} 
-            size="md" 
-            skipLoad={pathname === '/dashboard'} // Skip loading on dashboard to avoid loops
+        <Button 
+          variant="ghost" 
+          className="relative h-10 w-10 p-0 rounded-full"
+        >
+          <UserAvatar 
+            name={session.user.name || session.user.email || "U"} 
+            imageUrl={imageUrl}
+            size="md"
           />
         </Button>
       </DropdownMenuTrigger>

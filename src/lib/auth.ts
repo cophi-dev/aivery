@@ -63,7 +63,7 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: "jwt",
-    maxAge: 8 * 60 * 60, // 8 hours (shorter session to prevent token bloat)
+    maxAge: 30 * 24 * 60 * 60, // 30 days to match route.ts
   },
   pages: {
     signIn: "/login",
@@ -81,36 +81,68 @@ export const authOptions: NextAuthOptions = {
       return token
     },
     async session({ session, token }) {
-      // Keep session minimal
-      if (session.user && token) {
-        session.user.id = token.id as string
-        session.user.name = token.name as string
-        session.user.email = token.email as string
-        
-        // Verify we have an ID
-        if (!session.user.id) {
-          console.error("Session missing user ID after setting");
-        } else {
+      try {
+        // Keep session minimal
+        if (session.user && token) {
+          session.user.id = token.id as string
+          session.user.name = token.name as string
+          session.user.email = token.email as string
+          
+          // Verify we have an ID
+          if (!session.user.id) {
+            console.error("Session missing user ID after setting");
+            return { ...session, user: { id: '', email: '', name: '' } };
+          }
+
+          // Verify user still exists in database
+          await dbConnect();
+          const user = await UserModel.findOne({ _id: session.user.id });
+          
+          if (!user) {
+            console.error("User no longer exists in database:", session.user.id);
+            return { ...session, user: { id: '', email: '', name: '' } };
+          }
+          
           console.log("Session created with user ID:", session.user.id);
         }
+        return session;
+      } catch (error) {
+        console.error("Error in session callback:", error);
+        return { ...session, user: { id: '', email: '', name: '' } };
       }
-      return session
     }
   },
   // Keep cookie options minimal
   cookies: {
     sessionToken: {
-      name: `__Secure-next-auth.session-token`,
+      name: `next-auth.session-token`,
       options: {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 8 * 60 * 60, // Match session maxAge
+        secure: false, // Set to false for localhost
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+      },
+    },
+    callbackUrl: {
+      name: `next-auth.callback-url`,
+      options: {
+        sameSite: 'lax',
+        path: '/',
+        secure: false, // Set to false for localhost
+      },
+    },
+    csrfToken: {
+      name: `next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false, // Set to false for localhost
       },
     },
   },
-  debug: process.env.NODE_ENV === 'development',
+  debug: true, // Enable debug mode to see what's happening
   secret: process.env.NEXTAUTH_SECRET
 }
 

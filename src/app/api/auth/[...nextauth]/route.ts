@@ -1,9 +1,20 @@
-import NextAuth from "next-auth"
+import NextAuth from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 
-// Simple handler with explicit logging for debugging
-console.log("NextAuth route handler initialized")
-
-const handler = NextAuth(authOptions)
+// Enhanced NextAuth handler with debugging
+const handler = NextAuth({
+  ...authOptions,
+  logger: {
+    error(code, metadata) {
+      console.error(`NextAuth Error [${code}]:`, metadata)
+    },
+    warn(code) {
+      console.warn(`NextAuth Warning [${code}]`)
+    },
+    debug(code, metadata) {
+      console.log(`NextAuth Debug [${code}]:`, metadata)
+    },
+  },
+})
 
 export { handler as GET, handler as POST } 

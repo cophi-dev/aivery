@@ -3,7 +3,7 @@ import mongoose from "mongoose"
 const MONGODB_URI = process.env.MONGODB_URI
 
 if (!MONGODB_URI) {
-  throw new Error("Please define the MONGODB_URI environment variable")
+  console.warn("Please define the MONGODB_URI environment variable")
 }
 
 interface MongooseCache {
@@ -28,6 +28,7 @@ if (!global.mongoose) {
 
 async function dbConnect() {
   if (cached.conn) {
+    console.log('Using existing MongoDB connection')
     return cached.conn
   }
 
@@ -41,14 +42,21 @@ async function dbConnect() {
       family: 4,
     }
 
+    if (!MONGODB_URI) {
+      throw new Error("MONGODB_URI is not defined")
+    }
+
     console.log('Creating new MongoDB connection pool')
-    cached.promise = mongoose.connect(MONGODB_URI!, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
       mongoose.connection.on('error', err => {
         console.error('MongoDB connection error:', err)
       })
       
       mongoose.connection.on('disconnected', () => {
         console.log('MongoDB disconnected')
+        // Clear the cache on disconnection
+        cached.conn = null
+        cached.promise = null
       })
       
       mongoose.connection.on('connected', () => {
@@ -56,26 +64,27 @@ async function dbConnect() {
       })
       
       // Setup connection monitoring
-      setInterval(() => {
+      const monitorInterval = setInterval(() => {
         try {
-          // Only log if connection is established
           const mongoConnection = mongoose.connection;
           if (mongoConnection && mongoConnection.readyState === 1) {
-            // Access pool info safely using any casting
             const db = mongoConnection.db as any;
-            if (db && db.serverConfig && db.serverConfig.s && db.serverConfig.s.pool) {
+            if (db?.serverConfig?.s?.pool) {
               const pool = db.serverConfig.s.pool;
-              if (pool && typeof pool.totalConnectionCount === 'number') {
-                const numConnections = pool.totalConnectionCount || 0;
-                const availableConnections = pool.availableConnectionCount || 0;
-                console.log(`MongoDB connections - active: ${numConnections - availableConnections}, available: ${availableConnections}, total: ${numConnections}`);
-              }
+              const numConnections = pool.totalConnectionCount || 0;
+              const availableConnections = pool.availableConnectionCount || 0;
+              console.log(`MongoDB pool - active: ${numConnections - availableConnections}, available: ${availableConnections}, total: ${numConnections}`);
             }
           }
         } catch (err) {
-          // Don't log every error to reduce console spam
+          // Silently handle monitoring errors
         }
       }, 60000);
+
+      // Clear monitoring on disconnection
+      mongoose.connection.on('disconnected', () => {
+        clearInterval(monitorInterval);
+      });
       
       return mongoose
     })
