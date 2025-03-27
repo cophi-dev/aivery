@@ -110,10 +110,9 @@ export function AvatarLoader({
   
   return (
     <UserAvatar 
-      imageData={avatarData} 
+      imageUrl={avatarData} 
       name={displayName} 
       size={size} 
-      loading={loading}
     />
   );
 } 
