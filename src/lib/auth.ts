@@ -82,25 +82,13 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         // User object is only provided on sign in
         token.id = user.id
-        token.image = user.image || null
+        
+        // Don't store the full image in the JWT to avoid size issues
+        // Just store a flag indicating if an image exists
+        token.hasImage = !!user.image
       } else if (token.id) {
-        // On subsequent requests, if we have the user id but no image, try to fetch it
-        if (!token.image) {
-          try {
-            // Connect to MongoDB - this only needs to be done once
-            await dbConnect()
-            
-            // Fetch the latest user data to get the current image
-            const userData = await UserModel.findById(token.id).select("image").lean(false)
-            if (userData) {
-              // Update the token with the user's image
-              token.image = (userData as any).image || null
-              console.log("Updated token with user image from database")
-            }
-          } catch (error) {
-            console.error("Error fetching user image for token:", error)
-          }
-        }
+        // On subsequent requests, we don't need to do anything with the image here
+        // The image data will be fetched directly when needed by the avatar API
       }
       return token
     },
@@ -108,10 +96,12 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string
         
-        // Copy image from token to session
-        if (token.image) {
-          session.user.image = token.image as string
-        }
+        // Set hasImage flag rather than the actual image data
+        session.user.hasImage = !!token.hasImage
+
+        // Remove image from session to avoid large cookies/headers
+        // The actual image will be loaded via the avatar API
+        session.user.image = null
       }
       return session
     }
@@ -127,6 +117,7 @@ declare module "next-auth" {
       name?: string | null
       email?: string | null
       image?: string | null
+      hasImage: boolean
     }
   }
 }
