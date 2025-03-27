@@ -67,10 +67,10 @@ export default function NewRunningActivityPage() {
       setIsLoading(true)
 
       // Create a clean object to avoid potential issues
-      const parsedDistance = distance ? Number.parseFloat(distance) : null
-      const parsedElevationGain = elevationGain ? Number.parseFloat(elevationGain) : null
-      const parsedAvgHR = avgHeartRate ? Number.parseInt(avgHeartRate) : null
-      const parsedMaxHR = maxHeartRate ? Number.parseInt(maxHeartRate) : null
+      const parsedDistance = distance ? Number.parseFloat(distance) : undefined
+      const parsedElevationGain = elevationGain ? Number.parseFloat(elevationGain) : undefined
+      const parsedAvgHR = avgHeartRate ? Number.parseInt(avgHeartRate) : undefined
+      const parsedMaxHR = maxHeartRate ? Number.parseInt(maxHeartRate) : undefined
       
       const workoutData = {
         name: activityName,
@@ -78,7 +78,7 @@ export default function NewRunningActivityPage() {
         type: "running",
         duration: calculateTotalDuration(),
         intensity: intensity,
-        distance: parsedDistance, // Use the parsed values
+        distance: parsedDistance, // Use undefined instead of null
         // Avoid undefined values that might cause validation errors
         cardioDetails: {
           distance: parsedDistance,
@@ -88,7 +88,7 @@ export default function NewRunningActivityPage() {
           heartRate: includeHeartRate && (parsedAvgHR || parsedMaxHR) ? {
             average: parsedAvgHR,
             max: parsedMaxHR
-          } : null
+          } : undefined // Use undefined instead of null
         },
         notes: notes || "",
       }
