@@ -9,7 +9,7 @@ import JSZip from "jszip"
 import { gunzip } from 'zlib'
 import { promisify } from 'util'
 import dbConnect from "@/lib/db/mongoose"
-import { getCollection } from "@/lib/db/mongodb"
+import { getCollection } from "@/lib/db/mongoose"
 import { ObjectId } from "mongodb"
 
 const gunzipAsync = promisify(gunzip)

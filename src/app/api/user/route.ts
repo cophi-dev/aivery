@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import dbConnect from "@/lib/db/mongoose"
+import dbConnect from "@/lib/db/mongodb"
 import User from "@/lib/db/models/user"
 
 export async function GET() {

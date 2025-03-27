@@ -1,7 +1,8 @@
-import { Types } from 'mongoose'
-import dbConnect from '../mongoose'
-import WorkoutModel, { IWorkout } from '../models/workout'
+import { ObjectId } from "mongodb"
+import { getCollection } from "../mongodb"
 import type { WorkoutData } from "@/types/db"
+import dbConnect from '../mongodb'
+import WorkoutModel, { IWorkout } from '../models/workout'
 
 type LeanDocument<T> = {
   [P in keyof T]: T[P] extends Document ? LeanDocument<T[P]> : T[P]
@@ -15,7 +16,7 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
   try {
     await dbConnect()
     
-    const workouts = await WorkoutModel.find({ userId: new Types.ObjectId(userId) })
+    const workouts = await WorkoutModel.find({ userId: new ObjectId(userId) })
       .sort({ createdAt: -1 })
       .limit(5)
       .lean()
@@ -129,7 +130,7 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
     await dbConnect()
     
     const workout = new WorkoutModel({
-      userId: new Types.ObjectId(workoutData.userId),
+      userId: new ObjectId(workoutData.userId),
       name: workoutData.name || "",
       date: workoutData.date || new Date(),
       duration: workoutData.duration || 0,
@@ -233,7 +234,7 @@ export async function getWorkoutStats(userId: string) {
     await dbConnect()
     
     const stats = await WorkoutModel.aggregate([
-      { $match: { userId: new Types.ObjectId(userId) } },
+      { $match: { userId: new ObjectId(userId) } },
       {
         $group: {
           _id: null,
@@ -265,7 +266,7 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
     await dbConnect()
     
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       "exercises.name": exerciseName,
       date: { $lt: currentDate },
     })
@@ -307,7 +308,7 @@ export async function getMonthlyWorkoutDistanceByType(userId: string, workoutTyp
     
     // Query workouts of the specified type within the date range
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: workoutType,
       date: { $gte: startDate, $lte: endDate }
     })
@@ -346,7 +347,7 @@ export async function getWorkoutDistanceForDateRange(
     
     // Query workouts of the specified type within the date range
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: workoutType,
       date: { $gte: startDate, $lte: endDate }
     })
@@ -384,7 +385,7 @@ export async function getMonthlyWorkoutDurationByType(userId: string, workoutTyp
     
     // Query workouts of the specified type within the date range
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: workoutType,
       date: { $gte: startDate, $lte: endDate }
     })
@@ -418,7 +419,7 @@ export async function getWorkoutDurationForDateRange(
     
     // Query workouts of the specified type within the date range
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: workoutType,
       date: { $gte: startDate, $lte: endDate }
     })
@@ -452,7 +453,7 @@ export async function getWorkoutNotesByType(
     
     // Query workouts of the specified type within the date range
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: workoutType,
       date: { $gte: startDate, $lte: endDate }
     })
@@ -484,7 +485,7 @@ export async function getTotalRunningDistance(userId: string): Promise<number> {
     await dbConnect()
     
     const workouts = await WorkoutModel.find({ 
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: "running"
     })
       .lean()
@@ -512,7 +513,7 @@ export async function getTotalDistanceByType(userId: string, workoutType: string
     const result = await WorkoutModel.aggregate([
       {
         $match: {
-          userId: new Types.ObjectId(userId),
+          userId: new ObjectId(userId),
           type: workoutType,
           $or: [
             { distance: { $exists: true, $ne: null } },
@@ -569,7 +570,7 @@ export async function getWorkoutTypeStats(userId: string, workoutType: string): 
     await dbConnect()
     
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       type: workoutType,
       $or: [
         { distance: { $exists: true, $ne: null } },
@@ -677,7 +678,7 @@ export async function getWorkoutsByDate(userId: string, date: Date) {
     endOfDay.setHours(23, 59, 59, 999)
     
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       date: {
         $gte: startOfDay,
         $lte: endOfDay
@@ -703,7 +704,7 @@ export async function getWorkoutDatesForMonth(userId: string, date: Date) {
     const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
     
     const workouts = await WorkoutModel.find({
-      userId: new Types.ObjectId(userId),
+      userId: new ObjectId(userId),
       date: {
         $gte: startOfMonth,
         $lte: endOfMonth

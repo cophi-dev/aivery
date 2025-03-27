@@ -14,7 +14,7 @@ import {
 } from "@/lib/db/repositories/workoutRepository"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import dbConnect from "@/lib/db/mongoose"
+import dbConnect from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { getCollection } from "@/lib/db/mongodb"
 import { NextResponse } from "next/server"

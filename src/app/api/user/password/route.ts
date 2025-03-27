@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { hash, compare } from "bcryptjs"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import dbConnect from "@/lib/db/mongoose"
+import dbConnect from "@/lib/db/mongodb"
 import UserModel from "@/lib/db/models/user"
 
 // Add an interface for the user with password

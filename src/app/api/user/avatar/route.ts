@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { withDatabase } from "@/lib/db/middleware"
 import User from "@/lib/db/models/user"
-import dbConnect from "@/lib/db/mongoose"
+import dbConnect from "@/lib/db/mongodb"
 import UserModel from '@/lib/db/models/user'
 
 // Simple API endpoint that returns the user's avatar image

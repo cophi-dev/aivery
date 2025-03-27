@@ -45,19 +45,23 @@ async function dbConnect() {
   return cached.conn
 }
 
-export async function getCollection(collectionName: string) {
+export async function getDatabase() {
   if (!client) {
     client = new MongoClient(MONGODB_URI!)
   }
   
   try {
     await client.connect()
-    const db = client.db()
-    return db.collection(collectionName)
+    return client.db()
   } catch (error) {
     console.error('Error connecting to MongoDB:', error)
     throw error
   }
+}
+
+export async function getCollection(collectionName: string) {
+  const db = await getDatabase()
+  return db.collection(collectionName)
 }
 
 export async function checkDatabaseConnection() {

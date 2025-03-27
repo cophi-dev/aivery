@@ -1,7 +1,7 @@
 import { NextAuthOptions, getServerSession } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
-import dbConnect from "@/lib/db/mongoose"
+import dbConnect from "@/lib/db/mongodb"
 import UserModel from "@/lib/db/models/user"
 
 export const authOptions: NextAuthOptions = {

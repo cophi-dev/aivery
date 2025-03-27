@@ -1,4 +1,4 @@
-import dbConnect from "../mongoose"
+import dbConnect from "../mongodb"
 import Integration, { type IIntegration } from "../models/integration"
 import { ObjectId } from "mongodb"
 
