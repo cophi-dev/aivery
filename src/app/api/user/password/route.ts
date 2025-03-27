@@ -5,6 +5,14 @@ import { authOptions } from "@/lib/auth"
 import dbConnect from "@/lib/db/mongoose"
 import UserModel from "@/lib/db/models/user"
 
+// Add an interface for the user with password
+interface UserWithPassword {
+  _id: string;
+  email: string;
+  password: string;
+  [key: string]: any; // Allow other properties
+}
+
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -37,8 +45,8 @@ export async function PUT(request: Request) {
     await dbConnect()
     console.log('Connected to database')
 
-    // Find user with fresh data
-    const user = await UserModel.findOne({ email: session.user.email }).select('+password').lean(false)
+    // Find user with fresh data and cast as any to bypass TypeScript check
+    const user: any = await UserModel.findOne({ email: session.user.email }).select('+password')
     console.log('Found user:', user ? 'Yes' : 'No')
     
     if (!user) {
@@ -65,7 +73,7 @@ export async function PUT(request: Request) {
     
     try {
       // Use findOneAndUpdate for atomic operation
-      const updateResult = await UserModel.findOneAndUpdate(
+      const updateResult: any = await UserModel.findOneAndUpdate(
         { email: session.user.email },
         { $set: { password: hashedPassword } },
         { 
@@ -90,7 +98,7 @@ export async function PUT(request: Request) {
       }
 
       // Double check the update
-      const verifyUser = await UserModel.findOne({ email: session.user.email }).select('+password')
+      const verifyUser: any = await UserModel.findOne({ email: session.user.email }).select('+password')
       console.log('Verification check:', {
         passwordMatches: verifyUser?.password === hashedPassword,
         verifyPassword: verifyUser?.password,
