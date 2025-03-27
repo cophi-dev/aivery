@@ -150,7 +150,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   }
   
   // Get badge color based on intensity
-  const getIntensityColor = (intensity: string) => {
+  const getIntensityColor = (intensity: string | undefined) => {
     switch (intensity) {
       case "High":
         return "bg-red-500/10 text-red-500 hover:bg-red-500/20"
@@ -352,7 +352,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
                 </div>
                 <div className="col-span-2">
                   <Badge className={`${getIntensityColor(workout.intensity)} w-fit`}>
-                    {workout.intensity}
+                    {workout.intensity || 'Unknown'}
                   </Badge>
                 </div>
                 <div className="col-span-1">

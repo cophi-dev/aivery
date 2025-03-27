@@ -13,7 +13,7 @@ interface Workout {
     distance?: number
     pace?: number
   }
-  intensity: string
+  intensity?: string
   date: Date
   name?: string
   notes?: string
@@ -41,7 +41,7 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={workout.intensity === 'High' ? 'destructive' : 'secondary'}>
-                {workout.intensity}
+                {workout.intensity || 'Unknown'}
               </Badge>
               <Button variant="ghost" size="icon" asChild className="opacity-0 group-hover:opacity-100 transition-opacity">
                 <Link href={`/workout/edit/${workout.id}`}>

@@ -362,7 +362,7 @@ export default function WorkoutHistory({ initialWorkouts }: WorkoutHistoryProps)
                 </div>
                 <div className="col-span-2">
                   <Badge className={`${getIntensityColor(workout.intensity)} w-fit`}>
-                    {workout.intensity}
+                    {workout.intensity || 'Unknown'}
                   </Badge>
                 </div>
                 <div className="col-span-1">

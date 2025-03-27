@@ -106,7 +106,7 @@ export default function RecentWorkouts() {
                               : "outline"
                         }
                       >
-                        {workout.intensity}
+                        {workout.intensity || 'Unknown'}
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground mt-1">
