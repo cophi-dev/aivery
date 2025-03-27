@@ -8,39 +8,67 @@ const COLLECTION_NAME = "workouts"
 // Get all workouts for a user
 export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0): Promise<WorkoutData[]> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    if (!userId) {
+      console.error("getWorkoutsByUserId called with no userId");
+      return [];
+    }
 
-    const workouts = await collection
-      .find({ userId: new ObjectId(userId) })
+    const collection = await getCollection(DB_NAME, COLLECTION_NAME);
+    if (!collection) {
+      console.error("Failed to get collection");
+      return [];
+    }
+
+    // First try to properly format the ObjectId to avoid failures
+    let userIdObject;
+    try {
+      userIdObject = new ObjectId(userId);
+    } catch (error) {
+      console.error("Invalid user ID format:", userId, error);
+      return [];
+    }
+
+    // Use a timeout to prevent hanging queries
+    const timeoutPromise = new Promise<any[]>((_, reject) => 
+      setTimeout(() => reject(new Error("Query timeout")), 10000)
+    );
+
+    const queryPromise = collection
+      .find({ userId: userIdObject })
       .sort({ date: -1 })
       .skip(skip)
       .limit(limit)
-      .toArray()
+      .toArray();
+
+    // Race the query against the timeout
+    const workouts = await Promise.race([queryPromise, timeoutPromise]);
 
     return workouts.map((workout) => ({
       _id: workout._id.toString(),
-      userId: workout.userId.toString(),
-      name: workout.name,
-      date: workout.date,
-      duration: workout.duration,
-      intensity: workout.intensity,
-      type: workout.type,
-      volume: workout.volume,
-      distance: workout.distance,
-      exercises: workout.exercises,
-      cardioDetails: workout.cardioDetails,
-      notes: workout.notes,
-      stravaLink: workout.stravaLink,
-      sourceId: workout.sourceId,
-      source: workout.source,
-      importedFrom: workout.importedFrom,
-      importId: workout.importId,
+      userId: typeof workout.userId === 'object' && workout.userId !== null 
+        ? workout.userId.toString() 
+        : workout.userId,
+      name: workout.name || '',
+      date: workout.date || new Date(),
+      duration: workout.duration || 0,
+      intensity: workout.intensity || '',
+      type: workout.type || '',
+      volume: workout.volume || 0,
+      distance: workout.distance || 0,
+      exercises: workout.exercises || [],
+      cardioDetails: workout.cardioDetails || null,
+      notes: workout.notes || '',
+      stravaLink: workout.stravaLink || '',
+      sourceId: workout.sourceId || '',
+      source: workout.source || '',
+      importedFrom: workout.importedFrom || '',
+      importId: workout.importId || '',
       createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
       updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
-    }))
+    }));
   } catch (error) {
-    console.error("Error getting user workouts:", error)
-    throw new Error("Failed to get user workouts")
+    console.error("Error getting user workouts:", error);
+    return [];
   }
 }
 

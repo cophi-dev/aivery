@@ -63,42 +63,78 @@ function createMockClient() {
   } as unknown as MongoClient
 }
 
-try {
-  if (!validateMongoURI(uri)) {
-    // Use mock client if URI is invalid
-    client = createMockClient()
-    clientPromise = Promise.resolve(client)
-  } else {
-    // In development mode, use a global variable so that the value
-    // is preserved across module reloads caused by HMR (Hot Module Replacement).
-    if (process.env.NODE_ENV === "development") {
-      // @ts-ignore
-      if (!global._mongoClientPromise) {
-        client = new MongoClient(uri!, options)
-        // @ts-ignore
-        global._mongoClientPromise = client.connect()
-      }
-      // @ts-ignore
-      clientPromise = global._mongoClientPromise
+// Initialize the MongoDB connection promise
+if (!global.mongoose) {
+  try {
+    if (!uri) {
+      console.warn("MONGODB_URI not set, will use mock client");
+      global.mongoose = { conn: null, promise: null };
     } else {
-      // In production mode, it's best to not use a global variable.
-      client = new MongoClient(uri!, options)
-      clientPromise = client.connect()
+      global.mongoose = { conn: null, promise: null };
+      // Don't try to connect immediately, wait for the first request
     }
+  } catch (error) {
+    console.error("Error initializing MongoDB connection:", error);
+    global.mongoose = { conn: null, promise: null };
   }
-} catch (error) {
-  console.error("Error setting up MongoDB client:", error)
-  client = createMockClient()
-  clientPromise = Promise.resolve(client)
+}
+
+async function dbConnect() {
+  try {
+    if (global.mongoose.conn) {
+      return global.mongoose.conn;
+    }
+
+    if (!global.mongoose.promise) {
+      const opts = {
+        bufferCommands: false,
+        maxPoolSize: 10,
+        minPoolSize: 5,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 10000,
+        family: 4,
+      };
+
+      // Check if we have a valid MongoDB URI
+      if (!uri || !validateMongoURI(uri)) {
+        console.warn("Invalid MONGODB_URI, falling back to mock client");
+        return null;
+      }
+
+      console.log('Creating new MongoDB connection pool');
+      global.mongoose.promise = MongoClient.connect(uri, opts)
+        .then((mongoClient) => {
+          console.log('MongoDB connected successfully');
+          return mongoClient;
+        })
+        .catch((error) => {
+          console.error("MongoDB connection error:", error);
+          global.mongoose.promise = null;
+          return null;
+        });
+    }
+
+    try {
+      global.mongoose.conn = await global.mongoose.promise;
+      return global.mongoose.conn;
+    } catch (e) {
+      console.error("Error awaiting MongoDB connection:", e);
+      global.mongoose.promise = null;
+      return null;
+    }
+  } catch (outerError) {
+    console.error("Unexpected error in dbConnect:", outerError);
+    return null;
+  }
 }
 
 // Export a module-scoped MongoClient promise
-export default clientPromise
+export default dbConnect()
 
 // Helper function to get a database
 export async function getDatabase(dbName = "aivery") {
   try {
-    const client = await clientPromise
+    const client = await dbConnect()
     return client.db(dbName)
   } catch (error) {
     console.error("Error getting database:", error)
@@ -110,11 +146,22 @@ export async function getDatabase(dbName = "aivery") {
 // Helper function to get a collection
 export async function getCollection(dbName: string, collectionName: string) {
   try {
-    const db = await getDatabase(dbName)
-    return db.collection(collectionName)
-  } catch (error) {
-    console.error(`Error getting collection ${collectionName}:`, error)
-    // Return a mock collection that won't throw errors
+    // Wrap in try-catch to gracefully handle errors
+    try {
+      const db = await getDatabase(dbName)
+      // Check if db is valid and has collections method
+      if (!db) {
+        console.error(`Database ${dbName} not available, using mock collection`);
+        return createMockClient().db(dbName).collection(collectionName);
+      }
+      return db.collection(collectionName)
+    } catch (error) {
+      console.error(`Error getting collection ${collectionName}:`, error)
+      return createMockClient().db(dbName).collection(collectionName)
+    }
+  } catch (outerError) {
+    // Fallback to mock in case of any unexpected errors
+    console.error(`Unexpected error getting collection ${collectionName}:`, outerError)
     return createMockClient().db(dbName).collection(collectionName)
   }
 }
@@ -130,7 +177,7 @@ export async function checkDatabaseConnection() {
       }
     }
 
-    const client = await clientPromise
+    const client = await dbConnect()
     const adminDb = client.db().admin()
 
     // Run a simple command to verify connection

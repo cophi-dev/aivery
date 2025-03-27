@@ -24,16 +24,20 @@ export default function LoginPage() {
   // Emergency reset function that works directly on this page
   const resetEverything = async () => {
     setIsResetting(true)
+    setError(null)
     
     try {
-      // Force sign out
+      // Force sign out from NextAuth
       await signOut({ redirect: false });
       
-      // Clear all cookies
+      // Clear all cookies - more thorough approach
       document.cookie.split(';').forEach(cookie => {
         const [name] = cookie.split('=')
         if (name.trim()) {
+          // Clear for all possible domains and paths
+          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;`
           document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=localhost`
+          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=.localhost`
         }
       })
       
@@ -41,11 +45,19 @@ export default function LoginPage() {
       localStorage.clear()
       sessionStorage.clear()
       
-      setSuccess("All session data cleared. Please try logging in again.")
-      setIsResetting(false)
+      // Log the action
+      console.log("Session reset completed")
+      
+      // Success message
+      setSuccess("All session data cleared. Refreshing in 2 seconds...")
+      
+      // Force a complete page refresh after a delay
+      setTimeout(() => {
+        window.location.href = '/login?reset=true'
+      }, 2000)
     } catch (error) {
       console.error("Error during reset:", error)
-      setError("Failed to reset session. Try refreshing the page.")
+      setError("Failed to reset session. Please try refreshing the page manually.")
       setIsResetting(false)
     }
   }
@@ -56,10 +68,12 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      // Use callbackUrl parameter for clean redirection handling by NextAuth
       const result = await signIn("credentials", {
         redirect: false,
         email,
         password,
+        callbackUrl: '/dashboard'
       })
 
       if (!result?.ok) {
@@ -68,8 +82,14 @@ export default function LoginPage() {
         return;
       }
 
-      // Force reload instead of client navigation
-      window.location.href = '/dashboard';
+      // Success message
+      setSuccess("Login successful! Redirecting to dashboard...");
+      
+      // Wait 1.5 seconds then redirect
+      setTimeout(() => {
+        // Full redirect to ensure clean state
+        window.location.href = result.url || '/dashboard';
+      }, 1500);
       
     } catch (error) {
       console.error("Login error:", error);
@@ -81,6 +101,8 @@ export default function LoginPage() {
   // If we detect we're already logged in, go to dashboard
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.id) {
+      console.log("Already authenticated, redirecting to dashboard");
+      // Use window.location.href for a full page reload
       window.location.href = '/dashboard';
     }
   }, [status, session]);

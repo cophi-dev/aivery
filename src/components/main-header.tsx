@@ -10,12 +10,32 @@ import { UserNavigation } from "./user-navigation"
 
 export function MainHeader() {
   const pathname = usePathname()
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const user = session?.user
 
   // Safety check for pathname to fix deployment error
   const isPath = (path: string) => {
     return pathname ? pathname.startsWith(path) : false
+  }
+
+  // Add proper error handling for session loading
+  const isLoading = status === "loading";
+  const isAuthenticated = status === "authenticated" && !!user;
+
+  // Prevent render errors during loading state
+  if (isLoading) {
+    return (
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <Link href="/" className="flex items-center">
+              <Dumbbell className="h-6 w-6 mr-2 text-primary" />
+              <span className="font-bold text-xl">Aivery</span>
+            </Link>
+          </div>
+        </div>
+      </header>
+    );
   }
 
   return (

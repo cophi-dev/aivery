@@ -15,7 +15,8 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         try {
           if (!credentials?.email || !credentials?.password) {
-            throw new Error("Invalid credentials")
+            console.log("Missing credentials");
+            return null;
           }
 
           // Connect to database
@@ -25,19 +26,25 @@ export const authOptions: NextAuthOptions = {
           const user = await UserModel.findOne({ email: credentials.email }).select('+password name').lean(false)
 
           if (!user) {
-            throw new Error("Invalid credentials")
+            console.log("User not found:", credentials.email);
+            return null;
           }
           
           const userPassword = (user as any).password
           if (!userPassword) {
-            throw new Error("Invalid credentials")
+            console.log("User has no password");
+            return null;
           }
 
           const isPasswordValid = await compare(credentials.password, userPassword)
 
           if (!isPasswordValid) {
-            throw new Error("Invalid credentials")
+            console.log("Invalid password");
+            return null;
           }
+          
+          // Log successful login
+          console.log("User authenticated successfully:", credentials.email);
           
           // Return minimal user data
           const typedUser = user as any;
@@ -49,7 +56,7 @@ export const authOptions: NextAuthOptions = {
           }
         } catch (error) {
           console.error('Authorization error:', error)
-          throw error
+          return null
         }
       }
     })
@@ -60,12 +67,13 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: "/login",
-    // No other custom pages
+    error: "/login", // Show login page with error param on auth errors
   },
   callbacks: {
     async jwt({ token, user }) {
       // Keep token minimal
       if (user) {
+        console.log("Setting JWT token with user ID:", user.id);
         token.id = user.id
         token.email = user.email
         token.name = user.name
@@ -74,10 +82,17 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       // Keep session minimal
-      if (session.user) {
+      if (session.user && token) {
         session.user.id = token.id as string
         session.user.name = token.name as string
         session.user.email = token.email as string
+        
+        // Verify we have an ID
+        if (!session.user.id) {
+          console.error("Session missing user ID after setting");
+        } else {
+          console.log("Session created with user ID:", session.user.id);
+        }
       }
       return session
     }
@@ -95,6 +110,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
   },
+  debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET
 }
 
@@ -121,13 +137,37 @@ export async function getCurrentUser() {
     // If we're on the server side (RSC or server action)
     if (typeof window === 'undefined') {
       const session = await getServerSession(authOptions);
-      return session?.user;
+      if (!session?.user) {
+        console.warn("No session found on server side");
+        return null;
+      }
+      return session.user;
     } 
-    // If we're on the client side
+    // If we're on the client side - use cached data when possible
     else {
-      const session = await fetch("/api/auth/session");
-      const data = await session.json();
-      return data?.user;
+      try {
+        const session = await fetch("/api/auth/session", {
+          // Add cache control to prevent over-fetching
+          cache: "force-cache",
+          next: { revalidate: 60 } // Revalidate every minute
+        });
+        
+        if (!session.ok) {
+          console.warn("Session fetch failed:", session.statusText);
+          return null;
+        }
+        
+        const data = await session.json();
+        if (!data?.user) {
+          console.warn("No user data in session response");
+          return null;
+        }
+        
+        return data.user;
+      } catch (fetchError) {
+        console.error("Error fetching session on client side:", fetchError);
+        return null;
+      }
     }
   } catch (error) {
     console.error("Error getting current user:", error);

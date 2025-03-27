@@ -58,21 +58,24 @@ async function dbConnect() {
       // Setup connection monitoring
       setInterval(() => {
         try {
-          // Use any type to bypass TypeScript's strict type checking for MongoDB internals
-          const mongoConnection = mongoose.connection as any;
-          const pool = mongoConnection?.db?.serverConfig?.s?.pool;
-          
-          if (pool) {
-            const numConnections = pool.totalConnectionCount || 0;
-            const availableConnections = pool.availableConnectionCount || 0;
-            console.log(`MongoDB connections - active: ${numConnections - availableConnections}, available: ${availableConnections}, total: ${numConnections}`);
-          } else {
-            console.log('MongoDB connection pool information not available');
+          // Only log if connection is established
+          const mongoConnection = mongoose.connection;
+          if (mongoConnection && mongoConnection.readyState === 1) {
+            // Access pool info safely using any casting
+            const db = mongoConnection.db as any;
+            if (db && db.serverConfig && db.serverConfig.s && db.serverConfig.s.pool) {
+              const pool = db.serverConfig.s.pool;
+              if (pool && typeof pool.totalConnectionCount === 'number') {
+                const numConnections = pool.totalConnectionCount || 0;
+                const availableConnections = pool.availableConnectionCount || 0;
+                console.log(`MongoDB connections - active: ${numConnections - availableConnections}, available: ${availableConnections}, total: ${numConnections}`);
+              }
+            }
           }
         } catch (err) {
-          console.error('Error monitoring MongoDB connections:', err);
+          // Don't log every error to reduce console spam
         }
-      }, 60000); // Log every minute
+      }, 60000);
       
       return mongoose
     })
