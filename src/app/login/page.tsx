@@ -22,12 +22,28 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<string | null>(isRegistered ? "Registration successful! Please log in." : null)
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated or attempt to clear cookies if there's an issue
   useEffect(() => {
-    if (status === 'authenticated' && session) {
-      router.push(callbackUrl)
+    // Helper function to clear session cookies in case of issues
+    const clearProblematicCookies = async () => {
+      try {
+        await fetch('/api/auth/clear-session');
+        console.log('Cleared session cookies to prevent 431 errors');
+      } catch (err) {
+        console.error('Failed to clear cookies:', err);
+      }
+    };
+    
+    // Check URL for error params indicating we need to clear cookies
+    const hasErrors = searchParams.get('error') === 'cookies';
+    if (hasErrors) {
+      clearProblematicCookies();
     }
-  }, [status, session, router, callbackUrl])
+    
+    if (status === 'authenticated' && session) {
+      router.push(callbackUrl);
+    }
+  }, [status, session, router, callbackUrl, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,93 +73,80 @@ export default function LoginPage() {
   }
 
   if (status === 'loading') {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div>Loading...</div>
-      </div>
-    )
+    return <div className="text-center">Loading...</div>
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="mx-auto w-full max-w-md p-6 bg-background rounded-lg shadow-lg">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold">Welcome back</h1>
-          <p className="text-muted-foreground mt-2">Sign in to your account</p>
+    <div className="mx-auto w-full max-w-md p-6 bg-background rounded-lg shadow-lg">
+      <div className="text-center mb-8">
+        <h1 className="text-2xl font-bold">Welcome back</h1>
+        <p className="text-muted-foreground mt-2">Sign in to your account</p>
+      </div>
+
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {success && (
+        <Alert className="mb-6">
+          <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="yourname@example.com"
+            autoComplete="email"
+            required
+          />
         </div>
 
-        {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {success && (
-          <Alert className="mb-6">
-            <AlertDescription>{success}</AlertDescription>
-          </Alert>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="yourname@example.com"
-              autoComplete="email"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              <Link 
-                href="/forgot-password" 
-                className="text-sm text-primary hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              required
-            />
-          </div>
-
-          <Button 
-            type="submit" 
-            className="w-full" 
-            disabled={loading}
-          >
-            {loading ? "Signing in..." : "Sign in"}
-          </Button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          <p>
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-primary hover:underline">
-              Sign up
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link 
+              href="/forgot-password" 
+              className="text-sm text-primary hover:underline"
+            >
+              Forgot password?
             </Link>
-          </p>
+          </div>
+          <Input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            required
+          />
         </div>
+
+        <Button 
+          type="submit" 
+          className="w-full" 
+          disabled={loading}
+        >
+          {loading ? "Signing in..." : "Sign in"}
+        </Button>
+      </form>
+
+      <div className="mt-6 text-center text-sm">
+        <p>
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="text-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
       </div>
     </div>
   )
-}
-
-export const metadata = {
-  title: 'Login - Aivery',
-  description: 'Log in to your Aivery account',
-}
-
-export const dynamic = 'force-static'; 
+} 

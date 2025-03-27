@@ -4,7 +4,7 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     serverComponentsExternalPackages: ['mongoose'],
-    largePageDataBytes: 128 * 1000,
+    largePageDataBytes: 512 * 1000,
   },
   
   async headers() {
@@ -26,12 +26,8 @@ const nextConfig = {
   },
   
   serverRuntimeConfig: {
-    largeHeaderSize: true,
-  },
-
-  cookies: {
-    pkce: {
-      enabled: true,
+    bodyParser: {
+      sizeLimit: '2mb',
     },
   },
 }

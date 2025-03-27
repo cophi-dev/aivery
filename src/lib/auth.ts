@@ -72,7 +72,11 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 24 * 60 * 60, // Reduce to 1 day instead of 30 days to keep tokens smaller
+  },
+  jwt: {
+    // Make the JWT smaller with shorter expiry
+    maxAge: 24 * 60 * 60, // 1 day
   },
   pages: {
     signIn: "/login",
@@ -84,16 +88,17 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id
         
         // Store minimal data in the token
-        // Just use flags rather than actual image data
         token.hasImage = !!user.image
         
-        // Remove email from token to reduce size if email is in user object
+        // Only keep the user's name, nothing else
         if (user.name) {
           token.name = user.name
         }
         
-        // Clear any unnecessary data to keep token small
-        delete token.picture // Don't use NextAuth's default picture field
+        // Remove all unnecessary fields to keep token small
+        delete token.picture
+        delete token.email  // Remove email from token too
+        delete token.sub    // Don't need the sub claim
       }
       
       return token
@@ -111,9 +116,9 @@ export const authOptions: NextAuthOptions = {
         // Set hasImage flag rather than the actual image data
         session.user.hasImage = !!token.hasImage
 
-        // Remove image from session to avoid large cookies/headers
-        // The actual image will be loaded via the avatar API
+        // Remove unnecessary data to reduce header size
         session.user.image = null
+        delete (session.user as any).email  // Also delete email from session
       }
       return session
     }
