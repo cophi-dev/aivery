@@ -15,6 +15,34 @@ function isWorkoutDocument(doc: any): doc is SafeAny {
   return doc !== null && typeof doc === 'object';
 }
 
+// Helper function to handle MongoDB document conversion
+function convertDocToWorkoutData(doc: any): WorkoutData {
+  if (!doc) return {} as WorkoutData;
+  
+  // Create a type-safe object with proper conversions
+  return {
+    _id: doc._id ? doc._id.toString() : '',
+    userId: doc.userId ? doc.userId.toString() : '',
+    name: doc.name || '',
+    date: doc.date || new Date(),
+    duration: doc.duration || 0,
+    intensity: doc.intensity || '',
+    type: doc.type || '',
+    volume: doc.volume || 0,
+    distance: doc.distance,
+    exercises: doc.exercises || [],
+    cardioDetails: doc.cardioDetails,
+    notes: doc.notes || '',
+    stravaLink: doc.stravaLink,
+    sourceId: doc.sourceId,
+    source: doc.source,
+    importedFrom: doc.importedFrom,
+    importId: doc.importId,
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc.createdAt || new Date()),
+    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : String(doc.updatedAt || new Date()),
+  };
+}
+
 const DB_NAME = "aivery"
 const COLLECTION_NAME = "workouts"
 
@@ -71,8 +99,8 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
       return null
     }
     
-    // Use our type guard to safely access properties
-    const workout = isWorkoutDocument(workoutDoc) ? workoutDoc : {} as SafeAny;
+    // Cast to any to safely access properties
+    const workout = workoutDoc as any;
 
     return {
       _id: workout._id?.toString() || '',
