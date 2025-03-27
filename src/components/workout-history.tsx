@@ -154,7 +154,7 @@ export default function WorkoutHistory({ initialWorkouts }: WorkoutHistoryProps)
   }
   
   // Get badge color based on intensity
-  const getIntensityColor = (intensity: string) => {
+  const getIntensityColor = (intensity: string | undefined) => {
     switch (intensity) {
       case "High":
         return "bg-red-500/10 text-red-500 hover:bg-red-500/20"
