@@ -1,9 +1,34 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCollection } from "@/lib/db/mongodb"
 
+interface Workout {
+  _id: any;
+  name: string;
+  date: string;
+  type: string;
+  stravaLink?: string;
+  notes?: string;
+  source: string;
+  importedFrom: string;
+}
+
+interface MappedWorkout {
+  id: string;
+  name: string;
+  date: string;
+  type: string;
+  hasStravaLink: boolean;
+  stravaLink?: string;
+  hasNotes: boolean;
+  noteLength: number;
+  notesExcerpt: string;
+  source: string;
+  importedFrom: string;
+}
+
 export async function GET(req: NextRequest) {
   try {
-    const collection = await getCollection("aivery", "workouts")
+    const collection = await getCollection("workouts")
     
     // Get the most recent 10 workouts
     const workouts = await collection
@@ -13,7 +38,7 @@ export async function GET(req: NextRequest) {
       .toArray()
     
     // Map the workouts to a more readable format 
-    const mappedWorkouts = workouts.map(workout => ({
+    const mappedWorkouts = workouts.map((workout: Workout): MappedWorkout => ({
       id: workout._id.toString(),
       name: workout.name,
       date: workout.date,
@@ -30,7 +55,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ 
       workouts: mappedWorkouts,
       count: mappedWorkouts.length,
-      hasStravaLinks: mappedWorkouts.filter(w => w.hasStravaLink).length
+      hasStravaLinks: mappedWorkouts.filter((w: MappedWorkout) => w.hasStravaLink).length
     })
   } catch (error) {
     console.error('Error debugging workouts:', error)
