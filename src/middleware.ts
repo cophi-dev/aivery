@@ -2,52 +2,47 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
-// This middleware handles authentication for protected routes
+// Extremely simplified middleware to prevent redirect loops
 export async function middleware(request: NextRequest) {
-  // Get the pathname of the request
+  // Get the token but don't throw errors if it fails
+  let token
+  try {
+    token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET,
+    })
+  } catch (error) {
+    // If token verification fails, just proceed without a token
+    console.error('Error in middleware token verification:', error)
+    token = null
+  }
+  
+  // Get the pathname
   const path = request.nextUrl.pathname
   
-  // Define public paths that don't require authentication
-  const publicPaths = [
-    '/login',
-    '/register',
-    '/forgot-password',
-    '/reset',
-    '/api/reset-session',
-    '/api/auth',
-    '/health',
-  ]
-  
-  // Check if the current path is public
-  const isPublicPath = publicPaths.some(publicPath => 
-    path === publicPath || path.startsWith('/api/auth/') || path.startsWith('/api/health')
-  )
-
-  // Check for authentication token
-  const token = await getToken({ 
-    req: request, 
-    secret: process.env.NEXTAUTH_SECRET,
-  })
-  
-  // Simplify logic to prevent loops:
-  // 1. If path is public and user is authenticated, let them access it (no redirects)
-  // 2. If path is public and user is not authenticated, let them access it
-  // 3. If path is protected and user is not authenticated, redirect to login
-  // 4. If path is protected and user is authenticated, let them access it
-  
-  // Authenticated users can access all paths
-  if (token) {
+  // Public paths that don't need authentication
+  if (
+    path === '/login' || 
+    path === '/register' || 
+    path === '/forgot-password' || 
+    path === '/reset' || 
+    path.startsWith('/api/auth/') || 
+    path.startsWith('/api/reset-session') ||
+    path === '/health'
+  ) {
+    // Public path - always proceed
     return NextResponse.next()
   }
   
-  // Unauthenticated users can access public paths
-  if (isPublicPath) {
-    return NextResponse.next()
+  // For protected paths, redirect to login if not authenticated
+  if (!token) {
+    const url = new URL('/login', request.url)
+    // Don't carry over any query parameters to avoid loops
+    return NextResponse.redirect(url)
   }
   
-  // Redirect unauthenticated users trying to access protected routes
-  const loginUrl = new URL('/login', request.url)
-  return NextResponse.redirect(loginUrl)
+  // If authenticated, allow access to protected routes
+  return NextResponse.next()
 }
 
 export const config = {

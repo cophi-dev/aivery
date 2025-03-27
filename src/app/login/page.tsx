@@ -1,37 +1,54 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { signIn, useSession } from "next-auth/react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { signIn, signOut, useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Link from "next/link"
-import { CardContent, CardFooter } from "@/components/ui/card"
 import { Icons } from "@/components/icons"
 
 export default function LoginPage() {
   const router = useRouter()
   const { data: session, status } = useSession()
-  const searchParams = useSearchParams()
-  const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard'
-  const isRegistered = searchParams?.get('registered') === 'true'
   
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState<string | null>(isRegistered ? "Registration successful! Please log in." : null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [isResetting, setIsResetting] = useState(false)
 
-  // Simpler session detection with direct redirect, no loops
-  useEffect(() => {
-    // Only redirect if we're definitely logged in
-    if (status === 'authenticated' && session?.user?.id) {
-      // Simple direct navigation
-      window.location.href = '/dashboard';
+  // Emergency reset function that works directly on this page
+  const resetEverything = async () => {
+    setIsResetting(true)
+    
+    try {
+      // Force sign out
+      await signOut({ redirect: false });
+      
+      // Clear all cookies
+      document.cookie.split(';').forEach(cookie => {
+        const [name] = cookie.split('=')
+        if (name.trim()) {
+          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=localhost`
+        }
+      })
+      
+      // Clear storage
+      localStorage.clear()
+      sessionStorage.clear()
+      
+      setSuccess("All session data cleared. Please try logging in again.")
+      setIsResetting(false)
+    } catch (error) {
+      console.error("Error during reset:", error)
+      setError("Failed to reset session. Try refreshing the page.")
+      setIsResetting(false)
     }
-  }, [status, session]);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,7 +56,6 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      // Simple authentication - no redirect specified
       const result = await signIn("credentials", {
         redirect: false,
         email,
@@ -52,14 +68,8 @@ export default function LoginPage() {
         return;
       }
 
-      // Success - set flag for a moment to show success message
-      setSuccess("Login successful!");
-      
-      // Wait a moment then refresh the page completely
-      setTimeout(() => {
-        // Force complete refresh to get fresh session
-        window.location.href = '/dashboard';
-      }, 1000);
+      // Force reload instead of client navigation
+      window.location.href = '/dashboard';
       
     } catch (error) {
       console.error("Login error:", error);
@@ -68,13 +78,12 @@ export default function LoginPage() {
     }
   }
 
-  if (status === 'loading') {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div>Loading...</div>
-      </div>
-    )
-  }
+  // If we detect we're already logged in, go to dashboard
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user?.id) {
+      window.location.href = '/dashboard';
+    }
+  }, [status, session]);
 
   return (
     <div className="flex min-h-screen items-center justify-center">
@@ -105,7 +114,6 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="yourname@example.com"
-              autoComplete="email"
               required
             />
           </div>
@@ -126,7 +134,6 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              autoComplete="current-password"
               required
             />
           </div>
@@ -134,7 +141,7 @@ export default function LoginPage() {
           <Button 
             type="submit" 
             className="w-full" 
-            disabled={loading}
+            disabled={loading || isResetting}
           >
             {loading && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
             Sign in
@@ -151,21 +158,20 @@ export default function LoginPage() {
             </Link>
           </div>
           
-          <div className="flex justify-center mt-2">
-            <Link href="/reset">
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
-                Getting HTTP 431 errors? Click here to reset session
-              </Button>
-            </Link>
-          </div>
-          
-          <div className="flex justify-center mt-6">
-            <Link href="/health">
-              <Button variant="outline" size="sm" className="gap-2">
-                <Icons.question className="h-4 w-4" />
-                Having trouble? Check system status
-              </Button>
-            </Link>
+          <div className="flex justify-center mt-4">
+            <Button 
+              type="button"
+              variant="outline" 
+              size="sm" 
+              onClick={resetEverything}
+              disabled={isResetting}
+              className="text-xs"
+            >
+              {isResetting ? 
+                <><Icons.spinner className="mr-2 h-3 w-3 animate-spin" /> Resetting...</> : 
+                <>Fix Login Loop: Reset Session Data</>
+              }
+            </Button>
           </div>
         </form>
       </div>
