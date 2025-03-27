@@ -215,7 +215,7 @@ export async function POST(req: Request) {
     }
     else if (type === "custom_query") {
       // Handle custom database queries
-      const collection = await getCollection("aivery", "workouts")
+      const collection = await getCollection("workouts")
       
       // Start with user ID filter
       let dbQuery: any = { userId: new ObjectId(userId) }
