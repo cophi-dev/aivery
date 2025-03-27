@@ -9,6 +9,17 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
   try {
     const session = await getServerSession(authOptions)
     
+    // Start detailed debugging
+    console.log('---------- AVATAR DEBUG START ----------');
+    console.log('Session:', {
+      exists: !!session,
+      hasUser: !!session?.user,
+      userId: session?.user?.id || 'none',
+      userEmail: session?.user?.email || 'none',
+      userName: session?.user?.name || 'none',
+      hasImage: !!session?.user?.image
+    });
+    
     // Check if user is authenticated
     if (!session?.user) {
       console.error("No authenticated session found")
@@ -20,25 +31,40 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
     const queryUserId = url.searchParams.get("userId")
     const userId = queryUserId || session.user.id
     
+    console.log('User ID for avatar lookup:', userId);
+    
     if (!userId) {
       console.error("No userId found in session")
       return NextResponse.json({ error: "User ID not found" }, { status: 400 })
     }
     
     // Find user (no need to call dbConnect() manually, it's handled by the middleware)
+    console.log(`Looking up user with ID: ${userId}`)
     const userDoc = await User.findById(userId).select("image name").lean()
     
-    if (!userDoc) {
+    // Use a type assertion immediately to avoid TypeScript errors
+    const user = userDoc as any;
+    
+    console.log('User document found:', {
+      exists: !!user,
+      id: user?._id?.toString() || 'none',
+      hasImageField: user ? 'image' in user : false,
+      imageType: user?.image ? typeof user.image : 'undefined',
+      imageLength: user?.image?.length || 0
+    });
+    
+    if (!user) {
       console.error(`User not found for ID: ${userId}`)
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
     
-    // Use a type assertion to handle the document
-    const user = userDoc as any
-    
     // Enhanced logging to debug issues
     console.log(`User found: id=${userId}, name=${user.name || 'unknown'}`)
     console.log(`Has image property: ${user.hasOwnProperty('image')}`)
+    
+    // Examine the user document in more detail
+    console.log('User document keys:', Object.keys(user));
+    console.log('Image property type:', typeof user.image);
     
     // Log image information
     if (user.image) {
@@ -46,6 +72,8 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
     } else {
       console.log("No avatar image found for user")
     }
+    
+    console.log('---------- AVATAR DEBUG END ----------');
     
     // Return image data
     return NextResponse.json({ 

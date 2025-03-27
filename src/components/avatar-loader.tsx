@@ -21,6 +21,21 @@ export function AvatarLoader({ userId, name, size = "md", refreshKey }: AvatarLo
     // Reset states
     setLoading(true);
     setError(false);
+    
+    // Check if we have an image in the session
+    if (session?.user && !session.user.image) {
+      console.log('No image in session, will attempt to refresh session data');
+      // Try to refresh the session to get the latest user data
+      fetch('/api/auth/refresh-session')
+        .then(res => {
+          if (res.ok) {
+            console.log('Session refreshed successfully');
+          }
+        })
+        .catch(err => {
+          console.error('Failed to refresh session:', err);
+        });
+    }
 
     async function loadAvatar() {
       try {

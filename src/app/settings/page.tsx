@@ -510,6 +510,20 @@ export default function SettingsPage() {
       // Update image key to force avatar refresh
       setImageKey(`image-${Date.now()}`);
       
+      // Force session refresh to update the image
+      try {
+        console.log('Refreshing session data to update avatar...');
+        const refreshResponse = await fetch('/api/auth/refresh-session');
+        if (refreshResponse.ok) {
+          const refreshData = await refreshResponse.json();
+          console.log('Session refresh successful:', refreshData);
+        } else {
+          console.error('Session refresh failed:', await refreshResponse.text());
+        }
+      } catch (refreshError) {
+        console.error('Error refreshing session:', refreshError);
+      }
+      
       // Show success toast
       toast({
         title: "Image updated",

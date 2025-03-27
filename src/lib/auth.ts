@@ -80,13 +80,38 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        // User object is only provided on sign in
         token.id = user.id
+        token.image = user.image || null
+      } else if (token.id) {
+        // On subsequent requests, if we have the user id but no image, try to fetch it
+        if (!token.image) {
+          try {
+            // Connect to MongoDB - this only needs to be done once
+            await dbConnect()
+            
+            // Fetch the latest user data to get the current image
+            const userData = await UserModel.findById(token.id).select("image").lean(false)
+            if (userData) {
+              // Update the token with the user's image
+              token.image = (userData as any).image || null
+              console.log("Updated token with user image from database")
+            }
+          } catch (error) {
+            console.error("Error fetching user image for token:", error)
+          }
+        }
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        
+        // Copy image from token to session
+        if (token.image) {
+          session.user.image = token.image as string
+        }
       }
       return session
     }
