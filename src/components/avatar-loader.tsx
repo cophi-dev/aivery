@@ -22,14 +22,44 @@ export function AvatarLoader({ userId, name, size = "md", refreshKey }: AvatarLo
     setLoading(true);
     setError(false);
     
+    let retryCount = 0;
+    const maxRetries = 2;
+    
     // Always load the avatar through the API now, since we're not storing it in the session
     async function loadAvatar() {
       try {
+        // If we're on the login page, don't attempt to load avatar
+        if (typeof window !== 'undefined' && 
+            (window.location.pathname === '/login' || 
+             window.location.pathname === '/register')) {
+          console.log('Skip avatar loading on auth pages');
+          setLoading(false);
+          return;
+        }
+        
         // If we have a userId, use it, otherwise use the current user's avatar
         const response = await fetch(`/api/user/avatar${userId ? `?userId=${userId}` : ''}`);
         
+        if (response.status === 401) {
+          // User is not authenticated - this is normal, just don't show an avatar
+          console.log('User not authenticated, skip avatar loading');
+          setLoading(false);
+          return;
+        }
+        
         if (!response.ok) {
           console.error(`Avatar API responded with status: ${response.status}`);
+          
+          // Only retry for server errors, not for client errors (4xx)
+          if (response.status >= 500 && retryCount < maxRetries) {
+            retryCount++;
+            console.log(`Retrying avatar load (${retryCount}/${maxRetries})...`);
+            // Wait 1 second before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await loadAvatar();
+            return;
+          }
+          
           throw new Error(`Failed to load avatar: ${response.status}`);
         }
         

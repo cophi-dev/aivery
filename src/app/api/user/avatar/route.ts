@@ -22,7 +22,7 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
     
     // Check if user is authenticated
     if (!session?.user) {
-      console.error("No authenticated session found")
+      console.log("No authenticated session found - normal for unauthenticated users")
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
     

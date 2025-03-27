@@ -83,18 +83,30 @@ export const authOptions: NextAuthOptions = {
         // User object is only provided on sign in
         token.id = user.id
         
-        // Don't store the full image in the JWT to avoid size issues
-        // Just store a flag indicating if an image exists
+        // Store minimal data in the token
+        // Just use flags rather than actual image data
         token.hasImage = !!user.image
-      } else if (token.id) {
-        // On subsequent requests, we don't need to do anything with the image here
-        // The image data will be fetched directly when needed by the avatar API
+        
+        // Remove email from token to reduce size if email is in user object
+        if (user.name) {
+          token.name = user.name
+        }
+        
+        // Clear any unnecessary data to keep token small
+        delete token.picture // Don't use NextAuth's default picture field
       }
+      
       return token
     },
     async session({ session, token }) {
       if (session.user) {
+        // Set user ID properly
         session.user.id = token.id as string
+        
+        // Copy name from token if available
+        if (token.name) {
+          session.user.name = token.name as string
+        }
         
         // Set hasImage flag rather than the actual image data
         session.user.hasImage = !!token.hasImage

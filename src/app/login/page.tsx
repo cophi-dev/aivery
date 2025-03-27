@@ -139,4 +139,11 @@ export default function LoginPage() {
       </div>
     </div>
   )
-} 
+}
+
+export const metadata = {
+  title: 'Login - Aivery',
+  description: 'Log in to your Aivery account',
+}
+
+export const dynamic = 'force-static'; 
