@@ -43,11 +43,11 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
         } else {
           // Handle case where workout is not found
           console.error("Workout not found")
-          router.push("/workout") // Redirect to workouts list
+          router.push("/workouts") // Redirect to workouts list
         }
       } catch (error) {
         console.error("Failed to load workout:", error)
-        router.push("/workout") // Redirect to workouts list on error
+        router.push("/workouts") // Redirect to workouts list on error
       } finally {
         setIsLoading(false)
       }
@@ -160,7 +160,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
             The workout you're looking for doesn't exist or has been deleted.
           </p>
           <Button asChild className="mt-4">
-            <Link href="/calendar">Back to Calendar</Link>
+            <Link href="/workouts">Back to Workouts</Link>
           </Button>
         </div>
       </div>
@@ -170,7 +170,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center gap-4 mb-6">
-        <Link href="/workout">
+        <Link href="/workouts">
           <Button variant="ghost" size="icon">
             <LucideArrowLeft className="h-4 w-4" />
           </Button>
@@ -306,7 +306,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
           </Card>
 
           <div className="flex justify-between items-center mb-4">
-            <Link href="/calendar">Back to Calendar</Link>
+            <Link href="/workouts">Back to Workouts</Link>
             <Button 
               variant="ghost"
               onClick={() => setShowDeleteConfirm(true)}
@@ -318,7 +318,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
           </div>
 
           <div className="flex justify-end gap-4">
-            <Button variant="outline" onClick={() => router.push("/workout")}>
+            <Button variant="outline" onClick={() => router.push("/workouts")}>
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={isSaving}>

@@ -41,6 +41,7 @@ interface FitActivity {
   enhanced_max_speed?: number;
   avg_speed?: number;
   total_ascent?: number;
+  description?: string; // Description or notes from Strava
 }
 
 interface FitData {
@@ -107,6 +108,8 @@ export async function POST(request: NextRequest) {
     // Process each activity file
     let importedCount = 0
     let failedCount = 0
+    let countedWorkoutTypes: Record<string, number> = {}
+    let workouts: any[] = []
 
     for (const file of activityFiles) {
       try {
@@ -191,7 +194,8 @@ export async function POST(request: NextRequest) {
                     enhanced_avg_speed: session.enhanced_avg_speed || session.avg_speed,
                     enhanced_max_speed: session.enhanced_max_speed || session.max_speed,
                     avg_speed: session.avg_speed,
-                    total_ascent: session.total_ascent
+                    total_ascent: session.total_ascent,
+                    description: data.activity.description || session.description || data.activity.notes || session.notes
                   }
                 }
                 // Then try the activity field
@@ -210,7 +214,8 @@ export async function POST(request: NextRequest) {
                     enhanced_avg_speed: data.activity.enhanced_avg_speed || data.activity.avg_speed,
                     enhanced_max_speed: data.activity.enhanced_max_speed || data.activity.max_speed,
                     avg_speed: data.activity.avg_speed,
-                    total_ascent: data.activity.total_ascent
+                    total_ascent: data.activity.total_ascent,
+                    description: data.activity.description || data.activity.notes
                   }
                 }
 
@@ -288,61 +293,7 @@ export async function POST(request: NextRequest) {
         })
 
         // Map Strava sport types to our workout types
-        function mapStravaType(sport: string, subSport?: string): string {
-          if (!sport) return 'other'
-          
-          const sportLower = sport.toLowerCase()
-          const subSportLower = subSport?.toLowerCase()
-
-          // Map common sport types
-          switch (sportLower) {
-            case 'running':
-            case 'run':
-            case 'trail_running':
-            case 'treadmill_running':
-              return 'running'
-            case 'cycling':
-            case 'bike':
-            case 'ride':
-            case 'virtual_ride':
-            case 'indoor_cycling':
-              return 'cycling'
-            case 'swimming':
-            case 'swim':
-            case 'pool_swimming':
-            case 'open_water_swimming':
-              return 'swimming'
-            case 'walking':
-            case 'walk':
-              return 'walking'
-            case 'hiking':
-            case 'hike':
-              return 'hiking'
-            case 'training':
-            case 'workout':
-            case 'strength_training':
-            case 'weight_training':
-            case 'functional_strength':
-              return 'strength'
-            case 'yoga':
-            case 'flexibility':
-              return 'flexibility'
-            case 'hiit':
-            case 'circuit_training':
-            case 'crossfit':
-              return 'hiit'
-            default:
-              // Check sub_sport for additional context
-              if (subSportLower === 'strength_training' || subSportLower === 'weight_training') {
-                return 'strength'
-              }
-              return 'other'
-          }
-        }
-
-        const startTime = new Date(activityData.timestamp)
-        const sport = activityData.sport || 'other'
-        const mappedType = mapStravaType(sport, activityData.sub_sport)
+        const mappedType = mapStravaType(activityData.sport, activityData.sub_sport)
 
         // Calculate average pace in min/km if we have distance and time
         let avgPace = undefined
@@ -353,16 +304,17 @@ export async function POST(request: NextRequest) {
         }
 
         // Convert the activity data to our workout format
+        const stravaLink = extractStravaIdFromFilename(file.name);
         const workout = {
-          name: `${mappedType} Activity`,
-          date: startTime,
+          name: generateActivityName(activityData, new Date(activityData.timestamp), mappedType),
+          date: new Date(activityData.timestamp),
           type: mappedType,
           duration: Math.round(activityData.total_elapsed_time / 60),
           intensity: calculateIntensityFromSession(activityData),
           distance: typeof activityData.total_distance === 'number' ? activityData.total_distance : undefined,
           calories: activityData.total_calories ?? 0,
-          notes: `Imported from Strava Archive\nActivity from ${startTime.toLocaleDateString()}`,
-          exercises: [], // Required field, but empty for cardio activities
+          notes: generateActivityNotes(activityData, new Date(activityData.timestamp), file.name),
+          exercises: [],
           cardioDetails: (typeof activityData.total_distance === 'number' || typeof activityData.avg_speed === 'number') ? {
             distance: activityData.total_distance ?? 0,
             duration: activityData.total_elapsed_time / 60,
@@ -373,7 +325,7 @@ export async function POST(request: NextRequest) {
             heartRate: activityData.avg_heart_rate ? {
               average: Math.round(activityData.avg_heart_rate),
               max: Math.round(activityData.max_heart_rate || activityData.avg_heart_rate),
-              zones: calculateHeartRateZones(activityData.avg_heart_rate, activityData.max_heart_rate)
+              zones: calculateHeartRateZones(activityData.avg_heart_rate, activityData.max_heart_rate || Math.max(activityData.avg_heart_rate * 1.15, 185))
             } : undefined,
             power: activityData.avg_power ? {
               average: Math.round(activityData.avg_power),
@@ -387,19 +339,8 @@ export async function POST(request: NextRequest) {
           importedFrom: 'strava',
           importId: uniqueId,
           userId: userId,
-          source: 'strava' as const
-        }
-
-        // Helper function to calculate heart rate zones
-        function calculateHeartRateZones(avgHr?: number, maxHr?: number) {
-          if (!avgHr || !maxHr) return undefined;
-          
-          return {
-            easy: Math.round(maxHr * 0.6),    // 60% of max HR
-            moderate: Math.round(maxHr * 0.7), // 70% of max HR
-            hard: Math.round(maxHr * 0.8),     // 80% of max HR
-            peak: Math.round(maxHr * 0.9)      // 90% of max HR
-          };
+          source: 'strava' as const,
+          stravaLink: stravaLink
         }
 
         try {
@@ -430,6 +371,12 @@ export async function POST(request: NextRequest) {
           
           await createCardioWorkout(workout)
           importedCount++
+          workouts.push(workout)
+          
+          // Count workout types
+          const type = workout.type || 'other'
+          countedWorkoutTypes[type] = (countedWorkoutTypes[type] || 0) + 1
+          
           console.log('Successfully imported activity:', file.name)
         } catch (error) {
           console.error('Error creating workout:', {
@@ -462,12 +409,25 @@ export async function POST(request: NextRequest) {
     revalidatePath("/activity")
     revalidatePath("/dashboard")
 
-    console.log('Import complete. Successfully imported:', importedCount, 'Failed:', failedCount)
-    return NextResponse.json({ 
-      success: true, 
+    // Import complete, return response with stats
+    console.log(`Import complete. Successfully imported: ${importedCount} Failed: ${failedCount}`)
+    
+    // Calculate statistics about imported workouts
+    const stats = {
+      count: importedCount,
+      types: countedWorkoutTypes,
+      earliestDate: workouts.length > 0 ? workouts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0].date : null,
+      latestDate: workouts.length > 0 ? workouts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date : null,
+      totalDistance: workouts.reduce((sum, workout) => sum + (workout.distance || 0), 0),
+      totalDuration: workouts.reduce((sum, workout) => sum + (workout.duration || 0), 0)
+    }
+    
+    return NextResponse.json({
+      success: true,
       count: importedCount,
       failed: failedCount,
-      message: `Successfully imported ${importedCount} activities, ${failedCount} failed`
+      message: `Successfully imported ${importedCount} activities${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
+      stats
     })
 
   } catch (error) {
@@ -489,6 +449,292 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+// Map Strava sport types to our workout types
+function mapStravaType(sport: string, subSport?: string): string {
+  if (!sport) return 'other'
+  
+  const sportLower = sport.toLowerCase()
+  const subSportLower = subSport?.toLowerCase()
+
+  // Map common sport types
+  switch (sportLower) {
+    case 'running':
+    case 'run':
+    case 'trail_running':
+    case 'treadmill_running':
+      return 'running'
+    case 'cycling':
+    case 'bike':
+    case 'ride':
+    case 'virtual_ride':
+    case 'indoor_cycling':
+      return 'cycling'
+    case 'swimming':
+    case 'swim':
+    case 'pool_swimming':
+    case 'open_water_swimming':
+      return 'swimming'
+    case 'walking':
+    case 'walk':
+      return 'walking'
+    case 'hiking':
+    case 'hike':
+      return 'hiking'
+    case 'training':
+    case 'workout':
+    case 'strength_training':
+    case 'weight_training':
+    case 'functional_strength':
+      return 'strength'
+    case 'yoga':
+    case 'flexibility':
+      return 'flexibility'
+    case 'hiit':
+    case 'circuit_training':
+    case 'crossfit':
+      return 'hiit'
+    default:
+      // Check sub_sport for additional context
+      if (subSportLower === 'strength_training' || subSportLower === 'weight_training') {
+        return 'strength'
+      }
+      return 'other'
+  }
+}
+
+// Helper function to calculate heart rate zones
+function calculateHeartRateZones(avgHr?: number, maxHr?: number) {
+  if (!avgHr || !maxHr) return undefined;
+  
+  // Calculate the zone thresholds
+  const zones = {
+    // Zone thresholds (heart rate values that define each zone)
+    thresholds: {
+      easy: Math.round(maxHr * 0.6),    // 60% of max HR - Zone 1
+      moderate: Math.round(maxHr * 0.7), // 70% of max HR - Zone 2
+      hard: Math.round(maxHr * 0.8),     // 80% of max HR - Zone 3
+      peak: Math.round(maxHr * 0.9)      // 90% of max HR - Zone 4
+    },
+    // Estimated time distribution based on average heart rate
+    // This is an estimation since we don't have the full heart rate time series
+    distribution: estimateZoneDistribution(avgHr, maxHr)
+  };
+  
+  return zones;
+}
+
+// Estimate time distribution in heart rate zones based on average HR
+function estimateZoneDistribution(avgHr?: number, maxHr?: number) {
+  if (!avgHr || !maxHr) return undefined;
+  
+  // Define zone boundaries as percentages of max HR
+  const zoneBoundaries = [
+    0.6,  // Zone 1 starts at 60% of max HR
+    0.7,  // Zone 2 starts at 70% of max HR
+    0.8,  // Zone 3 starts at 80% of max HR
+    0.9   // Zone 4 starts at 90% of max HR
+  ];
+  
+  // Calculate which zone the average HR falls into
+  const avgHrPercentage = avgHr / maxHr;
+  let primaryZone = 0;
+  
+  for (let i = 0; i < zoneBoundaries.length; i++) {
+    if (avgHrPercentage >= zoneBoundaries[i]) {
+      primaryZone = i + 1;
+    } else {
+      break;
+    }
+  }
+  
+  // Create a distribution that emphasizes the primary zone
+  // but also allocates some time to adjacent zones
+  const distribution = {
+    easy: 0,      // Zone 1
+    moderate: 0,  // Zone 2
+    hard: 0,      // Zone 3
+    peak: 0       // Zone 4
+  };
+  
+  const zoneNames = ['easy', 'moderate', 'hard', 'peak'];
+  
+  // Allocate percentages based on the primary zone
+  // This is an estimation - we assume the athlete spent most time in the zone
+  // where their average HR falls, with some time in adjacent zones
+  switch (primaryZone) {
+    case 0: // Below Zone 1
+      distribution.easy = 100;
+      break;
+    case 1: // Zone 1 (easy)
+      distribution.easy = 70;
+      distribution.moderate = 30;
+      break;
+    case 2: // Zone 2 (moderate)
+      distribution.easy = 20;
+      distribution.moderate = 60;
+      distribution.hard = 20;
+      break;
+    case 3: // Zone 3 (hard)
+      distribution.moderate = 20;
+      distribution.hard = 60;
+      distribution.peak = 20;
+      break;
+    case 4: // Zone 4 (peak)
+      distribution.hard = 30;
+      distribution.peak = 70;
+      break;
+  }
+  
+  return distribution;
+}
+
+// Function to generate a meaningful activity name
+function generateActivityName(activityData: any, startTime: Date, mappedType: string): string {
+  // Format date as "Jun 15" or similar
+  const formattedDate = startTime.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+  
+  // Get time of day
+  const hour = startTime.getHours();
+  let timeOfDay = '';
+  if (hour >= 5 && hour < 12) timeOfDay = 'Morning';
+  else if (hour >= 12 && hour < 17) timeOfDay = 'Afternoon';
+  else if (hour >= 17 && hour < 21) timeOfDay = 'Evening';
+  else timeOfDay = 'Night';
+  
+  // Generate type-specific description
+  let detail = '';
+  const distanceKm = activityData.total_distance;
+  const durationMin = activityData.total_elapsed_time / 60;
+  
+  if (mappedType === 'running' || mappedType === 'cycling' || mappedType === 'swimming') {
+    if (distanceKm && distanceKm > 0) {
+      // Round to 1 decimal place
+      const formattedDistance = Math.round(distanceKm * 10) / 10;
+      detail = `${formattedDistance}km`;
+    } else if (durationMin && durationMin > 0) {
+      const formattedDuration = Math.round(durationMin);
+      detail = `${formattedDuration}min`;
+    }
+  }
+  
+  // Combine into final name
+  let name = `${timeOfDay} ${mappedType}`;
+  if (detail) name += ` (${detail})`;
+  if (activityData.sub_sport && activityData.sub_sport !== 'generic') {
+    name += ` - ${activityData.sub_sport.replace(/_/g, ' ')}`;
+  }
+  name += ` - ${formattedDate}`;
+  
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// Function to extract Strava ID from filename
+function extractStravaIdFromFilename(filename: string): string | undefined {
+  // Strava filenames follow the pattern: "activities/123456789.fit.gz"
+  // Extract the numeric ID
+  let activityId: string | undefined;
+  
+  // Match the standard pattern in filenames
+  const match = filename.match(/activities\/(\d+)\.fit\.gz/);
+  if (match && match[1]) {
+    activityId = match[1];
+  }
+  
+  // If no match in filename, try to look for a number that might be an activity ID
+  if (!activityId) {
+    const numericMatch = filename.match(/(\d{8,})/); // Find numbers that are 8+ digits (typical for Strava IDs)
+    if (numericMatch && numericMatch[1]) {
+      activityId = numericMatch[1];
+    }
+  }
+  
+  if (activityId) {
+    // Verify that the ID is a reasonable length for a Strava ID (typically 9-10 digits)
+    // Modern Strava IDs are around 9+ digits
+    if (activityId.length >= 8) {
+      return `https://www.strava.com/activities/${activityId}`;
+    }
+  }
+  
+  return undefined;
+}
+
+// Function to generate comprehensive notes for AI queries
+function generateActivityNotes(activityData: any, startTime: Date, fileName: string): string {
+  const formattedDate = startTime.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  
+  const formattedTime = startTime.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  
+  let notes = `Strava ${activityData.sport} Activity\n`;
+  notes += `Date: ${formattedDate} at ${formattedTime}\n`;
+  
+  // Include original activity description/notes if available
+  if (activityData.description) {
+    notes += `\nOriginal Description: ${activityData.description}\n`;
+  }
+  
+  if (activityData.total_distance && activityData.total_distance > 0) {
+    notes += `Distance: ${(Math.round(activityData.total_distance * 100) / 100).toFixed(2)} km\n`;
+  }
+  
+  if (activityData.total_elapsed_time) {
+    const hours = Math.floor(activityData.total_elapsed_time / 3600);
+    const minutes = Math.floor((activityData.total_elapsed_time % 3600) / 60);
+    const seconds = Math.floor(activityData.total_elapsed_time % 60);
+    let durationStr = '';
+    if (hours > 0) durationStr += `${hours}h `;
+    if (minutes > 0 || hours > 0) durationStr += `${minutes}m `;
+    durationStr += `${seconds}s`;
+    notes += `Duration: ${durationStr}\n`;
+  }
+  
+  if (activityData.total_calories) {
+    notes += `Calories: ${Math.round(activityData.total_calories)}\n`;
+  }
+  
+  if (activityData.total_ascent) {
+    notes += `Elevation Gain: ${Math.round(activityData.total_ascent)}m\n`;
+  }
+  
+  if (activityData.avg_heart_rate) {
+    notes += `Average Heart Rate: ${Math.round(activityData.avg_heart_rate)} bpm\n`;
+  }
+  
+  if (activityData.max_heart_rate) {
+    notes += `Max Heart Rate: ${Math.round(activityData.max_heart_rate)} bpm\n`;
+  }
+  
+  if (activityData.avg_power) {
+    notes += `Average Power: ${Math.round(activityData.avg_power)} watts\n`;
+  }
+  
+  if (activityData.avg_speed || activityData.enhanced_avg_speed) {
+    const speed = activityData.enhanced_avg_speed || activityData.avg_speed;
+    notes += `Average Speed: ${(Math.round(speed * 10) / 10).toFixed(1)} km/h\n`;
+  }
+  
+  // Include Strava link
+  const stravaLink = extractStravaIdFromFilename(fileName);
+  if (stravaLink) {
+    notes += `\nView on Strava: ${stravaLink}\n`;
+  }
+  
+  notes += `\nImported from Strava Archive`;
+  
+  return notes;
 }
 
 function calculateIntensityFromSession(session: any): "Low" | "Medium" | "High" {
@@ -587,6 +833,9 @@ function extractActivityFromRecords(data: any): FitActivity | null {
     ? Math.max(...powers)
     : undefined
 
+  // Extract description if available from the session or activity
+  const description = data.session?.description || data.activity?.description || data.session?.notes || data.activity?.notes
+
   return {
     timestamp: startTime.getTime(),
     total_elapsed_time: totalElapsedTime,
@@ -600,6 +849,7 @@ function extractActivityFromRecords(data: any): FitActivity | null {
     enhanced_avg_speed: avgSpeed,
     enhanced_max_speed: maxSpeed,
     avg_speed: avgSpeed,
-    total_ascent: totalAscent
+    total_ascent: totalAscent,
+    description: description
   }
 } 

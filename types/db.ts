@@ -14,6 +14,11 @@ export interface WorkoutData {
   notes?: string
   completed?: boolean
   completedAt?: Date
+  source?: "manual" | "garmin" | "coros" | "strava" | "apple" | "ai"
+  sourceId?: string
+  importedFrom?: string
+  importId?: string
+  stravaLink?: string
 }
 
 export type WorkoutType = "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "other"
@@ -42,10 +47,18 @@ export interface HeartRateData {
   average: number // in bpm
   max: number // in bpm
   zones?: {
-    easy: number // time in minutes
-    moderate: number
-    hard: number
-    peak: number
+    thresholds: {
+      easy: number
+      moderate: number
+      hard: number
+      peak: number
+    }
+    distribution: {
+      easy: number // percentage of time in zone
+      moderate: number
+      hard: number
+      peak: number
+    }
   }
 }
 

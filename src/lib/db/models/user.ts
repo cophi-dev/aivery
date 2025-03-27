@@ -24,7 +24,11 @@ const UserSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
-    password: { type: String },
+    password: { 
+      type: String,
+      required: true,
+      select: false  // Don't include password by default in queries
+    },
     image: { type: String },
     height: { type: Number },
     weight: { type: Number },

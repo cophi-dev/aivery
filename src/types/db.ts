@@ -27,10 +27,26 @@ export interface WorkoutData {
     distance?: number;
     duration?: number;
     pace?: number;
+    speed?: number;
+    maxSpeed?: number;
     elevationGain?: number;
     heartRate?: {
       average?: number;
       max?: number;
+      zones?: {
+        thresholds: {
+          easy: number;
+          moderate: number;
+          hard: number;
+          peak: number;
+        };
+        distribution: {
+          easy: number;
+          moderate: number;
+          hard: number;
+          peak: number;
+        };
+      };
     };
     laps?: Array<{
       number?: number;
@@ -47,8 +63,21 @@ export interface WorkoutData {
       max?: number;
     };
   };
+  source?: string;
+  sourceId?: string;
+  importedFrom?: string;
+  importId?: string;
+  stravaLink?: string;
   createdAt: string;
   updatedAt: string;
+  progressMetrics?: {
+    durationChange?: number;
+    durationChangePercent?: number;
+    distanceChange?: number;
+    distanceChangePercent?: number;
+    paceChange?: number;
+    paceChangePercent?: number;
+  };
 }
 
 export interface UserData {

@@ -243,7 +243,7 @@ export default function ActivityDetailClient({ id }: { id: string }) {
       </Tabs>
 
       <div className="mt-8 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-        <Link href="/calendar">Back to Calendar</Link>
+        <Link href="/workouts">Back to Workouts</Link>
         <div className="flex gap-4">
           <Button
             variant="outline"

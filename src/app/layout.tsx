@@ -26,12 +26,18 @@ export default async function RootLayout({
   const session = await getServerSession(authOptions)
 
   return (
-    <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <AuthProvider>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="light"
+            enableSystem={false}
+            storageKey="aivery-theme"
+            disableTransitionOnChange
+          >
             <ToastProvider>
-              <MainHeader user={session?.user || null} />
+              <MainHeader />
               <main className="min-h-screen pt-14">{children}</main>
               {session?.user && <PersistentChat />}
             </ToastProvider>

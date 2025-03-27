@@ -1,7 +1,8 @@
 import { NextAuthOptions, getServerSession } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
-import { prisma } from "@/lib/prisma"
+import dbConnect from "@/lib/db/mongoose"
+import UserModel from "@/lib/db/models/user"
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -12,30 +13,45 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Invalid credentials")
-        }
-
-        const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email
+        try {
+          console.log('Starting authorization for:', credentials?.email)
+          
+          if (!credentials?.email || !credentials?.password) {
+            console.log('Missing credentials')
+            throw new Error("Invalid credentials")
           }
-        })
 
-        if (!user || !user.password) {
-          throw new Error("Invalid credentials")
-        }
+          // Connect to MongoDB
+          await dbConnect()
+          console.log('Connected to database for auth')
 
-        const isPasswordValid = await compare(credentials.password, user.password)
+          // Find user by email with fresh data
+          const user = await UserModel.findOne({ email: credentials.email }).select('+password').lean(false)
+          console.log('Found user:', user ? 'Yes' : 'No')
 
-        if (!isPasswordValid) {
-          throw new Error("Invalid credentials")
-        }
+          if (!user || !user.password) {
+            console.log('User not found or missing password')
+            throw new Error("Invalid credentials")
+          }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
+          // Compare passwords
+          const isPasswordValid = await compare(credentials.password, user.password)
+          console.log('Password valid:', isPasswordValid)
+
+          if (!isPasswordValid) {
+            console.log('Invalid password')
+            throw new Error("Invalid credentials")
+          }
+
+          console.log('Authorization successful')
+          return {
+            id: user._id.toString(),
+            email: user.email,
+            name: user.name,
+          }
+        } catch (error) {
+          console.error('Authorization error:', error)
+          throw error
         }
       }
     })

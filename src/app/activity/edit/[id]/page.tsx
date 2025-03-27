@@ -298,7 +298,7 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
         </div>
       </form>
       <div className="flex justify-between mt-8">
-        <Link href="/calendar">Back to Calendar</Link>
+        <Link href="/workouts">Back to Workouts</Link>
         <Button type="submit">Update Workout</Button>
       </div>
     </div>

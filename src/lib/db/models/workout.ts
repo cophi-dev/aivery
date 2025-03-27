@@ -61,6 +61,9 @@ export interface IWorkout extends Document {
   completedAt?: Date
   source?: "manual" | "garmin" | "coros" | "strava" | "apple" | "ai"
   sourceId?: string
+  importedFrom?: string
+  importId?: string
+  stravaLink?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -83,10 +86,18 @@ const LapSchema = new Schema({
 })
 
 const HeartRateZonesSchema = new Schema({
-  easy: { type: Number },
-  moderate: { type: Number },
-  hard: { type: Number },
-  peak: { type: Number },
+  thresholds: {
+    easy: { type: Number },
+    moderate: { type: Number },
+    hard: { type: Number },
+    peak: { type: Number }
+  },
+  distribution: {
+    easy: { type: Number },
+    moderate: { type: Number },
+    hard: { type: Number },
+    peak: { type: Number }
+  }
 })
 
 const HeartRateDataSchema = new Schema({
@@ -141,6 +152,9 @@ const WorkoutSchema: Schema = new Schema(
     completedAt: { type: Date },
     source: { type: String, enum: ["manual", "garmin", "coros", "strava", "apple", "ai"], default: "manual" },
     sourceId: { type: String },
+    importedFrom: { type: String },
+    importId: { type: String },
+    stravaLink: { type: String },
   },
   { timestamps: true },
 )

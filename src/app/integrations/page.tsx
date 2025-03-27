@@ -8,6 +8,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LucideCheck, LucideLoader, LucideRefreshCw, LucideAlertCircle } from "lucide-react"
 import { Header } from "@/components/header"
 import { connectStravaAction, syncStravaWorkoutsAction, getStravaIntegrationAction } from "@/lib/strava-actions"
+import { StravaImport } from "@/components/strava-import"
+import { Separator } from "@/components/ui/separator"
 
 export default function IntegrationsPage() {
   const router = useRouter()
@@ -121,6 +123,15 @@ export default function IntegrationsPage() {
           </Alert>
         )}
 
+        {/* Strava Import Section */}
+        <div className="mb-10">
+          <h2 className="text-2xl font-bold mb-6">Import Workout History</h2>
+          <StravaImport />
+        </div>
+        
+        <Separator className="my-8" />
+        
+        <h2 className="text-2xl font-bold mb-6">Live Connections</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Strava */}
           <Card>

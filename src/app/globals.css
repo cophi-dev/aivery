@@ -131,3 +131,5 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Remove the debug indicator and media query styles */

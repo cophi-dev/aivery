@@ -49,11 +49,11 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
         } else {
           // Handle case where workout is not found
           console.error("Workout not found")
-          router.push("/workout") // Redirect to workouts list
+          router.push("/workouts") // Redirect to workouts list
         }
       } catch (error) {
         console.error("Failed to load workout:", error)
-        router.push("/workout") // Redirect to workouts list on error
+        router.push("/workouts") // Redirect to workouts list on error
       } finally {
         setIsLoading(false)
       }
@@ -115,7 +115,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
           completed,
         })),
       })
-      router.push("/workout")
+      router.push("/workouts")
     } catch (error) {
       console.error("Failed to complete workout:", error)
     } finally {
@@ -145,7 +145,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
               The workout you're looking for doesn't exist or has been deleted.
             </p>
             <Button asChild className="mt-4">
-              <Link href="/workout">Back to Workouts</Link>
+              <Link href="/workouts">Back to Workouts</Link>
             </Button>
           </div>
         </div>

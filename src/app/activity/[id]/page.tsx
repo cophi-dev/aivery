@@ -192,26 +192,17 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
         </Card>
       </div>
 
-      <div className="mt-8 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-        <Link href="/calendar">Back to Calendar</Link>
-        <div className="flex gap-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/activity/edit/${workout._id}`)}
-          >
+      <div className="flex justify-between items-center mb-8">
+        <Link href="/workouts">Back to Workouts</Link>
+        <Button 
+          variant="ghost"
+          asChild
+        >
+          <Link href={`/activity/edit/${workout.id}`}>
             <LucidePencil className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleDelete} disabled={isDeleting}>
-            {isDeleting ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-            ) : (
-              <LucideTrash className="h-4 w-4 mr-2" />
-            )}
-            Delete
-          </Button>
-        </div>
+            Edit Workout
+          </Link>
+        </Button>
       </div>
     </div>
   )

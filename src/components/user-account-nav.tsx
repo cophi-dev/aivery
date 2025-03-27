@@ -21,7 +21,11 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+        <Button 
+          variant="ghost" 
+          className="relative h-8 w-8 rounded-full"
+          onClick={() => console.log('Dropdown trigger clicked')}
+        >
           <Avatar className="h-8 w-8">
             <AvatarImage src={user.image || ""} alt={user.name || ""} />
             <AvatarFallback>
@@ -30,7 +34,12 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
+      <DropdownMenuContent 
+        className="w-56" 
+        align="end" 
+        forceMount
+        sideOffset={5}
+      >
         <div className="flex flex-col space-y-1 p-2">
           <p className="text-sm font-medium leading-none">{user.name}</p>
           <p className="text-xs leading-none text-muted-foreground">
@@ -49,6 +58,7 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
           className="cursor-pointer"
           onSelect={(event) => {
             event.preventDefault()
+            console.log('Sign out clicked')
             signOut({
               callbackUrl: `${window.location.origin}/login`,
             })

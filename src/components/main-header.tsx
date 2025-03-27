@@ -2,84 +2,77 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { UserAccountNav } from "@/components/user-account-nav"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { User } from "next-auth"
-import { Dumbbell, Calendar, MessageSquare } from "lucide-react"
+import { useSession } from "next-auth/react"
+import { Dumbbell, Calendar, MessageSquare, History, BarChart2 } from "lucide-react"
+import { UserNavigation } from "./user-navigation"
 
-interface MainHeaderProps {
-  user: Pick<User, "name" | "email" | "image"> | null
-}
-
-export function MainHeader({ user }: MainHeaderProps) {
+export function MainHeader() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+  const user = session?.user
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center">
-        <div className="mr-4 flex items-center">
-          <Link href={user ? "/dashboard" : "/"} className="flex items-center mr-6">
-            <Dumbbell className="h-5 w-5 mr-2 text-primary" />
-            <span className="font-bold text-lg">Aivery</span>
+      <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <Link href={user ? "/dashboard" : "/"} className="flex items-center">
+            <Dumbbell className="h-6 w-6 mr-2 text-primary" />
+            <span className="font-bold text-xl">Aivery</span>
           </Link>
           
           {/* Only show nav links when user is logged in */}
           {user && (
-            <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
+            <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
               <Link
-                href="/workout"
+                href="/workouts"
                 className={cn(
-                  "transition-colors hover:text-foreground/80",
-                  pathname.startsWith("/workout") ? "text-foreground" : "text-foreground/60"
+                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                  pathname.startsWith("/workouts") || pathname.startsWith("/workout") ? "text-foreground bg-accent/50" : "text-foreground/70"
                 )}
               >
-                Workouts
+                <History className="h-4 w-4" />
+                <span>Workout History</span>
               </Link>
               <Link
                 href="/plan"
                 className={cn(
-                  "transition-colors hover:text-foreground/80",
-                  pathname.startsWith("/plan") ? "text-foreground" : "text-foreground/60"
+                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                  pathname.startsWith("/plan") ? "text-foreground bg-accent/50" : "text-foreground/70"
                 )}
               >
-                Plans
-              </Link>
-              <Link
-                href="/calendar"
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:text-foreground",
-                  pathname.startsWith("/calendar") ? "text-foreground" : "text-foreground/60"
-                )}
-              >
-                <Calendar className="h-4 w-4" />
-                <span>Calendar</span>
+                <BarChart2 className="h-4 w-4" />
+                <span>Planner</span>
               </Link>
               <Link
                 href="/chat"
                 className={cn(
-                  "transition-colors hover:text-foreground/80",
-                  pathname.startsWith("/chat") ? "text-foreground" : "text-foreground/60"
+                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                  pathname.startsWith("/chat") ? "text-foreground bg-accent/50" : "text-foreground/70"
                 )}
               >
-                AI Coach
+                <MessageSquare className="h-4 w-4" />
+                <span>Chat</span>
               </Link>
             </nav>
           )}
         </div>
         
-        <div className="ml-auto flex items-center space-x-4">
+        <div className="flex items-center gap-3">
           {user ? (
-            <UserAccountNav user={user} />
+            <UserNavigation />
           ) : (
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-3">
               <Link href="/login">
                 <Button variant="ghost" size="sm">
                   Log in
                 </Button>
               </Link>
               <Link href="/register">
-                <Button size="sm">Sign up</Button>
+                <Button variant="default" size="sm" className="font-medium">
+                  Sign up
+                </Button>
               </Link>
             </div>
           )}
