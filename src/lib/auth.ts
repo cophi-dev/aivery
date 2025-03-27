@@ -29,13 +29,21 @@ export const authOptions: NextAuthOptions = {
           const user = await UserModel.findOne({ email: credentials.email }).select('+password').lean(false)
           console.log('Found user:', user ? 'Yes' : 'No')
 
-          if (!user || !user.password) {
-            console.log('User not found or missing password')
+          // Check for user existence first, then validate password
+          if (!user) {
+            console.log('User not found')
+            throw new Error("Invalid credentials")
+          }
+          
+          // Ensure password exists with type safety
+          const userPassword = (user as any).password
+          if (!userPassword) {
+            console.log('Missing password')
             throw new Error("Invalid credentials")
           }
 
           // Compare passwords
-          const isPasswordValid = await compare(credentials.password, user.password)
+          const isPasswordValid = await compare(credentials.password, userPassword)
           console.log('Password valid:', isPasswordValid)
 
           if (!isPasswordValid) {
@@ -44,10 +52,14 @@ export const authOptions: NextAuthOptions = {
           }
 
           console.log('Authorization successful')
+          
+          // Type assertion for the user object to fix TypeScript errors
+          const typedUser = user as any;
+          
           return {
-            id: user._id.toString(),
-            email: user.email,
-            name: user.name,
+            id: typedUser._id.toString(),
+            email: typedUser.email,
+            name: typedUser.name,
           }
         } catch (error) {
           console.error('Authorization error:', error)
