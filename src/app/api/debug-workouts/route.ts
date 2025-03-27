@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
-import { getCollection } from "@/lib/db/mongodb"
+import { getCollection } from "@/lib/db/mongoose"
 
 export async function GET() {
   try {
-    const collection = await getCollection("aivery", "workouts")
+    const collection = await getCollection("workouts")
     
     // Get all workouts
     const workouts = await collection.find({}).toArray()
