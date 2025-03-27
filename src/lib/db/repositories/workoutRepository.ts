@@ -198,21 +198,24 @@ export async function updateWorkout(id: string, workoutData: Partial<WorkoutData
       return null
     }
 
+    // Type assertion to handle Mongoose document
+    const workout = result as any;
+    
     return {
-      _id: result._id.toString(),
-      userId: result.userId.toString(),
-      name: result.name,
-      date: result.date,
-      duration: result.duration,
-      intensity: result.intensity,
-      type: result.type,
-      volume: result.volume,
-      distance: result.distance,
-      exercises: result.exercises,
-      cardioDetails: result.cardioDetails,
-      notes: result.notes,
-      createdAt: result.createdAt.toISOString(),
-      updatedAt: result.updatedAt.toISOString(),
+      _id: workout._id.toString(),
+      userId: workout.userId.toString(),
+      name: workout.name,
+      date: workout.date,
+      duration: workout.duration,
+      intensity: workout.intensity,
+      type: workout.type,
+      volume: workout.volume,
+      distance: workout.distance,
+      exercises: workout.exercises,
+      cardioDetails: workout.cardioDetails,
+      notes: workout.notes,
+      createdAt: workout.createdAt.toISOString(),
+      updatedAt: workout.updatedAt.toISOString(),
     }
   } catch (error) {
     console.error(`Error updating workout ${id}:`, error)
