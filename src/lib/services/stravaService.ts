@@ -1,4 +1,4 @@
-import { getCollection } from "../db/mongodb"
+import { getCollection } from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { mockIntegrations } from "../db/mock-data"
 
@@ -22,7 +22,7 @@ export async function connectStrava(userId: string, authCode: string) {
     }
 
     // Store the tokens in the database
-    const collection = await getCollection(DB_NAME, INTEGRATIONS_COLLECTION)
+    const collection = await getCollection(INTEGRATIONS_COLLECTION)
 
     // Check if integration already exists
     const existingIntegration = await collection.findOne({
@@ -128,8 +128,8 @@ export async function syncStravaWorkouts(userId: string) {
     ]
 
     // Store workouts in the database
-    const workoutsCollection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
-    const integrationCollection = await getCollection(DB_NAME, INTEGRATIONS_COLLECTION)
+    const workoutsCollection = await getCollection(WORKOUTS_COLLECTION)
+    const integrationCollection = await getCollection(INTEGRATIONS_COLLECTION)
 
     let importedCount = 0
 
@@ -169,7 +169,7 @@ export async function syncStravaWorkouts(userId: string) {
 
 export async function getStravaIntegration(userId: string) {
   try {
-    const collection = await getCollection(DB_NAME, INTEGRATIONS_COLLECTION)
+    const collection = await getCollection(INTEGRATIONS_COLLECTION)
     const integration = await collection.findOne({
       userId: new ObjectId(userId),
       provider: "strava",

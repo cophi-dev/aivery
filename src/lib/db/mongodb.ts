@@ -64,6 +64,46 @@ export async function getCollection(collectionName: string) {
   return db.collection(collectionName)
 }
 
+/**
+ * Recursively converts MongoDB objects with toJSON method (like ObjectId)
+ * to plain JavaScript objects or strings to avoid serialization issues
+ * when passing to client components
+ */
+export function serializeMongoData(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  // Convert ObjectId to string
+  if (obj && obj.toString && obj._bsontype === "ObjectID") {
+    return obj.toString();
+  }
+  
+  // Handle Date objects
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+  
+  // Handle arrays by recursively processing each item
+  if (Array.isArray(obj)) {
+    return obj.map(item => serializeMongoData(item));
+  }
+  
+  // Handle objects recursively
+  if (typeof obj === 'object') {
+    const serialized: Record<string, any> = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        serialized[key] = serializeMongoData(obj[key]);
+      }
+    }
+    return serialized;
+  }
+  
+  // Return primitive values as is
+  return obj;
+}
+
 export async function checkDatabaseConnection() {
   try {
     await dbConnect()
