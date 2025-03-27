@@ -24,10 +24,28 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   useEffect(() => {
+    // Clear problematic cookies on load to help with HTTP 431 errors
+    const clearCookies = () => {
+      // Clear any cookies related to sessions
+      document.cookie.split(';').forEach(cookie => {
+        const [name] = cookie.split('=');
+        if (name.trim().startsWith('next-auth')) {
+          // Expire the cookie
+          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+        }
+      });
+      console.log('Cleared session cookies to help with 431 errors');
+    }
+    
+    // If ?clearcookies=1 is in the URL, clear cookies
+    if (searchParams.get('clearcookies') === '1') {
+      clearCookies();
+    }
+    
     if (status === 'authenticated' && session) {
       router.push(callbackUrl)
     }
-  }, [status, session, router, callbackUrl])
+  }, [status, session, router, callbackUrl, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
