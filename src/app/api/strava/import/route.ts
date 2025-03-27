@@ -316,16 +316,20 @@ export async function POST(request: NextRequest) {
           notes: generateActivityNotes(activityData, new Date(activityData.timestamp), file.name),
           exercises: [],
           cardioDetails: (typeof activityData.total_distance === 'number' || typeof activityData.avg_speed === 'number') ? {
-            distance: activityData.total_distance ?? 0,
+            distance: activityData.total_distance ?? undefined,
             duration: activityData.total_elapsed_time / 60,
-            pace: avgPace ?? 0,
-            speed: activityData.enhanced_avg_speed ?? activityData.avg_speed ?? 0,
-            maxSpeed: activityData.enhanced_max_speed ?? 0,
-            elevationGain: activityData.total_ascent ?? 0,
+            pace: avgPace ?? undefined,
+            speed: activityData.enhanced_avg_speed ?? activityData.avg_speed ?? undefined,
+            maxSpeed: activityData.enhanced_max_speed ?? undefined,
+            elevationGain: activityData.total_ascent ?? undefined,
             heartRate: activityData.avg_heart_rate ? {
               average: Math.round(activityData.avg_heart_rate),
               max: Math.round(activityData.max_heart_rate || activityData.avg_heart_rate),
-              zones: calculateHeartRateZones(activityData.avg_heart_rate, activityData.max_heart_rate || Math.max(activityData.avg_heart_rate * 1.15, 185))
+              zones: activityData.avg_heart_rate && activityData.max_heart_rate ? 
+                calculateHeartRateZones(
+                  activityData.avg_heart_rate, 
+                  activityData.max_heart_rate || Math.max(activityData.avg_heart_rate * 1.15, 185)
+                ) : undefined
             } : undefined,
             power: activityData.avg_power ? {
               average: Math.round(activityData.avg_power),
@@ -508,21 +512,21 @@ function mapStravaType(sport: string, subSport?: string): string {
 function calculateHeartRateZones(avgHr?: number, maxHr?: number) {
   if (!avgHr || !maxHr) return undefined;
   
-  // Calculate the zone thresholds
-  const zones = {
-    // Zone thresholds (heart rate values that define each zone)
+  const distribution = estimateZoneDistribution(avgHr, maxHr);
+  
+  // Only return zones if we have a valid distribution
+  if (!distribution) return undefined;
+  
+  // Now we know distribution is defined, TypeScript will be happy
+  return {
     thresholds: {
       easy: Math.round(maxHr * 0.6),    // 60% of max HR - Zone 1
       moderate: Math.round(maxHr * 0.7), // 70% of max HR - Zone 2
       hard: Math.round(maxHr * 0.8),     // 80% of max HR - Zone 3
       peak: Math.round(maxHr * 0.9)      // 90% of max HR - Zone 4
     },
-    // Estimated time distribution based on average heart rate
-    // This is an estimation since we don't have the full heart rate time series
-    distribution: estimateZoneDistribution(avgHr, maxHr)
+    distribution // This is guaranteed to be defined
   };
-  
-  return zones;
 }
 
 // Estimate time distribution in heart rate zones based on average HR
