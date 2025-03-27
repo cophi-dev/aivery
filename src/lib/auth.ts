@@ -26,8 +26,8 @@ export const authOptions: NextAuthOptions = {
           await dbConnect()
           console.log('Connected to database for auth')
 
-          // Find user by email with fresh data
-          const user = await UserModel.findOne({ email: credentials.email }).select('+password image name').lean(false)
+          // Find user by email with minimal data - only select what we need
+          const user = await UserModel.findOne({ email: credentials.email }).select('+password name').lean(false)
           console.log('Found user:', user ? 'Yes' : 'No')
 
           // Check for user existence first, then validate password
@@ -57,11 +57,12 @@ export const authOptions: NextAuthOptions = {
           // Type assertion for the user object to fix TypeScript errors
           const typedUser = user as any;
           
+          // Return minimal user data to keep JWT small
           return {
             id: typedUser._id.toString(),
             email: typedUser.email,
             name: typedUser.name,
-            image: typedUser.image || null,
+            // Don't include large data in the token
           }
         } catch (error) {
           console.error('Authorization error:', error)
@@ -72,21 +73,30 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 24 * 60 * 60, // 24 hours instead of 30 days
   },
   pages: {
     signIn: "/login",
+    // Don't set other custom pages to avoid redirect loops
   },
   callbacks: {
     async jwt({ token, user }) {
+      // Keep the JWT content minimal - just the essential user ID and info
       if (user) {
         token.id = user.id
+        token.email = user.email
+        token.name = user.name
+        // No other data that might bloat the token
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
+        // Only set the essential fields to keep the session small
         session.user.id = token.id as string
+        session.user.email = token.email as string
+        session.user.name = token.name as string
+        // Remove any other data that might be present
       }
       return session
     }

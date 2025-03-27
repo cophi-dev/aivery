@@ -8,13 +8,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Link from "next/link"
+import { CardContent, CardFooter } from "@/components/ui/card"
+import { Icons } from "@/components/icons"
 
 export default function LoginPage() {
   const router = useRouter()
   const { data: session, status } = useSession()
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
-  const isRegistered = searchParams.get('registered') === 'true'
+  const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard'
+  const isRegistered = searchParams?.get('registered') === 'true'
   
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -22,30 +24,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<string | null>(isRegistered ? "Registration successful! Please log in." : null)
 
-  // Redirect if already authenticated
+  // Simpler session detection with direct redirect, no loops
   useEffect(() => {
-    // Clear problematic cookies on load to help with HTTP 431 errors
-    const clearCookies = () => {
-      // Clear any cookies related to sessions
-      document.cookie.split(';').forEach(cookie => {
-        const [name] = cookie.split('=');
-        if (name.trim().startsWith('next-auth')) {
-          // Expire the cookie
-          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-        }
-      });
-      console.log('Cleared session cookies to help with 431 errors');
+    // Only redirect if we're definitely logged in
+    if (status === 'authenticated' && session?.user?.id) {
+      // Simple direct navigation
+      window.location.href = '/dashboard';
     }
-    
-    // If ?clearcookies=1 is in the URL, clear cookies
-    if (searchParams.get('clearcookies') === '1') {
-      clearCookies();
-    }
-    
-    if (status === 'authenticated' && session) {
-      router.push(callbackUrl)
-    }
-  }, [status, session, router, callbackUrl, searchParams])
+  }, [status, session]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,24 +39,32 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      // Simple authentication - no redirect specified
       const result = await signIn("credentials", {
         redirect: false,
         email,
         password,
-        callbackUrl: "/dashboard"
       })
 
-      if (result?.error) {
-        setError(result.error)
-        setLoading(false)
-        return
+      if (!result?.ok) {
+        setError(result?.error || "Authentication failed");
+        setLoading(false);
+        return;
       }
 
-      // Successful login - redirect will happen via useEffect
-      setSuccess("Login successful! Redirecting...")
+      // Success - set flag for a moment to show success message
+      setSuccess("Login successful!");
+      
+      // Wait a moment then refresh the page completely
+      setTimeout(() => {
+        // Force complete refresh to get fresh session
+        window.location.href = '/dashboard';
+      }, 1000);
+      
     } catch (error) {
-      setError("An unexpected error occurred. Please try again.")
-      setLoading(false)
+      console.error("Login error:", error);
+      setError("An unexpected error occurred. Please try again.");
+      setLoading(false);
     }
   }
 
@@ -89,7 +83,7 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold">Welcome back</h1>
           <p className="text-muted-foreground mt-2">Sign in to your account</p>
         </div>
-
+        
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -142,18 +136,38 @@ export default function LoginPage() {
             className="w-full" 
             disabled={loading}
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+            Sign in
           </Button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          <p>
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-primary hover:underline">
+          
+          <div className="mt-4 text-center text-sm">
+            <span className="mr-1">Don&apos;t have an account?</span>
+            <Link
+              aria-label="Sign up"
+              href="/register"
+              className="text-primary underline-offset-4 transition-colors hover:underline"
+            >
               Sign up
             </Link>
-          </p>
-        </div>
+          </div>
+          
+          <div className="flex justify-center mt-2">
+            <Link href="/reset">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
+                Getting HTTP 431 errors? Click here to reset session
+              </Button>
+            </Link>
+          </div>
+          
+          <div className="flex justify-center mt-6">
+            <Link href="/health">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Icons.question className="h-4 w-4" />
+                Having trouble? Check system status
+              </Button>
+            </Link>
+          </div>
+        </form>
       </div>
     </div>
   )

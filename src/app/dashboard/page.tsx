@@ -16,8 +16,10 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export default async function DashboardPage() {
+  // Server-side auth check
   const session = await getServerSession(authOptions)
 
+  // Simple redirect if no session
   if (!session || !session.user) {
     redirect("/login")
   }
@@ -26,6 +28,7 @@ export default async function DashboardPage() {
   await dbConnect()
   const user = await UserModel.findOne({ email: session.user.email })
 
+  // Basic fallback if no user found, avoid complex redirections
   if (!user) {
     redirect("/login")
   }

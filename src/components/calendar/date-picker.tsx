@@ -14,7 +14,7 @@ export function DatePicker({ initialDate, workoutDates = [] }: DatePickerProps) 
 
   const onSelect = (date: Date | undefined) => {
     if (date) {
-      const params = new URLSearchParams(searchParams.toString())
+      const params = new URLSearchParams(searchParams?.toString() || '')
       params.set('date', date.toISOString())
       router.push(`/calendar?${params.toString()}`)
     }
