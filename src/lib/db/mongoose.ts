@@ -1,5 +1,5 @@
 import dbConnect from './mongodb'
-import { getCollection } from './mongodb'
+import { getCollection, getDatabase } from './mongodb'
 
-export { getCollection }
+export { getCollection, getDatabase }
 export default dbConnect 

@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server"
-import clientPromise from "@/lib/db/mongodb"
+import { getDatabase } from "@/lib/db/mongoose"
+import { Collection } from "mongodb"
 
 export async function GET() {
   try {
     // Connect to MongoDB
-    const client = await clientPromise
+    const db = await getDatabase()
 
-    // Test connection by listing databases
-    const dbList = await client.db().admin().listDatabases()
+    // Test connection by listing collections
+    const collections = await db.listCollections().toArray()
 
     return NextResponse.json({
       status: "success",
       message: "MongoDB connection successful",
-      databases: dbList.databases.map((db) => db.name),
+      collections: collections.map((collection: { name: string }) => collection.name),
     })
   } catch (error) {
     console.error("MongoDB connection error:", error)
