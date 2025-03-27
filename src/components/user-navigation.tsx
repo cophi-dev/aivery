@@ -16,7 +16,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideSettings } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideSettings, LucideUser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AvatarLoader } from "./avatar-loader";
 import { useSession } from "next-auth/react";
@@ -24,17 +25,34 @@ import { useSession } from "next-auth/react";
 export function UserNavigation() {
   const { setTheme } = useTheme();
   const { data: session } = useSession();
+  const pathname = usePathname();
+  
+  // Don't render on auth pages at all
+  const isAuthPage = 
+    pathname === '/login' || 
+    pathname === '/register' || 
+    pathname === '/forgot-password';
 
   // Only render if we have a session
-  if (!session?.user) {
+  if (!session?.user || isAuthPage) {
     return null;
   }
+
+  // Handle logout safely - direct to URL, don't use callback
+  const handleLogout = async () => {
+    await signOut({ redirect: false });
+    window.location.href = '/login';
+  };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-10 w-10 p-0 rounded-full overflow-hidden">
-          <AvatarLoader name={session.user.name as string} size="md" />
+          <AvatarLoader 
+            name={session.user.name as string} 
+            size="md" 
+            skipLoad={pathname === '/dashboard'} // Skip loading on dashboard to avoid loops
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -74,7 +92,7 @@ export function UserNavigation() {
         <DropdownMenuSeparator />
         <DropdownMenuItem 
           className="cursor-pointer text-red-500 focus:text-red-500" 
-          onClick={() => signOut({ callbackUrl: "/" })}
+          onClick={handleLogout}
         >
           <LucideLogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
