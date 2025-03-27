@@ -3,9 +3,16 @@ import { getCollection } from "../mongodb"
 import type { WorkoutData } from "@/types/db"
 import dbConnect from '../mongodb'
 import WorkoutModel, { IWorkout } from '../models/workout'
+import mongoose, { Document, FlattenMaps } from 'mongoose'
 
 type LeanDocument<T> = {
   [P in keyof T]: T[P] extends Document ? LeanDocument<T[P]> : T[P]
+}
+
+// Type guard to handle Mongoose document type conversions
+type SafeAny = Record<string, any>
+function isWorkoutDocument(doc: any): doc is SafeAny {
+  return doc !== null && typeof doc === 'object';
 }
 
 const DB_NAME = "aivery"
@@ -16,70 +23,37 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
   try {
     await dbConnect()
     
-    const workouts = await WorkoutModel.find({ userId: new ObjectId(userId) })
+    const workoutDocs = await WorkoutModel.find({ userId: new ObjectId(userId) })
       .sort({ createdAt: -1 })
-      .limit(5)
+      .limit(limit)
       .lean()
       .exec()
 
-    return workouts.map((workout: any) => ({
-      _id: workout._id?.toString() || '',
-      userId: workout.userId?.toString() || '',
-      type: workout.type || '',
-      name: workout.name || '',
-      date: workout.date || new Date(),
-      duration: workout.duration || 0,
-      distance: workout.distance,
-      calories: workout.calories,
-      notes: workout.notes || '',
-      intensity: workout.intensity || '',
-      volume: workout.volume || 0,
-      exercises: workout.exercises || [],
-      cardioDetails: workout.cardioDetails ? {
-        distance: workout.cardioDetails.distance,
-        duration: workout.cardioDetails.duration,
-        pace: workout.cardioDetails.pace,
-        elevationGain: workout.cardioDetails.elevationGain,
-        heartRate: workout.cardioDetails.heartRate ? {
-          average: workout.cardioDetails.heartRate.average,
-          max: workout.cardioDetails.heartRate.max,
-          zones: workout.cardioDetails.heartRate.zones ? {
-            thresholds: {
-              easy: workout.cardioDetails.heartRate.zones.easy || 0,
-              moderate: workout.cardioDetails.heartRate.zones.moderate || 0,
-              hard: workout.cardioDetails.heartRate.zones.hard || 0,
-              peak: workout.cardioDetails.heartRate.zones.peak || 0
-            },
-            distribution: {
-              easy: workout.cardioDetails.heartRate.zones.easy || 0,
-              moderate: workout.cardioDetails.heartRate.zones.moderate || 0,
-              hard: workout.cardioDetails.heartRate.zones.hard || 0,
-              peak: workout.cardioDetails.heartRate.zones.peak || 0
-            }
-          } : undefined
-        } : undefined,
-        laps: workout.cardioDetails.laps?.map((lap: any) => ({
-          number: lap.number,
-          distance: lap.distance,
-          duration: lap.duration,
-          pace: lap.pace
-        })),
-        poolLength: workout.cardioDetails.poolLength,
-        strokeType: workout.cardioDetails.strokeType,
-        bikeType: workout.cardioDetails.bikeType,
-        power: workout.cardioDetails.power ? {
-          average: workout.cardioDetails.power.average,
-          max: workout.cardioDetails.power.max
-        } : undefined
-      } : undefined,
-      source: workout.source,
-      sourceId: workout.sourceId,
-      importedFrom: workout.importedFrom,
-      importId: workout.importId,
-      stravaLink: workout.stravaLink,
-      createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt),
-      updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt)
-    }))
+    return workoutDocs.map((doc) => {
+      const workout = isWorkoutDocument(doc) ? doc : {} as SafeAny;
+      return {
+        _id: workout._id?.toString() || '',
+        userId: workout.userId?.toString() || '',
+        type: workout.type || '',
+        name: workout.name || '',
+        date: workout.date || new Date(),
+        duration: workout.duration || 0,
+        distance: workout.distance,
+        calories: workout.calories,
+        notes: workout.notes || '',
+        intensity: workout.intensity || '',
+        volume: workout.volume || 0,
+        exercises: workout.exercises || [],
+        cardioDetails: workout.cardioDetails || undefined,
+        source: workout.source,
+        sourceId: workout.sourceId,
+        importedFrom: workout.importedFrom,
+        importId: workout.importId,
+        stravaLink: workout.stravaLink,
+        createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt || new Date()),
+        updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt || new Date())
+      } as WorkoutData;
+    });
   } catch (error) {
     console.error('Error getting workouts:', error)
     throw new Error('Failed to get workouts')
@@ -91,15 +65,18 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
   try {
     await dbConnect()
     
-    const workout = await WorkoutModel.findById(id).lean().exec()
+    const workoutDoc = await WorkoutModel.findById(id).lean().exec()
 
-    if (!workout) {
+    if (!workoutDoc) {
       return null
     }
+    
+    // Use our type guard to safely access properties
+    const workout = isWorkoutDocument(workoutDoc) ? workoutDoc : {} as SafeAny;
 
     return {
-      _id: workout._id.toString(),
-      userId: workout.userId.toString(),
+      _id: workout._id?.toString() || '',
+      userId: workout.userId?.toString() || '',
       name: workout.name || '',
       date: workout.date || new Date(),
       duration: workout.duration || 0,
@@ -115,8 +92,8 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
       source: workout.source,
       importedFrom: workout.importedFrom,
       importId: workout.importId,
-      createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt),
-      updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt),
+      createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt || new Date()),
+      updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt || new Date()),
     }
   } catch (error) {
     console.error(`Error getting workout ${id}:`, error)
@@ -265,7 +242,7 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
   try {
     await dbConnect()
     
-    const workouts = await WorkoutModel.find({
+    const workoutDocs = await WorkoutModel.find({
       userId: new ObjectId(userId),
       "exercises.name": exerciseName,
       date: { $lt: currentDate },
@@ -275,21 +252,21 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
       .lean()
       .exec()
 
-    return workouts.map((workout) => ({
-      _id: workout._id.toString(),
-      userId: workout.userId.toString(),
-      name: workout.name,
-      date: workout.date,
-      duration: workout.duration,
-      intensity: workout.intensity,
-      type: workout.type,
-      volume: workout.volume,
-      distance: workout.distance,
-      exercises: workout.exercises,
-      cardioDetails: workout.cardioDetails,
-      notes: workout.notes,
-      createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
-      updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
+    return workoutDocs.map((workoutDoc: any) => ({
+      _id: workoutDoc._id.toString(),
+      userId: workoutDoc.userId.toString(),
+      name: workoutDoc.name || '',
+      date: workoutDoc.date || new Date(),
+      duration: workoutDoc.duration || 0,
+      intensity: workoutDoc.intensity || '',
+      type: workoutDoc.type || '',
+      volume: workoutDoc.volume || 0,
+      distance: workoutDoc.distance,
+      exercises: workoutDoc.exercises || [],
+      cardioDetails: workoutDoc.cardioDetails,
+      notes: workoutDoc.notes || '',
+      createdAt: workoutDoc.createdAt instanceof Date ? workoutDoc.createdAt.toISOString() : new Date().toISOString(),
+      updatedAt: workoutDoc.updatedAt instanceof Date ? workoutDoc.updatedAt.toISOString() : new Date().toISOString(),
     }))
   } catch (error) {
     console.error(`Error getting previous workouts for ${exerciseName}:`, error)
@@ -714,7 +691,8 @@ export async function getWorkoutDatesForMonth(userId: string, date: Date) {
       .lean()
       .exec()
       
-    return workouts.map((w: { date: Date }) => new Date(w.date))
+    // Type assertion to handle the Mongoose document type
+    return workouts.map((workout: any) => new Date(workout.date))
   } catch (error) {
     console.error("Error getting workout dates:", error)
     throw new Error("Failed to get workout dates")
