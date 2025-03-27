@@ -75,7 +75,12 @@ export function serializeMongoData(obj: any): any {
   }
   
   // Convert ObjectId to string
-  if (obj && obj.toString && obj._bsontype === "ObjectID") {
+  if (obj && obj.toString && (obj._bsontype === "ObjectID" || obj._bsontype === "ObjectId")) {
+    return obj.toString();
+  }
+  
+  // Handle buffer values (often in _id fields)
+  if (obj && typeof obj === 'object' && obj.buffer && obj.buffer instanceof Buffer) {
     return obj.toString();
   }
   
