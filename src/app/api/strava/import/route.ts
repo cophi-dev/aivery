@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
         const uniqueId = `${activityData.timestamp}_${activityData.sport}_${activityData.total_elapsed_time}`
 
         // Check if this workout has already been imported
-        const collection = await getCollection("aivery", "workouts")
+        const collection = await getCollection("workouts")
         const existingWorkout = await collection.findOne({ 
           userId: new ObjectId(userId),
           importId: uniqueId,
