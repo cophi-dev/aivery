@@ -14,119 +14,139 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         try {
-          console.log('Starting authorization for:', credentials?.email)
-          
           if (!credentials?.email || !credentials?.password) {
-            console.log('Missing credentials')
-            throw new Error("Invalid credentials")
+            console.log("Missing credentials");
+            return null;
           }
 
-          // Connect to MongoDB - this only needs to be done once
-          // The connection will be cached for subsequent calls
+          // Connect to database
           await dbConnect()
-          console.log('Connected to database for auth')
 
-          // Find user by email with fresh data
-          const user = await UserModel.findOne({ email: credentials.email }).select('+password image name').lean(false)
-          console.log('Found user:', user ? 'Yes' : 'No')
+          // Find user with minimal data
+          const user = await UserModel.findOne({ email: credentials.email }).select('+password name').lean(false)
 
-          // Check for user existence first, then validate password
           if (!user) {
-            console.log('User not found')
-            throw new Error("Invalid credentials")
+            console.log("User not found:", credentials.email);
+            return null;
           }
           
-          // Ensure password exists with type safety
           const userPassword = (user as any).password
           if (!userPassword) {
-            console.log('Missing password')
-            throw new Error("Invalid credentials")
+            console.log("User has no password");
+            return null;
           }
 
-          // Compare passwords
           const isPasswordValid = await compare(credentials.password, userPassword)
-          console.log('Password valid:', isPasswordValid)
 
           if (!isPasswordValid) {
-            console.log('Invalid password')
-            throw new Error("Invalid credentials")
+            console.log("Invalid password");
+            return null;
           }
-
-          console.log('Authorization successful')
           
-          // Type assertion for the user object to fix TypeScript errors
+          // Log successful login
+          console.log("User authenticated successfully:", credentials.email);
+          
+          // Return minimal user data
           const typedUser = user as any;
           
           return {
             id: typedUser._id.toString(),
             email: typedUser.email,
             name: typedUser.name,
-            image: typedUser.image || null,
           }
         } catch (error) {
           console.error('Authorization error:', error)
-          throw error
+          return null
         }
       }
     })
   ],
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60, // Reduce to 1 day instead of 30 days to keep tokens smaller
-  },
-  jwt: {
-    // Make the JWT smaller with shorter expiry
-    maxAge: 24 * 60 * 60, // 1 day
+    maxAge: 30 * 24 * 60 * 60, // 30 days to match route.ts
   },
   pages: {
     signIn: "/login",
+    error: "/login", // Show login page with error param on auth errors
   },
   callbacks: {
     async jwt({ token, user }) {
+      // Keep token minimal
       if (user) {
-        // User object is only provided on sign in
+        console.log("Setting JWT token with user ID:", user.id);
         token.id = user.id
-        
-        // Store minimal data in the token
-        token.hasImage = !!user.image
-        
-        // Only keep the user's name, nothing else
-        if (user.name) {
-          token.name = user.name
-        }
-        
-        // Remove all unnecessary fields to keep token small
-        delete token.picture
-        delete token.email  // Remove email from token too
-        delete token.sub    // Don't need the sub claim
+        token.email = user.email
+        token.name = user.name
       }
-      
       return token
     },
     async session({ session, token }) {
-      if (session.user) {
-        // Set user ID properly
-        session.user.id = token.id as string
-        
-        // Copy name from token if available
-        if (token.name) {
+      try {
+        // Keep session minimal
+        if (session.user && token) {
+          session.user.id = token.id as string
           session.user.name = token.name as string
-        }
-        
-        // Set hasImage flag rather than the actual image data
-        session.user.hasImage = !!token.hasImage
+          session.user.email = token.email as string
+          
+          // Verify we have an ID
+          if (!session.user.id) {
+            console.error("Session missing user ID after setting");
+            return { ...session, user: { id: '', email: '', name: '' } };
+          }
 
-        // Remove unnecessary data to reduce header size
-        session.user.image = null
-        delete (session.user as any).email  // Also delete email from session
+          // Verify user still exists in database
+          await dbConnect();
+          const user = await UserModel.findOne({ _id: session.user.id });
+          
+          if (!user) {
+            console.error("User no longer exists in database:", session.user.id);
+            return { ...session, user: { id: '', email: '', name: '' } };
+          }
+          
+          console.log("Session created with user ID:", session.user.id);
+        }
+        return session;
+      } catch (error) {
+        console.error("Error in session callback:", error);
+        return { ...session, user: { id: '', email: '', name: '' } };
       }
-      return session
     }
   },
+  // Keep cookie options minimal
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false, // Set to false for localhost
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+      },
+    },
+    callbackUrl: {
+      name: `next-auth.callback-url`,
+      options: {
+        sameSite: 'lax',
+        path: '/',
+        secure: false, // Set to false for localhost
+      },
+    },
+    csrfToken: {
+      name: `next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false, // Set to false for localhost
+      },
+    },
+  },
+  debug: true, // Enable debug mode to see what's happening
   secret: process.env.NEXTAUTH_SECRET
 }
 
-// Extend the next-auth session type to include the user id
+// Session extension to include ID
 declare module "next-auth" {
   interface Session {
     user: {
@@ -134,7 +154,6 @@ declare module "next-auth" {
       name?: string | null
       email?: string | null
       image?: string | null
-      hasImage: boolean
     }
   }
 }
@@ -150,13 +169,37 @@ export async function getCurrentUser() {
     // If we're on the server side (RSC or server action)
     if (typeof window === 'undefined') {
       const session = await getServerSession(authOptions);
-      return session?.user;
+      if (!session?.user) {
+        console.warn("No session found on server side");
+        return null;
+      }
+      return session.user;
     } 
-    // If we're on the client side
+    // If we're on the client side - use cached data when possible
     else {
-      const session = await fetch("/api/auth/session");
-      const data = await session.json();
-      return data?.user;
+      try {
+        const session = await fetch("/api/auth/session", {
+          // Add cache control to prevent over-fetching
+          cache: "force-cache",
+          next: { revalidate: 60 } // Revalidate every minute
+        });
+        
+        if (!session.ok) {
+          console.warn("Session fetch failed:", session.statusText);
+          return null;
+        }
+        
+        const data = await session.json();
+        if (!data?.user) {
+          console.warn("No user data in session response");
+          return null;
+        }
+        
+        return data.user;
+      } catch (fetchError) {
+        console.error("Error fetching session on client side:", fetchError);
+        return null;
+      }
     }
   } catch (error) {
     console.error("Error getting current user:", error);

@@ -10,8 +10,36 @@ import { UserNavigation } from "./user-navigation"
 
 export function MainHeader() {
   const pathname = usePathname()
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const user = session?.user
+
+  // Safety check for pathname to fix deployment error
+  const isPath = (path: string) => {
+    return pathname ? pathname.startsWith(path) : false
+  }
+
+  // Add proper error handling for session loading
+  const isLoading = status === "loading";
+  const isAuthenticated = status === "authenticated" && !!user;
+
+  // Prevent render errors during loading state
+  if (isLoading) {
+    return (
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <Link href="/" className="flex items-center">
+              <Dumbbell className="h-6 w-6 mr-2 text-primary" />
+              <span className="font-bold text-xl">Aivery</span>
+            </Link>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-primary/10 animate-pulse" />
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -29,7 +57,7 @@ export function MainHeader() {
                 href="/workouts"
                 className={cn(
                   "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  pathname.startsWith("/workouts") || pathname.startsWith("/workout") ? "text-foreground bg-accent/50" : "text-foreground/70"
+                  isPath("/workouts") || isPath("/workout") ? "text-foreground bg-accent/50" : "text-foreground/70"
                 )}
               >
                 <History className="h-4 w-4" />
@@ -39,7 +67,7 @@ export function MainHeader() {
                 href="/plan"
                 className={cn(
                   "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  pathname.startsWith("/plan") ? "text-foreground bg-accent/50" : "text-foreground/70"
+                  isPath("/plan") ? "text-foreground bg-accent/50" : "text-foreground/70"
                 )}
               >
                 <BarChart2 className="h-4 w-4" />
@@ -49,7 +77,7 @@ export function MainHeader() {
                 href="/chat"
                 className={cn(
                   "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  pathname.startsWith("/chat") ? "text-foreground bg-accent/50" : "text-foreground/70"
+                  isPath("/chat") ? "text-foreground bg-accent/50" : "text-foreground/70"
                 )}
               >
                 <MessageSquare className="h-4 w-4" />
@@ -60,7 +88,7 @@ export function MainHeader() {
         </div>
         
         <div className="flex items-center gap-3">
-          {user ? (
+          {isAuthenticated ? (
             <UserNavigation />
           ) : (
             <div className="flex items-center gap-3">

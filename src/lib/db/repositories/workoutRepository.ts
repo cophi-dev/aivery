@@ -1,6 +1,11 @@
-import { ObjectId } from "mongodb"
-import { getCollection } from "../mongodb"
+import { Types } from 'mongoose'
+import dbConnect from '../mongoose'
+import WorkoutModel, { IWorkout } from '../models/workout'
 import type { WorkoutData } from "@/types/db"
+
+type LeanDocument<T> = {
+  [P in keyof T]: T[P] extends Document ? LeanDocument<T[P]> : T[P]
+}
 
 const DB_NAME = "aivery"
 const COLLECTION_NAME = "workouts"
@@ -8,48 +13,84 @@ const COLLECTION_NAME = "workouts"
 // Get all workouts for a user
 export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0): Promise<WorkoutData[]> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
+    
+    const workouts = await WorkoutModel.find({ userId: new Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .lean()
+      .exec()
 
-    const workouts = await collection
-      .find({ userId: new ObjectId(userId) })
-      .sort({ date: -1 })
-      .skip(skip)
-      .limit(limit)
-      .toArray()
-
-    return workouts.map((workout) => ({
-      _id: workout._id.toString(),
-      userId: workout.userId.toString(),
-      name: workout.name,
-      date: workout.date,
-      duration: workout.duration,
-      intensity: workout.intensity,
-      type: workout.type,
-      volume: workout.volume,
+    return workouts.map((workout: any) => ({
+      _id: workout._id?.toString() || '',
+      userId: workout.userId?.toString() || '',
+      type: workout.type || '',
+      name: workout.name || '',
+      date: workout.date || new Date(),
+      duration: workout.duration || 0,
       distance: workout.distance,
-      exercises: workout.exercises,
-      cardioDetails: workout.cardioDetails,
-      notes: workout.notes,
-      stravaLink: workout.stravaLink,
-      sourceId: workout.sourceId,
+      calories: workout.calories,
+      notes: workout.notes || '',
+      intensity: workout.intensity || '',
+      volume: workout.volume || 0,
+      exercises: workout.exercises || [],
+      cardioDetails: workout.cardioDetails ? {
+        distance: workout.cardioDetails.distance,
+        duration: workout.cardioDetails.duration,
+        pace: workout.cardioDetails.pace,
+        elevationGain: workout.cardioDetails.elevationGain,
+        heartRate: workout.cardioDetails.heartRate ? {
+          average: workout.cardioDetails.heartRate.average,
+          max: workout.cardioDetails.heartRate.max,
+          zones: workout.cardioDetails.heartRate.zones ? {
+            thresholds: {
+              easy: workout.cardioDetails.heartRate.zones.easy || 0,
+              moderate: workout.cardioDetails.heartRate.zones.moderate || 0,
+              hard: workout.cardioDetails.heartRate.zones.hard || 0,
+              peak: workout.cardioDetails.heartRate.zones.peak || 0
+            },
+            distribution: {
+              easy: workout.cardioDetails.heartRate.zones.easy || 0,
+              moderate: workout.cardioDetails.heartRate.zones.moderate || 0,
+              hard: workout.cardioDetails.heartRate.zones.hard || 0,
+              peak: workout.cardioDetails.heartRate.zones.peak || 0
+            }
+          } : undefined
+        } : undefined,
+        laps: workout.cardioDetails.laps?.map((lap: any) => ({
+          number: lap.number,
+          distance: lap.distance,
+          duration: lap.duration,
+          pace: lap.pace
+        })),
+        poolLength: workout.cardioDetails.poolLength,
+        strokeType: workout.cardioDetails.strokeType,
+        bikeType: workout.cardioDetails.bikeType,
+        power: workout.cardioDetails.power ? {
+          average: workout.cardioDetails.power.average,
+          max: workout.cardioDetails.power.max
+        } : undefined
+      } : undefined,
       source: workout.source,
+      sourceId: workout.sourceId,
       importedFrom: workout.importedFrom,
       importId: workout.importId,
-      createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
-      updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
+      stravaLink: workout.stravaLink,
+      createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt),
+      updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt)
     }))
   } catch (error) {
-    console.error("Error getting user workouts:", error)
-    throw new Error("Failed to get user workouts")
+    console.error('Error getting workouts:', error)
+    throw new Error('Failed to get workouts')
   }
 }
 
 // Get a workout by ID
 export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
-
-    const workout = await collection.findOne({ _id: new ObjectId(id) })
+    await dbConnect()
+    
+    const workout = await WorkoutModel.findById(id).lean().exec()
 
     if (!workout) {
       return null
@@ -58,23 +99,23 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
     return {
       _id: workout._id.toString(),
       userId: workout.userId.toString(),
-      name: workout.name,
-      date: workout.date,
-      duration: workout.duration,
-      intensity: workout.intensity,
-      type: workout.type,
-      volume: workout.volume,
+      name: workout.name || '',
+      date: workout.date || new Date(),
+      duration: workout.duration || 0,
+      intensity: workout.intensity || '',
+      type: workout.type || '',
+      volume: workout.volume || 0,
       distance: workout.distance,
-      exercises: workout.exercises,
+      exercises: workout.exercises || [],
       cardioDetails: workout.cardioDetails,
-      notes: workout.notes,
+      notes: workout.notes || '',
       stravaLink: workout.stravaLink,
       sourceId: workout.sourceId,
       source: workout.source,
       importedFrom: workout.importedFrom,
       importId: workout.importId,
-      createdAt: workout.createdAt?.toISOString() || new Date().toISOString(),
-      updatedAt: workout.updatedAt?.toISOString() || new Date().toISOString(),
+      createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt),
+      updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt),
     }
   } catch (error) {
     console.error(`Error getting workout ${id}:`, error)
@@ -85,10 +126,10 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
 // Create a new workout
 export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<WorkoutData> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
-
-    const workout = {
-      userId: new ObjectId(workoutData.userId),
+    await dbConnect()
+    
+    const workout = new WorkoutModel({
+      userId: new Types.ObjectId(workoutData.userId),
       name: workoutData.name || "",
       date: workoutData.date || new Date(),
       duration: workoutData.duration || 0,
@@ -104,32 +145,31 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       sourceId: workoutData.sourceId,
       importedFrom: workoutData.importedFrom,
       importId: workoutData.importId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
+    })
 
-    const result = await collection.insertOne(workout)
+    const savedWorkout = await workout.save()
+    const result = savedWorkout.toObject()
 
     return {
-      _id: result.insertedId.toString(),
-      userId: workout.userId.toString(),
-      name: workout.name,
-      date: workout.date,
-      duration: workout.duration,
-      intensity: workout.intensity,
-      type: workout.type,
-      volume: workout.volume,
-      distance: workout.distance,
-      exercises: workout.exercises,
-      cardioDetails: workout.cardioDetails,
-      notes: workout.notes,
-      stravaLink: workout.stravaLink,
-      source: workout.source,
-      sourceId: workout.sourceId,
-      importedFrom: workout.importedFrom,
-      importId: workout.importId,
-      createdAt: workout.createdAt.toISOString(),
-      updatedAt: workout.updatedAt.toISOString(),
+      _id: result._id.toString(),
+      userId: result.userId.toString(),
+      name: result.name,
+      date: result.date,
+      duration: result.duration,
+      intensity: result.intensity,
+      type: result.type,
+      volume: result.volume,
+      distance: result.distance,
+      exercises: result.exercises,
+      cardioDetails: result.cardioDetails,
+      notes: result.notes,
+      stravaLink: result.stravaLink,
+      source: result.source,
+      sourceId: result.sourceId,
+      importedFrom: result.importedFrom,
+      importId: result.importId,
+      createdAt: result.createdAt.toISOString(),
+      updatedAt: result.updatedAt.toISOString(),
     }
   } catch (error) {
     console.error("Error creating workout:", error)
@@ -140,18 +180,13 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
 // Update an existing workout
 export async function updateWorkout(id: string, workoutData: Partial<WorkoutData>): Promise<WorkoutData | null> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
-
-    const workout = {
-      ...workoutData,
-      updatedAt: new Date(),
-    }
-
-    const result = await collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { $set: workout },
-      { returnDocument: "after" }
-    )
+    await dbConnect()
+    
+    const result = await WorkoutModel.findByIdAndUpdate(
+      id,
+      { ...workoutData, updatedAt: new Date() },
+      { new: true }
+    ).lean().exec()
 
     if (!result) {
       return null
@@ -182,11 +217,10 @@ export async function updateWorkout(id: string, workoutData: Partial<WorkoutData
 // Delete a workout
 export async function deleteWorkout(id: string): Promise<boolean> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
-
-    const result = await collection.deleteOne({ _id: new ObjectId(id) })
-
-    return result.deletedCount === 1
+    await dbConnect()
+    
+    const result = await WorkoutModel.findByIdAndDelete(id).exec()
+    return !!result
   } catch (error) {
     console.error(`Error deleting workout ${id}:`, error)
     throw new Error(`Failed to delete workout ${id}`)
@@ -196,10 +230,10 @@ export async function deleteWorkout(id: string): Promise<boolean> {
 // Get workout statistics
 export async function getWorkoutStats(userId: string) {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
-
-    const stats = await collection.aggregate([
-      { $match: { userId: new ObjectId(userId) } },
+    await dbConnect()
+    
+    const stats = await WorkoutModel.aggregate([
+      { $match: { userId: new Types.ObjectId(userId) } },
       {
         $group: {
           _id: null,
@@ -210,7 +244,7 @@ export async function getWorkoutStats(userId: string) {
           averageVolume: { $avg: "$volume" },
         },
       },
-    ]).toArray()
+    ]).exec()
 
     return stats[0] || {
       totalWorkouts: 0,
@@ -228,17 +262,17 @@ export async function getWorkoutStats(userId: string) {
 // Get previous workouts for a specific exercise
 export async function getPreviousWorkouts(userId: string, exerciseName: string, currentDate: Date, limit = 3): Promise<WorkoutData[]> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
-
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        "exercises.name": exerciseName,
-        date: { $lt: currentDate },
-      })
+    await dbConnect()
+    
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      "exercises.name": exerciseName,
+      date: { $lt: currentDate },
+    })
       .sort({ date: -1 })
       .limit(limit)
-      .toArray()
+      .lean()
+      .exec()
 
     return workouts.map((workout) => ({
       _id: workout._id.toString(),
@@ -265,20 +299,20 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
 // Get monthly workout distance by type
 export async function getMonthlyWorkoutDistanceByType(userId: string, workoutType: string, year: number, month: number): Promise<number> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Create date range for the specified month
     const startDate = new Date(year, month - 1, 1) // Month is 0-indexed in JS Date
     const endDate = new Date(year, month, 0) // Last day of the month
     
     // Query workouts of the specified type within the date range
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        type: workoutType,
-        date: { $gte: startDate, $lte: endDate }
-      })
-      .toArray()
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      type: workoutType,
+      date: { $gte: startDate, $lte: endDate }
+    })
+      .lean()
+      .exec()
     
     // Calculate total distance, checking both top-level distance and cardioDetails.distance
     let totalDistance = 0
@@ -308,16 +342,16 @@ export async function getWorkoutDistanceForDateRange(
   endDate: Date
 ): Promise<number> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Query workouts of the specified type within the date range
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        type: workoutType,
-        date: { $gte: startDate, $lte: endDate }
-      })
-      .toArray()
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      type: workoutType,
+      date: { $gte: startDate, $lte: endDate }
+    })
+      .lean()
+      .exec()
     
     // Calculate total distance, checking both top-level distance and cardioDetails.distance
     let totalDistance = 0
@@ -342,20 +376,20 @@ export async function getWorkoutDistanceForDateRange(
 // Get monthly workout duration by type
 export async function getMonthlyWorkoutDurationByType(userId: string, workoutType: string, year: number, month: number): Promise<number> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Create date range for the specified month
     const startDate = new Date(year, month - 1, 1) // Month is 0-indexed in JS Date
     const endDate = new Date(year, month, 0) // Last day of the month
     
     // Query workouts of the specified type within the date range
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        type: workoutType,
-        date: { $gte: startDate, $lte: endDate }
-      })
-      .toArray()
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      type: workoutType,
+      date: { $gte: startDate, $lte: endDate }
+    })
+      .lean()
+      .exec()
     
     // Calculate total duration
     let totalDuration = 0
@@ -380,16 +414,16 @@ export async function getWorkoutDurationForDateRange(
   endDate: Date
 ): Promise<number> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Query workouts of the specified type within the date range
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        type: workoutType,
-        date: { $gte: startDate, $lte: endDate }
-      })
-      .toArray()
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      type: workoutType,
+      date: { $gte: startDate, $lte: endDate }
+    })
+      .lean()
+      .exec()
     
     // Calculate total duration
     let totalDuration = 0
@@ -414,17 +448,17 @@ export async function getWorkoutNotesByType(
   endDate: Date
 ): Promise<{ notes: string[], count: number }> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Query workouts of the specified type within the date range
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        type: workoutType,
-        date: { $gte: startDate, $lte: endDate }
-      })
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      type: workoutType,
+      date: { $gte: startDate, $lte: endDate }
+    })
       .sort({ date: -1 })
-      .toArray()
+      .lean()
+      .exec()
     
     // Extract notes from workouts
     const notes = workouts
@@ -447,14 +481,14 @@ export const getUserWorkouts = getWorkoutsByUserId
 // Get total running distance for a user
 export async function getTotalRunningDistance(userId: string): Promise<number> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
-    const workouts = await collection
-      .find({ 
-        userId: new ObjectId(userId),
-        type: "running"
-      })
-      .toArray()
+    const workouts = await WorkoutModel.find({ 
+      userId: new Types.ObjectId(userId),
+      type: "running"
+    })
+      .lean()
+      .exec()
     
     let totalDistance = 0
     workouts.forEach(workout => {
@@ -473,12 +507,12 @@ export async function getTotalRunningDistance(userId: string): Promise<number> {
 // Get total distance for a specific workout type
 export async function getTotalDistanceByType(userId: string, workoutType: string): Promise<number> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
-    const result = await collection.aggregate([
+    const result = await WorkoutModel.aggregate([
       {
         $match: {
-          userId: new ObjectId(userId),
+          userId: new Types.ObjectId(userId),
           type: workoutType,
           $or: [
             { distance: { $exists: true, $ne: null } },
@@ -500,7 +534,7 @@ export async function getTotalDistanceByType(userId: string, workoutType: string
           }
         }
       }
-    ]).toArray()
+    ]).exec()
 
     return result[0]?.totalDistance || 0
   } catch (error) {
@@ -532,18 +566,18 @@ export async function getWorkoutTypeStats(userId: string, workoutType: string): 
   totalDuration: number;
 }> {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        type: workoutType,
-        $or: [
-          { distance: { $exists: true, $ne: null } },
-          { "cardioDetails.distance": { $exists: true, $ne: null } }
-        ]
-      })
-      .toArray()
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      type: workoutType,
+      $or: [
+        { distance: { $exists: true, $ne: null } },
+        { "cardioDetails.distance": { $exists: true, $ne: null } }
+      ]
+    })
+      .lean()
+      .exec()
 
     if (workouts.length === 0) {
       return {
@@ -633,7 +667,7 @@ export const getRunningStats = (userId: string) => getWorkoutTypeStats(userId, '
 
 export async function getWorkoutsByDate(userId: string, date: Date) {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Create start and end of the day
     const startOfDay = new Date(date)
@@ -642,16 +676,16 @@ export async function getWorkoutsByDate(userId: string, date: Date) {
     const endOfDay = new Date(date)
     endOfDay.setHours(23, 59, 59, 999)
     
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        date: {
-          $gte: startOfDay,
-          $lte: endOfDay
-        }
-      })
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      date: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    })
       .sort({ date: 1 })
-      .toArray()
+      .lean()
+      .exec()
       
     return workouts
   } catch (error) {
@@ -662,24 +696,24 @@ export async function getWorkoutsByDate(userId: string, date: Date) {
 
 export async function getWorkoutDatesForMonth(userId: string, date: Date) {
   try {
-    const collection = await getCollection(DB_NAME, COLLECTION_NAME)
+    await dbConnect()
     
     // Create start and end of the month
     const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1)
     const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
     
-    const workouts = await collection
-      .find({
-        userId: new ObjectId(userId),
-        date: {
-          $gte: startOfMonth,
-          $lte: endOfMonth
-        }
-      })
-      .project({ date: 1 })
-      .toArray()
+    const workouts = await WorkoutModel.find({
+      userId: new Types.ObjectId(userId),
+      date: {
+        $gte: startOfMonth,
+        $lte: endOfMonth
+      }
+    })
+      .select({ date: 1 })
+      .lean()
+      .exec()
       
-    return workouts.map(w => new Date(w.date))
+    return workouts.map((w: { date: Date }) => new Date(w.date))
   } catch (error) {
     console.error("Error getting workout dates:", error)
     throw new Error("Failed to get workout dates")

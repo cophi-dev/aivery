@@ -15,14 +15,29 @@ import { getCurrentUser } from "./auth"
 // Fetch all workouts for the current user
 export async function fetchWorkouts(): Promise<WorkoutData[]> {
   try {
+    // First ensure we have a user
     const user = await getCurrentUser()
     if (!user) {
-      throw new Error("User not authenticated")
+      console.warn("User not authenticated in fetchWorkouts");
+      return []; // Return empty array instead of throwing
     }
-    return await getWorkoutsByUserId(user.id)
+
+    // Validate user.id is present
+    if (!user.id) {
+      console.warn("User ID is missing in fetchWorkouts");
+      return []; // Return empty array instead of throwing
+    }
+
+    // Try to get workouts
+    try {
+      return await getWorkoutsByUserId(user.id);
+    } catch (dbError) {
+      console.error("Database error in fetchWorkouts:", dbError);
+      return []; // Return empty array instead of throwing
+    }
   } catch (error) {
-    console.error("Error fetching workouts:", error)
-    throw new Error("Failed to fetch workouts")
+    console.error("Error fetching workouts:", error);
+    return []; // Return empty array instead of throwing
   }
 }
 
