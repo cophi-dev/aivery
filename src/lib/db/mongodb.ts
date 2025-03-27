@@ -1,4 +1,5 @@
 import mongoose from "mongoose"
+import { MongoClient } from "mongodb"
 
 const MONGODB_URI = process.env.MONGODB_URI
 
@@ -16,6 +17,8 @@ let cached: MongooseCache = (global as any).mongoose
 if (!cached) {
   cached = (global as any).mongoose = { conn: null, promise: null }
 }
+
+let client: MongoClient | null = null
 
 async function dbConnect() {
   if (cached.conn) {
@@ -40,6 +43,21 @@ async function dbConnect() {
   }
 
   return cached.conn
+}
+
+export async function getCollection(collectionName: string) {
+  if (!client) {
+    client = new MongoClient(MONGODB_URI!)
+  }
+  
+  try {
+    await client.connect()
+    const db = client.db()
+    return db.collection(collectionName)
+  } catch (error) {
+    console.error('Error connecting to MongoDB:', error)
+    throw error
+  }
 }
 
 export async function checkDatabaseConnection() {
