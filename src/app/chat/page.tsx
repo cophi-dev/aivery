@@ -146,11 +146,21 @@ function ChatMessage({ message, onRemoveThinkingMessage }: { message: any, onRem
         try {
           // Fetch the workout data based on the content of the message
           let queryType = 'stats';
+          let queryParams: any = {
+            limit: 50
+          };
           
+          // Check for workout type
           if (message.content.toLowerCase().includes('running')) {
             queryType = 'running';
           } else if (message.content.toLowerCase().includes('strength')) {
             queryType = 'strength';
+          }
+          
+          // Check for year specification
+          const yearMatch = message.content.match(/\b(20\d{2})\b/); // Match years like 2023, 2024, etc.
+          if (yearMatch) {
+            queryParams.year = yearMatch[1]; // Use the year in the query
           }
           
           // Artificial delay for better UX
@@ -159,7 +169,7 @@ function ChatMessage({ message, onRemoveThinkingMessage }: { message: any, onRem
           // Fetch the workout data
           const data = await fetchWorkoutData({
             type: queryType,
-            limit: 10
+            ...queryParams
           });
           
           setWorkoutData(data);

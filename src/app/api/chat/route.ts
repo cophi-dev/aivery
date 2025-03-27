@@ -150,6 +150,7 @@ RESPONSE GUIDELINES:
 
 SPECIAL DATA VISUALIZATION INSTRUCTIONS:
 - If the user asks about their running pace or stats, ALWAYS begin with exactly: "Let me analyze your workouts and show you the data. Based on your running history..."
+- If the user asks about a specific year (e.g., 2024 runs), ALWAYS begin with exactly: "Let me analyze your workouts from [YEAR] and show you the data. Based on your running history..."
 - If the user asks about strength training, ALWAYS begin with exactly: "Let me check your strength workout data. Looking at your training history..."
 - If the user asks for general workout stats or any other workout data, ALWAYS begin with exactly: "Let me pull up your workout statistics. Here's what I found in your history..."
 - For EVERY response that relates to workout data, ALWAYS include one of the exact phrases above as the FIRST sentence

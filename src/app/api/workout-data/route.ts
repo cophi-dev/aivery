@@ -9,7 +9,7 @@ import { getCollection } from "@/lib/db/mongodb"
 export const dynamic = 'force-dynamic'
 
 // Helper function to get workouts by type
-async function getWorkoutsByType(userId: string, type: string, limit = 10) {
+async function getWorkoutsByType(userId: string, type: string, limit = 50) {
   const workouts = await fetchWorkouts();
   return workouts
     .filter(workout => workout.type === type)
@@ -29,8 +29,19 @@ async function getWorkoutsByDateRange(userId: string, startDate: Date, endDate: 
 }
 
 // Helper function to get running workouts
-async function getRunningWorkouts(userId: string, limit = 10) {
+async function getRunningWorkouts(userId: string, limit = 50) {
   return getWorkoutsByType(userId, 'running', limit);
+}
+
+// Helper function to get running workouts for a specific year
+async function getRunningWorkoutsByYear(userId: string, year: number) {
+  const workouts = await fetchWorkouts();
+  return workouts
+    .filter(workout => 
+      workout.type === 'running' && 
+      new Date(workout.date).getFullYear() === year
+    )
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 // Helper function to get strength workouts
@@ -39,7 +50,7 @@ async function getStrengthWorkouts(userId: string, limit = 10) {
 }
 
 // Helper function to get recent workouts
-async function getRecentWorkouts(userId: string, limit = 10) {
+async function getRecentWorkouts(userId: string, limit = 50) {
   const workouts = await fetchWorkouts();
   return workouts
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -157,7 +168,14 @@ export async function POST(req: Request) {
     }
     else if (type === "running") {
       // Specialized running data
-      workouts = await getRunningWorkouts(userId, limit)
+      
+      // Check if we're looking for a specific year
+      if (query && query.year) {
+        const year = parseInt(query.year);
+        workouts = await getRunningWorkoutsByYear(userId, year);
+      } else {
+        workouts = await getRunningWorkouts(userId, limit);
+      }
       
       // Calculate running-specific metrics
       if (workouts.length > 0) {
@@ -170,6 +188,7 @@ export async function POST(req: Request) {
           totalDuration,
           avgPace,
           workoutCount: workouts.length,
+          yearFilter: query?.year ? parseInt(query.year) : null,
           longestRun: Math.max(...workouts.map(w => w.distance || 0)),
           fastestPace: Math.min(...workouts
             .filter(w => w.cardioDetails?.pace && w.cardioDetails.pace > 0)
