@@ -10,7 +10,7 @@ const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
 // Create a new workout
 export async function createWorkout(workoutData: any) {
   try {
-    const collection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
+    const collection = await getCollection(WORKOUTS_COLLECTION)
 
     // Add userId and timestamps
     const workout = {
@@ -31,7 +31,7 @@ export async function createWorkout(workoutData: any) {
 // Get a workout by ID
 export async function getWorkout(id: string) {
   try {
-    const collection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
+    const collection = await getCollection(WORKOUTS_COLLECTION)
 
     const workout = await collection.findOne({ _id: new ObjectId(id) })
 
@@ -52,7 +52,7 @@ export async function getWorkout(id: string) {
 // Get all workouts for a user
 export async function getUserWorkouts(userId: string = MOCK_USER_ID, limit = 20, skip = 0) {
   try {
-    const collection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
+    const collection = await getCollection(WORKOUTS_COLLECTION)
 
     const workouts = await collection
       .find({ userId: new ObjectId(userId) })
@@ -61,7 +61,7 @@ export async function getUserWorkouts(userId: string = MOCK_USER_ID, limit = 20,
       .limit(limit)
       .toArray()
 
-    return workouts.map((workout) => ({
+    return workouts.map((workout: any) => ({
       id: workout._id.toString(),
       ...workout,
     }))
@@ -74,7 +74,7 @@ export async function getUserWorkouts(userId: string = MOCK_USER_ID, limit = 20,
 // Update a workout
 export async function updateWorkout(id: string, workoutData: any) {
   try {
-    const collection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
+    const collection = await getCollection(WORKOUTS_COLLECTION)
 
     // Remove fields that shouldn't be updated
     const { _id, userId, createdAt, ...updateData } = workoutData
@@ -103,7 +103,7 @@ export async function updateWorkout(id: string, workoutData: any) {
 // Delete a workout
 export async function deleteWorkout(id: string) {
   try {
-    const collection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
+    const collection = await getCollection(WORKOUTS_COLLECTION)
 
     const result = await collection.deleteOne({ _id: new ObjectId(id) })
 
@@ -117,7 +117,7 @@ export async function deleteWorkout(id: string) {
 // Get workout stats for a user
 export async function getWorkoutStats(userId: string = MOCK_USER_ID) {
   try {
-    const collection = await getCollection(DB_NAME, WORKOUTS_COLLECTION)
+    const collection = await getCollection(WORKOUTS_COLLECTION)
 
     // Get total workouts
     const totalWorkouts = await collection.countDocuments({ userId: new ObjectId(userId) })
@@ -159,11 +159,11 @@ export async function getWorkoutStats(userId: string = MOCK_USER_ID) {
       totalWorkouts,
       totalVolume: volumeStats.length > 0 ? volumeStats[0].totalVolume : 0,
       totalDistance: distanceStats.length > 0 ? distanceStats[0].totalDistance : 0,
-      workoutsByType: workoutsByType.reduce((acc, curr) => {
+      workoutsByType: workoutsByType.reduce((acc: Record<string, number>, curr: any) => {
         acc[curr._id] = curr.count
         return acc
-      }, {}),
-      recentWorkouts: recentWorkouts.map((workout) => ({
+      }, {} as Record<string, number>),
+      recentWorkouts: recentWorkouts.map((workout: any) => ({
         id: workout._id.toString(),
         name: workout.name,
         date: workout.date,
