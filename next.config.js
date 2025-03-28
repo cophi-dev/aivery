@@ -1,32 +1,34 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['fit-file-parser'],
-    // Drastically increase size limit to handle very large headers
-    largePageDataBytes: 2 * 1024 * 1024, // 2MB
+  reactStrictMode: true,
+  images: {
+    domains: ['localhost', 'vercel.app', 'avatar.vercel.sh'],
   },
-  
-  // Increase memory cache size
-  cacheMaxMemorySize: 50 * 1024 * 1024, // 50MB
-  
-  // Add headers to prevent caching and handle large requests
+  experimental: {
+    serverActions: true,
+    largePageDataBytes: 128 * 1000, // 128KB
+  },
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: '/api/quotes',
         headers: [
           {
-            key: 'Cache-Control', 
-            value: 'no-store, max-age=0',
+            key: 'Cache-Control',
+            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
           },
         ],
       },
     ]
   },
-  
-  // Optimize production builds
-  swcMinify: true,
-  reactStrictMode: false, // Avoid double-rendering that could cause larger state
-};
+}
 
-module.exports = nextConfig; 
+module.exports = nextConfig 

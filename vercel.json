@@ -3,6 +3,10 @@
     "src/app/api/strava/import/route": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "src/app/api/quotes/route": {
+      "memory": 1024,
+      "maxDuration": 30
     }
   },
   "routes": [
@@ -16,11 +20,40 @@
         "Content-Type": "application/json"
       },
       "continue": true
+    },
+    {
+      "src": "/api/quotes",
+      "methods": ["GET"],
+      "headers": {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+      },
+      "continue": true
     }
   ],
   "build": {
     "env": {
       "VERCEL_BODY_SIZE_LIMIT": "100mb"
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/quotes",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, proxy-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
+        }
+      ]
+    }
+  ]
 } 

@@ -124,6 +124,7 @@ export default function HomePage() {
         
         // Add timestamp to prevent caching
         params.append('t', Date.now().toString());
+        params.append('random', Math.random().toString());
         
         if (location) {
           params.append('lat', location.lat.toString());
@@ -133,18 +134,22 @@ export default function HomePage() {
         const queryString = params.toString();
         const url = `/api/quotes${queryString ? `?${queryString}` : ''}`;
         
+        console.log('Fetching quote from:', url);
+        
         const response = await fetch(url, { 
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
-          }
+          },
+          next: { revalidate: 0 }
         });
         
         if (response.ok) {
           const data = await response.json();
           if (data.quote) {
+            console.log('New quote received:', data.quote);
             setQuote(data.quote);
           }
         }
@@ -153,11 +158,25 @@ export default function HomePage() {
       }
     }
     
+    // Fetch immediately on mount
     fetchQuote();
     
-    // Refresh quote every 12 hours
-    const quoteInterval = setInterval(fetchQuote, 12 * 60 * 60 * 1000);
-    return () => clearInterval(quoteInterval);
+    // Set up interval to refresh quotes (every hour instead of 12)
+    const quoteInterval = setInterval(fetchQuote, 60 * 60 * 1000);
+    
+    // Also add event listener for visibility change to fetch when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchQuote();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(quoteInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [location]);
 
   // If loading, show a loading state
