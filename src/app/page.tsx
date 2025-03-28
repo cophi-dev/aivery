@@ -287,8 +287,26 @@ export default function HomePage() {
   // Use nickname if available, otherwise fall back to name
   const displayName = user.nickname || user.name;
   
+  // Add debugging info in development
+  const debug = process.env.NODE_ENV === 'development' ? (
+    <div className="bg-yellow-100 dark:bg-yellow-900/30 p-3 rounded-md mb-4 text-xs">
+      <h3 className="font-bold">Debug Info:</h3>
+      <pre className="overflow-auto max-h-40">
+        {JSON.stringify({
+          nickname: user.nickname,
+          name: user.name,
+          displayName,
+          quoteLength: quote?.length,
+          hasQuote: !!quote,
+          quote: quote?.substring(0, 50) + (quote?.length > 50 ? '...' : '')
+        }, null, 2)}
+      </pre>
+    </div>
+  ) : null;
+  
   return (
     <div className="container mx-auto px-4 py-6">
+      {debug}
       <section className="mb-8 p-6 bg-card rounded-xl">
         <div className="flex items-center gap-4">
           <UserAvatar 

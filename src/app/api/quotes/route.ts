@@ -232,7 +232,16 @@ export async function GET(request: Request) {
     
     // If AI quote generation succeeded, return it
     if (aiQuote) {
-      return NextResponse.json({ quote: aiQuote, timestamp }, { headers });
+      // Add timestamp suffix in dev mode to confirm fresh quotes
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const suffix = process.env.NODE_ENV === 'development' ? ` [${hours}:${minutes}]` : '';
+      
+      return NextResponse.json({ 
+        quote: aiQuote + suffix, 
+        timestamp 
+      }, { headers });
     }
     
     // If AI quote generation failed, fall back to our rule-based system
