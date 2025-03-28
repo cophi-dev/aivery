@@ -17,7 +17,18 @@ export async function middleware(request: NextRequest) {
   
   // If it's a public path or API path, let the request continue
   if (isPublicPath || isApiPath) {
-    return NextResponse.next();
+    // Pass to next middleware
+    const response = NextResponse.next();
+    
+    // Add cache-busting headers for chat API endpoints
+    if (path === '/api/chat' || path === '/chat') {
+      console.log('[MIDDLEWARE] Adding cache-busting headers for', path);
+      response.headers.set('Cache-Control', 'no-store, max-age=0');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+    }
+    
+    return response;
   }
   
   // Otherwise, get the token to check authentication
@@ -36,7 +47,17 @@ export async function middleware(request: NextRequest) {
   }
   
   // Allow authenticated users to access protected routes
-  return NextResponse.next();
+  const response = NextResponse.next();
+  
+  // Add cache-busting headers for the chat page
+  if (path === '/chat') {
+    console.log('[MIDDLEWARE] Adding cache-busting headers for', path);
+    response.headers.set('Cache-Control', 'no-store, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+  }
+  
+  return response;
 }
 
 export const config = {
