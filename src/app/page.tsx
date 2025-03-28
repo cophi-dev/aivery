@@ -37,8 +37,8 @@ function AppHeader({ user, quote, isLoading }: { user: any | null, quote: string
     <section className="mb-8 p-6 bg-card rounded-xl">
       <div className="flex items-center gap-4">
         <UserAvatar 
-          name={displayName} 
-          imageUrl={user?.image}
+          name={typeof displayName === 'string' ? displayName : ''} 
+          imageUrl={typeof user?.image === 'string' ? user.image : null}
           size="lg"
         />
         <div className="flex-1">

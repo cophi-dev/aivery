@@ -138,8 +138,8 @@ export function AvatarLoader({
 
   return (
     <UserAvatar 
-      imageUrl={avatarData} 
-      name={displayName} 
+      imageUrl={typeof avatarData === 'string' ? avatarData : null} 
+      name={typeof displayName === 'string' ? displayName : ''} 
       size={size} 
     />
   );

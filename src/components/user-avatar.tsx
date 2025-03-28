@@ -12,8 +12,7 @@ interface UserAvatarProps {
 }
 
 export function UserAvatar({ name, imageUrl, size = "md", className }: UserAvatarProps) {
-  // Add debugging to show the name being passed
-  console.log('UserAvatar received:', { name, imageUrl, size });
+  // Remove the console log that was causing issues in production
   
   // Set size classes
   const sizeClasses = {
@@ -22,21 +21,22 @@ export function UserAvatar({ name, imageUrl, size = "md", className }: UserAvata
     lg: "h-20 w-20"
   };
   
-  // Get initial from name
-  const initial = name?.charAt(0)?.toUpperCase() || "";
+  // Get initial from name - ensure name is a string
+  const nameStr = typeof name === 'string' ? name : '';
+  const initial = nameStr.charAt(0)?.toUpperCase() || "";
 
   // Track if image failed to load
   const [imageFailed, setImageFailed] = useState(false);
   
   // Check if it's a base64 image
-  const isBase64Image = imageUrl?.startsWith('data:image/');
+  const isBase64Image = typeof imageUrl === 'string' && imageUrl?.startsWith('data:image/');
   
   return (
     <Avatar className={`${sizeClasses[size]} ${className || ''}`}>
       {imageUrl && !imageFailed && (
         <AvatarImage 
           src={imageUrl} 
-          alt={name || "User avatar"} 
+          alt={nameStr || "User avatar"} 
           onError={() => setImageFailed(true)}
         />
       )}

@@ -93,8 +93,8 @@ export function UserNavigation() {
           className="relative h-10 w-10 p-0 rounded-full"
         >
           <UserAvatar 
-            name={userInfo.nickname || userInfo.name || session.user.email || "U"} 
-            imageUrl={imageUrl}
+            name={typeof userInfo.nickname === 'string' ? userInfo.nickname : (typeof userInfo.name === 'string' ? userInfo.name : (typeof session.user.email === 'string' ? session.user.email : 'U'))} 
+            imageUrl={typeof imageUrl === 'string' ? imageUrl : null}
             size="md"
           />
         </Button>
