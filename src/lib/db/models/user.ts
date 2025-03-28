@@ -5,6 +5,7 @@ export interface IUser extends Document {
   email: string
   password?: string
   image?: string
+  nickname?: string
   height?: number
   weight?: number
   age?: number
@@ -30,6 +31,7 @@ const UserSchema: Schema = new Schema(
       select: false  // Don't include password by default in queries
     },
     image: { type: String },
+    nickname: { type: String },
     height: { type: Number },
     weight: { type: Number },
     age: { type: Number },

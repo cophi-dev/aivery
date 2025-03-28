@@ -597,7 +597,7 @@ function ChatMessage({ message, onRemoveThinkingMessage }: { message: any, onRem
           {session?.user?.image ? (
             <Image 
               src={session.user.image} 
-              alt={session.user.name || "User"} 
+              alt={(session.user as any).nickname || session.user.name || "User"} 
               width={36} 
               height={36} 
               className="rounded-full"
@@ -608,7 +608,11 @@ function ChatMessage({ message, onRemoveThinkingMessage }: { message: any, onRem
             />
           ) : (
             <AvatarFallback className="bg-secondary text-secondary-foreground">
-              {session?.user?.name ? session.user.name.charAt(0).toUpperCase() : <LucideUser className="h-4 w-4" />}
+              {(session?.user as any)?.nickname 
+                ? (session?.user as any).nickname.charAt(0).toUpperCase() 
+                : session?.user?.name 
+                  ? session?.user?.name.charAt(0).toUpperCase() 
+                  : <LucideUser className="h-4 w-4" />}
             </AvatarFallback>
           )}
         </Avatar>
@@ -623,13 +627,17 @@ export default function ChatPage() {
   const [workoutId, setWorkoutId] = useState<string | null>(null)
   const [isThinking, setIsThinking] = useState(false)
   const [thinkingMessageId, setThinkingMessageId] = useState<string | null>(null)
+  const { data: session } = useSession()
+  
+  // Get user name or nickname for personalized message
+  const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there"
   
   // Initialize with default welcome message
   const initialMessages = [
     {
       id: "welcome-message",
       role: "assistant" as const,
-      content: "Hi there! I'm Aivery, your AI fitness coach. I can help you with workout advice, track your progress, or answer any fitness-related questions. How can I help you today?",
+      content: `Hi ${userDisplayName}! I'm Aivery, your AI fitness coach. I can help you with workout advice, track your progress, or answer any fitness-related questions. How can I help you today?`,
     },
   ]
 

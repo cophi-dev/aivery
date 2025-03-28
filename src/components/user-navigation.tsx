@@ -28,6 +28,13 @@ export function UserNavigation() {
   const pathname = usePathname();
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   
+  // Fetch user information including nickname
+  const [userInfo, setUserInfo] = useState({
+    name: session?.user?.name || '',
+    email: session?.user?.email || '',
+    nickname: (session?.user as any)?.nickname || '',
+  });
+  
   // Don't render on auth pages at all
   const isAuthPage = 
     pathname === '/login' || 
@@ -39,24 +46,38 @@ export function UserNavigation() {
     return null;
   }
 
-  // Fetch user avatar
+  // Fetch user avatar and info
   useEffect(() => {
-    async function fetchAvatar() {
+    async function fetchUserData() {
       try {
-        const response = await fetch('/api/user/avatar');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.image) {
-            setImageUrl(data.image);
+        // Fetch avatar
+        const avatarResponse = await fetch('/api/user/avatar');
+        if (avatarResponse.ok) {
+          const avatarData = await avatarResponse.json();
+          if (avatarData.image) {
+            setImageUrl(avatarData.image);
+          }
+        }
+        
+        // Fetch user info with nickname
+        const userResponse = await fetch('/api/user');
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          if (userData.user) {
+            setUserInfo({
+              name: userData.user.name || session?.user?.name || '',
+              email: userData.user.email || session?.user?.email || '',
+              nickname: userData.user.nickname || (session?.user as any)?.nickname || '',
+            });
           }
         }
       } catch (error) {
-        console.error('Error fetching avatar:', error);
+        console.error('Error fetching user data:', error);
       }
     }
     
-    fetchAvatar();
-  }, [session.user.id]);
+    fetchUserData();
+  }, [session?.user?.id, session?.user?.name, session?.user?.email]);
 
   // Handle logout safely - direct to URL, don't use callback
   const handleLogout = async () => {
@@ -72,7 +93,7 @@ export function UserNavigation() {
           className="relative h-10 w-10 p-0 rounded-full"
         >
           <UserAvatar 
-            name={session.user.name || session.user.email || "U"} 
+            name={userInfo.nickname || userInfo.name || session.user.email || "U"} 
             imageUrl={imageUrl}
             size="md"
           />
@@ -81,8 +102,10 @@ export function UserNavigation() {
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium">{session.user.name}</p>
-            <p className="text-xs text-muted-foreground">{session.user.email}</p>
+            <p className="text-sm font-medium">
+              {userInfo.nickname ? userInfo.nickname : userInfo.name}
+            </p>
+            <p className="text-xs text-muted-foreground">{userInfo.email}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

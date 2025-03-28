@@ -81,6 +81,10 @@ export const authOptions: NextAuthOptions = {
         if (user.image) {
           token.picture = user.image
         }
+        // Store nickname if available
+        if ((user as any).nickname) {
+          token.nickname = (user as any).nickname
+        }
       }
       return token
     },
@@ -97,15 +101,20 @@ export const authOptions: NextAuthOptions = {
             session.user.image = token.picture as string
           }
           
+          // If we have the nickname in the token, use it
+          if (token.nickname) {
+            session.user.nickname = token.nickname as string
+          }
+          
           // Verify we have an ID
           if (!session.user.id) {
             console.error("Session missing user ID after setting");
             return { ...session, user: { id: '', email: '', name: '' } };
           }
 
-          // Verify user still exists in database and get latest image
+          // Verify user still exists in database and get latest image and nickname
           await dbConnect();
-          const userDoc = await UserModel.findOne({ _id: session.user.id }).select("image").lean();
+          const userDoc = await UserModel.findOne({ _id: session.user.id }).select("image nickname").lean();
           
           if (!userDoc) {
             console.error("User no longer exists in database:", session.user.id);
@@ -115,9 +124,14 @@ export const authOptions: NextAuthOptions = {
           // Properly serialize MongoDB document to prevent buffer warnings
           const user = serializeMongoDoc(userDoc);
           
-          // Update session with latest image from database
-          if (user && user.image) {
-            session.user.image = user.image;
+          // Update session with latest image and nickname from database
+          if (user) {
+            if (user.image) {
+              session.user.image = user.image;
+            }
+            if (user.nickname) {
+              session.user.nickname = user.nickname;
+            }
           }
         }
         return session;
@@ -169,6 +183,7 @@ declare module "next-auth" {
       name?: string | null
       email?: string | null
       image?: string | null
+      nickname?: string | null
     }
   }
 }

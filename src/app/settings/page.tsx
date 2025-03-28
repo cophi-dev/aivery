@@ -33,6 +33,7 @@ export default function SettingsPage() {
     name: session?.user?.name || '',
     email: session?.user?.email || '',
     image: session?.user?.image || '',
+    nickname: '',
   })
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -79,6 +80,7 @@ export default function SettingsPage() {
     lastName: lastName,
     email: userData.email,
     phone: '',
+    nickname: '',
   })
 
   // Add state for initial values
@@ -103,8 +105,9 @@ export default function SettingsPage() {
       lastName: lastName || '',
       email: userData.email || '',
       phone: '',
+      nickname: userData.nickname || '',
     })
-  }, [firstName, lastName, userData.email])
+  }, [firstName, lastName, userData.email, userData.nickname])
 
   // Load user data and set initial physical info
   useEffect(() => {
@@ -152,6 +155,18 @@ export default function SettingsPage() {
           } catch (avatarError) {
             console.error("Error fetching avatar:", avatarError)
           }
+
+          // Update nickname if available
+          if (data.user.nickname) {
+            setUserData(prev => ({
+              ...prev,
+              nickname: data.user.nickname
+            }))
+            setProfileChanges(prev => ({
+              ...prev,
+              nickname: data.user.nickname
+            }))
+          }
         }
       } catch (error) {
         console.error('Error loading user data:', error)
@@ -173,6 +188,7 @@ export default function SettingsPage() {
         name: session.user.name || '',
         email: session.user.email || '',
         image: session.user.image || '',
+        nickname: (session.user as any).nickname || '',
       })
     }
   }, [session])
@@ -203,6 +219,7 @@ export default function SettingsPage() {
       (profileChanges.lastName !== lastName && profileChanges.lastName !== '') ||
       (profileChanges.email !== userData.email && profileChanges.email !== '') ||
       (profileChanges.phone !== '' && profileChanges.phone !== undefined) ||
+      (profileChanges.nickname !== userData.nickname && profileChanges.nickname !== '') ||
       hasImageChanged;
 
     // Only consider changes if values are non-empty and different from initial values
@@ -639,16 +656,72 @@ export default function SettingsPage() {
       if (
         profileChanges.firstName !== firstName ||
         profileChanges.lastName !== lastName ||
-        profileChanges.email !== userData.email
+        profileChanges.email !== userData.email ||
+        profileChanges.nickname !== userData.nickname
       ) {
         console.log('Saving profile changes')
-        // This would require implementing a user profile update API endpoint
-        // For now, just show a toast that it's not implemented
-        toast({
-          title: "Not implemented",
-          description: "Profile information updates are not yet implemented",
-          variant: "destructive"
-        })
+        
+        try {
+          const profileResponse = await fetch('/api/user/profile', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              firstName: profileChanges.firstName,
+              lastName: profileChanges.lastName,
+              email: profileChanges.email !== userData.email ? profileChanges.email : undefined,
+              nickname: profileChanges.nickname,
+            }),
+            credentials: 'include',
+          })
+          
+          if (!profileResponse.ok) {
+            const profileError = await profileResponse.json()
+            throw new Error(profileError.message || 'Failed to update profile info')
+          }
+          
+          const { user: updatedUser, changes: profileChangesResult } = await profileResponse.json()
+          
+          // Update user data with the changes
+          setUserData(prev => ({
+            ...prev,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            nickname: updatedUser.nickname || prev.nickname,
+          }))
+          
+          console.log('Profile updated with nickname:', updatedUser.nickname)
+          
+          // Show success toast with details of what was updated
+          if (profileChangesResult && profileChangesResult.length > 0) {
+            const changeMessages = profileChangesResult.map((change: Change) => {
+              switch (change.field) {
+                case 'name':
+                  return `Name: ${change.value}`
+                case 'email':
+                  return `Email: ${change.value}`
+                case 'nickname':
+                  return `Nickname: ${change.value}`
+                default:
+                  return `${change.field}: ${change.value}`
+              }
+            })
+            
+            toast({
+              title: "Success",
+              description: `Updated: ${changeMessages.join(', ')}`
+            })
+          }
+        } catch (error) {
+          console.error('Error updating profile info:', error)
+          setSaveError(error instanceof Error ? error.message : 'Failed to update profile info')
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: error instanceof Error ? error.message : "Failed to update profile info"
+          })
+        }
       }
       
       // Show success state
@@ -662,10 +735,11 @@ export default function SettingsPage() {
             ...session,
             user: {
               ...session.user,
-              image: userData.image // Make sure we have the latest image
+              image: userData.image, // Make sure we have the latest image
+              nickname: userData.nickname // Add nickname to session
             }
           })
-          console.log('Session updated with latest user data')
+          console.log('Session updated with latest user data including nickname')
           
           // Broadcast session update event
           const event = new Event('session-update')
@@ -768,6 +842,17 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="last-name">Last Name</Label>
                   <Input id="last-name" defaultValue={lastName} onChange={(e) => handleProfileChange('lastName', e.target.value)} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="nickname">Nickname</Label>
+                  <Input 
+                    id="nickname" 
+                    placeholder="Your display name"
+                    value={profileChanges.nickname} 
+                    onChange={(e) => handleProfileChange('nickname', e.target.value)} 
+                  />
+                  <p className="text-xs text-muted-foreground">This will be displayed across the dashboard and AI chats</p>
                 </div>
 
                 <div className="space-y-2">
