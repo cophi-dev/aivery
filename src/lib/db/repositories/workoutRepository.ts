@@ -108,8 +108,8 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean()
-      .exec()
-
+      .exec() as any[];
+    
     // Process documents to ensure they're safe for client components
     // This creates new objects with only the necessary properties and
     // avoids any MongoDB objects with toJSON methods that cause warnings

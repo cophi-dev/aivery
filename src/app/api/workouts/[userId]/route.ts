@@ -7,12 +7,12 @@ import WorkoutModel from "@/lib/db/models/workout";
 
 // Define interfaces for type safety
 interface WorkoutDoc {
-  _id: any;
+  _id?: any;
   name?: string;
   type?: string;
   date?: Date;
   duration?: number;
-  userId: any;
+  userId?: any;
   exercises?: any[];
   notes?: string;
   cardioDetails?: {
@@ -82,31 +82,40 @@ export async function GET(
       
       // Process documents to ensure they're safe for client components
       // Without sacrificing essential data needed for rendering
-      const processedWorkouts = workoutDocs.map((workout: WorkoutDoc): SafeWorkout => {
+      const processedWorkouts = workoutDocs.map((doc: any): SafeWorkout => {
         // Ensure required top-level fields exist
         const safeWorkout: SafeWorkout = {
-          _id: workout._id ? workout._id.toString() : "",
-          name: workout.name || '',
-          type: workout.type || 'workout',
-          date: workout.date instanceof Date ? workout.date.toISOString() : new Date().toISOString(),
-          duration: workout.duration || 0,
-          userId: workout.userId ? workout.userId.toString() : "",
-          exercises: workout.exercises || [],
-          notes: workout.notes || ''
+          _id: doc._id ? doc._id.toString() : "",
+          userId: doc.userId ? doc.userId.toString() : "",
+          type: doc.type || '',
+          name: doc.name || '',
+          date: doc.date instanceof Date ? doc.date.toISOString() : 
+                (doc.date ? new Date(doc.date).toISOString() : new Date().toISOString()),
+          duration: doc.duration || 0,
+          exercises: Array.isArray(doc.exercises) ? doc.exercises.map((exercise: any) => ({
+            _id: exercise._id ? exercise._id.toString() : undefined,
+            name: exercise.name || '',
+            sets: Array.isArray(exercise.sets) ? exercise.sets.map((set: any) => ({
+              weight: set.weight || 0,
+              reps: set.reps || 0,
+              // Skip any _id fields with buffer properties
+            })) : []
+          })) : [],
+          notes: doc.notes || ''
         };
         
         // If there's cardio details, create a safe version
-        if (workout.cardioDetails) {
+        if (doc.cardioDetails) {
           safeWorkout.cardioDetails = {
-            distance: workout.cardioDetails.distance || 0,
-            duration: workout.cardioDetails.duration || 0,
+            distance: doc.cardioDetails.distance || 0,
+            duration: doc.cardioDetails.duration || 0,
           };
           
           // Safely include heart rate data if available
-          if (workout.cardioDetails.heartRate) {
+          if (doc.cardioDetails.heartRate) {
             safeWorkout.cardioDetails.heartRate = {
-              average: workout.cardioDetails.heartRate.average || 0,
-              max: workout.cardioDetails.heartRate.max || 0
+              average: doc.cardioDetails.heartRate.average || 0,
+              max: doc.cardioDetails.heartRate.max || 0
             };
           }
         }
