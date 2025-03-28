@@ -102,38 +102,11 @@ export default function HomePage() {
 
   // Fetch a quote when the component mounts
   useEffect(() => {
-    // Get user location for context-aware quotes
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
-
     async function fetchQuote() {
       try {
-        // Add location data if available
-        const params = new URLSearchParams();
-        
         // Add timestamp to prevent caching
-        params.append('t', Date.now().toString());
-        
-        if (location) {
-          params.append('lat', location.lat.toString());
-          params.append('lon', location.lon.toString());
-        }
-        
-        const queryString = params.toString();
-        const url = `/api/quotes${queryString ? `?${queryString}` : ''}`;
-        
-        const response = await fetch(url, { 
+        const timestamp = Date.now();
+        const response = await fetch(`/api/quotes?t=${timestamp}`, {
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -155,10 +128,10 @@ export default function HomePage() {
     
     fetchQuote();
     
-    // Refresh quote every 12 hours
-    const quoteInterval = setInterval(fetchQuote, 12 * 60 * 60 * 1000);
+    // Refresh quote every hour
+    const quoteInterval = setInterval(fetchQuote, 60 * 60 * 1000);
     return () => clearInterval(quoteInterval);
-  }, [location]);
+  }, []);
 
   // If loading, show a loading state
   if (loading && status === "authenticated") {
