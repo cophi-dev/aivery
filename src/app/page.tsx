@@ -19,6 +19,7 @@ export default function HomePage() {
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
@@ -27,11 +28,13 @@ export default function HomePage() {
   // Check user authentication status
   useEffect(() => {
     if (status === "loading") {
+      setInitialLoading(true);
       return; // Still checking auth status
     }
     
     // If user is not logged in, show the public landing page
     if (status !== "authenticated") {
+      setInitialLoading(false);
       setLoading(false);
       return;
     }
@@ -44,6 +47,7 @@ export default function HomePage() {
   const fetchUserData = async () => {
     try {
       if (!session?.user?.id) {
+        setInitialLoading(false);
         setLoading(false);
         return;
       }
@@ -91,6 +95,7 @@ export default function HomePage() {
       console.error("Error loading data:", err);
       setError(err.message || "Failed to load data. Please try again.");
     } finally {
+      setInitialLoading(false);
       setLoading(false);
     }
   };
@@ -144,7 +149,19 @@ export default function HomePage() {
     };
   }, []);
 
-  // If loading, show a loading state
+  // If in initial loading state, show a loading screen
+  if (initialLoading) {
+    return (
+      <div className="container mx-auto px-4 py-6 h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-6 text-xl text-muted-foreground">Loading Aivery...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If loading authenticated dashboard, show a loading state
   if (loading && status === "authenticated") {
     return (
       <div className="container mx-auto px-4 py-6">
