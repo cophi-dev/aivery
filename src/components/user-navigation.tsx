@@ -22,10 +22,9 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "./user-avatar";
 import { useEffect, useState } from "react";
 
-export function UserNavigation() {
+// Inner component that only renders when session is valid
+function UserNavigationInner({ session }: { session: any }) {
   const { setTheme } = useTheme();
-  const { data: session, status } = useSession();
-  const pathname = usePathname();
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   
   // Ensure we have safe defaults and type checking for user info
@@ -34,23 +33,9 @@ export function UserNavigation() {
     email: '',
     nickname: '',
   });
-  
-  // Don't render on auth pages at all
-  const isAuthPage = 
-    pathname === '/login' || 
-    pathname === '/register' || 
-    pathname === '/forgot-password';
-
-  // Don't render during loading or if no session
-  if (status === "loading" || !session?.user || isAuthPage) {
-    return null;
-  }
 
   // Fetch user avatar and info
   useEffect(() => {
-    // Only run if we have a session
-    if (!session?.user?.id) return;
-    
     // Get safe string values from session
     setUserInfo({
       name: typeof session.user.name === 'string' ? session.user.name : '',
@@ -165,4 +150,24 @@ export function UserNavigation() {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+// Wrapper component to check session and only render inner component when valid
+export function UserNavigation() {
+  const { data: session, status } = useSession();
+  const pathname = usePathname();
+  
+  // Don't render on auth pages at all
+  const isAuthPage = 
+    pathname === '/login' || 
+    pathname === '/register' || 
+    pathname === '/forgot-password';
+
+  // Don't render during loading or if no session
+  if (status === "loading" || !session || !session.user || isAuthPage) {
+    return null;
+  }
+
+  // Now we're sure session exists, render the inner component
+  return <UserNavigationInner session={session} />;
 } 
