@@ -5,9 +5,9 @@ const nextConfig = {
     domains: ['localhost', 'vercel.app', 'avatar.vercel.sh'],
   },
   experimental: {
-    serverActions: true,
     largePageDataBytes: 128 * 1000, // 128KB
   },
+  output: 'standalone',
   async headers() {
     return [
       {
