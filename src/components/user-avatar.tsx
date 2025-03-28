@@ -5,14 +5,25 @@ import { LucideUser } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface UserAvatarProps {
-  name?: string | null;
-  imageUrl?: string | null;
+  name?: string | null | undefined | object;
+  imageUrl?: string | null | undefined | object;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
 
 export function UserAvatar({ name, imageUrl, size = "md", className }: UserAvatarProps) {
-  // Remove the console log that was causing issues in production
+  // Safely convert name to string
+  const displayName = 
+    typeof name === 'string' ? name : 
+    name === null || name === undefined ? '' : 
+    typeof name === 'object' ? '' : 
+    String(name);
+  
+  // Safely convert imageUrl to string
+  const displayImageUrl = 
+    typeof imageUrl === 'string' ? imageUrl : 
+    imageUrl === null || imageUrl === undefined ? null : 
+    null;
   
   // Set size classes
   const sizeClasses = {
@@ -21,22 +32,18 @@ export function UserAvatar({ name, imageUrl, size = "md", className }: UserAvata
     lg: "h-20 w-20"
   };
   
-  // Get initial from name - ensure name is a string
-  const nameStr = typeof name === 'string' ? name : '';
-  const initial = nameStr.charAt(0)?.toUpperCase() || "";
+  // Get initial from name
+  const initial = displayName.charAt(0)?.toUpperCase() || "";
 
   // Track if image failed to load
   const [imageFailed, setImageFailed] = useState(false);
   
-  // Check if it's a base64 image
-  const isBase64Image = typeof imageUrl === 'string' && imageUrl?.startsWith('data:image/');
-  
   return (
     <Avatar className={`${sizeClasses[size]} ${className || ''}`}>
-      {imageUrl && !imageFailed && (
+      {displayImageUrl && !imageFailed && (
         <AvatarImage 
-          src={imageUrl} 
-          alt={nameStr || "User avatar"} 
+          src={displayImageUrl} 
+          alt={displayName || "User avatar"} 
           onError={() => setImageFailed(true)}
         />
       )}

@@ -155,34 +155,40 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
       if (mostFrequentType) {
         const typeStats = await getWorkoutTypeStats(userId, mostFrequentType);
         workoutTypeData = {
-          totalSessions: typeStats.totalSessions,
-          totalDistance: typeStats.totalDistance,
-          totalDuration: typeStats.totalDuration,
-          averageDistance: typeStats.averageDistance,
-          averageDuration: typeStats.averageDuration
+          totalSessions: typeStats.totalSessions || 0,
+          totalDistance: typeStats.totalDistance || 0,
+          totalDuration: typeStats.totalDuration || 0,
+          averageDistance: typeStats.averageDistance || 0,
+          averageDuration: typeStats.averageDuration || 0
         };
       }
     }
     
     // Get all workout types with counts for context
     const workoutTypeCounts = workoutTypes.reduce((obj: Record<string, number>, type: any) => {
-      obj[type._id] = type.count;
+      if (type && type._id) {
+        obj[String(type._id)] = typeof type.count === 'number' ? type.count : 0;
+      }
       return obj;
     }, {});
     
-    // Generate a simple context message for the AI
+    // Generate a simple context message for the AI - ensure all values are primitive types
     const context = {
-      lastWorkoutType: lastWorkout.type,
-      daysSinceLastWorkout,
-      totalWorkouts: totalWorkoutCount,
-      preferredActivity: mostFrequentType,
-      workoutTypeCounts, // Add all workout types with their counts
-      lastWorkoutDistance: lastWorkout.distance || null,
-      lastWorkoutDuration: lastWorkout.duration || null,
+      lastWorkoutType: typeof lastWorkout.type === 'string' ? lastWorkout.type : String(lastWorkout.type),
+      daysSinceLastWorkout: typeof daysSinceLastWorkout === 'number' ? daysSinceLastWorkout : 0,
+      totalWorkouts: typeof totalWorkoutCount === 'number' ? totalWorkoutCount : 0,
+      preferredActivity: typeof mostFrequentType === 'string' ? mostFrequentType : 
+                          mostFrequentType === null ? null : String(mostFrequentType),
+      workoutTypeCounts, 
+      lastWorkoutDistance: typeof lastWorkout.distance === 'number' ? lastWorkout.distance : 
+                           lastWorkout.distance !== null ? Number(lastWorkout.distance) : null,
+      lastWorkoutDuration: typeof lastWorkout.duration === 'number' ? lastWorkout.duration : 
+                           lastWorkout.duration !== null ? Number(lastWorkout.duration) : null,
       mostFrequentTypeStats: workoutTypeData
     };
     
-    console.log("Greeting context:", JSON.stringify(context, null, 2));
+    // Safely serialize the context to JSON
+    const safeContext = JSON.stringify(context);
     
     // Use OpenAI to generate a personalized greeting
     const response = await client.chat.completions.create({
@@ -194,7 +200,7 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
         },
         {
           role: "user",
-          content: JSON.stringify(context)
+          content: safeContext
         }
       ],
       temperature: 0.8,
@@ -267,6 +273,15 @@ export async function POST(request: Request) {
       }
     }
     
+    // Ensure session user is properly serialized for sending to the AI
+    const safeUser = {
+      id: typeof session.user.id === 'string' ? session.user.id : String(session.user.id),
+      name: typeof session.user.name === 'string' ? session.user.name : null,
+      email: typeof session.user.email === 'string' ? session.user.email : null,
+      image: typeof session.user.image === 'string' ? session.user.image : null,
+      nickname: typeof session.user.nickname === 'string' ? session.user.nickname : null
+    };
+    
     // Create a system prompt that guides the AI to provide detailed responses
     const systemMessage = {
       role: "system",
@@ -319,13 +334,19 @@ For example:
         max_tokens: 800, // Adjusted for more concise responses
       });
       
+      // Safely extract the response text
+      const responseContent = result.choices[0].message?.content || 
+                             "Sorry, I couldn't generate a response. Please try again.";
+      
       // Return as a basic text response
-      return new Response(result.choices[0].message?.content || "Sorry, I couldn't generate a response. Please try again.", {
+      return new Response(responseContent, {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
         }
       });
     } catch (error) {
+      console.error("OpenAI API error:", error);
+      
       // Send a fallback response if OpenAI call fails
       return new Response(
         "I'm having trouble connecting right now. Please try again in a moment.",
