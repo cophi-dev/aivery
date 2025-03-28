@@ -34,6 +34,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "fit-file-parser": "^1.21.0",
+    "framer-motion": "^12.6.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.483.0",
     "mongodb": "^6.15.0",

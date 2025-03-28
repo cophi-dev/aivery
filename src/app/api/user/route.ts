@@ -12,7 +12,6 @@ export async function GET() {
     
     // Check if user is authenticated
     if (!session?.user?.id) {
-      console.log("Unauthorized access attempt to user API");
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
@@ -27,7 +26,6 @@ export async function GET() {
 
     // If user not found, return 404
     if (!userDoc) {
-      console.log("User not found:", session.user.id);
       return NextResponse.json(
         { error: "User not found" },
         { status: 404 }
@@ -37,10 +35,17 @@ export async function GET() {
     try {
       // Serialize the user document to prevent client serialization issues
       const serializedUser = toClientData(userDoc)
-      return NextResponse.json({ user: serializedUser })
-    } catch (error) {
-      console.error("Error serializing user data:", error);
       
+      // Create a userData object from the serialized data
+      const userData = serializedUser as any;
+      
+      // If nickname is missing but should be set, add it explicitly
+      if (!userData.nickname && (userDoc as any).nickname) {
+        userData.nickname = (userDoc as any).nickname;
+      }
+      
+      return NextResponse.json({ user: userData })
+    } catch (error) {
       // Fallback with minimal user data to prevent frontend errors
       return NextResponse.json({
         user: {
@@ -54,7 +59,6 @@ export async function GET() {
       })
     }
   } catch (error) {
-    console.error("Error in user API route:", error)
     return NextResponse.json(
       { error: "Server error", details: String(error) },
       { status: 500 }

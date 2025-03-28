@@ -8,9 +8,9 @@ import Link from "next/link"
 export default async function SignInPage() {
   const session = await getServerSession(authOptions)
   
-  // If already authenticated, redirect to dashboard
+  // If already authenticated, redirect to home page
   if (session?.user) {
-    redirect("/dashboard")
+    redirect("/")
   }
   
   // Get the callback URL from the query string (for redirecting after login)

@@ -131,6 +131,11 @@ export const authOptions: NextAuthOptions = {
             }
             if (user.nickname) {
               session.user.nickname = user.nickname;
+            } else {
+              // Check if we have a nickname in the original document
+              if ((userDoc as any).nickname) {
+                session.user.nickname = (userDoc as any).nickname;
+              }
             }
           }
         }

@@ -6,11 +6,49 @@ import { redirect, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare } from "lucide-react";
+import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2 } from "lucide-react";
 import type { WorkoutData } from "@/types/db";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/user-avatar";
+import { motion } from "framer-motion";
+
+// Header component that will be visible immediately
+function AppHeader({ user, quote, isLoading }: { user: any | null, quote: string, isLoading?: boolean }) {
+  // Use nickname if available, otherwise fall back to name or default
+  const displayName = user?.nickname || user?.name || "Guest";
+  
+  if (isLoading) {
+    // Show a placeholder header while loading
+    return (
+      <section className="mb-8 p-6 bg-card rounded-xl">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-primary/20 animate-pulse" />
+          <div className="flex-1">
+            <div className="h-7 w-40 bg-primary/20 rounded animate-pulse mb-2"></div>
+            <div className="h-5 w-64 bg-primary/10 rounded animate-pulse"></div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  
+  return (
+    <section className="mb-8 p-6 bg-card rounded-xl">
+      <div className="flex items-center gap-4">
+        <UserAvatar 
+          name={displayName} 
+          imageUrl={user?.image}
+          size="lg"
+        />
+        <div className="flex-1">
+          <h2 className="text-2xl font-bold">Hey {displayName}!</h2>
+          <p className="text-muted-foreground italic">{quote}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -18,21 +56,81 @@ export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
+  const [headerLoading, setHeaderLoading] = useState(false);
 
-  // Check user authentication status
+  // Fetch a quote when the component mounts
+  useEffect(() => {
+    async function fetchQuote(forceFresh = false) {
+      try {
+        // Always generate a completely unique URL to bypass caching
+        const now = Date.now();
+        const uniqueId = now + '-' + Math.random().toString(36).substring(2, 15);
+        // Add a force parameter to ensure we get a fresh quote when needed
+        const forceParam = forceFresh ? '&force=true' : '';
+        const url = `/api/quotes?unique=${uniqueId}${forceParam}`;
+        
+        const response = await fetch(url, { 
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.quote) {
+            setQuote(data.quote);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching quote:', error);
+      }
+    }
+    
+    // Always fetch a fresh quote on mount/page load
+    fetchQuote(true);
+
+    // Add event listener for beforeunload to prepare for page refresh
+    window.addEventListener('beforeunload', () => {
+      sessionStorage.removeItem('lastQuote');
+      sessionStorage.removeItem('quoteTimestamp');
+    });
+
+    // Handle window visibility changes (tab focus)
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        fetchQuote(true);
+      }
+    }
+    
+    // Use the Page Visibility API for tab focus
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Refresh quote every 15 minutes
+    const quoteInterval = setInterval(() => fetchQuote(true), 15 * 60 * 1000);
+    
+    return () => {
+      clearInterval(quoteInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', () => {});
+    };
+  }, []);
+
+  // Check user authentication status and fetch user data
   useEffect(() => {
     if (status === "loading") {
       return; // Still checking auth status
     }
     
-    // If user is not logged in, show the public landing page
+    // If user is not logged in, the public landing page will be shown
     if (status !== "authenticated") {
-      setLoading(false);
       return;
     }
     
@@ -40,11 +138,10 @@ export default function HomePage() {
     fetchUserData();
   }, [status, retryCount]);
 
-  // Function to fetch user data
+  // Function to fetch complete user data
   const fetchUserData = async () => {
     try {
       if (!session?.user?.id) {
-        setLoading(false);
         return;
       }
       
@@ -100,179 +197,100 @@ export default function HomePage() {
     setRetryCount(prev => prev + 1);
   };
 
-  // Fetch a quote when the component mounts
-  useEffect(() => {
-    // Get user location for context-aware quotes
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
-
-    async function fetchQuote() {
-      try {
-        // Add location data if available
-        const params = new URLSearchParams();
-        
-        // Add timestamp to prevent caching
-        params.append('t', Date.now().toString());
-        params.append('random', Math.random().toString());
-        
-        if (location) {
-          params.append('lat', location.lat.toString());
-          params.append('lon', location.lon.toString());
-        }
-        
-        const queryString = params.toString();
-        const url = `/api/quotes${queryString ? `?${queryString}` : ''}`;
-        
-        console.log('Fetching quote from:', url);
-        
-        const response = await fetch(url, { 
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          },
-          next: { revalidate: 0 }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.quote) {
-            console.log('New quote received:', data.quote);
-            setQuote(data.quote);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching quote:', error);
-      }
-    }
-    
-    // Fetch immediately on mount
-    fetchQuote();
-    
-    // Set up interval to refresh quotes (every hour instead of 12)
-    const quoteInterval = setInterval(fetchQuote, 60 * 60 * 1000);
-    
-    // Also add event listener for visibility change to fetch when tab becomes visible
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchQuote();
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      clearInterval(quoteInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [location]);
-
-  // If loading, show a loading state
-  if (loading && status === "authenticated") {
+  // Simple loading state for when authentication is being checked
+  if (status === "loading") {
     return (
       <div className="container mx-auto px-4 py-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-            <p className="mt-4 text-muted-foreground">Loading your dashboard...</p>
+        <AppHeader 
+          user={null} 
+          quote={quote} 
+          isLoading={true} 
+        />
+      </div>
+    );
+  }
+
+  // For completely unauthenticated users or error states
+  if (status !== "authenticated" || error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        {/* Show error if there is one */}
+        {error && (
+          <div className="mb-8 bg-destructive/10 text-destructive p-6 rounded-lg">
+            <h2 className="text-xl font-bold mb-2">Error Loading Dashboard</h2>
+            <p className="mb-4">{error}</p>
+            <Button 
+              onClick={handleRetry}
+              variant="outline"
+            >
+              Try Again
+            </Button>
           </div>
-        </div>
-      </div>
-    );
-  }
+        )}
 
-  // If error, show error state
-  if (error) {
-    return (
-      <div className="container mx-auto px-4 py-6">
-        <div className="bg-destructive/10 text-destructive p-6 rounded-lg">
-          <h2 className="text-xl font-bold mb-2">Error Loading Dashboard</h2>
-          <p className="mb-4">{error}</p>
-          <Button 
-            onClick={handleRetry}
-            variant="outline"
-          >
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Public landing page for unauthenticated users
-  if (status !== "authenticated" || !user) {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col items-center text-center mb-12">
-        <h1 className="text-4xl font-bold tracking-tight mb-4">Welcome to Aivery</h1>
-        <p className="text-muted-foreground max-w-2xl mb-8">
-          Your AI-powered fitness companion to track, plan and analyze your fitness journey
-        </p>
-        <div className="flex gap-4 flex-wrap justify-center">
-          <Button size="lg" asChild>
-              <Link href="/login">
-                <MessageSquare className="mr-2 h-5 w-5" />
-                Login
-            </Link>
-          </Button>
-          <Button variant="outline" size="lg" asChild>
-              <Link href="/register">
-                <Calendar className="mr-2 h-5 w-5" />
-                Register
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Weekly Workouts</CardTitle>
-            <CardDescription>Your workout consistency</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">4/5</div>
-            <p className="text-muted-foreground">Goal: 5 workouts per week</p>
-            <div className="w-full bg-secondary h-2 rounded-full mt-4">
-              <div className="bg-primary h-2 rounded-full w-4/5"></div>
+        {/* Show landing page for unauthenticated users */}
+        {status !== "authenticated" && (
+          <>
+            <div className="flex flex-col items-center text-center mb-12">
+              <h1 className="text-4xl font-bold tracking-tight mb-4">Welcome to Aivery</h1>
+              <p className="text-muted-foreground max-w-2xl mb-8">
+                Your AI-powered fitness companion to track, plan and analyze your fitness journey
+              </p>
+              <div className="flex gap-4 flex-wrap justify-center">
+                <Button size="lg" asChild>
+                  <Link href="/login">
+                    <MessageSquare className="mr-2 h-5 w-5" />
+                    Login
+                  </Link>
+                </Button>
+                <Button variant="outline" size="lg" asChild>
+                  <Link href="/register">
+                    <Calendar className="mr-2 h-5 w-5" />
+                    Register
+                  </Link>
+                </Button>
+              </div>
             </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Total Volume</CardTitle>
-            <CardDescription>Weight lifted this week</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">12,450 kg</div>
-            <p className="text-muted-foreground">+8% from last week</p>
-          </CardContent>
-        </Card>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle>Weekly Workouts</CardTitle>
+                  <CardDescription>Your workout consistency</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">4/5</div>
+                  <p className="text-muted-foreground">Goal: 5 workouts per week</p>
+                  <div className="w-full bg-secondary h-2 rounded-full mt-4">
+                    <div className="bg-primary h-2 rounded-full w-4/5"></div>
+                  </div>
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Personal Records</CardTitle>
-            <CardDescription>New PRs this month</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">3</div>
-            <p className="text-muted-foreground">Bench Press, Squat, Deadlift</p>
-          </CardContent>
-        </Card>
-      </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle>Total Volume</CardTitle>
+                  <CardDescription>Weight lifted this week</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">12,450 kg</div>
+                  <p className="text-muted-foreground">+8% from last week</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle>Personal Records</CardTitle>
+                  <CardDescription>New PRs this month</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">3</div>
+                  <p className="text-muted-foreground">Bench Press, Squat, Deadlift</p>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -281,45 +299,12 @@ export default function HomePage() {
   // Get some user-specific data
   const workoutCount = workouts.length;
   const hasWorkouts = workoutCount > 0;
-  const hasPlans = user.plans?.length > 0;
+  const hasPlans = user?.plans?.length > 0;
   const planCount = hasPlans ? user.plans.length : 0;
-  
-  // Use nickname if available, otherwise fall back to name
-  const displayName = user.nickname || user.name;
-  
-  // Add debugging info in development
-  const debug = process.env.NODE_ENV === 'development' ? (
-    <div className="bg-yellow-100 dark:bg-yellow-900/30 p-3 rounded-md mb-4 text-xs">
-      <h3 className="font-bold">Debug Info:</h3>
-      <pre className="overflow-auto max-h-40">
-        {JSON.stringify({
-          nickname: user.nickname,
-          name: user.name,
-          displayName,
-          quoteLength: quote?.length,
-          hasQuote: !!quote,
-          quote: quote?.substring(0, 50) + (quote?.length > 50 ? '...' : '')
-        }, null, 2)}
-      </pre>
-    </div>
-  ) : null;
   
   return (
     <div className="container mx-auto px-4 py-6">
-      {debug}
-      <section className="mb-8 p-6 bg-card rounded-xl">
-        <div className="flex items-center gap-4">
-          <UserAvatar 
-            name={displayName} 
-            imageUrl={user.image}
-            size="lg"
-          />
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold">Hey {displayName}!</h2>
-            <p className="text-muted-foreground italic">{quote}</p>
-          </div>
-        </div>
-      </section>
+      <AppHeader user={user} quote={quote} />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-6">
         {/* First row - Key statistics and quick access */}
@@ -384,6 +369,7 @@ export default function HomePage() {
         </Card>
       </div>
 
+      {/* Rest of dashboard content */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-6">
         {/* Quick Actions */}
         <Card>
@@ -499,4 +485,5 @@ export default function HomePage() {
     </div>
   );
 }
+
 
