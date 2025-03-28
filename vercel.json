@@ -9,29 +9,6 @@
       "maxDuration": 30
     }
   },
-  "routes": [
-    {
-      "src": "/api/strava/import",
-      "methods": ["POST", "OPTIONS"],
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Content-Type": "application/json"
-      },
-      "continue": true
-    },
-    {
-      "src": "/api/quotes",
-      "methods": ["GET"],
-      "headers": {
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      },
-      "continue": true
-    }
-  ],
   "build": {
     "env": {
       "VERCEL_BODY_SIZE_LIMIT": "100mb"
@@ -52,6 +29,27 @@
         {
           "key": "Expires",
           "value": "0"
+        }
+      ]
+    },
+    {
+      "source": "/api/strava/import",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
         }
       ]
     }
