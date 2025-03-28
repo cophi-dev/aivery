@@ -5,6 +5,8 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongodb";
 import User from "@/lib/db/models/user";
 import { format } from 'date-fns';
+import { getCollection } from "@/lib/db/mongodb";
+import { ObjectId } from 'mongodb';
 
 // Define workout type
 interface WorkoutType {
@@ -18,9 +20,9 @@ interface WorkoutType {
 // Define user type
 interface UserType {
   _id: string;
-  name: string;
+  name?: string;
   nickname?: string;
-  email: string;
+  email?: string;
   workouts?: WorkoutType[];
   activityLevel?: string;
   gender?: string;
@@ -242,166 +244,209 @@ export async function GET(request: Request) {
     const timestamp = Date.now();
     
     // Try to get weather data if coordinates provided
-    const weather = lat && lon ? await getWeather(lat, lon) : null;
+    let weather = null;
+    try {
+      if (lat && lon) {
+        weather = await getWeather(lat, lon);
+      }
+    } catch (weatherError) {
+      console.error('Failed to fetch weather data:', weatherError);
+      // Continue without weather data
+    }
     
     // Get user session
-    const session = await getServerSession(authOptions);
+    let session = null;
+    try {
+      session = await getServerSession(authOptions);
+    } catch (sessionError) {
+      console.error('Failed to get user session:', sessionError);
+      // Continue without session
+    }
+    
     if (!session?.user?.id) {
       // No session, pick a random fallback quote
-      // If force is true, make sure we don't return the same quote twice in a row
-      let randomIndex = Math.floor(Math.random() * fallbackQuotes.length);
-      const randomQuote = fallbackQuotes[randomIndex];
-      
-      return NextResponse.json({ 
-        quote: randomQuote, 
-        timestamp,
-        isPersonalized: false 
-      }, { headers });
-    }
-
-    // Connect to DB and get user data
-    await dbConnect();
-    const user = await User.findById(session.user.id)
-      .select('nickname workouts activityLevel age gender')
-      .lean() as unknown as UserType;
-
-    if (!user) {
       const randomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+      
+      // If force is true, make sure we don't return the same quote twice in a row
+      const quote = force ? randomQuote + " " + timestamp : randomQuote;
+      
       return NextResponse.json({ quote: randomQuote, timestamp }, { headers });
     }
-
-    // Get user's workout data
-    const workouts = user.workouts || [];
-    const hasWorkouts = workouts.length > 0;
-    const recentWorkouts = hasWorkouts ? workouts.slice(-3) : [];
-    const recentWorkoutTypes = recentWorkouts.map((w: WorkoutType) => w.type || 'workout').filter(Boolean);
-
-    // Get contextual info
-    const timeOfDay = getTimeBasedGreeting();
-    const dayOfWeek = getDayOfWeek();
-    const isWeekendDay = isWeekend();
-    const nickname = user.nickname || "";
     
-    // Generate a personalized AI quote with all the context
-    const aiQuote = await generateAIQuote({
-      nickname,
-      workoutCount: workouts.length,
-      recentWorkoutTypes,
-      activityLevel: user.activityLevel,
-      timeOfDay,
-      dayOfWeek,
-      isWeekend: isWeekendDay,
-      weather,
-      forceRefresh: unique !== null
-    });
-    
-    // If AI quote generation succeeded, return it
-    if (aiQuote) {
-      // Add timestamp suffix in dev mode to confirm fresh quotes
-      const now = new Date();
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const suffix = process.env.NODE_ENV === 'development' ? ` [${hours}:${minutes}]` : '';
+    // At this point we have a user session
+    try {
+      await dbConnect();
       
-      return NextResponse.json({ 
-        quote: aiQuote + suffix, 
-        timestamp 
-      }, { headers });
-    }
-    
-    // If AI quote generation failed, fall back to our rule-based system
-    let personalizedQuote = '';
-    
-    // Determine what type of quote to generate
-    let quoteTypes = ['motivation', 'reminder', 'workout-specific', 'time-based', 'progress'];
-    
-    // Add weather type if we have weather data
-    if (weather) {
-      quoteTypes.push('weather');
-    }
-    
-    const quoteType = quoteTypes[Math.floor(Math.random() * quoteTypes.length)];
-    
-    switch (quoteType) {
-      case 'motivation':
-        if (hasWorkouts) {
-          personalizedQuote = `${workouts.length} workouts logged. Nice work on the consistency.`;
-        } else {
-          personalizedQuote = "Start small, build gradually.";
-        }
-        break;
+      // Get the user's info
+      const user = await User.findById(session.user.id).lean().exec() as UserType;
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      // Get user's recent workouts for context
+      const workoutCollection = await getCollection('workouts');
+      let recentWorkouts: any[] = [];
+      let workoutCount = 0;
+      
+      try {
+        recentWorkouts = await workoutCollection
+          .find({ userId: new ObjectId(session.user.id) })
+          .sort({ date: -1 })
+          .limit(5)
+          .toArray();
+          
+        workoutCount = await workoutCollection.countDocuments({ 
+          userId: new ObjectId(session.user.id) 
+        });
+      } catch (workoutError) {
+        console.error('Failed to fetch workout data:', workoutError);
+        // Continue without workout data
+      }
+      
+      // Extract workout types for context
+      const recentWorkoutTypes = recentWorkouts
+        .map((w: any) => w.type)
+        .filter((value: string, index: number, self: string[]) => self.indexOf(value) === index);
+      
+      // Check if we've reached the rate limit or if we should force a refresh
+      const ctx = {
+        nickname: user?.nickname || user?.name?.split(' ')[0] || 'there',
+        workoutCount,
+        recentWorkoutTypes,
+        activityLevel: user?.activityLevel,
+        timeOfDay: getTimeBasedGreeting(),
+        dayOfWeek: getDayOfWeek(),
+        isWeekend: isWeekend(),
+        weather,
+        forceRefresh: force,
+      };
+      
+      // Generate a personalized AI quote with all the context
+      let aiQuote = null;
+      try {
+        aiQuote = await generateAIQuote(ctx);
+      } catch (aiError) {
+        console.error('AI quote generation failed:', aiError);
+        // Will fall back to rule-based quotes
+      }
+      
+      // If AI quote generation succeeded, return it
+      if (aiQuote) {
+        // Add timestamp suffix in dev mode to confirm fresh quotes
+        const suffix = process.env.NODE_ENV === 'development' ? ` (${timestamp})` : '';
         
-      case 'reminder':
-        if (user.activityLevel === 'sedentary') {
-          personalizedQuote = "Try to stand up and stretch once an hour.";
-        } else if (user.activityLevel === 'very-active' || user.activityLevel === 'extra-active') {
-          personalizedQuote = "Recovery is an essential part of fitness.";
-        } else {
-          personalizedQuote = "Balance activity with proper rest.";
-        }
-        break;
-        
-      case 'workout-specific':
-        if (hasWorkouts) {
-          const workoutTypes = recentWorkoutTypes;
-          if (workoutTypes.includes('strength')) {
-            personalizedQuote = "Form matters more than weight.";
-          } else if (workoutTypes.includes('cardio')) {
-            personalizedQuote = "Mix intensity levels for better cardio results.";
-          } else if (workoutTypes.includes('yoga') || workoutTypes.includes('flexibility')) {
-            personalizedQuote = "Flexibility improves with regular practice.";
+        return NextResponse.json({
+          quote: aiQuote + suffix, 
+          timestamp
+        }, { headers });
+      }
+      
+      // If AI quote generation failed, fall back to our rule-based system
+      let personalizedQuote = '';
+      
+      // Determine what type of quote to generate
+      let quoteTypes = ['motivation', 'reminder', 'workout-specific', 'time-based', 'progress'];
+      
+      // Add weather type if we have weather data
+      if (weather) {
+        quoteTypes.push('weather');
+      }
+      
+      const quoteType = quoteTypes[Math.floor(Math.random() * quoteTypes.length)];
+      
+      switch (quoteType) {
+        case 'motivation':
+          if (workoutCount > 0) {
+            personalizedQuote = `${workoutCount} workouts logged. Nice work on the consistency.`;
           } else {
-            personalizedQuote = "Variety keeps exercise interesting.";
+            personalizedQuote = "Start small, build gradually.";
           }
-        } else {
-          personalizedQuote = "Find activities you genuinely enjoy.";
-        }
-        break;
-        
-      case 'time-based':
-        if (isWeekendDay) {
-          personalizedQuote = `It's ${dayOfWeek}. Consider a short activity break.`;
-        } else {
-          personalizedQuote = `Good ${timeOfDay}. Even 10 minutes of movement helps.`;
-        }
-        break;
-        
-      case 'weather':
-        if (weather) {
-          if (weather.isRainy) {
-            personalizedQuote = "Indoor workouts can be just as effective.";
-          } else if (weather.isSnowy) {
-            personalizedQuote = "Indoor movement is great on snowy days.";
-          } else if (weather.isClear && weather.isHot) {
-            personalizedQuote = "Stay hydrated in hot weather.";
-          } else if (weather.isClear) {
-            personalizedQuote = "Nice weather can make outdoor activity more enjoyable.";
-          } else if (weather.isCold) {
-            personalizedQuote = "Proper warm-up is important in cold weather.";
+          break;
+          
+        case 'reminder':
+          if (user?.activityLevel === 'sedentary') {
+            personalizedQuote = "Try to stand up and stretch once an hour.";
+          } else if (user?.activityLevel === 'very-active' || user?.activityLevel === 'extra-active') {
+            personalizedQuote = "Recovery is an essential part of fitness.";
           } else {
-            personalizedQuote = `${weather.condition.charAt(0).toUpperCase() + weather.condition.slice(1)} outside? Adapt your routine as needed.`;
+            personalizedQuote = "Balance activity with proper rest.";
           }
-        } else {
-          personalizedQuote = "Indoor and outdoor exercise both have benefits.";
-        }
-        break;
-        
-      case 'progress':
-        if (hasWorkouts && workouts.length > 5) {
-          personalizedQuote = "Consistent effort builds lasting results.";
-        } else if (hasWorkouts) {
-          personalizedQuote = "Starting is often the hardest part.";
-        } else {
-          personalizedQuote = "Small steps lead to meaningful progress.";
-        }
-        break;
-        
-      default:
-        personalizedQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+          break;
+          
+        case 'workout-specific':
+          if (workoutCount > 0) {
+            const workoutTypes = recentWorkoutTypes;
+            if (workoutTypes.includes('strength')) {
+              personalizedQuote = "Form matters more than weight.";
+            } else if (workoutTypes.includes('cardio')) {
+              personalizedQuote = "Mix intensity levels for better cardio results.";
+            } else if (workoutTypes.includes('yoga') || workoutTypes.includes('flexibility')) {
+              personalizedQuote = "Flexibility improves with regular practice.";
+            } else {
+              personalizedQuote = "Variety keeps exercise interesting.";
+            }
+          } else {
+            personalizedQuote = "Find activities you genuinely enjoy.";
+          }
+          break;
+          
+        case 'time-based':
+          if (isWeekend()) {
+            personalizedQuote = `It's ${getDayOfWeek()}. Consider a short activity break.`;
+          } else {
+            personalizedQuote = `Good ${getTimeBasedGreeting()}. Even 10 minutes of movement helps.`;
+          }
+          break;
+          
+        case 'weather':
+          if (weather) {
+            if (weather.isRainy) {
+              personalizedQuote = "Indoor workouts can be just as effective.";
+            } else if (weather.isSnowy) {
+              personalizedQuote = "Indoor movement is great on snowy days.";
+            } else if (weather.isClear && weather.isHot) {
+              personalizedQuote = "Stay hydrated in hot weather.";
+            } else if (weather.isClear) {
+              personalizedQuote = "Nice weather can make outdoor activity more enjoyable.";
+            } else if (weather.isCold) {
+              personalizedQuote = "Proper warm-up is important in cold weather.";
+            } else {
+              personalizedQuote = `${weather.condition.charAt(0).toUpperCase() + weather.condition.slice(1)} outside? Adapt your routine as needed.`;
+            }
+          } else {
+            personalizedQuote = "Indoor and outdoor exercise both have benefits.";
+          }
+          break;
+          
+        case 'progress':
+          if (workoutCount > 5) {
+            personalizedQuote = "Consistent effort builds lasting results.";
+          } else if (workoutCount > 0) {
+            personalizedQuote = "Starting is often the hardest part.";
+          } else {
+            personalizedQuote = "Small steps lead to meaningful progress.";
+          }
+          break;
+          
+        default:
+          personalizedQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+      }
+      
+      return NextResponse.json({ quote: personalizedQuote, timestamp }, { headers });
+      
+    } catch (error) {
+      console.error('Error generating personalized quote:', error);
+      // Create new headers in the catch block
+      const errorHeaders = new Headers();
+      errorHeaders.append('Cache-Control', 'no-store, max-age=0, must-revalidate');
+      errorHeaders.append('Pragma', 'no-cache');
+      errorHeaders.append('Expires', '0');
+      // Create a new timestamp
+      const errorTimestamp = Date.now();
+      // Fallback to a random quote if something goes wrong
+      const randomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+      return NextResponse.json({ quote: randomQuote, timestamp: errorTimestamp }, { headers: errorHeaders });
     }
-    
-    return NextResponse.json({ quote: personalizedQuote, timestamp }, { headers });
-    
   } catch (error) {
     console.error('Error generating personalized quote:', error);
     // Create new headers in the catch block
