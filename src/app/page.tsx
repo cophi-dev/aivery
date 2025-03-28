@@ -12,6 +12,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { motion } from "framer-motion";
+import { fetchWithAuth, getUserData, getQuote } from "@/lib/client-utils";
 
 // Header component that will be visible immediately
 function AppHeader({ user, quote, isLoading }: { user: any | null, quote: string, isLoading?: boolean }) {
@@ -65,48 +66,27 @@ export default function HomePage() {
 
   // Fetch a quote when the component mounts
   useEffect(() => {
-    async function fetchQuote(forceFresh = false) {
+    async function fetchQuoteData(forceFresh = false) {
       try {
-        // Always generate a completely unique URL to bypass caching
-        const now = Date.now();
-        const uniqueId = now + '-' + Math.random().toString(36).substring(2, 15);
-        // Add a force parameter to ensure we get a fresh quote when needed
-        const forceParam = forceFresh ? '&force=true' : '';
-        const url = `/api/quotes?unique=${uniqueId}${forceParam}`;
-        
-        const response = await fetch(url, { 
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.quote) {
-            setQuote(data.quote);
-          }
-        }
+        // Use the new utility function
+        const quoteText = await getQuote(
+          location?.lat, 
+          location?.lon, 
+          forceFresh
+        );
+        setQuote(quoteText);
       } catch (error) {
         console.error('Error fetching quote:', error);
       }
     }
     
     // Always fetch a fresh quote on mount/page load
-    fetchQuote(true);
-
-    // Add event listener for beforeunload to prepare for page refresh
-    window.addEventListener('beforeunload', () => {
-      sessionStorage.removeItem('lastQuote');
-      sessionStorage.removeItem('quoteTimestamp');
-    });
+    fetchQuoteData(true);
 
     // Handle window visibility changes (tab focus)
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') {
-        fetchQuote(true);
+        fetchQuoteData(true);
       }
     }
     
@@ -114,14 +94,13 @@ export default function HomePage() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
     // Refresh quote every 15 minutes
-    const quoteInterval = setInterval(() => fetchQuote(true), 15 * 60 * 1000);
+    const quoteInterval = setInterval(() => fetchQuoteData(true), 15 * 60 * 1000);
     
     return () => {
       clearInterval(quoteInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', () => {});
     };
-  }, []);
+  }, [location]);
 
   // Check user authentication status and fetch user data
   useEffect(() => {
@@ -148,41 +127,39 @@ export default function HomePage() {
       setLoading(true);
       setError(null);
       
-      // Fetch user data
-      const userResponse = await fetch('/api/user');
-      if (!userResponse.ok) {
-        throw new Error(`Failed to fetch user data: ${userResponse.statusText}`);
-      }
-      const userData = await userResponse.json();
-      
-      if (!userData.user) {
-        throw new Error("User data not found");
-      }
-      
-      setUser(userData.user);
-
-      // Fetch user's workouts
-      if (userData.user._id) {
-        const workoutsResponse = await fetch(`/api/workouts/${userData.user._id}`);
-        if (!workoutsResponse.ok) {
-          throw new Error(`Failed to fetch workouts: ${workoutsResponse.statusText}`);
-        }
-        const workoutsData = await workoutsResponse.json();
-        
-        if (!workoutsData.workouts) {
-          // If no workouts array, create an empty one
-          setWorkouts([]);
-          setRecentWorkouts([]);
-        } else {
-          setWorkouts(workoutsData.workouts);
+      // Use new utility function for user data
+      try {
+        const userData = await getUserData();
+        if (userData?.user) {
+          setUser(userData.user);
           
-          // Sort workouts by date (newest first) and take the 5 most recent
-          const sortedWorkouts = [...workoutsData.workouts].sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-          ).slice(0, 5);
-          
-          setRecentWorkouts(sortedWorkouts);
+          // Fetch user's workouts
+          if (userData.user._id) {
+            const workoutsResponse = await fetchWithAuth(`/api/workouts/${userData.user._id}`);
+            if (!workoutsResponse.ok) {
+              throw new Error(`Failed to fetch workouts: ${workoutsResponse.statusText}`);
+            }
+            const workoutsData = await workoutsResponse.json();
+            
+            if (!workoutsData.workouts) {
+              // If no workouts array, create an empty one
+              setWorkouts([]);
+              setRecentWorkouts([]);
+            } else {
+              setWorkouts(workoutsData.workouts);
+              
+              // Sort workouts by date (newest first) and take the 5 most recent
+              const sortedWorkouts = [...workoutsData.workouts].sort(
+                (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+              ).slice(0, 5);
+              
+              setRecentWorkouts(sortedWorkouts);
+            }
+          }
         }
+      } catch (userErr) {
+        console.error("Error fetching user data:", userErr);
+        setError("Failed to load user data. Please try again.");
       }
     } catch (err: any) {
       console.error("Error loading data:", err);

@@ -4,12 +4,33 @@ import { authOptions } from "@/lib/auth";
 import { getToken } from "next-auth/jwt";
 import { cookies } from "next/headers";
 
+// Define allowlisted paths that can work without authentication
+const AUTH_OPTIONAL_ENDPOINTS = [
+  '/api/quotes',
+  '/api/public'
+];
+
 /**
  * Helper function to check if a user is authenticated for API routes
  * Returns the session if authenticated, otherwise returns null and sends a 401 response
  */
 export async function authenticateApiRoute(request: NextRequest) {
   try {
+    // Extract path for auth-optional checks
+    const path = request.nextUrl.pathname;
+    const searchParams = request.nextUrl.searchParams;
+    
+    // Check if this is an auth-optional endpoint
+    const isAuthOptional = AUTH_OPTIONAL_ENDPOINTS.some(endpoint => 
+      path.startsWith(endpoint)
+    );
+    
+    // Check if client is forcing auth via a special param (useful for retries)
+    const isForceAuth = searchParams.get('_auth') === 'force';
+    
+    // Check if the client explicitly identified itself
+    const hasClientAuthHeader = request.headers.get('X-Client-Auth') === '1';
+    
     // Try multiple authentication methods
     
     // Method 1: Server session (standard approach)
@@ -23,13 +44,18 @@ export async function authenticateApiRoute(request: NextRequest) {
     
     // Debug info for development environment
     let debugInfo: any = {};
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' || isForceAuth) {
       debugInfo = {
         hasSession: !!session,
         hasUser: !!session?.user,
         hasUserId: !!session?.user?.id,
         hasToken: !!token,
         tokenSub: token?.sub,
+        path,
+        isAuthOptional,
+        isForceAuth,
+        hasClientAuthHeader,
+        cookies: Object.fromEntries(request.cookies.getAll().map(c => [c.name, c.value.substring(0, 15) + '...'])),
       };
     }
     
@@ -39,10 +65,10 @@ export async function authenticateApiRoute(request: NextRequest) {
       (!!token?.sub) // JWT token
     );
     
-    // If no valid authentication, return 401
-    if (!isAuthenticated) {
+    // If no valid authentication and it's not an auth-optional endpoint, return 401
+    if (!isAuthenticated && !isAuthOptional) {
       // In development, include debug info
-      if (process.env.NODE_ENV === 'development') {
+      if (process.env.NODE_ENV === 'development' || isForceAuth) {
         return {
           session: null,
           response: NextResponse.json(
@@ -62,6 +88,22 @@ export async function authenticateApiRoute(request: NextRequest) {
           { error: "Not authenticated" },
           { status: 401 }
         )
+      };
+    }
+    
+    // For auth-optional endpoints with no auth, return a limited session
+    if (!isAuthenticated && isAuthOptional) {
+      return {
+        session: {
+          user: {
+            id: null,
+            name: null,
+            email: null,
+            image: null,
+          },
+          isLimitedAccess: true
+        },
+        response: null
       };
     }
     

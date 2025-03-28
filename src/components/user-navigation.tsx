@@ -21,6 +21,7 @@ import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideSettings, Lucide
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "./user-avatar";
 import { useEffect, useState } from "react";
+import { fetchWithAuth } from "@/lib/client-utils";
 
 // Inner component that only renders when session is valid
 function UserNavigationInner({ session }: { session: any }) {
@@ -45,8 +46,8 @@ function UserNavigationInner({ session }: { session: any }) {
     
     async function fetchUserData() {
       try {
-        // Fetch avatar
-        const avatarResponse = await fetch('/api/user/avatar');
+        // Fetch avatar using auth utility
+        const avatarResponse = await fetchWithAuth('/api/user/avatar');
         if (avatarResponse.ok) {
           const avatarData = await avatarResponse.json();
           if (avatarData.image && typeof avatarData.image === 'string') {
@@ -54,8 +55,8 @@ function UserNavigationInner({ session }: { session: any }) {
           }
         }
         
-        // Fetch user info with nickname
-        const userResponse = await fetch('/api/user');
+        // Fetch user info with nickname using auth utility
+        const userResponse = await fetchWithAuth('/api/user');
         if (userResponse.ok) {
           const userData = await userResponse.json();
           if (userData.user) {

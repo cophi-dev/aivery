@@ -1,0 +1,108 @@
+/**
+ * Client-side utility functions for handling API requests
+ */
+
+/**
+ * Enhanced fetch function that includes auth credentials and handles common error scenarios
+ */
+export async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  // Always include credentials
+  const fetchOptions: RequestInit = {
+    ...options,
+    credentials: 'include',
+    headers: {
+      ...options.headers,
+      'Accept': 'application/json',
+      'Content-Type': options.body ? 'application/json' : 'text/plain',
+      'X-Client-Auth': '1', // Custom header to indicate client auth
+    },
+  };
+
+  try {
+    // Attempt the fetch with auth credentials
+    const response = await fetch(url, fetchOptions);
+    
+    // If 401 unauthorized, try once more with force param
+    if (response.status === 401) {
+      console.log('Unauthorized API call, retrying with force param:', url);
+      
+      // Add a query parameter to force refresh auth
+      const separator = url.includes('?') ? '&' : '?';
+      const retryUrl = `${url}${separator}_auth=force`;
+      
+      // Retry the request with the force param
+      const retryResponse = await fetch(retryUrl, fetchOptions);
+      
+      return retryResponse;
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Fetch error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get user data with auth and retry
+ */
+export async function getUserData() {
+  try {
+    const response = await fetchWithAuth('/api/user');
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user data: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get quotes with optional lat/lon coordinates
+ */
+export async function getQuote(lat?: number, lon?: number, force: boolean = false) {
+  try {
+    // Build the URL with query parameters
+    let url = '/api/quotes';
+    const params = new URLSearchParams();
+    
+    // Add a unique parameter to prevent caching
+    params.append('unique', Date.now().toString());
+    
+    // Add location if available
+    if (lat && lon) {
+      params.append('lat', lat.toString());
+      params.append('lon', lon.toString());
+    }
+    
+    // Force refresh if needed
+    if (force) {
+      params.append('force', 'true');
+    }
+    
+    // Combine URL and parameters
+    url = `${url}?${params.toString()}`;
+    
+    const response = await fetchWithAuth(url, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch quote: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data.quote || "Stay consistent with your fitness journey.";
+  } catch (error) {
+    console.error('Error fetching quote:', error);
+    return "Stay consistent with your fitness journey.";
+  }
+} 
