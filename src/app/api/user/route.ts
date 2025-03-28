@@ -3,46 +3,60 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import dbConnect from "@/lib/db/mongodb"
 import User from "@/lib/db/models/user"
+import { toClientData } from "@/lib/db/utils"
 
 export async function GET() {
   try {
+    // Get the user session
     const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
+    
+    // Check if user is authenticated
+    if (!session?.user?.id) {
+      console.log("Unauthorized access attempt to user API");
       return NextResponse.json(
-        { message: "Not authenticated" },
+        { error: "Not authenticated" },
         { status: 401 }
       )
     }
 
+    // Connect to database
     await dbConnect()
-    const user = await User.findOne({ email: session.user.email })
+    
+    // Find the user by ID (more reliable than email)
+    const userDoc = await User.findById(session.user.id).lean()
 
-    if (!user) {
+    // If user not found, return 404
+    if (!userDoc) {
+      console.log("User not found:", session.user.id);
       return NextResponse.json(
-        { message: "User not found" },
+        { error: "User not found" },
         { status: 404 }
       )
     }
 
-    // Return user data without sensitive information
-    return NextResponse.json({
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        image: user.image,
-        height: user.height,
-        weight: user.weight,
-        age: user.age,
-        gender: user.gender,
-        activityLevel: user.activityLevel,
-        goals: user.goals,
-      }
-    })
+    try {
+      // Serialize the user document to prevent client serialization issues
+      const serializedUser = toClientData(userDoc)
+      return NextResponse.json({ user: serializedUser })
+    } catch (error) {
+      console.error("Error serializing user data:", error);
+      
+      // Fallback with minimal user data to prevent frontend errors
+      return NextResponse.json({
+        user: {
+          _id: session.user.id,
+          name: session.user.name || "User",
+          email: session.user.email,
+          image: session.user.image,
+          plans: []
+        },
+        warning: "Limited user data returned due to serialization issues"
+      })
+    }
   } catch (error) {
-    console.error("Error fetching user data:", error)
+    console.error("Error in user API route:", error)
     return NextResponse.json(
-      { message: "Failed to fetch user data" },
+      { error: "Server error", details: String(error) },
       { status: 500 }
     )
   }

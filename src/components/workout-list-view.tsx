@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, ErrorInfo } from "react"
 import Link from "next/link"
 import { format, parseISO, isAfter, isBefore, isEqual } from "date-fns"
 import { Button } from "@/components/ui/button"
@@ -17,20 +17,70 @@ import {
   CalendarIcon, 
   X,
   ArrowUpDown,
-  Search
+  Search,
+  AlertCircle
 } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
+
+// Define types for sorting
+type SortField = "date" | "name" | "type" | "intensity" | "duration";
+type SortDirection = "asc" | "desc";
 
 interface WorkoutListViewProps {
   initialWorkouts: WorkoutData[]
 }
 
-type SortField = "date" | "name" | "duration" | "type" | "intensity"
-type SortDirection = "asc" | "desc"
+// Simple error boundary class component
+class WorkoutListErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("WorkoutList error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Alert variant="destructive" className="my-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error displaying workout data</AlertTitle>
+          <AlertDescription>
+            There was a problem rendering the workout data. Please try refreshing the page.
+            <Button 
+              onClick={() => {
+                this.setState({ hasError: false });
+                window.location.reload();
+              }}
+              variant="outline"
+              className="ml-2"
+            >
+              Refresh
+            </Button>
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProps) {
-  const [workouts, setWorkouts] = useState<WorkoutData[]>(initialWorkouts || [])
-  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>(initialWorkouts || [])
+  // Initialize all state hooks at the top level
+  const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
+  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>([]);
+  const [error, setError] = useState<string | null>(null);
   
   // Filter state
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -43,8 +93,126 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   
-  // Get unique workout types for filter options
-  const workoutTypes = Array.from(new Set(workouts.map(w => w.type)))
+  // Initialize data safely
+  useEffect(() => {
+    try {
+      // Make sure we have valid workouts data
+      const validWorkouts = Array.isArray(initialWorkouts) ? initialWorkouts : [];
+      
+      // Sanitize the workout data by removing problematic fields or converting as needed
+      const sanitizedWorkouts = validWorkouts.map(workout => {
+        try {
+          // Create a clean copy to work with
+          const cleanWorkout = { ...workout };
+          
+          // Clean the _id field
+          if (cleanWorkout._id && typeof cleanWorkout._id === 'object') {
+            cleanWorkout._id = String(cleanWorkout._id);
+          }
+          
+          // Clean userId field
+          if (cleanWorkout.userId && typeof cleanWorkout.userId === 'object') {
+            cleanWorkout.userId = String(cleanWorkout.userId);
+          }
+          
+          // Ensure date is properly formatted
+          if (cleanWorkout.date && !(cleanWorkout.date instanceof Date)) {
+            try {
+              cleanWorkout.date = new Date(cleanWorkout.date);
+            } catch (e) {
+              cleanWorkout.date = new Date();
+            }
+          }
+          
+          // Clean cardioDetails - this is where buffer objects are often found
+          if (cleanWorkout.cardioDetails && typeof cleanWorkout.cardioDetails === 'object') {
+            try {
+              // Detect and remove _id fields with buffer objects
+              const cardioDetails = { ...cleanWorkout.cardioDetails };
+              
+              // Remove _id from cardioDetails - use type assertion
+              const cardioDetailsAny = cardioDetails as any;
+              if (cardioDetailsAny._id) {
+                delete cardioDetailsAny._id;
+              }
+              
+              // Clean the heart rate data
+              if (cardioDetails.heartRate && typeof cardioDetails.heartRate === 'object') {
+                const heartRate = { ...cardioDetails.heartRate };
+                
+                // Remove _id from heart rate - use type assertion
+                const heartRateAny = heartRate as any;
+                if (heartRateAny._id) {
+                  delete heartRateAny._id;
+                }
+                
+                // Clean heart rate zones
+                if (heartRate.zones && typeof heartRate.zones === 'object') {
+                  const zones = { ...heartRate.zones };
+                  // Use type assertion to handle _id field
+                  const zonesAny = zones as any;
+                  if (zonesAny._id) {
+                    delete zonesAny._id;
+                  }
+                  heartRate.zones = zones;
+                }
+                
+                cardioDetails.heartRate = heartRate;
+              }
+              
+              // Clean the laps data
+              if (Array.isArray(cardioDetails.laps)) {
+                cardioDetails.laps = cardioDetails.laps.map((lap: any) => {
+                  if (lap && typeof lap === 'object') {
+                    const cleanLap = { ...lap };
+                    delete cleanLap._id;
+                    return cleanLap;
+                  }
+                  return lap;
+                });
+              }
+              
+              cleanWorkout.cardioDetails = cardioDetails;
+            } catch (e) {
+              console.error("Error cleaning cardioDetails:", e);
+              // If there was an error, remove the entire cardioDetails object
+              cleanWorkout.cardioDetails = { 
+                distance: cleanWorkout.cardioDetails.distance,
+                duration: cleanWorkout.cardioDetails.duration
+              };
+            }
+          }
+          
+          // Return the clean workout
+          return cleanWorkout as WorkoutData;
+        } catch (err) {
+          console.error("Error sanitizing workout:", err);
+          // Return a minimal workout object if there's an error
+          return {
+            _id: workout._id?.toString() || String(Date.now()),
+            name: workout.name || "Workout",
+            type: workout.type || "unknown",
+            date: new Date(),
+            duration: workout.duration || 0,
+            intensity: workout.intensity || "Unknown",
+            userId: workout.userId?.toString() || "",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          } as WorkoutData;
+        }
+      });
+      
+      setWorkouts(sanitizedWorkouts);
+      setFilteredWorkouts(sanitizedWorkouts);
+    } catch (err) {
+      console.error("Error initializing workout data:", err);
+      setError("Failed to load workout data. Please try refreshing the page.");
+      // Don't return early - still need to let the component render
+    }
+  }, [initialWorkouts]);
+  
+  // Get unique workout types for filter options safely
+  const workoutTypes = Array.from(new Set(workouts.filter(w => w?.type).map(w => w.type)))
   
   // Parse date strings to Date objects
   const startDate = startDateString ? new Date(startDateString) : undefined
@@ -52,68 +220,87 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   
   // Apply filters
   useEffect(() => {
-    let result = [...workouts]
-    
-    // Filter by type
-    if (typeFilter !== "all") {
-      result = result.filter(workout => workout.type === typeFilter)
-    }
-    
-    // Filter by intensity
-    if (intensityFilter !== "all") {
-      result = result.filter(workout => workout.intensity === intensityFilter)
-    }
-    
-    // Filter by date range
-    if (startDate) {
-      result = result.filter(workout => {
-        const workoutDate = new Date(workout.date)
-        return isAfter(workoutDate, startDate) || isEqual(workoutDate, startDate)
-      })
-    }
-    
-    if (endDate) {
-      result = result.filter(workout => {
-        const workoutDate = new Date(workout.date)
-        return isBefore(workoutDate, endDate) || isEqual(workoutDate, endDate)
-      })
-    }
-    
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(workout => 
-        (workout.name && workout.name.toLowerCase().includes(query)) ||
-        workout.type.toLowerCase().includes(query) ||
-        (workout.notes && workout.notes.toLowerCase().includes(query))
-      )
-    }
-    
-    // Apply sorting
-    result.sort((a, b) => {
-      if (sortField === "date") {
-        return sortDirection === "asc" 
-          ? new Date(a.date).getTime() - new Date(b.date).getTime()
-          : new Date(b.date).getTime() - new Date(a.date).getTime()
+    try {
+      let result = [...workouts]
+      
+      // Filter by type
+      if (typeFilter !== "all") {
+        result = result.filter(workout => workout.type === typeFilter)
       }
       
-      if (sortField === "duration") {
-        return sortDirection === "asc" 
-          ? a.duration - b.duration
-          : b.duration - a.duration
+      // Filter by intensity
+      if (intensityFilter !== "all") {
+        result = result.filter(workout => workout.intensity === intensityFilter)
       }
       
-      // String-based sorting (name, type, intensity)
-      const aValue = String(a[sortField] || "").toLowerCase()
-      const bValue = String(b[sortField] || "").toLowerCase()
+      // Filter by date range
+      if (startDate) {
+        result = result.filter(workout => {
+          try {
+            const workoutDate = new Date(workout.date)
+            return isAfter(workoutDate, startDate) || isEqual(workoutDate, startDate)
+          } catch (e) {
+            return true; // Include if date parsing fails
+          }
+        })
+      }
       
-      return sortDirection === "asc"
-        ? aValue.localeCompare(bValue)
-        : bValue.localeCompare(aValue)
-    })
-    
-    setFilteredWorkouts(result)
-  }, [workouts, typeFilter, intensityFilter, startDate, endDate, searchQuery, sortField, sortDirection])
+      if (endDate) {
+        result = result.filter(workout => {
+          try {
+            const workoutDate = new Date(workout.date)
+            return isBefore(workoutDate, endDate) || isEqual(workoutDate, endDate)
+          } catch (e) {
+            return true; // Include if date parsing fails
+          }
+        })
+      }
+      
+      // Filter by search query
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        result = result.filter(workout => 
+          (workout.name && workout.name.toLowerCase().includes(query)) ||
+          (workout.type && workout.type.toLowerCase().includes(query)) ||
+          (workout.notes && workout.notes.toLowerCase().includes(query))
+        )
+      }
+      
+      // Apply sorting
+      result.sort((a, b) => {
+        try {
+          if (sortField === "date") {
+            return sortDirection === "asc" 
+              ? new Date(a.date).getTime() - new Date(b.date).getTime()
+              : new Date(b.date).getTime() - new Date(a.date).getTime()
+          }
+          
+          if (sortField === "duration") {
+            return sortDirection === "asc" 
+              ? (a.duration || 0) - (b.duration || 0)
+              : (b.duration || 0) - (a.duration || 0)
+          }
+          
+          // String-based sorting (name, type, intensity)
+          const aValue = String(a[sortField] || "").toLowerCase()
+          const bValue = String(b[sortField] || "").toLowerCase()
+          
+          return sortDirection === "asc"
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue)
+        } catch (e) {
+          return 0; // Return 0 if comparison fails
+        }
+      })
+      
+      setFilteredWorkouts(result)
+    } catch (err) {
+      console.error("Error filtering workouts:", err);
+      // Don't return early or set filtered workouts to empty here
+      // This could cause hook order issues if we conditionally return early
+      setError("Failed to filter workout data. Please try refreshing the page.");
+    }
+  }, [workouts, typeFilter, intensityFilter, startDate, endDate, searchQuery, sortField, sortDirection]);
   
   // Handle sorting
   const handleSort = (field: SortField) => {
@@ -146,7 +333,11 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
 
   // Format date in a readable way
   const formatDate = (date: Date) => {
-    return format(new Date(date), "MMM d, yyyy")
+    try {
+      return format(new Date(date), "MMM d, yyyy")
+    } catch (e) {
+      return "Unknown date"
+    }
   }
   
   // Get badge color based on intensity
@@ -181,213 +372,240 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   
   // Get workout distance safely
   const getWorkoutDistance = (workout: WorkoutData): number => {
-    if (typeof workout.distance === 'number') {
-      return workout.distance;
-    }
-    if (workout.cardioDetails?.distance !== undefined) {
-      return workout.cardioDetails.distance;
+    try {
+      if (typeof workout.distance === 'number') {
+        return workout.distance;
+      }
+      if (workout.cardioDetails?.distance !== undefined) {
+        return workout.cardioDetails.distance;
+      }
+    } catch (e) {
+      console.error("Error getting workout distance:", e);
     }
     return 0;
   }
+
+  // Prepare the ErrorContent separately to avoid conditional hooks
+  const errorContent = (
+    <Alert variant="destructive">
+      <AlertCircle className="h-4 w-4" />
+      <AlertTitle>Error</AlertTitle>
+      <AlertDescription>
+        {error}
+        <Button 
+          onClick={() => window.location.reload()}
+          variant="outline"
+          className="ml-2"
+        >
+          Refresh
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
   
+  // Always render the full component structure, conditionally show error content if needed
   return (
-    <div>
-      {/* Filters */}
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
-          {/* Search */}
-          <div className="w-full md:w-auto md:min-w-[250px]">
-            <Label htmlFor="search-query">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="search-query"
-                placeholder="Search workouts..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+    <WorkoutListErrorBoundary>
+      <div>
+        {error && errorContent}
+        
+        {/* Filters */}
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
+            {/* Search */}
+            <div className="w-full md:w-auto md:min-w-[250px]">
+              <Label htmlFor="search-query">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="search-query"
+                  placeholder="Search workouts..."
+                  className="pl-8"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
             </div>
-          </div>
-          
-          {/* Workout Type */}
-          <div className="w-full md:w-auto md:min-w-[150px]">
-            <Label htmlFor="type-filter">Type</Label>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger id="type-filter">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {workoutTypes.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Intensity */}
-          <div className="w-full md:w-auto md:min-w-[150px]">
-            <Label htmlFor="intensity-filter">Intensity</Label>
-            <Select value={intensityFilter} onValueChange={setIntensityFilter}>
-              <SelectTrigger id="intensity-filter">
-                <SelectValue placeholder="All intensities" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All intensities</SelectItem>
-                <SelectItem value="Low">Low</SelectItem>
-                <SelectItem value="Medium">Medium</SelectItem>
-                <SelectItem value="High">High</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Date Range */}
-          <div className="flex gap-2 w-full md:w-auto">
-            <div>
-              <Label htmlFor="start-date">From</Label>
-              <Input
-                id="start-date"
-                type="date"
-                value={startDateString}
-                onChange={(e) => setStartDateString(e.target.value)}
-              />
+            
+            {/* Workout Type */}
+            <div className="w-full md:w-auto md:min-w-[150px]">
+              <Label htmlFor="type-filter">Type</Label>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger id="type-filter">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {workoutTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div>
-              <Label htmlFor="end-date">To</Label>
-              <Input
-                id="end-date"
-                type="date"
-                value={endDateString}
-                onChange={(e) => setEndDateString(e.target.value)}
-              />
+            
+            {/* Intensity */}
+            <div className="w-full md:w-auto md:min-w-[150px]">
+              <Label htmlFor="intensity-filter">Intensity</Label>
+              <Select value={intensityFilter} onValueChange={setIntensityFilter}>
+                <SelectTrigger id="intensity-filter">
+                  <SelectValue placeholder="All intensities" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All intensities</SelectItem>
+                  <SelectItem value="Low">Low</SelectItem>
+                  <SelectItem value="Medium">Medium</SelectItem>
+                  <SelectItem value="High">High</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            
+            {/* Date Range */}
+            <div className="flex gap-2 w-full md:w-auto">
+              <div>
+                <Label htmlFor="start-date">From</Label>
+                <Input
+                  id="start-date"
+                  type="date"
+                  value={startDateString}
+                  onChange={(e) => setStartDateString(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="end-date">To</Label>
+                <Input
+                  id="end-date"
+                  type="date"
+                  value={endDateString}
+                  onChange={(e) => setEndDateString(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            {/* Reset filters */}
+            {filtersActive && (
+              <Button 
+                variant="ghost" 
+                onClick={resetFilters}
+                className="md:self-end"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
           </div>
-          
-          {/* Reset filters */}
-          {filtersActive && (
-            <Button 
-              variant="ghost" 
-              onClick={resetFilters}
-              className="md:self-end"
-            >
-              <X className="h-4 w-4 mr-1" />
-              Clear
-            </Button>
-          )}
         </div>
-      </div>
-    
-      {/* Results info */}
-      <div className="flex justify-between items-center mb-4 text-sm text-muted-foreground">
-        <span>
-          Showing {filteredWorkouts.length} of {workouts.length} workouts
-          {filtersActive && " (filtered)"}
-        </span>
-      </div>
       
-      {/* Workouts Table */}
-      <div className="rounded-md border overflow-hidden">
-        <div className="bg-muted">
-          <div className="grid grid-cols-12 gap-2 p-4 text-xs font-medium text-muted-foreground">
-            <div 
-              className="col-span-3 flex items-center cursor-pointer"
-              onClick={() => handleSort("date")}
-            >
-              Date
-              <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "date" ? "opacity-100" : "opacity-50"}`} />
-            </div>
-            <div 
-              className="col-span-3 flex items-center cursor-pointer"
-              onClick={() => handleSort("name")}
-            >
-              Workout
-              <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "name" ? "opacity-100" : "opacity-50"}`} />
-            </div>
-            <div 
-              className="col-span-2 flex items-center cursor-pointer"
-              onClick={() => handleSort("type")}
-            >
-              Type
-              <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "type" ? "opacity-100" : "opacity-50"}`} />
-            </div>
-            <div 
-              className="col-span-2 flex items-center cursor-pointer"
-              onClick={() => handleSort("intensity")}
-            >
-              Intensity
-              <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "intensity" ? "opacity-100" : "opacity-50"}`} />
-            </div>
-            <div 
-              className="col-span-1 flex items-center cursor-pointer"
-              onClick={() => handleSort("duration")}
-            >
-              Duration
-              <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "duration" ? "opacity-100" : "opacity-50"}`} />
-            </div>
-            <div className="col-span-1"></div>
-          </div>
+        {/* Results info */}
+        <div className="flex justify-between items-center mb-4 text-sm text-muted-foreground">
+          <span>
+            Showing {filteredWorkouts.length} of {workouts.length} workouts
+            {filtersActive && " (filtered)"}
+          </span>
         </div>
         
-        <div className="divide-y">
-          {filteredWorkouts.length > 0 ? (
-            filteredWorkouts.map((workout) => (
+        {/* Workouts Table */}
+        <div className="rounded-md border overflow-hidden">
+          <div className="bg-muted">
+            <div className="grid grid-cols-12 gap-2 p-4 text-xs font-medium text-muted-foreground">
               <div 
-                key={workout._id} 
-                className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/50"
+                className="col-span-3 flex items-center cursor-pointer"
+                onClick={() => handleSort("date")}
               >
-                <div className="col-span-3 flex flex-col">
-                  <div className="font-medium">{formatDate(new Date(workout.date))}</div>
-                </div>
-                <div className="col-span-3">
-                  <div className="font-medium">{workout.name || `${workout.type} workout`}</div>
-                </div>
-                <div className="col-span-2">
-                  <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                    {getTypeIcon(workout.type)}
-                    {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
-                  </Badge>
-                </div>
-                <div className="col-span-2">
-                  <Badge className={`${getIntensityColor(workout.intensity)} w-fit`}>
-                    {workout.intensity || 'Unknown'}
-                  </Badge>
-                </div>
-                <div className="col-span-1">
-                  <div className="flex items-center gap-1 text-sm">
-                    <Clock className="h-3 w-3 text-muted-foreground" />
-                    {workout.duration} min
-                  </div>
-                  {(workout.distance || workout.cardioDetails?.distance) && (
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Ruler className="h-3 w-3" />
-                      {getWorkoutDistance(workout).toFixed(1)} km
-                    </div>
-                  )}
-                </div>
-                <div className="col-span-1 text-right">
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/workout/${workout._id}`}>
-                      View
-                    </Link>
-                  </Button>
-                </div>
+                Date
+                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "date" ? "opacity-100" : "opacity-50"}`} />
               </div>
-            ))
-          ) : (
-            <div className="py-8 text-center">
-              <p className="text-muted-foreground">No workouts found matching your criteria.</p>
-              {filtersActive && (
-                <Button variant="link" onClick={resetFilters} className="mt-2">
-                  Clear filters
-                </Button>
-              )}
+              <div 
+                className="col-span-3 flex items-center cursor-pointer"
+                onClick={() => handleSort("name")}
+              >
+                Workout
+                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "name" ? "opacity-100" : "opacity-50"}`} />
+              </div>
+              <div 
+                className="col-span-2 flex items-center cursor-pointer"
+                onClick={() => handleSort("type")}
+              >
+                Type
+                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "type" ? "opacity-100" : "opacity-50"}`} />
+              </div>
+              <div 
+                className="col-span-2 flex items-center cursor-pointer"
+                onClick={() => handleSort("intensity")}
+              >
+                Intensity
+                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "intensity" ? "opacity-100" : "opacity-50"}`} />
+              </div>
+              <div 
+                className="col-span-1 flex items-center cursor-pointer"
+                onClick={() => handleSort("duration")}
+              >
+                Duration
+                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "duration" ? "opacity-100" : "opacity-50"}`} />
+              </div>
+              <div className="col-span-1"></div>
             </div>
-          )}
+          </div>
+          
+          <div className="divide-y">
+            {filteredWorkouts.length > 0 ? (
+              filteredWorkouts.map((workout) => (
+                <div 
+                  key={typeof workout._id === 'string' ? workout._id : String(workout._id)} 
+                  className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/50"
+                >
+                  <div className="col-span-3 flex flex-col">
+                    <div className="font-medium">{formatDate(new Date(workout.date))}</div>
+                  </div>
+                  <div className="col-span-3">
+                    <div className="font-medium">{workout.name || `${workout.type} workout`}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                      {getTypeIcon(workout.type)}
+                      {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
+                    </Badge>
+                  </div>
+                  <div className="col-span-2">
+                    <Badge className={`${getIntensityColor(workout.intensity)} w-fit`}>
+                      {workout.intensity || 'Unknown'}
+                    </Badge>
+                  </div>
+                  <div className="col-span-1">
+                    <div className="flex items-center gap-1 text-sm">
+                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      {workout.duration} min
+                    </div>
+                    {(workout.distance || workout.cardioDetails?.distance) && (
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Ruler className="h-3 w-3" />
+                        {getWorkoutDistance(workout).toFixed(1)} km
+                      </div>
+                    )}
+                  </div>
+                  <div className="col-span-1 text-right">
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/workout/${workout._id}`}>
+                        View
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-muted-foreground">No workouts found matching your criteria.</p>
+                {filtersActive && (
+                  <Button variant="link" onClick={resetFilters} className="mt-2">
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </WorkoutListErrorBoundary>
   )
 } 

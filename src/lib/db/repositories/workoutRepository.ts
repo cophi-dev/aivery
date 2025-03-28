@@ -43,6 +43,59 @@ function convertDocToWorkoutData(doc: any): WorkoutData {
   };
 }
 
+// Add a helper function at the top of the file to recursively convert MongoDB objects
+
+/**
+ * Helper function to convert MongoDB documents to plain objects
+ * This recursively converts all ObjectIds to strings and removes any methods
+ */
+function convertToPlainObject(obj: any): any {
+  // Handle null or undefined
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  // Handle dates
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+  
+  // Handle ObjectId
+  if (obj && obj._id && typeof obj._id.toString === 'function') {
+    obj = { ...obj, _id: obj._id.toString() };
+  }
+  
+  // If we have a MongoDB document with a toObject method, use it
+  if (obj && typeof obj.toObject === 'function') {
+    obj = obj.toObject();
+  }
+  
+  // Handle arrays by mapping over each item
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertToPlainObject(item));
+  }
+  
+  // Handle plain objects with potential nested MongoDB objects
+  if (obj && typeof obj === 'object' && obj.constructor === Object) {
+    const result: any = {};
+    for (const key in obj) {
+      // Skip keys that start with $ or _
+      if (key.startsWith('$') || key === '__v') continue;
+      
+      // Convert ObjectIds in any key to strings
+      if (obj[key] && typeof obj[key].toString === 'function' && obj[key]._bsontype === 'ObjectID') {
+        result[key] = obj[key].toString();
+      } else {
+        result[key] = convertToPlainObject(obj[key]);
+      }
+    }
+    return result;
+  }
+  
+  // Return primitive values and everything else as is
+  return obj;
+}
+
 const DB_NAME = "aivery"
 const COLLECTION_NAME = "workouts"
 
@@ -57,30 +110,75 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
       .lean()
       .exec()
 
-    return workoutDocs.map((doc) => {
-      const workout = isWorkoutDocument(doc) ? doc : {} as SafeAny;
+    // Process documents to ensure they're safe for client components
+    // This creates new objects with only the necessary properties and
+    // avoids any MongoDB objects with toJSON methods that cause warnings
+    return workoutDocs.map((doc: any) => {
+      // Create a new clean object with only the properties we need
       return {
-        _id: workout._id?.toString() || '',
-        userId: workout.userId?.toString() || '',
-        type: workout.type || '',
-        name: workout.name || '',
-        date: workout.date || new Date(),
-        duration: workout.duration || 0,
-        distance: workout.distance,
-        calories: workout.calories,
-        notes: workout.notes || '',
-        intensity: workout.intensity || '',
-        volume: workout.volume || 0,
-        exercises: workout.exercises || [],
-        cardioDetails: workout.cardioDetails || undefined,
-        source: workout.source,
-        sourceId: workout.sourceId,
-        importedFrom: workout.importedFrom,
-        importId: workout.importId,
-        stravaLink: workout.stravaLink,
-        createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt || new Date()),
-        updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt || new Date())
-      } as WorkoutData;
+        _id: doc._id ? doc._id.toString() : '',
+        userId: doc.userId ? doc.userId.toString() : '',
+        type: doc.type || '',
+        name: doc.name || '',
+        date: doc.date instanceof Date ? doc.date.toISOString() : 
+              (doc.date ? new Date(doc.date).toISOString() : new Date().toISOString()),
+        duration: doc.duration || 0,
+        distance: doc.distance || 0,
+        calories: doc.calories || 0,
+        notes: doc.notes || '',
+        intensity: doc.intensity || '',
+        volume: doc.volume || 0,
+        
+        // Carefully handle exercises to avoid nested buffer objects
+        exercises: Array.isArray(doc.exercises) ? doc.exercises.map((exercise: any) => ({
+          _id: exercise._id ? exercise._id.toString() : undefined,
+          name: exercise.name || '',
+          sets: Array.isArray(exercise.sets) ? exercise.sets.map((set: any) => ({
+            weight: set.weight || 0,
+            reps: set.reps || 0,
+            // Skip any _id fields with buffer properties
+          })) : []
+        })) : [],
+        
+        // Create a simplified version of cardioDetails
+        cardioDetails: doc.cardioDetails ? {
+          distance: doc.cardioDetails.distance || 0,
+          duration: doc.cardioDetails.duration || 0,
+          pace: doc.cardioDetails.pace || 0,
+          speed: doc.cardioDetails.speed || 0,
+          maxSpeed: doc.cardioDetails.maxSpeed || 0,
+          elevationGain: doc.cardioDetails.elevationGain || 0,
+          
+          // Include only simplified heart rate data
+          heartRate: doc.cardioDetails.heartRate ? {
+            average: doc.cardioDetails.heartRate.average || 0,
+            max: doc.cardioDetails.heartRate.max || 0
+            // Explicitly omit zones and other objects that might contain buffer properties
+          } : undefined,
+          
+          // Include only simplified power data
+          power: doc.cardioDetails.power ? {
+            average: doc.cardioDetails.power.average || 0,
+            max: doc.cardioDetails.power.max || 0
+            // Omit any potentially problematic nested fields
+          } : undefined,
+          
+          // Skip laps entirely as they often contain buffer objects
+        } : undefined,
+        
+        // Include metadata fields as simple strings
+        source: doc.source || '',
+        sourceId: doc.sourceId || '',
+        importedFrom: doc.importedFrom || '',
+        importId: doc.importId || '',
+        stravaLink: doc.stravaLink || '',
+        
+        // Ensure dates are properly serialized
+        createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : 
+                  (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
+        updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
+                  (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString())
+      };
     });
   } catch (error) {
     console.error('Error getting workouts:', error)
@@ -93,36 +191,79 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
   try {
     await dbConnect()
     
-    const workoutDoc = await WorkoutModel.findById(id).lean().exec()
+    // Use explicit type assertion for the lean document
+    const doc = await WorkoutModel.findById(id).lean().exec() as any;
 
-    if (!workoutDoc) {
+    if (!doc) {
       return null
     }
     
-    // Cast to any to safely access properties
-    const workout = workoutDoc as any;
-
+    // Create a new clean object with only the properties we need
+    // This avoids any MongoDB objects with toJSON methods that cause warnings
     return {
-      _id: workout._id?.toString() || '',
-      userId: workout.userId?.toString() || '',
-      name: workout.name || '',
-      date: workout.date || new Date(),
-      duration: workout.duration || 0,
-      intensity: workout.intensity || '',
-      type: workout.type || '',
-      volume: workout.volume || 0,
-      distance: workout.distance,
-      exercises: workout.exercises || [],
-      cardioDetails: workout.cardioDetails,
-      notes: workout.notes || '',
-      stravaLink: workout.stravaLink,
-      sourceId: workout.sourceId,
-      source: workout.source,
-      importedFrom: workout.importedFrom,
-      importId: workout.importId,
-      createdAt: workout.createdAt instanceof Date ? workout.createdAt.toISOString() : String(workout.createdAt || new Date()),
-      updatedAt: workout.updatedAt instanceof Date ? workout.updatedAt.toISOString() : String(workout.updatedAt || new Date()),
-    }
+      _id: doc._id ? doc._id.toString() : '',
+      userId: doc.userId ? doc.userId.toString() : '',
+      type: doc.type || '',
+      name: doc.name || '',
+      date: doc.date instanceof Date ? doc.date.toISOString() : 
+            (doc.date ? new Date(doc.date).toISOString() : new Date().toISOString()),
+      duration: doc.duration || 0,
+      distance: doc.distance || 0,
+      calories: doc.calories || 0,
+      notes: doc.notes || '',
+      intensity: doc.intensity || '',
+      volume: doc.volume || 0,
+      
+      // Carefully handle exercises to avoid nested buffer objects
+      exercises: Array.isArray(doc.exercises) ? doc.exercises.map((exercise: any) => ({
+        _id: exercise._id ? exercise._id.toString() : undefined,
+        name: exercise.name || '',
+        sets: Array.isArray(exercise.sets) ? exercise.sets.map((set: any) => ({
+          weight: set.weight || 0,
+          reps: set.reps || 0,
+          // Skip any _id fields with buffer properties
+        })) : []
+      })) : [],
+      
+      // Create a simplified version of cardioDetails
+      cardioDetails: doc.cardioDetails ? {
+        distance: doc.cardioDetails.distance || 0,
+        duration: doc.cardioDetails.duration || 0,
+        pace: doc.cardioDetails.pace || 0,
+        speed: doc.cardioDetails.speed || 0,
+        maxSpeed: doc.cardioDetails.maxSpeed || 0,
+        elevationGain: doc.cardioDetails.elevationGain || 0,
+        
+        // Include only simplified heart rate data
+        heartRate: doc.cardioDetails.heartRate ? {
+          average: doc.cardioDetails.heartRate.average || 0,
+          max: doc.cardioDetails.heartRate.max || 0
+          // Explicitly omit zones and other objects that might contain buffer properties
+        } : undefined,
+        
+        // Include only simplified power data
+        power: doc.cardioDetails.power ? {
+          average: doc.cardioDetails.power.average || 0,
+          max: doc.cardioDetails.power.max || 0
+          // Omit any potentially problematic nested fields
+        } : undefined,
+        
+        // Skip laps entirely as they often contain buffer objects
+      } : undefined,
+      
+      // Include metadata fields as simple strings
+      source: doc.source || '',
+      sourceId: doc.sourceId || '',
+      importedFrom: doc.importedFrom || '',
+      importId: doc.importId || '',
+      stravaLink: doc.stravaLink || '',
+      
+      // Ensure dates are properly serialized
+      createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : 
+                (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
+      updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
+                (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString())
+    };
   } catch (error) {
     console.error(`Error getting workout ${id}:`, error)
     throw new Error(`Failed to get workout ${id}`)
