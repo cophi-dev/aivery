@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:debug": "NODE_OPTIONS='--inspect' next dev",
+    "dev:fix-buffer": "node scripts/fix-buffer-errors.js",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint"
@@ -39,6 +41,7 @@
     "next": "14.1.0",
     "next-auth": "^4.24.11",
     "next-themes": "^0.4.6",
+    "openai": "4.20.1",
     "prisma": "^6.5.0",
     "react": "^18.2.0",
     "react-day-picker": "^8.10.1",
