@@ -37,7 +37,23 @@ export async function GET() {
     try {
       // Serialize the user document to prevent client serialization issues
       const serializedUser = toClientData(userDoc)
-      return NextResponse.json({ user: serializedUser })
+      
+      // Make sure nickname is explicitly included in the response
+      const userData = serializedUser as any;
+      console.log('User data being returned:', {
+        id: userData._id,
+        name: userData.name, 
+        hasNickname: !!userData.nickname,
+        nickname: userData.nickname || null
+      });
+      
+      // If nickname is missing but should be set, add it explicitly
+      if (!userData.nickname && (userDoc as any).nickname) {
+        userData.nickname = (userDoc as any).nickname;
+        console.log('Added missing nickname to response:', (userDoc as any).nickname);
+      }
+      
+      return NextResponse.json({ user: userData })
     } catch (error) {
       console.error("Error serializing user data:", error);
       

@@ -119,6 +119,10 @@ async function generateAIQuote(context: {
     // Create a prompt with user context
     let prompt = "Generate a short, inspiring and unique fitness quote (max 100 characters) that's creative, motivational and personalized. Be creative and varied in your tone and style.\n\n";
     
+    // Add a random seed to force uniqueness in each request
+    const randomSeed = Math.floor(Math.random() * 10000);
+    prompt += `Random seed: ${randomSeed}\n\n`;
+    
     prompt += "User context:\n";
     if (context.nickname) prompt += `- User's nickname: ${context.nickname}\n`;
     if (context.workoutCount !== undefined) prompt += `- Has logged ${context.workoutCount} workouts\n`;

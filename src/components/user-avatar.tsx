@@ -7,10 +7,14 @@ import { useEffect, useState } from "react";
 interface UserAvatarProps {
   name?: string | null;
   imageUrl?: string | null;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "default";
+  className?: string;
 }
 
-export function UserAvatar({ name, imageUrl, size = "md" }: UserAvatarProps) {
+export function UserAvatar({ name, imageUrl, size = "md", className }: UserAvatarProps) {
+  // Add debugging to show the name being passed
+  console.log('UserAvatar received:', { name, imageUrl, size });
+  
   // Set size classes
   const sizeClasses = {
     sm: "h-8 w-8",
@@ -28,7 +32,7 @@ export function UserAvatar({ name, imageUrl, size = "md" }: UserAvatarProps) {
   const isBase64Image = imageUrl?.startsWith('data:image/');
   
   return (
-    <Avatar className={sizeClasses[size]}>
+    <Avatar className={`${sizeClasses[size]} ${className || ''}`}>
       {imageUrl && !imageFailed && (
         <AvatarImage 
           src={imageUrl} 

@@ -131,6 +131,13 @@ export const authOptions: NextAuthOptions = {
             }
             if (user.nickname) {
               session.user.nickname = user.nickname;
+              console.log('Added nickname to session:', user.nickname);
+            } else {
+              // Check if we have a nickname in the original document
+              if ((userDoc as any).nickname) {
+                session.user.nickname = (userDoc as any).nickname;
+                console.log('Added nickname from original doc to session:', (userDoc as any).nickname);
+              }
             }
           }
         }
