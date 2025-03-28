@@ -25,8 +25,14 @@ export function PersistentChat() {
   const inputRef = useRef<HTMLInputElement>(null)
   const { data: session } = useSession()
   
-  // Get user info
-  const userName = (session?.user as any)?.nickname || session?.user?.name || "there"
+  // Get user info - safely handle potential objects
+  const userName = (() => {
+    const nickname = session?.user ? 
+      (typeof (session.user as any)?.nickname === 'string' ? (session.user as any).nickname : null) : 
+      null;
+    const name = session?.user?.name && typeof session.user.name === 'string' ? session.user.name : null;
+    return nickname || name || "there";
+  })();
 
   // Get a random welcome message for variety
   function getRandomWelcomeMessage(): string {

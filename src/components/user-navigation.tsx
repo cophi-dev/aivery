@@ -24,15 +24,15 @@ import { useEffect, useState } from "react";
 
 export function UserNavigation() {
   const { setTheme } = useTheme();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const pathname = usePathname();
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   
-  // Fetch user information including nickname
+  // Ensure we have safe defaults and type checking for user info
   const [userInfo, setUserInfo] = useState({
-    name: session?.user?.name || '',
-    email: session?.user?.email || '',
-    nickname: (session?.user as any)?.nickname || '',
+    name: '',
+    email: '',
+    nickname: '',
   });
   
   // Don't render on auth pages at all
@@ -41,20 +41,30 @@ export function UserNavigation() {
     pathname === '/register' || 
     pathname === '/forgot-password';
 
-  // Only render if we have a session
-  if (!session?.user || isAuthPage) {
+  // Don't render during loading or if no session
+  if (status === "loading" || !session?.user || isAuthPage) {
     return null;
   }
 
   // Fetch user avatar and info
   useEffect(() => {
+    // Only run if we have a session
+    if (!session?.user?.id) return;
+    
+    // Get safe string values from session
+    setUserInfo({
+      name: typeof session.user.name === 'string' ? session.user.name : '',
+      email: typeof session.user.email === 'string' ? session.user.email : '',
+      nickname: typeof (session.user as any)?.nickname === 'string' ? (session.user as any).nickname : '',
+    });
+    
     async function fetchUserData() {
       try {
         // Fetch avatar
         const avatarResponse = await fetch('/api/user/avatar');
         if (avatarResponse.ok) {
           const avatarData = await avatarResponse.json();
-          if (avatarData.image) {
+          if (avatarData.image && typeof avatarData.image === 'string') {
             setImageUrl(avatarData.image);
           }
         }
@@ -65,9 +75,12 @@ export function UserNavigation() {
           const userData = await userResponse.json();
           if (userData.user) {
             setUserInfo({
-              name: userData.user.name || session?.user?.name || '',
-              email: userData.user.email || session?.user?.email || '',
-              nickname: userData.user.nickname || (session?.user as any)?.nickname || '',
+              name: typeof userData.user.name === 'string' ? userData.user.name : 
+                    (typeof session.user.name === 'string' ? session.user.name : ''),
+              email: typeof userData.user.email === 'string' ? userData.user.email : 
+                     (typeof session.user.email === 'string' ? session.user.email : ''),
+              nickname: typeof userData.user.nickname === 'string' ? userData.user.nickname : 
+                        (typeof (session.user as any)?.nickname === 'string' ? (session.user as any).nickname : ''),
             });
           }
         }
@@ -77,13 +90,19 @@ export function UserNavigation() {
     }
     
     fetchUserData();
-  }, [session?.user?.id, session?.user?.name, session?.user?.email]);
+  }, [session]);
 
   // Handle logout safely - direct to URL, don't use callback
   const handleLogout = async () => {
     await signOut({ redirect: false });
     window.location.href = '/login';
   };
+
+  // Create safe display values
+  const safeNickname = typeof userInfo.nickname === 'string' ? userInfo.nickname : '';
+  const safeName = typeof userInfo.name === 'string' ? userInfo.name : '';
+  const safeEmail = typeof userInfo.email === 'string' ? userInfo.email : '';
+  const safeSessionEmail = typeof session.user.email === 'string' ? session.user.email : '';
 
   return (
     <DropdownMenu>
@@ -93,7 +112,7 @@ export function UserNavigation() {
           className="relative h-10 w-10 p-0 rounded-full"
         >
           <UserAvatar 
-            name={typeof userInfo.nickname === 'string' ? userInfo.nickname : (typeof userInfo.name === 'string' ? userInfo.name : (typeof session.user.email === 'string' ? session.user.email : 'U'))} 
+            name={safeNickname || safeName || safeSessionEmail || 'U'} 
             imageUrl={typeof imageUrl === 'string' ? imageUrl : null}
             size="md"
           />
@@ -103,9 +122,9 @@ export function UserNavigation() {
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium">
-              {userInfo.nickname ? userInfo.nickname : userInfo.name}
+              {safeNickname || safeName}
             </p>
-            <p className="text-xs text-muted-foreground">{userInfo.email}</p>
+            <p className="text-xs text-muted-foreground">{safeEmail}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
