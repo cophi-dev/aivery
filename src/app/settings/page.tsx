@@ -114,9 +114,14 @@ export default function SettingsPage() {
     const loadUserData = async () => {
       try {
         setIsLoadingUserData(true)
-        const response = await fetch('/api/user')
+        const response = await fetch('/api/user', {
+          credentials: 'include'
+        })
         const data = await response.json()
         if (data.user) {
+          // Set the full user object to access _id
+          setUser(data.user)
+          
           const newPhysicalInfo = {
             height: data.user.height?.toString() || "",
             weight: data.user.weight?.toString() || "",
@@ -130,7 +135,9 @@ export default function SettingsPage() {
           
           // Fetch avatar image directly from database
           try {
-            const avatarResponse = await fetch('/api/user/avatar')
+            const avatarResponse = await fetch('/api/user/avatar', {
+              credentials: 'include'
+            })
             const avatarData = await avatarResponse.json()
             if (avatarData.image) {
               console.log("Got avatar image directly from database:", 
@@ -257,6 +264,7 @@ export default function SettingsPage() {
           currentPassword,
           newPassword,
         }),
+        credentials: 'include',
       })
 
       const data = await response.json()
@@ -294,6 +302,7 @@ export default function SettingsPage() {
           gender: physicalInfo.gender || undefined,
           activityLevel: physicalInfo.activityLevel || undefined,
         }),
+        credentials: 'include',
       })
 
       if (!response.ok) {
@@ -470,73 +479,67 @@ export default function SettingsPage() {
   };
 
   const handleCropComplete = async (croppedBlob: Blob) => {
+    setIsUploadingImage(true);
+    
+    // Close the crop dialog first
+    setShowCropDialog(false);
+    
     try {
-      setIsUploadingImage(true);
-      console.log('Crop completed, processing image...');
+      // Optimize the image size before upload
+      const optimizedBlob = await compressImage(croppedBlob);
       
-      // Close the crop dialog
-      setShowCropDialog(false);
+      // Convert to base64 for upload
+      const base64Image = await blobToBase64(optimizedBlob);
       
-      // Optimize image size before upload
-      let optimizedBlob = croppedBlob;
       try {
-        optimizedBlob = await compressImage(croppedBlob);
-        console.log(`Original size: ${Math.round(croppedBlob.size / 1024)}KB, Compressed: ${Math.round(optimizedBlob.size / 1024)}KB`);
-      } catch (err) {
-        console.error('Failed to optimize image:', err);
-        // Continue with original blob if compression fails
-      }
-      
-      // Convert blob to base64
-      const base64 = await blobToBase64(optimizedBlob);
-      
-      // Upload image to server
-      const response = await fetch('/api/user/image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: base64 }),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload image');
-      }
-      
-      const data = await response.json();
-      console.log('Image upload successful:', data);
-      
-      // Update image key to force avatar refresh
-      setImageKey(`image-${Date.now()}`);
-      
-      // Force session refresh to update the image
-      try {
-        console.log('Refreshing session data to update avatar...');
-        const refreshResponse = await fetch('/api/auth/refresh-session');
-        if (refreshResponse.ok) {
-          const refreshData = await refreshResponse.json();
-          console.log('Session refresh successful:', refreshData);
-        } else {
-          console.error('Session refresh failed:', await refreshResponse.text());
+        const response = await fetch('/api/user/image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            image: base64Image,
+            email: userData.email // Include email for fallback authentication
+          }),
+          credentials: 'include',
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to upload image');
         }
-      } catch (refreshError) {
-        console.error('Error refreshing session:', refreshError);
+        
+        const data = await response.json();
+        
+        // Update user data with the new image
+        setUserData(prev => ({
+          ...prev,
+          image: base64Image
+        }));
+        
+        // Refresh the session to update the image in navbar
+        await updateSession();
+        
+        // Force refresh avatar by updating the key
+        setImageKey(`image-${Date.now()}`);
+        
+        // Success notification
+        toast({
+          description: "Profile image updated successfully!",
+        });
+      } catch (error) {
+        console.error('Error uploading image:', error);
+        toast({
+          variant: "destructive",
+          description: error instanceof Error ? error.message : "Failed to upload image",
+        });
+      } finally {
+        setIsUploadingImage(false);
       }
-      
-      // Show success toast
-      toast({
-        title: "Image updated",
-        description: "Your profile image has been updated successfully",
-      });
     } catch (error) {
-      console.error('Error processing or uploading image:', error);
+      console.error('Error handling crop:', error);
       toast({
         variant: "destructive",
-        title: "Upload failed",
-        description: error instanceof Error ? error.message : "Failed to upload image",
+        description: error instanceof Error ? error.message : "Error processing image",
       });
-    } finally {
       setIsUploadingImage(false);
     }
   };
@@ -580,6 +583,7 @@ export default function SettingsPage() {
             gender: physicalInfo.gender || undefined,
             activityLevel: physicalInfo.activityLevel || undefined,
           }),
+          credentials: 'include',
       })
 
       if (!response.ok) {
@@ -721,18 +725,20 @@ export default function SettingsPage() {
                     className="hidden"
                     onChange={handleImageUpload}
                   />
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="mb-2"
-                    onClick={() => {
-                      setFileSizeError(null)
-                      fileInputRef.current?.click()
-                    }}
-                    disabled={isUploadingImage}
-                  >
-                    {isUploadingImage ? "Uploading..." : "Upload Photo"}
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mb-2"
+                      onClick={() => {
+                        setFileSizeError(null)
+                        fileInputRef.current?.click()
+                      }}
+                      disabled={isUploadingImage}
+                    >
+                      {isUploadingImage ? "Uploading..." : "Upload Photo"}
+                    </Button>
+                  </div>
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">
                       JPG, GIF or PNG. Maximum size: 1MB. For best results, use a square image.

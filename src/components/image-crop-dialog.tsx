@@ -31,11 +31,11 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>()
   const imgRef = useRef<HTMLImageElement>(null)
   const [isImageLoaded, setIsImageLoaded] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   // Reset crop when dialog opens
   useEffect(() => {
     if (isOpen && imageUrl) {
-      console.log('ImageCropDialog opened with URL:', imageUrl)
       setCrop({
         unit: '%',
         width: 80,
@@ -45,34 +45,26 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
       })
       setCompletedCrop(undefined)
       setIsImageLoaded(false)
+      setIsProcessing(false)
     }
   }, [isOpen, imageUrl])
 
   const handleSave = async () => {
     if (!completedCrop || !imgRef.current || !isImageLoaded) {
-      console.log('Cannot save: missing requirements', {
-        completedCrop: !!completedCrop,
-        imgRef: !!imgRef.current,
-        isImageLoaded
-      })
       return
     }
 
-    console.log('Starting save with crop:', completedCrop)
+    // Prevent multiple clicks
+    if (isProcessing) {
+      return
+    }
+
+    setIsProcessing(true)
     
     const canvas = document.createElement('canvas')
     const image = imgRef.current
     const scaleX = image.naturalWidth / image.width
     const scaleY = image.naturalHeight / image.height
-    
-    console.log('Image dimensions:', {
-      naturalWidth: image.naturalWidth,
-      naturalHeight: image.naturalHeight,
-      displayWidth: image.width,
-      displayHeight: image.height,
-      scaleX,
-      scaleY
-    })
 
     // Calculate the size based on the smaller dimension to ensure we don't exceed image bounds
     const cropWidth = completedCrop.width * scaleX
@@ -87,15 +79,10 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
     
     canvas.width = finalSize
     canvas.height = finalSize
-    
-    console.log('Canvas dimensions:', {
-      width: canvas.width,
-      height: canvas.height
-    })
 
     const ctx = canvas.getContext('2d')
     if (!ctx) {
-      console.error('No 2d context')
+      setIsProcessing(false)
       return
     }
 
@@ -120,25 +107,21 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
       canvas.toBlob(
         (blob) => {
           if (blob) {
-            console.log('Blob created successfully:', {
-              size: blob.size,
-              type: blob.type
-            })
             onSave(blob)
-          } else {
-            console.error('Failed to create blob')
           }
+          setIsProcessing(false)
         },
         'image/png',
         0.7 // Lower quality to save space
       )
     } catch (e) {
       console.error('Error drawing image:', e)
+      setIsProcessing(false)
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-[800px]">
         <DialogHeader>
           <DialogTitle>Crop Profile Picture</DialogTitle>
@@ -157,7 +140,6 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
                   setCrop(percentCrop)
                 }}
                 onComplete={(c) => {
-                  console.log('Crop completed:', c)
                   setCompletedCrop(c)
                 }}
                 circularCrop={false}
@@ -172,11 +154,7 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
                     maxHeight: '500px',
                     objectFit: 'contain'
                   }}
-                  onLoad={(e) => {
-                    console.log('Image loaded:', {
-                      width: e.currentTarget.width,
-                      height: e.currentTarget.height
-                    })
+                  onLoad={() => {
                     setIsImageLoaded(true)
                   }}
                 />
@@ -188,9 +166,9 @@ export function ImageCropDialog({ isOpen, onClose, onSave, imageUrl }: ImageCrop
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button 
             onClick={handleSave} 
-            disabled={!completedCrop || !isImageLoaded}
+            disabled={!completedCrop || !isImageLoaded || isProcessing}
           >
-            Save
+            {isProcessing ? "Processing..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
