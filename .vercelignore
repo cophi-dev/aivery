@@ -1,0 +1,7 @@
+# Don't upload unnecessary files to Vercel
+node_modules
+.git
+.next
+.env.local
+.env
+**/*.log 
