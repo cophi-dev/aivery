@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 interface UserAvatarProps {
   name?: string | null;
   imageUrl?: string | null;
-  size?: "sm" | "md" | "lg" | "default";
+  size?: "sm" | "md" | "lg";
   className?: string;
 }
 
