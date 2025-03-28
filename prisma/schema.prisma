@@ -37,6 +37,7 @@ model Workout {
   updatedAt     DateTime  @updatedAt
   userId        String    @db.ObjectId
   user          User      @relation(fields: [userId], references: [id])
+  exercises     WorkoutExercise[]
 }
 
 model UserPreferences {
@@ -52,4 +53,29 @@ model UserPreferences {
   weeklyWorkoutGoal Int      @default(3)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+model Exercise {
+  id              String     @id @default(auto()) @map("_id") @db.ObjectId
+  name            String     @unique
+  description     String?
+  muscleGroups    String[]
+  category        String     @default("strength") // strength, cardio, flexibility
+  equipment       String?
+  instructions    String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  workoutExercises WorkoutExercise[]
+}
+
+model WorkoutExercise {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  workoutId   String   @db.ObjectId
+  workout     Workout  @relation(fields: [workoutId], references: [id])
+  exerciseId  String   @db.ObjectId
+  exercise    Exercise @relation(fields: [exerciseId], references: [id])
+  sets        Json[]   // Array of sets with weight and reps
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 } 

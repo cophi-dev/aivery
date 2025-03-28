@@ -182,6 +182,11 @@ export default async function DashboardPage() {
                     Create Plan
                   </Button>
                 </Link>
+                <Link href="/exercises">
+                  <Button variant="secondary" className="w-full" size="sm">
+                    Exercises
+                  </Button>
+                </Link>
                 <Link href="/settings">
                   <Button variant="secondary" className="w-full" size="sm">
                     Settings

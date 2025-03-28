@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useSession } from "next-auth/react"
-import { Dumbbell, Calendar, MessageSquare, History, BarChart2 } from "lucide-react"
+import { Dumbbell, Calendar, MessageSquare, History, BarChart2, List } from "lucide-react"
 import { UserNavigation } from "./user-navigation"
 
 export function MainHeader() {
@@ -62,6 +62,16 @@ export function MainHeader() {
               >
                 <History className="h-4 w-4" />
                 <span>Workout History</span>
+              </Link>
+              <Link
+                href="/exercises"
+                className={cn(
+                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                  isPath("/exercises") ? "text-foreground bg-accent/50" : "text-foreground/70"
+                )}
+              >
+                <List className="h-4 w-4" />
+                <span>Exercises</span>
               </Link>
               <Link
                 href="/plan"

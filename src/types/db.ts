@@ -97,4 +97,27 @@ export interface ChatMessage {
   workoutId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ExerciseData {
+  _id: string;
+  name: string;
+  description?: string;
+  muscleGroups: string[];
+  category: "strength" | "cardio" | "flexibility";
+  equipment?: string;
+  instructions?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkoutExerciseData {
+  _id: string;
+  workoutId: string;
+  exerciseId: string;
+  exercise?: ExerciseData;
+  sets: Set[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
 } 
