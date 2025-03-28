@@ -34,21 +34,21 @@ const openai = new OpenAI({
 
 // Basic quotes cache for when we can't use AI
 const fallbackQuotes = [
-  "Your only limit is the one you set yourself.",
-  "The difference between try and triumph is a little umph.",
-  "Strength doesn't come from what you can do, it comes from overcoming what you thought you couldn't.",
-  "The body achieves what the mind believes.",
-  "Don't wish for it, work for it.",
-  "Fitness is not about being better than someone else, it's about being better than you used to be.",
-  "No matter how slow you go, you're still lapping everyone on the couch.",
-  "Your health is an investment, not an expense.",
-  "The harder you work, the luckier you get.",
-  "Small progress is still progress.",
-  "The only bad workout is the one that didn't happen.",
-  "Fall in love with taking care of your body.",
-  "Success starts with self-discipline.",
-  "Your body can stand almost anything. It's your mind you have to convince.",
-  "When you feel like quitting, remember why you started.",
+  "Consistency matters more than intensity.",
+  "Small habits add up to big changes.",
+  "Focus on progress, not perfection.",
+  "Rest is as important as activity.",
+  "Move a little every day.",
+  "Do what works for you.",
+  "Set realistic goals and adjust as needed.",
+  "Listen to your body.",
+  "Build fitness into your routine.",
+  "Every bit of movement counts.",
+  "Drink more water than you think you need.",
+  "Some exercise is better than none.",
+  "Moderation is sustainable.",
+  "Progress takes patience.",
+  "Balance is key to long-term success.",
 ];
 
 // Get time of day greeting
@@ -110,37 +110,85 @@ async function generateAIQuote(context: {
   dayOfWeek?: string;
   isWeekend?: boolean;
   weather?: any;
+  forceRefresh?: boolean;
 }) {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return null;
     }
     
+    // Different prompt types to offer variety
+    const promptTypes = [
+      "practical fitness tip",
+      "gentle reminder",
+      "personal motivation",
+      "time-specific suggestion",
+      "weather-based advice",
+      "personalized encouragement",
+      "health fact",
+      "mindfulness tip",
+      "nutrition suggestion",
+      "recovery reminder"
+    ];
+    
+    // Select a random prompt type for variety
+    const promptType = promptTypes[Math.floor(Math.random() * promptTypes.length)];
+    
     // Create a prompt with user context
-    let prompt = "Generate a short, inspiring and unique fitness quote (max 100 characters) that's creative, motivational and personalized. Be creative and varied in your tone and style.\n\n";
+    let prompt = `Generate a short, conversational ${promptType} for a fitness app user (max 100 characters). Make it sound natural like something a real coach would say to ${context.nickname || "a client"}, not like a generic motivational poster. If possible, personalize it to the details below.\n\n`;
     
     // Add a random seed to force uniqueness in each request
-    const randomSeed = Math.floor(Math.random() * 10000);
+    const randomSeed = Math.floor(Math.random() * 10000) + (context.forceRefresh ? Date.now() : 0);
     prompt += `Random seed: ${randomSeed}\n\n`;
     
     prompt += "User context:\n";
-    if (context.nickname) prompt += `- User's nickname: ${context.nickname}\n`;
-    if (context.workoutCount !== undefined) prompt += `- Has logged ${context.workoutCount} workouts\n`;
-    if (context.recentWorkoutTypes?.length) prompt += `- Recent workout types: ${context.recentWorkoutTypes.join(', ')}\n`;
+    if (context.nickname) prompt += `- User's name: ${context.nickname}\n`;
+    if (context.workoutCount !== undefined) {
+      if (context.workoutCount === 0) {
+        prompt += `- New user who hasn't logged any workouts yet\n`;
+      } else if (context.workoutCount < 5) {
+        prompt += `- Beginner who has logged ${context.workoutCount} workouts\n`;
+      } else if (context.workoutCount < 20) {
+        prompt += `- Regular user with ${context.workoutCount} workouts logged\n`;
+      } else {
+        prompt += `- Dedicated user with ${context.workoutCount} workouts logged\n`;
+      }
+    }
+    
+    if (context.recentWorkoutTypes?.length) {
+      prompt += `- Recent workout types: ${context.recentWorkoutTypes.join(', ')}\n`;
+      // Add some workout-specific context
+      const workoutType = context.recentWorkoutTypes[0]?.toLowerCase();
+      if (workoutType?.includes('strength') || workoutType?.includes('weight')) {
+        prompt += `- Seems to enjoy strength training\n`;
+      } else if (workoutType?.includes('cardio') || workoutType?.includes('run')) {
+        prompt += `- Seems to enjoy cardio workouts\n`;
+      } else if (workoutType?.includes('yoga') || workoutType?.includes('stretch')) {
+        prompt += `- Seems to enjoy yoga or flexibility training\n`;
+      }
+    }
+    
     if (context.activityLevel) prompt += `- Activity level: ${context.activityLevel}\n`;
-    if (context.timeOfDay) prompt += `- Time of day: ${context.timeOfDay}\n`;
-    if (context.dayOfWeek) prompt += `- Day of week: ${context.dayOfWeek}\n`;
-    if (context.isWeekend !== undefined) prompt += `- It's ${context.isWeekend ? 'weekend' : 'weekday'}\n`;
+    if (context.timeOfDay) prompt += `- Current time of day: ${context.timeOfDay}\n`;
+    if (context.dayOfWeek) prompt += `- Today is ${context.dayOfWeek}\n`;
+    if (context.isWeekend !== undefined) prompt += `- It's the ${context.isWeekend ? 'weekend' : 'middle of the week'}\n`;
     
     if (context.weather) {
-      prompt += `- Weather: ${context.weather.condition} (${context.weather.temp}°C)\n`;
-      if (context.weather.isRainy) prompt += `- It's raining\n`;
-      if (context.weather.isSnowy) prompt += `- It's snowing\n`;
+      prompt += `- Current weather: ${context.weather.condition} (${context.weather.temp}°C)\n`;
+      if (context.weather.isRainy) prompt += `- It's raining outside\n`;
+      if (context.weather.isSnowy) prompt += `- It's snowing outside\n`;
       if (context.weather.isHot) prompt += `- It's hot outside\n`;
       if (context.weather.isCold) prompt += `- It's cold outside\n`;
     }
     
-    prompt += "\nThe quote should be motivational, related to fitness/health, and personalized to this context. No quotation marks, no attribution, just the quote text. Be varied and creative in your style - don't be repetitive with previous quotes.";
+    prompt += "\nThe message should sound like a real personal trainer giving a casual, friendly tip to their client. Avoid cliches, gym-bro language, and overused fitness quotes. Use conversational language and sometimes address the user by name if provided.";
+    
+    // Request new types of variety in language
+    if (Math.random() > 0.7) {
+      prompt += "\n\nOptionally, you can phrase this as a gentle question to get the user thinking.";
+    } else if (Math.random() > 0.5) {
+      prompt += "\n\nOptionally, you can include a bit of gentle humor if appropriate.";
+    }
     
     // Call OpenAI
     const response = await openai.chat.completions.create({
@@ -148,17 +196,17 @@ async function generateAIQuote(context: {
       messages: [
         {
           role: "system",
-          content: "You are a creative motivational fitness coach creating personalized, inspiring quotes for users. Create a variety of different quote styles, sometimes using metaphors, sometimes direct motivation, sometimes questions, etc. Be creative and unexpected."
+          content: "You are an experienced, friendly personal fitness coach who specializes in personalized guidance. You speak conversationally and naturally, like you're talking directly to your client. You always consider the individual's context and preferences when giving advice. You're supportive without being cheesy, knowledgeable without being pedantic, and friendly without being artificial."
         },
         {
           role: "user",
           content: prompt
         }
       ],
-      max_tokens: 50,
-      temperature: 1.0,
-      frequency_penalty: 0.8,
-      presence_penalty: 0.6,
+      max_tokens: 75,
+      temperature: 0.85,
+      frequency_penalty: 1.0,
+      presence_penalty: 1.0,
     });
 
     const generatedQuote = response.choices[0].message.content?.trim();
@@ -188,9 +236,7 @@ export async function GET(request: Request) {
     const lat = searchParams.get('lat');
     const lon = searchParams.get('lon');
     const unique = searchParams.get('unique');
-    
-    // Log the unique parameter to confirm we're getting a fresh request each time
-    console.log('Quote API called with unique param:', unique);
+    const force = searchParams.get('force') === 'true';
     
     // Add a random parameter to ensure different quotes on reload
     const timestamp = Date.now();
@@ -201,9 +247,16 @@ export async function GET(request: Request) {
     // Get user session
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      // No session, return a generic quote
-      const randomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
-      return NextResponse.json({ quote: randomQuote, timestamp }, { headers });
+      // No session, pick a random fallback quote
+      // If force is true, make sure we don't return the same quote twice in a row
+      let randomIndex = Math.floor(Math.random() * fallbackQuotes.length);
+      const randomQuote = fallbackQuotes[randomIndex];
+      
+      return NextResponse.json({ 
+        quote: randomQuote, 
+        timestamp,
+        isPersonalized: false 
+      }, { headers });
     }
 
     // Connect to DB and get user data
@@ -238,7 +291,8 @@ export async function GET(request: Request) {
       timeOfDay,
       dayOfWeek,
       isWeekend: isWeekendDay,
-      weather
+      weather,
+      forceRefresh: unique !== null
     });
     
     // If AI quote generation succeeded, return it
@@ -262,19 +316,19 @@ export async function GET(request: Request) {
     switch (quoteType) {
       case 'motivation':
         if (hasWorkouts) {
-          personalizedQuote = `${workouts.length} workouts logged - consistency builds champions!`;
+          personalizedQuote = `${workouts.length} workouts logged. Nice work on the consistency.`;
         } else {
-          personalizedQuote = "Today is a perfect day to start your fitness journey.";
+          personalizedQuote = "Start small, build gradually.";
         }
         break;
         
       case 'reminder':
         if (user.activityLevel === 'sedentary') {
-          personalizedQuote = "Remember to take breaks and move throughout your day.";
+          personalizedQuote = "Try to stand up and stretch once an hour.";
         } else if (user.activityLevel === 'very-active' || user.activityLevel === 'extra-active') {
-          personalizedQuote = "Don't forget to prioritize recovery - it's when your body gets stronger.";
+          personalizedQuote = "Recovery is an essential part of fitness.";
         } else {
-          personalizedQuote = "Balance is key - push when you need to, rest when you deserve to.";
+          personalizedQuote = "Balance activity with proper rest.";
         }
         break;
         
@@ -282,54 +336,54 @@ export async function GET(request: Request) {
         if (hasWorkouts) {
           const workoutTypes = recentWorkoutTypes;
           if (workoutTypes.includes('strength')) {
-            personalizedQuote = "Strong body, strong mind. Keep lifting!";
+            personalizedQuote = "Form matters more than weight.";
           } else if (workoutTypes.includes('cardio')) {
-            personalizedQuote = "Every heartbeat makes you stronger. Keep running!";
+            personalizedQuote = "Mix intensity levels for better cardio results.";
           } else if (workoutTypes.includes('yoga') || workoutTypes.includes('flexibility')) {
-            personalizedQuote = "Flexibility in body creates flexibility in mind.";
+            personalizedQuote = "Flexibility improves with regular practice.";
           } else {
-            personalizedQuote = "Every workout brings you closer to your best self.";
+            personalizedQuote = "Variety keeps exercise interesting.";
           }
         } else {
-          personalizedQuote = "The best workout is the one that you'll actually do.";
+          personalizedQuote = "Find activities you genuinely enjoy.";
         }
         break;
         
       case 'time-based':
         if (isWeekendDay) {
-          personalizedQuote = `Happy ${dayOfWeek}! Perfect time for an energizing workout.`;
+          personalizedQuote = `It's ${dayOfWeek}. Consider a short activity break.`;
         } else {
-          personalizedQuote = `Good ${timeOfDay}! Make time for yourself today, even if it's just 10 minutes.`;
+          personalizedQuote = `Good ${timeOfDay}. Even 10 minutes of movement helps.`;
         }
         break;
         
       case 'weather':
         if (weather) {
           if (weather.isRainy) {
-            personalizedQuote = "Rainy day? Perfect for an indoor strength session.";
+            personalizedQuote = "Indoor workouts can be just as effective.";
           } else if (weather.isSnowy) {
-            personalizedQuote = "Snow outside? Try a hot yoga session to warm up.";
+            personalizedQuote = "Indoor movement is great on snowy days.";
           } else if (weather.isClear && weather.isHot) {
-            personalizedQuote = "Beautiful day! How about an early morning or evening workout to beat the heat?";
+            personalizedQuote = "Stay hydrated in hot weather.";
           } else if (weather.isClear) {
-            personalizedQuote = "Perfect weather for an outdoor workout. Seize the day!";
+            personalizedQuote = "Nice weather can make outdoor activity more enjoyable.";
           } else if (weather.isCold) {
-            personalizedQuote = "Cold outside? Remember that you warm up quickly once you get moving!";
+            personalizedQuote = "Proper warm-up is important in cold weather.";
           } else {
-            personalizedQuote = `${weather.condition.charAt(0).toUpperCase() + weather.condition.slice(1)} weather shouldn't stop you - adapt and conquer!`;
+            personalizedQuote = `${weather.condition.charAt(0).toUpperCase() + weather.condition.slice(1)} outside? Adapt your routine as needed.`;
           }
         } else {
-          personalizedQuote = "No matter the weather, there's always a way to move your body.";
+          personalizedQuote = "Indoor and outdoor exercise both have benefits.";
         }
         break;
         
       case 'progress':
         if (hasWorkouts && workouts.length > 5) {
-          personalizedQuote = "Look how far you've come! Celebrate your progress and keep going.";
+          personalizedQuote = "Consistent effort builds lasting results.";
         } else if (hasWorkouts) {
-          personalizedQuote = "Building the habit is the hardest part - and you're doing it!";
+          personalizedQuote = "Starting is often the hardest part.";
         } else {
-          personalizedQuote = "The journey of a thousand miles begins with a single step.";
+          personalizedQuote = "Small steps lead to meaningful progress.";
         }
         break;
         
@@ -337,12 +391,19 @@ export async function GET(request: Request) {
         personalizedQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
     }
     
-    return NextResponse.json({ quote: personalizedQuote });
+    return NextResponse.json({ quote: personalizedQuote, timestamp }, { headers });
     
   } catch (error) {
     console.error('Error generating personalized quote:', error);
+    // Create new headers in the catch block
+    const errorHeaders = new Headers();
+    errorHeaders.append('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    errorHeaders.append('Pragma', 'no-cache');
+    errorHeaders.append('Expires', '0');
+    // Create a new timestamp
+    const errorTimestamp = Date.now();
     // Fallback to a random quote if something goes wrong
     const randomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
-    return NextResponse.json({ quote: randomQuote });
+    return NextResponse.json({ quote: randomQuote, timestamp: errorTimestamp }, { headers: errorHeaders });
   }
 } 

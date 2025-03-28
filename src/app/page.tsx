@@ -50,49 +50,29 @@ function AppHeader({ user, quote, isLoading }: { user: any | null, quote: string
   );
 }
 
-// Content loading overlay
-function ContentLoadingOverlay() {
-  return (
-    <div className="fixed inset-x-0 top-[150px] bottom-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <div className="text-center bg-background/90 p-8 rounded-lg">
-        <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-        <p className="mt-4 text-lg font-medium text-muted-foreground">Loading your dashboard...</p>
-      </div>
-    </div>
-  );
-}
-
 export default function HomePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
-  const [showLoadingOverlay, setShowLoadingOverlay] = useState(true);
-  const [loadingOpacity, setLoadingOpacity] = useState(1);
-  const [minimalUserData, setMinimalUserData] = useState<any>(null);
-  const [headerLoading, setHeaderLoading] = useState(true);
+  const [headerLoading, setHeaderLoading] = useState(false);
 
-  // Add state to enforce minimum loading time
-  const [loadStartTime] = useState<number>(Date.now());
-  const MIN_LOADING_TIME = 1000; // Minimum 1 second of loading
-  const FADE_DURATION = 500; // 0.5 second fade out
-
-  // Fetch a quote when the component mounts (moved earlier to get quote sooner)
+  // Fetch a quote when the component mounts
   useEffect(() => {
-    async function fetchQuote() {
+    async function fetchQuote(forceFresh = false) {
       try {
-        // Generate a completely unique URL each time to bypass all caching
-        const uniqueId = Date.now() + '-' + Math.random().toString(36).substring(2, 15);
-        const url = `/api/quotes?unique=${uniqueId}`;
-        
-        console.log('Fetching quote from:', url);
+        // Always generate a completely unique URL to bypass caching
+        const now = Date.now();
+        const uniqueId = now + '-' + Math.random().toString(36).substring(2, 15);
+        // Add a force parameter to ensure we get a fresh quote when needed
+        const forceParam = forceFresh ? '&force=true' : '';
+        const url = `/api/quotes?unique=${uniqueId}${forceParam}`;
         
         const response = await fetch(url, { 
           cache: 'no-store',
@@ -106,7 +86,6 @@ export default function HomePage() {
         if (response.ok) {
           const data = await response.json();
           if (data.quote) {
-            console.log('New quote received:', data.quote);
             setQuote(data.quote);
           }
         }
@@ -115,110 +94,54 @@ export default function HomePage() {
       }
     }
     
-    fetchQuote();
+    // Always fetch a fresh quote on mount/page load
+    fetchQuote(true);
+
+    // Add event listener for beforeunload to prepare for page refresh
+    window.addEventListener('beforeunload', () => {
+      sessionStorage.removeItem('lastQuote');
+      sessionStorage.removeItem('quoteTimestamp');
+    });
+
+    // Handle window visibility changes (tab focus)
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        fetchQuote(true);
+      }
+    }
     
-    // Also add event handler for window focus to refresh quote when tab gets focus
-    window.addEventListener('focus', fetchQuote);
+    // Use the Page Visibility API for tab focus
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Refresh quote every hour
-    const quoteInterval = setInterval(fetchQuote, 60 * 60 * 1000);
+    // Refresh quote every 15 minutes
+    const quoteInterval = setInterval(() => fetchQuote(true), 15 * 60 * 1000);
+    
     return () => {
       clearInterval(quoteInterval);
-      window.removeEventListener('focus', fetchQuote);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', () => {});
     };
   }, []);
 
-  // Check user authentication status and fetch minimal user data for header
+  // Check user authentication status and fetch user data
   useEffect(() => {
     if (status === "loading") {
-      setInitialLoading(true);
-      setHeaderLoading(true);
       return; // Still checking auth status
     }
     
-    // If user is not logged in, show the public landing page
+    // If user is not logged in, the public landing page will be shown
     if (status !== "authenticated") {
-      // Ensure minimum loading time with fade out
-      const timeElapsed = Date.now() - loadStartTime;
-      if (timeElapsed < MIN_LOADING_TIME) {
-        const remainingTime = MIN_LOADING_TIME - timeElapsed;
-        
-        // Start fade out animation before the loading time is completely finished
-        setTimeout(() => {
-          setLoadingOpacity(0);
-        }, remainingTime - FADE_DURATION);
-        
-        // Remove the loading animation after it has faded out
-        setTimeout(() => {
-          setInitialLoading(false);
-          setLoading(false);
-          setShowLoadingOverlay(false);
-          setHeaderLoading(false);
-        }, remainingTime);
-      } else {
-        // If already past minimum time, start fade out now
-        setLoadingOpacity(0);
-        setTimeout(() => {
-          setInitialLoading(false);
-          setLoading(false);
-          setShowLoadingOverlay(false);
-          setHeaderLoading(false);
-        }, FADE_DURATION);
-      }
       return;
     }
     
-    // User is authenticated, fetch their basic info for header and then full data
-    fetchMinimalUserData();
-  }, [status, retryCount, loadStartTime]);
-
-  // Function to fetch minimal user data for header
-  const fetchMinimalUserData = async () => {
-    try {
-      if (!session?.user?.id) return;
-      
-      setHeaderLoading(true);
-      
-      // Fetch just the basic user info first to show in header
-      const userResponse = await fetch('/api/user/minimal');
-      
-      // If the minimal endpoint doesn't exist, fallback to regular endpoint
-      if (!userResponse.ok) {
-        const fullUserResponse = await fetch('/api/user');
-        if (fullUserResponse.ok) {
-          const userData = await fullUserResponse.json();
-          if (userData.user) {
-            setMinimalUserData({
-              name: userData.user.name,
-              nickname: userData.user.nickname,
-              image: userData.user.image
-            });
-            setHeaderLoading(false); // Header data is loaded
-          }
-        }
-      } else {
-        const userData = await userResponse.json();
-        if (userData.user) {
-          setMinimalUserData(userData.user);
-          setHeaderLoading(false); // Header data is loaded
-        }
-      }
-      
-      // Now fetch complete user data
-      fetchUserData();
-    } catch (err) {
-      console.error("Error loading minimal user data:", err);
-      // Continue to fetch full data even if minimal data fails
-      setHeaderLoading(false);
-      fetchUserData();
-    }
-  };
+    // User is authenticated, fetch their data
+    fetchUserData();
+  }, [status, retryCount]);
 
   // Function to fetch complete user data
   const fetchUserData = async () => {
     try {
       if (!session?.user?.id) {
-        handleLoadingComplete();
         return;
       }
       
@@ -265,35 +188,7 @@ export default function HomePage() {
       console.error("Error loading data:", err);
       setError(err.message || "Failed to load data. Please try again.");
     } finally {
-      handleLoadingComplete();
-    }
-  };
-
-  // Helper function to handle loading completion with fade out
-  const handleLoadingComplete = () => {
-    const timeElapsed = Date.now() - loadStartTime;
-    if (timeElapsed < MIN_LOADING_TIME) {
-      const remainingTime = MIN_LOADING_TIME - timeElapsed;
-      
-      // Start fade out animation before the loading time is completely finished
-      setTimeout(() => {
-        setLoadingOpacity(0);
-      }, remainingTime - FADE_DURATION);
-      
-      // Remove the loading animation after it has faded out
-      setTimeout(() => {
-        setInitialLoading(false);
-        setLoading(false);
-        setShowLoadingOverlay(false);
-      }, remainingTime);
-    } else {
-      // If already past minimum time, start fade out now
-      setLoadingOpacity(0);
-      setTimeout(() => {
-        setInitialLoading(false);
-        setLoading(false);
-        setShowLoadingOverlay(false);
-      }, FADE_DURATION);
+      setLoading(false);
     }
   };
 
@@ -302,8 +197,21 @@ export default function HomePage() {
     setRetryCount(prev => prev + 1);
   };
 
+  // Simple loading state for when authentication is being checked
+  if (status === "loading") {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <AppHeader 
+          user={null} 
+          quote={quote} 
+          isLoading={true} 
+        />
+      </div>
+    );
+  }
+
   // For completely unauthenticated users or error states
-  if ((status !== "authenticated" && !initialLoading) || error) {
+  if (status !== "authenticated" || error) {
     return (
       <div className="container mx-auto px-4 py-8">
         {/* Show error if there is one */}
@@ -387,38 +295,11 @@ export default function HomePage() {
     );
   }
 
-  // For authenticated users with initial loading or still loading data
-  if (initialLoading || showLoadingOverlay) {
-    return (
-      <div className="container mx-auto px-4 py-6">
-        {/* Always show the header, even if it's loading */}
-        <AppHeader 
-          user={minimalUserData} 
-          quote={quote} 
-          isLoading={headerLoading} 
-        />
-        
-        {/* Show loading overlay for the content */}
-        <div 
-          className="transition-opacity duration-500 ease-in-out"
-          style={{ opacity: loadingOpacity }}
-        >
-          <ContentLoadingOverlay />
-        </div>
-        
-        {/* Placeholder content to maintain layout */}
-        <div className="opacity-0">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 h-[400px]"></div>
-        </div>
-      </div>
-    );
-  }
-
   // Dashboard for authenticated users with data
   // Get some user-specific data
   const workoutCount = workouts.length;
   const hasWorkouts = workoutCount > 0;
-  const hasPlans = user.plans?.length > 0;
+  const hasPlans = user?.plans?.length > 0;
   const planCount = hasPlans ? user.plans.length : 0;
   
   return (
@@ -488,6 +369,7 @@ export default function HomePage() {
         </Card>
       </div>
 
+      {/* Rest of dashboard content */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-6">
         {/* Quick Actions */}
         <Card>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { signIn, signOut, useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,6 +13,7 @@ import { Icons } from "@/components/icons"
 export default function LoginPage() {
   const router = useRouter()
   const { data: session, status } = useSession()
+  const searchParams = useSearchParams()
   
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -20,6 +21,30 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
   const [isResetting, setIsResetting] = useState(false)
+  const [shouldRedirect, setShouldRedirect] = useState(false)
+
+  // Check for error parameter in URL
+  useEffect(() => {
+    const errorParam = searchParams?.get("error")
+    if (errorParam === "session_required") {
+      setError("You need to be logged in to access that page.")
+    }
+  }, [searchParams])
+
+  // If we detect we're already logged in, redirect to home page
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user?.id) {
+      console.log("Already authenticated, redirecting to home page");
+      setShouldRedirect(true);
+      
+      // Use a timeout to prevent immediate redirect which may cause hook issues
+      const timer = setTimeout(() => {
+        window.location.href = '/';
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [status, session]);
 
   // Emergency reset function that works directly on this page
   const resetEverything = async () => {
@@ -73,7 +98,7 @@ export default function LoginPage() {
         redirect: false,
         email,
         password,
-        callbackUrl: '/dashboard'
+        callbackUrl: '/'
       })
 
       if (!result?.ok) {
@@ -83,12 +108,12 @@ export default function LoginPage() {
       }
 
       // Success message
-      setSuccess("Login successful! Redirecting to dashboard...");
+      setSuccess("Login successful! Redirecting to home page...");
       
       // Wait 1.5 seconds then redirect
       setTimeout(() => {
         // Full redirect to ensure clean state
-        window.location.href = result.url || '/dashboard';
+        window.location.href = result.url || '/';
       }, 1500);
       
     } catch (error) {
@@ -98,14 +123,17 @@ export default function LoginPage() {
     }
   }
 
-  // If we detect we're already logged in, go to dashboard
-  useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id) {
-      console.log("Already authenticated, redirecting to dashboard");
-      // Use window.location.href for a full page reload
-      window.location.href = '/dashboard';
-    }
-  }, [status, session]);
+  // If currently redirecting, show a minimal UI to prevent hooks issues
+  if (shouldRedirect) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <Icons.spinner className="mx-auto h-8 w-8 animate-spin" />
+          <p className="mt-2">Redirecting to home page...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center">

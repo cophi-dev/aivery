@@ -28,6 +28,22 @@ export async function GET(request: NextRequest) {
     // Use type assertion to handle MongoDB document type
     const user = userDoc as any;
     
+    // Log the image information for debugging
+    if (user.image) {
+      console.log(`User image found in DB: ${user.image.substring(0, 30)}... (${Math.round(user.image.length / 1024)}KB)`);
+    } else {
+      console.log("No image found for user in DB");
+    }
+    
+    // Force update the session with the latest user data
+    // This approach works around issues with NextAuth's session handling
+    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/auth/session`, {
+      method: "GET",
+      headers: {
+        cookie: request.headers.get("cookie") || "",
+      },
+    });
+    
     // Return the refreshed user data
     return NextResponse.json({
       success: true,
@@ -35,9 +51,11 @@ export async function GET(request: NextRequest) {
         id: user._id.toString(),
         name: user.name,
         email: user.email,
+        image: user.image,
         // Include image data size for debugging
         imageSize: user.image ? Math.round(user.image.length / 1024) + "KB" : "No image"
-      }
+      },
+      message: "Session refreshed with latest user data"
     });
   } catch (error) {
     console.error("Error refreshing session:", error);
