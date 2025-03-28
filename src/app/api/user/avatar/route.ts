@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { withDatabase } from "@/lib/db/middleware"
-import User from "@/lib/db/models/user"
 import dbConnect from "@/lib/db/mongodb"
 import UserModel from '@/lib/db/models/user'
+import { withApiAuth } from "@/lib/auth-utils"
 
 // Helper function to properly serialize MongoDB objects
 function serializeDocument(doc: any): any {
@@ -27,49 +27,42 @@ function serializeDocument(doc: any): any {
 }
 
 // Simple API endpoint that returns the user's avatar image
-export const GET = (request: NextRequest) => withDatabase(request, async (request: NextRequest) => {
+export const GET = withApiAuth(async (request: NextRequest, session: any) => {
   try {
-    const session = await getServerSession(authOptions)
-    
-    // Check if user is authenticated
-    if (!session?.user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-    }
-    
     // Connect to DB
-    await dbConnect()
+    await dbConnect();
     
     // Get user ID from query params if exists, otherwise use authenticated user
-    const url = new URL(request.url)
-    const queryUserId = url.searchParams.get("userId")
-    const userId = queryUserId || session.user.id
+    const url = new URL(request.url);
+    const queryUserId = url.searchParams.get("userId");
+    const userId = queryUserId || session.user.id;
     
     if (!userId) {
-      return NextResponse.json({ error: "User ID not found" }, { status: 400 })
+      return NextResponse.json({ error: "User ID not found" }, { status: 400 });
     }
     
-    // Find user (no need to call dbConnect() manually, it's handled by the middleware)
-    const userDoc = await UserModel.findById(userId).select("name image").lean()
+    // Find user
+    const userDoc = await UserModel.findById(userId).select("name image").lean();
     
     if (!userDoc) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
     
     // Properly serialize the document
-    const user = serializeDocument(userDoc)
+    const user = serializeDocument(userDoc);
     
     // Set cache headers for 1 hour to reduce frequent requests
     const headers = {
       'Cache-Control': 'public, max-age=3600, s-maxage=3600',
-    }
+    };
     
     // Return image data
     return NextResponse.json({ 
       image: user.image || null,
       name: user.name || null
-    }, { headers })
+    }, { headers });
   } catch (error) {
-    console.error("Error getting avatar:", error)
-    return NextResponse.json({ error: "Failed to get avatar" }, { status: 500 })
+    console.error("Error getting avatar:", error);
+    return NextResponse.json({ error: "Failed to get avatar" }, { status: 500 });
   }
-}) 
+}); 
