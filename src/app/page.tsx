@@ -104,9 +104,13 @@ export default function HomePage() {
   useEffect(() => {
     async function fetchQuote() {
       try {
-        // Add timestamp to prevent caching
-        const timestamp = Date.now();
-        const response = await fetch(`/api/quotes?t=${timestamp}`, {
+        // Generate a completely unique URL each time to bypass all caching
+        const uniqueId = Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+        const url = `/api/quotes?unique=${uniqueId}`;
+        
+        console.log('Fetching quote from:', url);
+        
+        const response = await fetch(url, { 
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -118,6 +122,7 @@ export default function HomePage() {
         if (response.ok) {
           const data = await response.json();
           if (data.quote) {
+            console.log('New quote received:', data.quote);
             setQuote(data.quote);
           }
         }
@@ -128,9 +133,15 @@ export default function HomePage() {
     
     fetchQuote();
     
+    // Also add event handler for window focus to refresh quote when tab gets focus
+    window.addEventListener('focus', fetchQuote);
+    
     // Refresh quote every hour
     const quoteInterval = setInterval(fetchQuote, 60 * 60 * 1000);
-    return () => clearInterval(quoteInterval);
+    return () => {
+      clearInterval(quoteInterval);
+      window.removeEventListener('focus', fetchQuote);
+    };
   }, []);
 
   // If loading, show a loading state

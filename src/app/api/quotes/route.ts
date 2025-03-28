@@ -156,7 +156,9 @@ async function generateAIQuote(context: {
         }
       ],
       max_tokens: 50,
-      temperature: 0.9,
+      temperature: 1.0,
+      frequency_penalty: 0.8,
+      presence_penalty: 0.6,
     });
 
     const generatedQuote = response.choices[0].message.content?.trim();
@@ -177,13 +179,18 @@ export async function GET(request: Request) {
   try {
     // Add cache control headers to prevent caching
     const headers = new Headers();
-    headers.append('Cache-Control', 'no-store, max-age=0');
+    headers.append('Cache-Control', 'no-store, max-age=0, must-revalidate');
     headers.append('Pragma', 'no-cache');
+    headers.append('Expires', '0');
     
     // Parse URL to get query parameters
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lon = searchParams.get('lon');
+    const unique = searchParams.get('unique');
+    
+    // Log the unique parameter to confirm we're getting a fresh request each time
+    console.log('Quote API called with unique param:', unique);
     
     // Add a random parameter to ensure different quotes on reload
     const timestamp = Date.now();
