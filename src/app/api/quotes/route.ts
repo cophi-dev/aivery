@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongodb";
@@ -7,6 +7,7 @@ import User from "@/lib/db/models/user";
 import { format } from 'date-fns';
 import { getCollection } from "@/lib/db/mongodb";
 import { ObjectId } from 'mongodb';
+import { getToken } from "next-auth/jwt";
 
 // Define workout type
 interface WorkoutType {
@@ -225,7 +226,7 @@ async function generateAIQuote(context: {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     // Add cache control headers to prevent caching
     const headers = new Headers();
@@ -253,39 +254,53 @@ export async function GET(request: Request) {
       console.error('Error fetching weather:', error);
     }
     
-    // Try to get user session but don't require it
+    // Try to get user session but don't require it - try multiple auth methods
     let userDetails: {
       nickname?: string;
       activityLevel?: string;
       workoutCount?: number;
       recentWorkoutTypes?: string[];
     } | null = null;
-    let session = null;
+    
+    // Try to authenticate using multiple methods
+    let userId = null;
+    let userName = null;
     
     try {
-      session = await getServerSession(authOptions);
+      // Method 1: Server session
+      const session = await getServerSession(authOptions);
       
-      // Only proceed with user-specific logic if we have a session
-      if (session?.user?.id) {
+      // Method 2: JWT token
+      const token = await getToken({ 
+        req: request, 
+        secret: process.env.NEXTAUTH_SECRET 
+      });
+      
+      // Use any authentication method that works
+      userId = session?.user?.id || token?.sub;
+      userName = session?.user?.name || token?.name;
+      
+      // Only proceed with user-specific logic if we have a user ID
+      if (userId) {
         await dbConnect();
         
         // Get user data
-        const user = await User.findById(session.user.id).lean();
+        const user = await User.findById(userId).lean();
         if (user) {
           userDetails = {
-            nickname: (user as any).nickname || session.user.name,
+            nickname: (user as any).nickname || userName || 'there',
             activityLevel: (user as any).activityLevel
           };
           
           // Get workout count
           const workoutCollection = await getCollection('workouts');
           const workoutCount = await workoutCollection.countDocuments({ 
-            userId: new ObjectId(session.user.id) 
+            userId: new ObjectId(userId) 
           });
           
           // Get recent workout types (up to 3)
           const recentWorkouts = await workoutCollection.find({ 
-            userId: new ObjectId(session.user.id) 
+            userId: new ObjectId(userId) 
           })
           .sort({ date: -1 })
           .limit(3)
@@ -295,10 +310,8 @@ export async function GET(request: Request) {
             .map((w: any) => w.type)
             .filter((t: any) => !!t);
           
-          if (userDetails) {
-            userDetails.workoutCount = workoutCount;
-            userDetails.recentWorkoutTypes = workoutTypes;
-          }
+          userDetails.workoutCount = workoutCount;
+          userDetails.recentWorkoutTypes = workoutTypes;
         }
       }
     } catch (error) {
@@ -313,7 +326,7 @@ export async function GET(request: Request) {
     
     // Prepare context for AI quote
     const quoteContext = {
-      nickname: userDetails?.nickname,
+      nickname: userDetails?.nickname || 'there',
       workoutCount: userDetails?.workoutCount,
       recentWorkoutTypes: userDetails?.recentWorkoutTypes,
       activityLevel: userDetails?.activityLevel,
