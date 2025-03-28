@@ -6,6 +6,26 @@ import User from "@/lib/db/models/user"
 import dbConnect from "@/lib/db/mongodb"
 import UserModel from '@/lib/db/models/user'
 
+// Helper function to properly serialize MongoDB objects
+function serializeDocument(doc: any): any {
+  if (!doc) return null;
+  
+  // Create a plain object without MongoDB methods
+  const result: any = { ...doc };
+  
+  // Convert _id to string if it exists
+  if (result._id) {
+    result._id = result._id.toString();
+  }
+  
+  // Handle other MongoDB specific properties
+  if (result.__v !== undefined) {
+    delete result.__v;
+  }
+  
+  return result;
+}
+
 // Simple API endpoint that returns the user's avatar image
 export const GET = (request: NextRequest) => withDatabase(request, async (request: NextRequest) => {
   try {
@@ -13,7 +33,6 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
     
     // Check if user is authenticated
     if (!session?.user) {
-      console.error("No authenticated session found")
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
     
@@ -26,7 +45,6 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
     const userId = queryUserId || session.user.id
     
     if (!userId) {
-      console.error("No userId found in session")
       return NextResponse.json({ error: "User ID not found" }, { status: 400 })
     }
     
@@ -34,23 +52,11 @@ export const GET = (request: NextRequest) => withDatabase(request, async (reques
     const userDoc = await UserModel.findById(userId).select("name image").lean()
     
     if (!userDoc) {
-      console.error(`User not found for ID: ${userId}`)
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
     
-    // Use a type assertion to handle the document
-    const user = userDoc as any
-    
-    // Enhanced logging to debug issues
-    console.log(`User found: id=${userId}, name=${user.name || 'unknown'}`)
-    console.log(`Has image property: ${user.hasOwnProperty('image')}`)
-    
-    // Log image information
-    if (user.image) {
-      console.log(`Found avatar image: ${user.image.substring(0, 30)}... (${Math.round(user.image.length / 1024)}KB)`)
-    } else {
-      console.log("No avatar image found for user")
-    }
+    // Properly serialize the document
+    const user = serializeDocument(userDoc)
     
     // Set cache headers for 1 hour to reduce frequent requests
     const headers = {

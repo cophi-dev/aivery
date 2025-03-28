@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
 import dbConnect from "@/lib/db/mongodb"
 import UserModel from "@/lib/db/models/user"
+import { serializeMongoDoc } from "@/lib/db/utils"
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -73,10 +74,13 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       // Keep token minimal
       if (user) {
-        console.log("Setting JWT token with user ID:", user.id);
         token.id = user.id
         token.email = user.email
         token.name = user.name
+        // Also store image in token if available
+        if (user.image) {
+          token.picture = user.image
+        }
       }
       return token
     },
@@ -88,22 +92,33 @@ export const authOptions: NextAuthOptions = {
           session.user.name = token.name as string
           session.user.email = token.email as string
           
+          // If we have the image in the token, use it
+          if (token.picture) {
+            session.user.image = token.picture as string
+          }
+          
           // Verify we have an ID
           if (!session.user.id) {
             console.error("Session missing user ID after setting");
             return { ...session, user: { id: '', email: '', name: '' } };
           }
 
-          // Verify user still exists in database
+          // Verify user still exists in database and get latest image
           await dbConnect();
-          const user = await UserModel.findOne({ _id: session.user.id });
+          const userDoc = await UserModel.findOne({ _id: session.user.id }).select("image").lean();
           
-          if (!user) {
+          if (!userDoc) {
             console.error("User no longer exists in database:", session.user.id);
             return { ...session, user: { id: '', email: '', name: '' } };
           }
           
-          console.log("Session created with user ID:", session.user.id);
+          // Properly serialize MongoDB document to prevent buffer warnings
+          const user = serializeMongoDoc(userDoc);
+          
+          // Update session with latest image from database
+          if (user && user.image) {
+            session.user.image = user.image;
+          }
         }
         return session;
       } catch (error) {
@@ -142,7 +157,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
   },
-  debug: true, // Enable debug mode to see what's happening
+  debug: false, // Disable debug mode to reduce console logs
   secret: process.env.NEXTAUTH_SECRET
 }
 
@@ -181,6 +196,7 @@ export async function getCurrentUser() {
         const session = await fetch("/api/auth/session", {
           // Add cache control to prevent over-fetching
           cache: "force-cache",
+          credentials: "include", // Always include cookies with the request
           next: { revalidate: 60 } // Revalidate every minute
         });
         

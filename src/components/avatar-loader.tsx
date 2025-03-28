@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { UserAvatar } from "./user-avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 
@@ -25,6 +25,7 @@ export function AvatarLoader({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const pathname = usePathname();
+  const [fallbackAttempted, setFallbackAttempted] = useState(false);
 
   // Don't even try to load on auth pages
   const isAuthPage = 
@@ -35,7 +36,6 @@ export function AvatarLoader({
   useEffect(() => {
     // Skip avatar loading on auth pages
     if (isAuthPage) {
-      console.log('Skip avatar loading on auth pages');
       return;
     }
 
@@ -56,7 +56,6 @@ export function AvatarLoader({
     let aborted = false;
     const timeoutId = setTimeout(() => {
       if (!aborted) {
-        console.log('Avatar load timed out');
         setLoading(false);
         setError(true);
         aborted = true;
@@ -71,7 +70,6 @@ export function AvatarLoader({
         if (aborted) return;
         
         if (!response.ok) {
-          console.error(`Avatar API responded with status: ${response.status}`);
           throw new Error(`Failed to load avatar: ${response.status}`);
         }
         
@@ -86,7 +84,6 @@ export function AvatarLoader({
         }
       } catch (err) {
         if (!aborted) {
-          console.error("Error loading avatar:", err);
           setError(true);
         }
       } finally {
@@ -108,6 +105,37 @@ export function AvatarLoader({
   // Use session name as backup if no name is provided
   const displayName = name || session?.user?.name || "";
   
+  // Load avatar from session or API
+  useEffect(() => {
+    const loadAvatar = async () => {
+      try {
+        setLoading(true);
+        
+        // Try to get avatar directly from the API
+        const response = await fetch('/api/user/avatar', {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.image) {
+            setAvatarData(data.image);
+          }
+        }
+      } catch (error) {
+        // Silently fail - the fallback will be used
+      } finally {
+        setLoading(false);
+        setFallbackAttempted(true);
+      }
+    };
+    
+    // If we don't have an image URL and haven't tried the fallback yet, load from API
+    if (!avatarData && !fallbackAttempted) {
+      loadAvatar();
+    }
+  }, [avatarData, fallbackAttempted, refreshKey]);
+
   return (
     <UserAvatar 
       imageUrl={avatarData} 
