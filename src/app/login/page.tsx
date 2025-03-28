@@ -21,7 +21,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
   const [isResetting, setIsResetting] = useState(false)
-  const [shouldRedirect, setShouldRedirect] = useState(false)
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  
+  // Track whether a login has been attempted in this session
+  const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false)
+  
+  // Get callback URL from search params
+  const callbackUrl = searchParams?.get("callbackUrl") || "/"
 
   // Check for error parameter in URL
   useEffect(() => {
@@ -31,20 +37,26 @@ export default function LoginPage() {
     }
   }, [searchParams])
 
-  // If we detect we're already logged in, redirect to home page
+  // Handle redirection if already authenticated
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id) {
-      console.log("Already authenticated, redirecting to home page");
-      setShouldRedirect(true);
+    // Only redirect if authenticated and not in the middle of login or reset
+    if (status === 'authenticated' && session?.user?.id && !loading && !isResetting && !isRedirecting) {
+      // Don't redirect if we just logged in (prevent loops)
+      if (hasAttemptedLogin) {
+        return;
+      }
       
-      // Use a timeout to prevent immediate redirect which may cause hook issues
+      console.log("Already authenticated, redirecting to:", callbackUrl);
+      setIsRedirecting(true);
+      
+      // Add small delay to prevent UI flashing
       const timer = setTimeout(() => {
-        window.location.href = '/';
+        router.replace(callbackUrl);
       }, 100);
       
       return () => clearTimeout(timer);
     }
-  }, [status, session]);
+  }, [status, session, router, callbackUrl, loading, isResetting, isRedirecting, hasAttemptedLogin]);
 
   // Emergency reset function that works directly on this page
   const resetEverything = async () => {
@@ -91,6 +103,9 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    
+    // Mark that a login has been attempted
+    setHasAttemptedLogin(true)
 
     try {
       // Use callbackUrl parameter for clean redirection handling by NextAuth
@@ -98,7 +113,7 @@ export default function LoginPage() {
         redirect: false,
         email,
         password,
-        callbackUrl: '/'
+        callbackUrl
       })
 
       if (!result?.ok) {
@@ -108,13 +123,15 @@ export default function LoginPage() {
       }
 
       // Success message
-      setSuccess("Login successful! Redirecting to home page...");
+      setSuccess("Login successful! Redirecting...");
       
-      // Wait 1.5 seconds then redirect
+      // Set a flag in session storage to prevent redirect loops
+      sessionStorage.setItem('just_logged_in', 'true');
+      
+      // Wait a moment then redirect
       setTimeout(() => {
-        // Full redirect to ensure clean state
-        window.location.href = result.url || '/';
-      }, 1500);
+        router.replace(callbackUrl);
+      }, 1000);
       
     } catch (error) {
       console.error("Login error:", error);
@@ -123,13 +140,13 @@ export default function LoginPage() {
     }
   }
 
-  // If currently redirecting, show a minimal UI to prevent hooks issues
-  if (shouldRedirect) {
+  // Show a loading state if redirecting
+  if (isRedirecting) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <Icons.spinner className="mx-auto h-8 w-8 animate-spin" />
-          <p className="mt-2">Redirecting to home page...</p>
+          <p className="mt-2">Redirecting...</p>
         </div>
       </div>
     );
