@@ -250,91 +250,57 @@ export async function GET(request: NextRequest) {
       if (lat && lon) {
         weather = await getWeather(lat, lon);
       }
-    } catch (error) {
-      console.error('Error fetching weather:', error);
+    } catch (weatherError) {
+      console.error('Error fetching weather:', weatherError);
+      // Continue without weather data
     }
     
-    // Try to get user session but don't require it - try multiple auth methods
-    let userDetails: {
-      nickname?: string;
-      activityLevel?: string;
-      workoutCount?: number;
-      recentWorkoutTypes?: string[];
-    } | null = null;
-    
-    // Try to authenticate using multiple methods
-    let userId = null;
-    let userName = null;
+    // Get user session - OPTIONAL for this endpoint
+    let session;
+    let token;
+    let userData: any = null;
     
     try {
-      // Method 1: Server session
-      const session = await getServerSession(authOptions);
+      // Try to get auth info but don't require it
+      session = await getServerSession(authOptions);
+      token = await getToken({ req: request as any, secret: process.env.NEXTAUTH_SECRET });
       
-      // Method 2: JWT token
-      const token = await getToken({ 
-        req: request, 
-        secret: process.env.NEXTAUTH_SECRET 
-      });
-      
-      // Use any authentication method that works
-      userId = session?.user?.id || token?.sub;
-      userName = session?.user?.name || token?.name;
-      
-      // Only proceed with user-specific logic if we have a user ID
-      if (userId) {
+      // If we have a session, try to get user data
+      if ((session?.user?.id || token?.sub) && !force) {
         await dbConnect();
         
-        // Get user data
-        const user = await User.findById(userId).lean();
-        if (user) {
-          userDetails = {
-            nickname: (user as any).nickname || userName || 'there',
-            activityLevel: (user as any).activityLevel
-          };
+        const userId = session?.user?.id || token?.sub;
+        
+        if (userId) {
+          // Get user data
+          userData = await User.findById(userId).lean();
           
-          // Get workout count
-          const workoutCollection = await getCollection('workouts');
-          const workoutCount = await workoutCollection.countDocuments({ 
-            userId: new ObjectId(userId) 
-          });
-          
-          // Get recent workout types (up to 3)
-          const recentWorkouts = await workoutCollection.find({ 
-            userId: new ObjectId(userId) 
-          })
-          .sort({ date: -1 })
-          .limit(3)
-          .toArray();
-          
-          const workoutTypes = recentWorkouts
-            .map((w: any) => w.type)
-            .filter((t: any) => !!t);
-          
-          userDetails.workoutCount = workoutCount;
-          userDetails.recentWorkoutTypes = workoutTypes;
+          if (!userData) {
+            console.log('User not found, using anonymous mode');
+          }
         }
       }
-    } catch (error) {
-      console.error('Error getting user data:', error);
-      // Continue without user data - we'll use fallback quotes
+    } catch (authError) {
+      console.error('Auth error in quotes API:', authError);
+      // Continue without user data
     }
     
-    // Get time-based context
+    // Get contextual info for the quote
     const timeOfDay = getTimeBasedGreeting();
     const dayOfWeek = getDayOfWeek();
-    const weekend = isWeekend();
+    const isWeekendToday = isWeekend();
     
     // Prepare context for AI quote
     const quoteContext = {
-      nickname: userDetails?.nickname || 'there',
-      workoutCount: userDetails?.workoutCount,
-      recentWorkoutTypes: userDetails?.recentWorkoutTypes,
-      activityLevel: userDetails?.activityLevel,
+      nickname: userData?.nickname || 'there',
+      workoutCount: userData?.workouts?.length || 0,
+      recentWorkoutTypes: userData?.workouts?.map((w: any) => w.type) || [],
+      activityLevel: userData?.activityLevel || 'active',
       timeOfDay,
       dayOfWeek,
-      isWeekend: weekend,
+      isWeekend: isWeekendToday,
       weather,
-      forceRefresh: force
+      forceRefresh: !!force || !!unique
     };
     
     // Try to generate an AI quote

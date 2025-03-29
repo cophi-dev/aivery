@@ -39,9 +39,14 @@ export async function authenticateApiRoute(request: NextRequest) {
     // Method 2: JWT token from request
     const token = await getToken({ 
       req: request,
-      secret: process.env.NEXTAUTH_SECRET
+      secret: process.env.NEXTAUTH_SECRET,
+      secureCookie: process.env.NODE_ENV === 'production'
     });
     
+    // Check for session cookie as a fallback check
+    const hasSessionCookie = request.cookies.get('next-auth.session-token') || 
+                             request.cookies.get('__Secure-next-auth.session-token');
+
     // Debug info for development environment
     let debugInfo: any = {};
     if (process.env.NODE_ENV === 'development' || isForceAuth) {
@@ -51,6 +56,7 @@ export async function authenticateApiRoute(request: NextRequest) {
         hasUserId: !!session?.user?.id,
         hasToken: !!token,
         tokenSub: token?.sub,
+        hasSessionCookie: !!hasSessionCookie,
         path,
         isAuthOptional,
         isForceAuth,
@@ -62,7 +68,9 @@ export async function authenticateApiRoute(request: NextRequest) {
     // Check if we have valid authentication from any method
     const isAuthenticated = (
       (!!session?.user?.id) || // Server session
-      (!!token?.sub) // JWT token
+      (!!token?.sub) ||        // JWT token
+      // Special case for auth-optional endpoints - require less strict auth
+      (isAuthOptional && hasSessionCookie) 
     );
     
     // If no valid authentication and it's not an auth-optional endpoint, return 401

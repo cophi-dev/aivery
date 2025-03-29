@@ -11,26 +11,34 @@ export async function middleware(request: NextRequest) {
   const isAuthPath = path === '/login' || path === '/register' || path === '/forgot-password';
   const isApiPath = path.startsWith('/api/');
   const isNextAuthPath = path.startsWith('/api/auth');
-  const isPublicPath = path === '/' || isNextAuthPath;
+  const isPublicPath = path === '/' || isNextAuthPath || path === '/api/quotes';
   
   // Debug cookie values
   const cookieHeader = request.headers.get('cookie') || '';
   const hasSessionToken = cookieHeader.includes('next-auth.session-token');
+  const hasSecureSessionToken = cookieHeader.includes('__Secure-next-auth.session-token');
   
   // Get token for auth status
   const token = await getToken({ 
     req: request, 
-    secret: process.env.NEXTAUTH_SECRET 
+    secret: process.env.NEXTAUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === 'production'
   });
   
   // Debug log token info
-  console.log(`[MIDDLEWARE] Path: ${path}, HasToken: ${!!token}, HasSessionCookie: ${hasSessionToken}`);
+  console.log(`[MIDDLEWARE] Path: ${path}, HasToken: ${!!token}, HasSessionCookie: ${hasSessionToken || hasSecureSessionToken}, Secure: ${hasSecureSessionToken}`);
   
   // Create response 
   const response = NextResponse.next();
   
   // Add debug header to track auth status in responses
   response.headers.set('X-Auth-Status', token ? 'authenticated' : 'unauthenticated');
+  if (hasSessionToken) {
+    response.headers.set('X-Has-Session-Cookie', 'true');
+  }
+  if (hasSecureSessionToken) {
+    response.headers.set('X-Has-Secure-Session-Cookie', 'true');
+  }
   
   // Add CSRF protection header
   response.headers.set('X-CSRF-Protection', '1; mode=block');
