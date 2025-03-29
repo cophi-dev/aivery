@@ -71,22 +71,49 @@ export const authOptions: NextAuthOptions = {
     error: "/login", // Show login page with error param on auth errors
   },
   callbacks: {
-    async jwt({ token, user }) {
-      // Keep token minimal
-      if (user) {
-        token.id = user.id
-        token.email = user.email
-        token.name = user.name
-        // Also store image in token if available
-        if (user.image) {
-          token.picture = user.image
+    async jwt({ token, trigger, user }) {
+      try {
+        if (trigger === "signIn" && user) {
+          // Add user ID to token
+          token.id = user.id;
+          
+          // Get complete user data including nickname
+          await dbConnect();
+          const userData = await UserModel.findById(user.id).select('nickname').lean();
+          
+          if (userData) {
+            // Add nickname to token if it exists in the database
+            if ((userData as any).nickname) {
+              token.nickname = (userData as any).nickname;
+              console.log(`[AUTH] Added nickname to token: ${token.nickname}`);
+            }
+          }
         }
-        // Store nickname if available
-        if ((user as any).nickname) {
-          token.nickname = (user as any).nickname
+        
+        // Always verify/update the nickname in the token on any token update after sign-in
+        if (token.id && trigger !== "signIn") {
+          try {
+            await dbConnect();
+            const freshUserData = await UserModel.findById(token.id).select('nickname').lean();
+            
+            if (freshUserData && (freshUserData as any).nickname) {
+              // Update nickname in token if it changed or wasn't set
+              const nickname = (freshUserData as any).nickname;
+              if (nickname !== token.nickname) {
+                console.log(`[AUTH] Updating nickname in token from ${token.nickname} to ${nickname}`);
+                token.nickname = nickname;
+              }
+            }
+          } catch (error) {
+            console.error("[AUTH] Error refreshing nickname in token:", error);
+          }
         }
+        
+        return token;
+      } catch (error) {
+        console.error("[AUTH] Token callback error:", error);
+        return token;
       }
-      return token
     },
     async session({ session, token }) {
       try {
@@ -104,6 +131,7 @@ export const authOptions: NextAuthOptions = {
           // If we have the nickname in the token, use it
           if (token.nickname) {
             session.user.nickname = token.nickname as string
+            console.log(`[AUTH] Added nickname to session from token: ${session.user.nickname}`);
           }
           
           // Verify we have an ID
@@ -129,12 +157,13 @@ export const authOptions: NextAuthOptions = {
             if (user.image) {
               session.user.image = user.image;
             }
-            if (user.nickname) {
-              session.user.nickname = user.nickname;
-            } else {
-              // Check if we have a nickname in the original document
-              if ((userDoc as any).nickname) {
-                session.user.nickname = (userDoc as any).nickname;
+            
+            // Always use the most up-to-date nickname from the database
+            if ((userDoc as any).nickname) {
+              const nickname = (userDoc as any).nickname;
+              if (nickname !== session.user.nickname) {
+                console.log(`[AUTH] Updating nickname in session from ${session.user.nickname} to ${nickname}`);
+                session.user.nickname = nickname;
               }
             }
           }

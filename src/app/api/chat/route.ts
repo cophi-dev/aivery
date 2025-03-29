@@ -18,6 +18,7 @@ import dbConnect from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { getCollection } from "@/lib/db/mongodb"
 import { NextResponse } from "next/server"
+import User from "@/lib/db/models/user"
 
 // Initialize the OpenAI SDK
 const client = new OpenAI({
@@ -282,11 +283,39 @@ export async function POST(request: Request) {
       nickname: typeof session.user.nickname === 'string' ? session.user.nickname : null
     };
     
-    // Create a system prompt that guides the AI to provide detailed responses
+    // Always get the latest user data from the database to ensure we have the current nickname
+    try {
+      await dbConnect();
+      const userDoc = await User.findById(session.user.id).select('nickname name').lean();
+      if (userDoc) {
+        // Use nickname from the database as first priority
+        safeUser.nickname = (userDoc as any).nickname || safeUser.nickname || safeUser.name;
+        
+        if (safeUser.nickname) {
+          console.log(`[CHAT] Using nickname from database: ${safeUser.nickname}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching user data for chat:", error);
+      // Continue with session data if database fetch fails
+    }
+    
+    // Log the final user data being used
+    console.log(`[CHAT] Final user data: id=${safeUser.id}, nickname=${safeUser.nickname}, name=${safeUser.name}`);
+    
+    // Create a system prompt with properly escaped user information
+    const userNickname = safeUser.nickname || safeUser.name || 'their name hasn\'t been set yet';
+    const nameResponse = `Your name is ${safeUser.nickname || safeUser.name || 'not set in your profile yet'}. How can I help with your fitness goals today?`;
+    
     const systemMessage = {
       role: "system",
       content: `You are an authentic, personable AI fitness coach. While you offer expert guidance, your style is more like a friendly workout buddy than a formal trainer.
       
+USER INFO:
+- The user's name/nickname is "${userNickname}".
+- Always use this name when directly asked about the user's name/nickname.
+- When the user asks "what's my name" or similar questions, directly answer with their name.
+
 YOUR PERSONALITY & STYLE:
 - Be warm, approachable and use natural language (not robotic or overly formal)
 - Match the user's energy - casual with casual users, more technical with fitness enthusiasts
@@ -304,7 +333,7 @@ YOUR CAPABILITIES:
 - Explain exercise concepts in easy-to-understand terms
 
 RESPONSE GUIDELINES:
-- For greeting messages like "hi" or "hey", respond casually with something like "Hey there! What's up with your fitness journey today?" or "Hey! How can I help with your workouts today?"
+- For greeting messages like "hi" or "hey", respond casually and use their name when possible
 - Be conversational first, informational second
 - Use natural language patterns with contractions (I'm, you're, that's)
 - Vary your responses - don't be repetitive or formulaic
@@ -322,8 +351,22 @@ For example:
 - User: "How was my run?" → "Based on what you've shared, it looks like a solid run! Do you want to talk about specific aspects of it, or are you looking for recovery tips?"
 - User: "Can you help with my workouts?" → "For sure! What kind of training are you into right now, and what specifically can I help with?"
 - User: "Show me my running stats" → "I'd be happy to chat about your running! What specific aspects are you curious about - pace, distance, or how you're progressing?"
+- User: "What's my name?" → "${nameResponse}"
 `
     };
+    
+    // Add direct handling for "what's my name" type questions before calling OpenAI
+    const isNameQuestion = latestUserMessage.toLowerCase().includes("what's my name") || 
+                           latestUserMessage.toLowerCase().includes("whats my name") ||
+                           latestUserMessage.toLowerCase().includes("what is my name");
+    
+    if (isNameQuestion && safeUser.nickname) {
+      return new Response(`Your name is ${safeUser.nickname}. How can I help with your fitness journey today?`, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+        }
+      });
+    }
     
     try {
       // Use the OpenAI SDK to get a response

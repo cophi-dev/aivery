@@ -62,56 +62,67 @@ export async function getUserData() {
 }
 
 /**
- * Get quotes with optional lat/lon coordinates
+ * Get personalized fitness quotes with optional location context
+ * This function handles fetching quotes from the API with proper caching control
+ * to ensure users always see fresh, relevant content
  */
 // Keep track of the last received quote to prevent repeats
 let lastReceivedQuote = '';
+let lastQuoteTimestamp = 0;
 
 export async function getQuote(lat?: number, lon?: number, force: boolean = false) {
   try {
-    // Generate a truly unique parameter to ensure no caching
-    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`;
+    // Generate a truly unique request identifier
+    const timestamp = Date.now();
+    const uniqueId = `${timestamp}-${Math.random().toString(36).substring(2)}`;
     
-    // Build URL with parameters to force uniqueness and track last quote
+    // Only request a new quote if it's been at least 10 seconds or forced
+    const shouldFetchNew = force || !lastReceivedQuote || (timestamp - lastQuoteTimestamp) > 10000;
+    
+    if (!shouldFetchNew) {
+      console.log(`[CLIENT] Using cached quote (age: ${(timestamp - lastQuoteTimestamp) / 1000}s)`);
+      return lastReceivedQuote;
+    }
+    
+    // Build request parameters
     const params = new URLSearchParams();
     params.append('nocache', uniqueId);
-    params.append('timestamp', Date.now().toString());
+    params.append('timestamp', timestamp.toString());
     
     // Add the last quote to explicitly avoid repeats
     if (lastReceivedQuote) {
       params.append('lastQuote', encodeURIComponent(lastReceivedQuote));
     }
     
-    // Add location if available
+    // Add location if available for weather-aware quotes
     if (lat && lon) {
       params.append('lat', lat.toString());
       params.append('lon', lon.toString());
     }
     
-    // Force refresh
-    params.append('force', 'true');
+    // Always force refresh when explicitly requested
+    if (force) {
+      params.append('force', 'true');
+    }
     
-    // Use the dynamic quotes endpoint with all params
+    // Use the dynamic quotes endpoint
     const dynamicUrl = `/api/quotes/dynamic?${params.toString()}`;
     
     console.log(`[CLIENT] Fetching dynamic quote at ${new Date().toISOString().substring(11, 19)} with ID: ${uniqueId.substring(0, 10)}`);
     
-    // Use a direct fetch with no-cache options
+    // Use cache-busting headers to prevent any caching
     const response = await fetch(dynamicUrl, {
       method: 'GET',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
         'Pragma': 'no-cache',
         'Expires': '0',
-        'X-Timestamp': Date.now().toString(),
-        'X-Random': uniqueId,
-        'X-Last-Quote': lastReceivedQuote ? encodeURIComponent(lastReceivedQuote.substring(0, 30)) : ''
+        'X-Timestamp': timestamp.toString(),
+        'X-Random': uniqueId
       },
-      // Force each request to be fresh using cache: 'no-store'
       cache: 'no-store',
       next: { 
         revalidate: 0,
-        // Bypass all caches including browser and service worker caches
         tags: [uniqueId] 
       } as any
     });
@@ -121,20 +132,13 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     }
     
     const data = await response.json();
-    
-    let cleanQuote = '';
-    
-    // Clean the quote by removing the timestamp identifier if present
-    if (data.quote) {
-      // Remove the timestamp like [12345678] from the end
-      cleanQuote = data.quote.replace(/ \[\d+\]$/, '');
-    }
+    let cleanQuote = data.quote || '';
     
     // If we somehow still got the same quote, use client-side fallback
     if (cleanQuote === lastReceivedQuote && cleanQuote) {
       console.log(`[CLIENT] Warning: Received the same quote again: "${cleanQuote.substring(0, 20)}..."`);
       
-      // Generate a fallback different quote
+      // Client-side fallback quotes for variety
       const fallbackQuotes = [
         "Consistency matters more than intensity.",
         "Small habits add up to big changes.", 
@@ -149,24 +153,25 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
       
       const clientRandomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
       
-      // Log client-generated quote
       console.log(`[CLIENT] Generated different quote client-side: "${clientRandomQuote.substring(0, 20)}..."`);
       
-      // Save as last quote
+      // Update tracking variables
       lastReceivedQuote = clientRandomQuote;
+      lastQuoteTimestamp = timestamp;
       return clientRandomQuote;
     }
     
     // Save this quote as the last received
     lastReceivedQuote = cleanQuote;
+    lastQuoteTimestamp = timestamp;
     
-    // Log what we received to debug
     console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${cleanQuote.substring(0, 20)}...`);
     
     return cleanQuote || "Stay consistent with your fitness journey.";
   } catch (error) {
     console.error('Error fetching quote:', error);
-    // Generate a completely random fallback quote - different from last
+    
+    // Generate a fallback quote different from the last one
     const fallbackQuotes = [
       "Consistency matters more than intensity.",
       "Small habits add up to big changes.", 
@@ -179,12 +184,11 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
       "Just showing up is half the battle."
     ].filter(q => q !== lastReceivedQuote);
     
-    // Ensure randomness using current timestamp
     const index = Date.now() % fallbackQuotes.length;
     const newQuote = fallbackQuotes[index];
     
-    // Update last quote
     lastReceivedQuote = newQuote;
+    lastQuoteTimestamp = Date.now();
     
     return newQuote;
   }

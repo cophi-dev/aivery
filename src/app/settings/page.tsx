@@ -18,6 +18,8 @@ import { ImageCropDialog } from "@/components/image-crop-dialog"
 import { IUser } from "@/lib/db/models/user"
 import { UserAvatar } from "@/components/user-avatar"
 import { AvatarLoader } from "@/components/avatar-loader"
+import { fetchWithAuth } from "@/lib/client-utils"
+import UserNicknameDisplay from "@/components/UserNicknameDisplay"
 
 interface Change {
   field: string;
@@ -117,9 +119,7 @@ export default function SettingsPage() {
     const loadUserData = async () => {
       try {
         setIsLoadingUserData(true)
-        const response = await fetch('/api/user', {
-          credentials: 'include'
-        })
+        const response = await fetchWithAuth('/api/user')
         const data = await response.json()
         if (data.user) {
           // Set the full user object to access _id
@@ -138,9 +138,7 @@ export default function SettingsPage() {
           
           // Fetch avatar image directly from database
           try {
-            const avatarResponse = await fetch('/api/user/avatar', {
-              credentials: 'include'
-            })
+            const avatarResponse = await fetchWithAuth('/api/user/avatar')
             const avatarData = await avatarResponse.json()
             if (avatarData.image) {
               console.log("Got avatar image directly from database:", 
@@ -662,7 +660,7 @@ export default function SettingsPage() {
         console.log('Saving profile changes')
         
         try {
-          const profileResponse = await fetch('/api/user/profile', {
+          const profileResponse = await fetchWithAuth('/api/user/profile', {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -673,7 +671,6 @@ export default function SettingsPage() {
               email: profileChanges.email !== userData.email ? profileChanges.email : undefined,
               nickname: profileChanges.nickname,
             }),
-            credentials: 'include',
           })
           
           if (!profileResponse.ok) {
@@ -867,7 +864,12 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-
+          
+          {/* Add Nickname Debug Component */}
+          <div className="mb-8">
+            <UserNicknameDisplay />
+          </div>
+          
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Physical Information</CardTitle>

@@ -94,6 +94,9 @@ async function generateAIQuote(context: {
     // Create a prompt with user context
     let prompt = `Generate a short, conversational ${promptType} for a fitness app user (max 100 characters). Make it sound natural like something a real coach would say to ${context.nickname || "a client"}, not like a generic motivational poster. If possible, personalize it to the details below.\n\n`;
     
+    // Add instructions to avoid redundant greetings
+    prompt += `IMPORTANT: Do NOT include greetings like "Hey ${context.nickname}" or "Hello there" since this will be displayed directly after the user's name. Start with the actual fitness tip/advice.\n\n`;
+    
     // Add a random seed to force uniqueness in each request
     const randomSeed = Math.floor(Math.random() * 10000) + Date.now();
     prompt += `Random seed: ${randomSeed}\n\n`;
@@ -186,9 +189,9 @@ export async function GET(request: NextRequest) {
     // Get any lastQuote that was sent
     const lastQuote = searchParams.get('lastQuote') ? decodeURIComponent(searchParams.get('lastQuote') || '') : '';
     
-    // Get a truly unique random seed based on current time
+    // Get a truly unique random seed based on current time with microsecond precision
     const now = Date.now();
-    const randomSeed = now + Math.floor(Math.random() * 1000000);
+    const randomSeed = now + Math.floor(Math.random() * 1000000) + Math.random();
     
     // Log to verify the function is being called each time
     console.log(`[QUOTES-DYNAMIC] Request at ${new Date(now).toISOString()} with seed: ${randomSeed} and ID: ${requestId.substring(0, 10)}`);
@@ -196,8 +199,7 @@ export async function GET(request: NextRequest) {
       console.log(`[QUOTES-DYNAMIC] Last quote reported by client: "${lastQuote.substring(0, 30)}..."`);
     }
     
-    // Track previously returned quotes using cookies to avoid repeating
-    // Get the last 5 quotes from cookies
+    // Track previously returned quotes to avoid repeating
     const lastQuotesCookie = request.cookies.get('last-quotes');
     let lastQuotes: string[] = [];
     
@@ -256,9 +258,13 @@ export async function GET(request: NextRequest) {
           .map(w => w.type)
           .filter((value, index, self) => self.indexOf(value) === index); // unique values
         
+        // Load user data to get nickname
+        const userDoc = await User.findById(userId).select('nickname name').lean();
+        const nickname = userDoc ? (userDoc as any).nickname || (userDoc as any).name || null : null;
+        
         // Generate a quote with context
         aiQuote = await generateAIQuote({
-          nickname: session.user.nickname || session.user.name || 'friend',
+          nickname,
           workoutCount,
           recentWorkoutTypes,
           activityLevel,
@@ -270,40 +276,18 @@ export async function GET(request: NextRequest) {
         
         if (aiQuote) {
           quoteSource = 'ai';
-          // Check if we've used this AI quote before
-          if (lastQuotes.includes(aiQuote)) {
-            console.log(`[QUOTES-DYNAMIC] Generated AI quote has been used recently, forcing regeneration`);
-            
-            // Force it to be different by adding the timestamp to the prompt
-            aiQuote = await generateAIQuote({
-              nickname: session.user.nickname || session.user.name || 'friend',
-              workoutCount,
-              recentWorkoutTypes,
-              activityLevel,
-              timeOfDay: getTimeBasedGreeting(),
-              dayOfWeek: getDayOfWeek(),
-              isWeekend: isWeekend(),
-              forceRefresh: true,
-              weather: { timestamp: Date.now() } // Forcing uniqueness with timestamp
-            });
-            
-            if (aiQuote && lastQuotes.includes(aiQuote)) {
-              console.log(`[QUOTES-DYNAMIC] Still getting duplicate AI quote, falling back to static quotes`);
-              aiQuote = null; // Force fallback to static quotes
-            }
-          }
+          console.log(`[QUOTES-DYNAMIC] Generated AI quote for user: ${nickname}`);
         }
       } catch (error) {
-        console.error('[QUOTES-DYNAMIC] Error generating AI quote:', error);
-        aiQuote = null; // Force fallback to static quotes
+        console.error('Error generating AI quote:', error);
       }
     }
     
-    // Use the AI quote if available, otherwise fall back to static quotes
+    // Use the AI quote if available, otherwise use a fallback
     let quote = aiQuote;
     
-    // If no AI quote, use static quotes
-    if (!quote) {
+    // If no AI quote or AI quote matches the last one, use a fallback quote
+    if (!quote || (lastQuote && quote === lastQuote)) {
       // Create a filtered list without the most recently used quotes
       let availableQuotes = [...FALLBACK_QUOTES];
       
@@ -313,90 +297,68 @@ export async function GET(request: NextRequest) {
         console.log(`[QUOTES-DYNAMIC] ${availableQuotes.length} quotes available after filtering out last ${lastQuotes.length} quotes`);
       }
       
-      // Use truly random selection with seed that changes every millisecond
-      const index = (Date.now() % availableQuotes.length);
+      // Use more entropy for randomness
+      const index = Math.floor((Date.now() + Math.random() * 10000000) % availableQuotes.length);
       quote = availableQuotes[index];
       
       // Force a different quote if the last one is the same and we have more options
-      if (lastQuotes.length > 0 && quote === lastQuotes[0] && availableQuotes.length > 1) {
-        // Pick a different index
-        const newIndex = (index + 1) % availableQuotes.length;
+      if (lastQuote && quote === lastQuote && availableQuotes.length > 1) {
+        // Pick a different index, ensure it's different
+        let newIndex;
+        do {
+          newIndex = Math.floor(Math.random() * availableQuotes.length);
+        } while (newIndex === index && availableQuotes.length > 1);
+        
         quote = availableQuotes[newIndex];
         console.log(`[QUOTES-DYNAMIC] Forced different quote to avoid repetition`);
       }
       
-      // Final safety check - if we're still getting the same quote
-      if (lastQuotes.length > 0 && quote === lastQuotes[0]) {
-        // Pick a hardcoded new quote that's not in the last quotes
-        const emergencyQuotes = [
-          "Challenge yourself, but don't break yourself.",
-          "The best workout is the one that gets done.",
-          "Small consistent steps lead to massive results over time.",
-          "What seems impossible today will become your warm-up tomorrow.",
-          "Your body is your most priceless possession... take care of it!",
-          "Action is the foundational key to all success in fitness.",
-          "Strength does not come from the body. It comes from the will.",
-          "The difference between try and triumph is a little umph.",
-          "Don't count the days, make the days count.",
-          "Discipline is choosing between what you want now and what you want most."
-        ];
-        
-        // Find one that's not in the last quotes
-        for (const emergency of emergencyQuotes) {
-          if (!lastQuotes.includes(emergency)) {
-            quote = emergency;
-            console.log('[QUOTES-DYNAMIC] Using emergency quote to avoid repetition');
-            break;
-          }
-        }
+      quoteSource = 'static';
+    }
+    
+    // Add a cache-busting timestamp to the quote (invisible to user)
+    const timestampedQuote = quote;
+    
+    // Update or create the cookie with recent quotes
+    if (lastQuotes.length > 0) {
+      try {
+        // Sanitize quotes to ensure they contain only ASCII characters
+        const sanitizedQuotes = lastQuotes.map(q => 
+          encodeURIComponent(q.replace(/[^\x00-\x7F]/g, ''))
+        );
+        const newCookie = JSON.stringify([encodeURIComponent(quote.replace(/[^\x00-\x7F]/g, '')), ...sanitizedQuotes].slice(0, 5));
+        headers.append('Set-Cookie', `last-quotes=${newCookie}; Path=/; Max-Age=86400; SameSite=Strict`);
+      } catch (cookieError) {
+        console.error('Error setting quote cookie:', cookieError);
+        // Continue without setting cookie
       }
     }
     
-    // Add timestamp to quote text to guarantee it's different
-    // This is invisible to users but ensures uniqueness
-    const uniqueTimestamp = Date.now().toString().substring(8);
-    quote = quote + ` [${uniqueTimestamp}]`;
+    // Log the quote being returned
+    console.log(`[QUOTES-DYNAMIC] Returning ${quoteSource} quote: "${timestampedQuote.substring(0, 40)}..."`);
     
-    // Update the last quotes list
-    lastQuotes.unshift(quote);
-    // Keep only the last 5 quotes
-    lastQuotes = lastQuotes.slice(0, 5);
-    
-    console.log(`[QUOTES-DYNAMIC] Returning quote (${quoteSource}): "${quote.substring(0, 30)}..."`);
-    
-    // Create response
-    const response = NextResponse.json({ 
-      quote, 
-      timestamp: now,
-      uniqueId: requestId,
-      isUnique: true,
-      source: quoteSource
-    }, { headers });
-    
-    // Set the updated last quotes cookie
-    response.cookies.set({
-      name: 'last-quotes',
-      value: JSON.stringify(lastQuotes),
-      maxAge: 60 * 60 * 24 * 7, // 1 week
-      path: '/',
-    });
-    
-    return response;
+    // Return response with the quote
+    return NextResponse.json(
+      { 
+        quote: timestampedQuote,
+        id: requestId,
+        source: quoteSource,
+        timestamp: Date.now()
+      },
+      { 
+        headers,
+        status: 200 
+      }
+    );
   } catch (error) {
-    console.error('[QUOTES-DYNAMIC] Error:', error);
-    
-    // Even in case of error, return a unique quote
-    const timestamp = Date.now();
-    const fallbackIndex = timestamp % FALLBACK_QUOTES.length;
-    const uniqueId = Date.now().toString().substring(8);
-    const quote = FALLBACK_QUOTES[fallbackIndex] + ` [${uniqueId}]`;
-    
-    return NextResponse.json({ 
-      quote,
-      error: true,
-      timestamp,
-      isUnique: true,
-      source: 'error-fallback'
-    });
+    console.error('Error in dynamic quote API:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to generate quote',
+        quote: "Your body can stand almost anything. It's your mind you have to convince.", 
+        fallback: true 
+      },
+      { status: 500 }
+    );
   }
 } 
