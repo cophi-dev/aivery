@@ -122,9 +122,17 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     
     const data = await response.json();
     
-    // Make sure we got a different quote
-    if (data.quote === lastReceivedQuote && data.quote) {
-      console.log(`[CLIENT] Warning: Received the same quote again: "${data.quote.substring(0, 20)}..."`);
+    let cleanQuote = '';
+    
+    // Clean the quote by removing the timestamp identifier if present
+    if (data.quote) {
+      // Remove the timestamp like [12345678] from the end
+      cleanQuote = data.quote.replace(/ \[\d+\]$/, '');
+    }
+    
+    // If we somehow still got the same quote, use client-side fallback
+    if (cleanQuote === lastReceivedQuote && cleanQuote) {
+      console.log(`[CLIENT] Warning: Received the same quote again: "${cleanQuote.substring(0, 20)}..."`);
       
       // Generate a fallback different quote
       const fallbackQuotes = [
@@ -150,14 +158,12 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     }
     
     // Save this quote as the last received
-    if (data.quote) {
-      lastReceivedQuote = data.quote;
-    }
+    lastReceivedQuote = cleanQuote;
     
     // Log what we received to debug
-    console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
+    console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${cleanQuote.substring(0, 20)}...`);
     
-    return data.quote || "Stay consistent with your fitness journey.";
+    return cleanQuote || "Stay consistent with your fitness journey.";
   } catch (error) {
     console.error('Error fetching quote:', error);
     // Generate a completely random fallback quote - different from last
