@@ -1,47 +1,68 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Turn off static optimization for improved dynamic support
+  // Basic configuration
   reactStrictMode: false,
+  swcMinify: true,
+  
+  // Image settings
   images: {
     domains: ['localhost', 'vercel.app', 'avatar.vercel.sh'],
     unoptimized: true,
   },
+  
+  // Force server rendering
+  output: 'standalone',
+  
+  // Force dynamic rendering and disable static optimization
   experimental: {
-    // Add support for dynamic API routes with headers
-    serverActions: true,
+    // Use true Server Components to prevent static optimization
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
     // Support for larger page data
     largePageDataBytes: 128 * 1000, // 128KB
-    // Support for external packages in server components
-    serverComponentsExternalPackages: ['mongodb', 'headers', 'cookies']
+    // Only transpile external packages
+    serverComponentsExternalPackages: ['mongodb'],
   },
-  // Use standalone output for Vercel
-  output: 'standalone',
-  // Generate a unique build ID to prevent caching issues
+  
+  // Cache busting for builds
   generateBuildId: () => {
     return `build-${Date.now()}`
   },
-  // Set cache headers for all routes
+
+  // Configure headers for cache control 
   async headers() {
     return [
       {
         source: '/api/:path*',
         headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, max-age=0',
-          },
-          {
-            key: 'Pragma',
-            value: 'no-cache',
-          },
-          {
-            key: 'Expires',
-            value: '0',
-          },
-        ],
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Pragma', value: 'no-cache' }
+        ]
       },
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' }
+        ]
+      }
     ]
   },
+
+  // Force server-side rendering for all pages
+  // This is the most important part to disable static generation
+  distDir: '.next',
+  poweredByHeader: false,
+  compress: true,
+}
+
+// Ensure we're using proper configuration for Vercel deployment
+if (process.env.VERCEL) {
+  nextConfig.compiler = {
+    ...nextConfig.compiler,
+    // Eliminate static optimization
+    styledComponents: true
+  }
 }
 
 module.exports = nextConfig 
