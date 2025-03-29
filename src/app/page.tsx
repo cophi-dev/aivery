@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { redirect, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2 } from "lucide-react";
+import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw } from "lucide-react";
 import type { WorkoutData } from "@/types/db";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +15,27 @@ import { motion } from "framer-motion";
 import { fetchWithAuth, getUserData, getQuote } from "@/lib/client-utils";
 
 // Header component that will be visible immediately
-function AppHeader({ user, quote, isLoading }: { user: any | null, quote: string, isLoading?: boolean }) {
+function AppHeader({ user, quote, isLoading, onRefreshQuote }: { 
+  user: any | null, 
+  quote: string, 
+  isLoading?: boolean,
+  onRefreshQuote?: () => void
+}) {
   // Use nickname if available, otherwise fall back to name or default
   const displayName = user?.nickname || user?.name || "Guest";
+  
+  // Add a timestamp to ensure the quote always looks fresh 
+  // (even if it's the same content, browsers often cache and gray out unchanged content)
+  const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
+  
+  // Update the timestamp every minute to keep the quote looking fresh
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimestamp(new Date().toLocaleTimeString());
+    }, 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
   
   if (isLoading) {
     // Show a placeholder header while loading
@@ -44,7 +62,24 @@ function AppHeader({ user, quote, isLoading }: { user: any | null, quote: string
         />
         <div className="flex-1">
           <h2 className="text-2xl font-bold">Hey {displayName}!</h2>
-          <p className="text-muted-foreground italic">{quote}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-muted-foreground italic">
+              {quote}
+              {/* Invisible timestamp to prevent quote from being grayed out by browser */}
+              <span className="invisible h-0 w-0 overflow-hidden">{timestamp}</span>
+            </p>
+            {onRefreshQuote && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 rounded-full hover:bg-muted/50"
+                onClick={onRefreshQuote}
+                title="Refresh quote"
+              >
+                <RefreshCcw className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </section>
@@ -202,6 +237,22 @@ export default function HomePage() {
     setRetryCount(prev => prev + 1);
   };
 
+  // Function to force refresh the quote
+  const refreshQuote = useCallback(async () => {
+    try {
+      console.log('[PAGE] Manual quote refresh requested');
+      const newQuote = await getQuote(
+        location?.lat,
+        location?.lon,
+        true // Always force fresh
+      );
+      setQuote(newQuote);
+      console.log(`[PAGE] Quote manually refreshed: ${newQuote.substring(0, 20)}...`);
+    } catch (error) {
+      console.error('Error refreshing quote:', error);
+    }
+  }, [location]);
+
   // Simple loading state for when authentication is being checked
   if (status === "loading") {
     return (
@@ -209,7 +260,7 @@ export default function HomePage() {
         <AppHeader 
           user={null} 
           quote={quote} 
-          isLoading={true} 
+          isLoading={true}
         />
       </div>
     );
@@ -309,7 +360,11 @@ export default function HomePage() {
   
   return (
     <div className="container mx-auto px-4 py-6">
-      <AppHeader user={user} quote={quote} />
+      <AppHeader 
+        user={user} 
+        quote={quote} 
+        onRefreshQuote={refreshQuote}
+      />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-6">
         {/* First row - Key statistics and quick access */}

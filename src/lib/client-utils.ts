@@ -66,24 +66,31 @@ export async function getUserData() {
  */
 export async function getQuote(lat?: number, lon?: number, force: boolean = false) {
   try {
-    // Use the dynamic quotes endpoint instead of the AI-based one
-    const dynamicUrl = `/api/quotes/dynamic?t=${Date.now()}&r=${Math.random()}`;
+    // Generate a truly unique parameter to ensure no caching
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`;
     
-    console.log(`[CLIENT] Fetching dynamic quote at ${new Date().toISOString().substring(11, 19)}`);
+    // Use the dynamic quotes endpoint instead of the AI-based one - with uniqueId in path to ensure no caching
+    const dynamicUrl = `/api/quotes/dynamic?nocache=${uniqueId}`;
     
-    // Use a no-cache fetch approach
+    console.log(`[CLIENT] Fetching dynamic quote at ${new Date().toISOString().substring(11, 19)} with ID: ${uniqueId.substring(0, 10)}`);
+    
+    // Use a direct fetch with no-cache options
     const response = await fetch(dynamicUrl, {
       method: 'GET',
       headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Timestamp': Date.now().toString(),
-        'X-Random': Math.random().toString()
+        'X-Random': uniqueId
       },
+      // Force each request to be fresh using cache: 'no-store'
       cache: 'no-store',
-      credentials: 'include',
-      next: { revalidate: 0 } as any
+      next: { 
+        revalidate: 0,
+        // Bypass all caches including browser and service worker caches
+        tags: [uniqueId] 
+      } as any
     });
     
     if (!response.ok) {
@@ -93,18 +100,24 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     const data = await response.json();
     
     // Log what we received to debug
-    console.log(`[CLIENT] Received quote ${data.index} at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
+    console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
     
     return data.quote || "Stay consistent with your fitness journey.";
   } catch (error) {
     console.error('Error fetching quote:', error);
-    // Use a timestamp to make even the fallback different each time
+    // Generate a completely random fallback quote
     const fallbackQuotes = [
       "Consistency matters more than intensity.",
       "Small habits add up to big changes.", 
       "Focus on progress, not perfection.",
-      "Every workout counts, no matter how small."
+      "Every workout counts, no matter how small.",
+      "Keep moving forward, even if it's just a little each day.",
+      "Today's efforts become tomorrow's results.",
+      "The best time to start was yesterday. The next best time is now.",
+      "You're stronger than you think.",
+      "Just showing up is half the battle."
     ];
+    // Ensure randomness using current timestamp
     const index = Date.now() % fallbackQuotes.length;
     return fallbackQuotes[index];
   }
