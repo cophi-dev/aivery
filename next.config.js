@@ -52,6 +52,18 @@ const nextConfig = {
       },
     ]
   },
+  serverRuntimeConfig: {
+    runtimeCaching: true,
+  },
+}
+
+// Force all API routes to be server-side rendered
+if (process.env.NODE_ENV === 'production') {
+  nextConfig.experimental = {
+    ...nextConfig.experimental,
+    // This is needed for routes that use headers() and cookies
+    serverComponentsExternalPackages: ['headers', 'cookies'],
+  }
 }
 
 module.exports = nextConfig 
