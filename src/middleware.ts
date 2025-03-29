@@ -45,6 +45,13 @@ export async function middleware(request: NextRequest) {
   // Create response 
   const response = NextResponse.next();
   
+  // Force all responses to be dynamic with strong cache-busting headers
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  response.headers.set('Pragma', 'no-cache');
+  response.headers.set('Expires', '0');
+  response.headers.set('Surrogate-Control', 'no-store');
+  response.headers.set('X-Accel-Expires', '0');
+  
   // Add debug header to track auth status in responses
   response.headers.set('X-Auth-Status', token ? 'authenticated' : 'unauthenticated');
   if (hasSessionToken) {
@@ -59,9 +66,6 @@ export async function middleware(request: NextRequest) {
   
   // For all API routes, always add cache control headers to force dynamic behavior
   if (isApiPath) {
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    response.headers.set('Pragma', 'no-cache');
-    response.headers.set('Expires', '0');
     return response;
   }
   
@@ -84,13 +88,6 @@ export async function middleware(request: NextRequest) {
     console.log('[MIDDLEWARE] Unauthenticated user on protected page, redirecting to login');
     const callbackUrl = encodeURIComponent(request.nextUrl.pathname);
     return NextResponse.redirect(new URL(`/login?callbackUrl=${callbackUrl}`, request.url));
-  }
-  
-  // Add cache-busting headers for dynamic pages
-  if (path === '/chat' || path === '/workout/edit' || path.includes('/workout/edit/') || path === '/workouts') {
-    response.headers.set('Cache-Control', 'no-store, max-age=0');
-    response.headers.set('Pragma', 'no-cache');
-    response.headers.set('Expires', '0');
   }
   
   // Allow the request to proceed

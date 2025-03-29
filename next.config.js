@@ -23,6 +23,9 @@ const nextConfig = {
     largePageDataBytes: 128 * 1000, // 128KB
     // Only transpile external packages
     serverComponentsExternalPackages: ['mongodb'],
+    // Added to fix static generation issues
+    appRouterDirectInvokeAllowed: true,
+    isrMemoryCacheSize: 0,
   },
   
   // Cache busting for builds
@@ -36,24 +39,32 @@ const nextConfig = {
       {
         source: '/api/:path*',
         headers: [
-          { key: 'Cache-Control', value: 'no-store, max-age=0' },
-          { key: 'Pragma', value: 'no-cache' }
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' }
         ]
       },
       {
         source: '/:path*',
         headers: [
-          { key: 'Cache-Control', value: 'no-store, max-age=0' }
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' }
         ]
       }
     ]
   },
 
   // Force server-side rendering for all pages
-  // This is the most important part to disable static generation
   distDir: '.next',
   poweredByHeader: false,
   compress: true,
+  
+  // Added to force dynamic rendering
+  staticPageGenerationTimeout: 1000,
+  serverRuntimeConfig: {
+    dynamicRoutes: true
+  },
 }
 
 // Ensure we're using proper configuration for Vercel deployment

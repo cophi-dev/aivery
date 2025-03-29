@@ -3,14 +3,25 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongodb";
 import User from "@/lib/db/models/user";
+import { setNoCacheHeaders } from "@/app/api/force-dynamic";
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
+    // Set cache control headers
+    const response = NextResponse.next();
+    setNoCacheHeaders(response.headers);
+    
     const session = await getServerSession(authOptions);
     
     // Check if user is authenticated
     if (!session?.user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      const errorResponse = NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      setNoCacheHeaders(errorResponse.headers);
+      return errorResponse;
     }
     
     // Connect to MongoDB
@@ -22,7 +33,9 @@ export async function GET(request: NextRequest) {
       .lean();
     
     if (!userDoc) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      const errorResponse = NextResponse.json({ error: "User not found" }, { status: 404 });
+      setNoCacheHeaders(errorResponse.headers);
+      return errorResponse;
     }
     
     // Use type assertion to handle MongoDB document type
@@ -37,7 +50,7 @@ export async function GET(request: NextRequest) {
     
     // Force update the session with the latest user data
     // This approach works around issues with NextAuth's session handling
-    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/auth/session`, {
+    const sessionResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/auth/session`, {
       method: "GET",
       headers: {
         cookie: request.headers.get("cookie") || "",
@@ -45,7 +58,7 @@ export async function GET(request: NextRequest) {
     });
     
     // Return the refreshed user data
-    return NextResponse.json({
+    const finalResponse = NextResponse.json({
       success: true,
       user: {
         id: user._id.toString(),
@@ -57,11 +70,17 @@ export async function GET(request: NextRequest) {
       },
       message: "Session refreshed with latest user data"
     });
+    
+    // Apply cache-busting headers to final response
+    setNoCacheHeaders(finalResponse.headers);
+    return finalResponse;
   } catch (error) {
     console.error("Error refreshing session:", error);
-    return NextResponse.json(
+    const errorResponse = NextResponse.json(
       { error: "Failed to refresh session" },
       { status: 500 }
     );
+    setNoCacheHeaders(errorResponse.headers);
+    return errorResponse;
   }
 } 
