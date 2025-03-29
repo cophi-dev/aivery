@@ -13,12 +13,19 @@ export async function middleware(request: NextRequest) {
   const isNextAuthPath = path.startsWith('/api/auth');
   const isPublicPath = path === '/' || isNextAuthPath || path === '/api/quotes';
   
+  // Check for specific paths that need direct access (protected but no redirect)
+  const isProtectedNoRedirect = path === '/workouts' || path === '/exercises' || path === '/chat';
+  
   // Debug cookie values
   const cookieHeader = request.headers.get('cookie') || '';
   const hasSessionToken = cookieHeader.includes('next-auth.session-token');
   const hasSecureSessionToken = cookieHeader.includes('__Secure-next-auth.session-token');
   
-  // Get token for auth status
+  // Skip authentication for specific hosts if needed
+  const host = request.headers.get('host') || '';
+  const isSpecialSubdomain = host.startsWith('api.') || host.startsWith('public.');
+  
+  // Get token for auth status with appropriate options
   const token = await getToken({ 
     req: request, 
     secret: process.env.NEXTAUTH_SECRET,
@@ -26,7 +33,7 @@ export async function middleware(request: NextRequest) {
   });
   
   // Debug log token info
-  console.log(`[MIDDLEWARE] Path: ${path}, HasToken: ${!!token}, HasSessionCookie: ${hasSessionToken || hasSecureSessionToken}, Secure: ${hasSecureSessionToken}`);
+  console.log(`[MIDDLEWARE] Path: ${path}, Host: ${host}, HasToken: ${!!token}, HasSessionCookie: ${hasSessionToken || hasSecureSessionToken}, Secure: ${hasSecureSessionToken}`);
   
   // Create response 
   const response = NextResponse.next();
@@ -55,6 +62,11 @@ export async function middleware(request: NextRequest) {
     return response;
   }
   
+  // Skip auth redirects for special subdomains
+  if (isSpecialSubdomain) {
+    return response;
+  }
+  
   // Case 2: User is on auth page (login/register) but already authenticated
   // Redirect to home page
   if (isAuthPath && token) {
@@ -63,8 +75,8 @@ export async function middleware(request: NextRequest) {
   }
   
   // Case 3: User is on protected page but not authenticated
-  // Redirect to login
-  if (!isAuthPath && !isPublicPath && !token) {
+  // Redirect to login - except for protected no-redirect paths
+  if (!isAuthPath && !isPublicPath && !token && !isProtectedNoRedirect) {
     console.log('[MIDDLEWARE] Unauthenticated user on protected page, redirecting to login');
     const callbackUrl = encodeURIComponent(request.nextUrl.pathname);
     return NextResponse.redirect(new URL(`/login?callbackUrl=${callbackUrl}`, request.url));

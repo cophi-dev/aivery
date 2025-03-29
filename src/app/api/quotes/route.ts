@@ -238,10 +238,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lon = searchParams.get('lon');
-    const unique = searchParams.get('unique');
+    const unique = searchParams.get('unique') || Date.now().toString(); // Always use a unique value
     const force = searchParams.get('force') === 'true';
     
-    // Add a random parameter to ensure different quotes on reload
+    // Add a timestamp to ensure different quotes on reload
     const timestamp = Date.now();
     
     // Try to get weather data if coordinates provided
@@ -300,7 +300,7 @@ export async function GET(request: NextRequest) {
       dayOfWeek,
       isWeekend: isWeekendToday,
       weather,
-      forceRefresh: !!force || !!unique
+      forceRefresh: true // Always force refresh to get new quotes
     };
     
     // Try to generate an AI quote
@@ -308,16 +308,28 @@ export async function GET(request: NextRequest) {
     
     // Fall back to static quotes if AI generation fails
     if (!quote) {
-      quote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+      // Use the timestamp to select a different quote each time
+      const randomIndex = Math.floor((Math.random() * 1000 + timestamp) % fallbackQuotes.length);
+      quote = fallbackQuotes[randomIndex];
     }
     
-    // Return the quote
-    return NextResponse.json({ quote }, { headers });
+    // Return the quote with a timestamp to prevent caching
+    return NextResponse.json({ 
+      quote, 
+      timestamp: Date.now()
+    }, { headers });
   } catch (error) {
     console.error('Error generating quote:', error);
     
-    // Return a fallback quote in case of error
-    const fallbackQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
-    return NextResponse.json({ quote: fallbackQuote });
+    // Return a fallback quote in case of error with a random index based on timestamp
+    const timestamp = Date.now();
+    const randomIndex = Math.floor((Math.random() * 1000 + timestamp) % fallbackQuotes.length);
+    const fallbackQuote = fallbackQuotes[randomIndex];
+    
+    return NextResponse.json({ 
+      quote: fallbackQuote,
+      timestamp: Date.now(),
+      error: 'Error generating quote'
+    });
   }
 } 

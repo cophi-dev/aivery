@@ -71,7 +71,7 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     const params = new URLSearchParams();
     
     // Add a unique parameter to prevent caching
-    params.append('unique', Date.now().toString());
+    params.append('unique', Date.now().toString() + Math.random().toString(36).substring(2, 15));
     
     // Add location if available
     if (lat && lon) {
@@ -88,11 +88,18 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     url = `${url}?${params.toString()}`;
     
     const response = await fetchWithAuth(url, {
+      method: 'GET', // Explicitly set method
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
-        'Expires': '0'
-      }
+        'Expires': '0',
+        // Add a timestamp header to prevent caching
+        'X-Timestamp': Date.now().toString()
+      },
+      // Disable browser cache
+      cache: 'no-store' as RequestCache,
+      // Create a new request each time
+      next: { revalidate: 0 } as any
     });
     
     if (!response.ok) {
