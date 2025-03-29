@@ -161,7 +161,15 @@
   }
   
   .prose strong {
-    @apply font-bold text-primary-foreground dark:text-primary;
+    @apply font-bold;
+  }
+  
+  .bg-muted .prose strong {
+    @apply text-primary-foreground dark:text-primary;
+  }
+  
+  .bg-primary .prose strong {
+    @apply text-primary-foreground;
   }
   
   .prose em {

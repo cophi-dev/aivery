@@ -300,7 +300,7 @@ export default function ChatPage() {
                         : "bg-muted"
                     }`}
                   >
-                    <div className="prose prose-sm dark:prose-invert">
+                    <div className={`prose prose-sm ${message.role === "user" ? "prose-invert" : "dark:prose-invert"}`}>
                       {message.role === "assistant" ? (
                         <ReactMarkdown>
                           {message.content}

@@ -119,76 +119,105 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
   try {
     await dbConnect();
     
-    // Get recent workouts
-    const recentWorkouts = await getWorkoutsByUserId(userId, 5);
+    // Get current date and time info for context-aware greetings
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+    const hour = now.getHours();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isEvening = hour >= 17;
+    const isMorning = hour < 12;
+    const isAfternoon = hour >= 12 && hour < 17;
+    
+    // Get recent workouts - more of them for better context
+    const workoutsCollection = await getCollection('workouts');
+    const recentWorkouts = await workoutsCollection
+      .find({ userId: new ObjectId(userId) })
+      .sort({ date: -1 })
+      .limit(10)
+      .toArray();
     
     if (!recentWorkouts || recentWorkouts.length === 0) {
-      return null; // No workouts found, will use default greeting
+      // No workouts found, send a welcoming first-time message
+      return `Welcome to your fitness journey! Ready to log your first workout? Let me know how I can help you get started.`;
     }
     
-    // Get workout stats for most frequent type
-    const workoutCollection = await getCollection('workouts');
+    // Get total workout count
+    const totalWorkoutCount = await workoutsCollection.countDocuments({ 
+      userId: new ObjectId(userId) 
+    });
     
-    // Count workouts by type
-    const workoutTypes = await workoutCollection.aggregate([
+    // Get workout stats for most frequent type
+    const workoutTypes = await workoutsCollection.aggregate([
       { $match: { userId: new ObjectId(userId) } },
       { $group: { _id: "$type", count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]).toArray();
-
-    // Get total workout count
-    const totalWorkoutCount = await workoutCollection.countDocuments({ 
-      userId: new ObjectId(userId) 
+    
+    // Calculate streak and activity patterns
+    let currentStreak = 0;
+    let lastWorkoutDate = new Date(recentWorkouts[0].date);
+    const daysSinceLastWorkout = Math.floor((now.getTime() - lastWorkoutDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Get this week's workouts for context
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Start of current week (Sunday)
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeeksWorkouts = await workoutsCollection.find({
+      userId: new ObjectId(userId),
+      date: { $gte: startOfWeek }
+    }).toArray();
+    
+    // Check if there's a workout scheduled for today
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+    
+    const scheduledToday = await workoutsCollection.findOne({
+      userId: new ObjectId(userId),
+      date: { $gte: startOfToday, $lte: endOfToday },
+      status: { $in: ["scheduled", "planned"] }
     });
     
-    // Generate context for greeting
-    const lastWorkout = recentWorkouts[0];
-    const daysSinceLastWorkout = Math.floor((Date.now() - new Date(lastWorkout.date).getTime()) / (1000 * 60 * 60 * 24));
-    
-    // Get most frequent workout type and its stats
-    let mostFrequentType = null;
-    let workoutTypeData = {};
-    
-    if (workoutTypes.length > 0) {
-      mostFrequentType = workoutTypes[0]._id;
-      
-      // Get additional stats for the most frequent workout type
-      if (mostFrequentType) {
-        const typeStats = await getWorkoutTypeStats(userId, mostFrequentType);
-        workoutTypeData = {
-          totalSessions: typeStats.totalSessions || 0,
-          totalDistance: typeStats.totalDistance || 0,
-          totalDuration: typeStats.totalDuration || 0,
-          averageDistance: typeStats.averageDistance || 0,
-          averageDuration: typeStats.averageDuration || 0
-        };
-      }
-    }
-    
-    // Get all workout types with counts for context
-    const workoutTypeCounts = workoutTypes.reduce((obj: Record<string, number>, type: any) => {
-      if (type && type._id) {
-        obj[String(type._id)] = typeof type.count === 'number' ? type.count : 0;
-      }
-      return obj;
-    }, {});
-    
-    // Generate a simple context message for the AI - ensure all values are primitive types
+    // Build rich context for the greeting
     const context = {
-      lastWorkoutType: typeof lastWorkout.type === 'string' ? lastWorkout.type : String(lastWorkout.type),
-      daysSinceLastWorkout: typeof daysSinceLastWorkout === 'number' ? daysSinceLastWorkout : 0,
-      totalWorkouts: typeof totalWorkoutCount === 'number' ? totalWorkoutCount : 0,
-      preferredActivity: typeof mostFrequentType === 'string' ? mostFrequentType : 
-                          mostFrequentType === null ? null : String(mostFrequentType),
-      workoutTypeCounts, 
-      lastWorkoutDistance: typeof lastWorkout.distance === 'number' ? lastWorkout.distance : 
-                           lastWorkout.distance !== null ? Number(lastWorkout.distance) : null,
-      lastWorkoutDuration: typeof lastWorkout.duration === 'number' ? lastWorkout.duration : 
-                           lastWorkout.duration !== null ? Number(lastWorkout.duration) : null,
-      mostFrequentTypeStats: workoutTypeData
+      // Time context
+      isWeekend,
+      isMorning,
+      isAfternoon,
+      isEvening,
+      dayOfWeek,
+      dayName: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayOfWeek],
+      
+      // Workout context
+      totalWorkouts: totalWorkoutCount,
+      workoutsThisWeek: thisWeeksWorkouts.length,
+      daysSinceLastWorkout,
+      hasWorkoutToday: scheduledToday !== null,
+      scheduledWorkoutToday: scheduledToday ? scheduledToday.type : null,
+      
+      // Most recent workout
+      lastWorkout: {
+        type: recentWorkouts[0].type,
+        date: new Date(recentWorkouts[0].date).toISOString(),
+        distance: recentWorkouts[0].distance,
+        duration: recentWorkouts[0].duration,
+        intensity: recentWorkouts[0].intensity
+      },
+      
+      // Workout patterns
+      preferredActivity: workoutTypes.length > 0 ? workoutTypes[0]._id : null,
+      isConsistent: daysSinceLastWorkout <= 3, // Consider consistent if workout in last 3 days
+      needsMotivation: daysSinceLastWorkout > 5, // Needs motivation if no workout in 5+ days
+      
+      // Achievement context (basic)
+      isRecentAchievement: totalWorkoutCount % 10 === 0 || totalWorkoutCount % 25 === 0,
+      recentMilestone: totalWorkoutCount % 25 === 0 ? totalWorkoutCount : 
+                      totalWorkoutCount % 10 === 0 ? totalWorkoutCount : null
     };
     
-    // Safely serialize the context to JSON
+    // Safely serialize the context to JSON  
     const safeContext = JSON.stringify(context);
     
     // Use OpenAI to generate a personalized greeting
@@ -197,7 +226,30 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
       messages: [
         {
           role: "system",
-          content: `You are a friendly fitness coach. Generate a brief, natural-sounding greeting (1-2 sentences max) based on the user's workout data. Make it personal, positive, and engaging. DO NOT explain the data or mention that you're analyzing it. Just create a natural greeting a real coach might say. No introductions like "Hey there!" or "Hi! I'm your fitness coach" - just dive right into the personalized observation. Reference specific data like number of workouts by type or most frequent activity when relevant.`
+          content: `You are a friendly fitness coach generating a personalized greeting based on the user's workout data and current context. Make your greeting genuinely personalized, timely, and relevant.
+
+GUIDELINES:
+- Generate a brief, energetic greeting (1-2 sentences)
+- DON'T use generic phrases like "Welcome back!" or "How can I help you today?"
+- DO reference specific context like day of week, time of day, or recent workout patterns
+- If the user hasn't worked out in 5+ days, offer gentle encouragement, not criticism
+- If they've been consistent, acknowledge and praise that consistency
+- If it's a weekend, weekend-specific greetings are great
+- Mention specific workout types they prefer when relevant
+- If they hit a round-number milestone (10, 25, 50, etc workouts), celebrate that
+- Make it sound natural and conversational - how a real coach would text their client
+- Use markdown formatting for emphasis of METRICS (not names): **10 workouts**, **5.2 miles**
+- AVOID putting the user's name in bold formatting to prevent visibility issues
+- Use emojis naturally (but sparingly) to add personality: 💪 🏃‍♀️ 🏋️‍♂️ 🎯 🔥
+
+EXAMPLES OF GOOD PERSONALIZED GREETINGS:
+- "Morning, Sam! Ready for that run you scheduled today? Perfect weather for it! 🏃‍♀️"
+- "Hey there! Your strength session yesterday was impressive - **3 workouts** this week already and it's only Wednesday! 💪"
+- "It's been a week since your last run. Weekend plans include getting those running shoes back on? 👟"
+- "Congrats on hitting **50 workouts**! 🎉 Your consistency with those morning runs is really paying off."
+- "Happy Friday! You've crushed **4 workouts** this week - time to celebrate that dedication this weekend! 🔥"
+
+Use the context provided to create a truly personalized, timely greeting.`
         },
         {
           role: "user",
@@ -205,7 +257,7 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
         }
       ],
       temperature: 0.8,
-      max_tokens: 80,
+      max_tokens: 100,
     });
     
     return response.choices[0].message?.content || null;
@@ -607,7 +659,7 @@ async function processAIDataRequest(request: AIQueryRequest) {
             
             FORMATTING INSTRUCTIONS:
             Format your response using Markdown:
-            - Use **bold** for emphasis and important metrics
+            - Use **bold** for numbers and metrics, NOT for names or workout types
             - Use *italics* for workout types or intensity levels
             - Use # and ## for headings when showing lists or summaries
             - Use proper line breaks with double spaces or blank lines between paragraphs
@@ -615,7 +667,7 @@ async function processAIDataRequest(request: AIQueryRequest) {
             - For workout entries, format them clearly:
               
               ## [Day], [Date]
-              **[Workout Type]** - *[Duration]*
+              *[Workout Type]* - Duration: **[duration]**
               - Distance: **[distance] [units]**
               - Intensity: *[intensity level]*
               - Average Heart Rate: **[bpm]** 
@@ -625,13 +677,13 @@ async function processAIDataRequest(request: AIQueryRequest) {
             # Your Workouts This Week
             
             ## Monday, March 27
-            **Morning Run** - *40 minutes*
+            *Morning Run* - Duration: **40 minutes**
             - Distance: **5.2 miles**
             - Intensity: *Medium*
             - Heart Rate: **142 bpm**
             
             ## Thursday, March 24
-            **Evening Run** - *33 minutes*
+            *Evening Run* - Duration: **33 minutes**
             - Distance: **5.65 km**
             - Intensity: *High*
             - Heart Rate: **156 bpm**
