@@ -25,11 +25,7 @@ const nextConfig = {
     // Only transpile external packages
     serverComponentsExternalPackages: ['mongodb'],
     // Disable static generation
-    appRouterDirectInvokeAllowed: true,
-    isrMemoryCacheSize: 0,
     disableOptimizedLoading: true,
-    disableStaticGenerationExtra: true,
-    optimizeCss: false,
   },
   
   // Cache busting for builds - ensure unique for every deployment
