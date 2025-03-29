@@ -152,7 +152,7 @@ export const authOptions: NextAuthOptions = {
       name: `next-auth.session-token`,
       options: {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'none' in production for cross-domain
         path: '/',
         secure: process.env.NODE_ENV === 'production', // Secure in production
         maxAge: 30 * 24 * 60 * 60, // 30 days
@@ -162,7 +162,7 @@ export const authOptions: NextAuthOptions = {
     callbackUrl: {
       name: `next-auth.callback-url`,
       options: {
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'none' in production for cross-domain
         path: '/',
         secure: process.env.NODE_ENV === 'production', // Secure in production
         domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined, // Use COOKIE_DOMAIN in production if set
@@ -172,7 +172,7 @@ export const authOptions: NextAuthOptions = {
       name: `next-auth.csrf-token`,
       options: {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'none' in production for cross-domain
         path: '/',
         secure: process.env.NODE_ENV === 'production', // Secure in production
         domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined, // Use COOKIE_DOMAIN in production if set
