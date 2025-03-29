@@ -273,4 +273,15 @@ export async function getCurrentUser() {
     console.error("Error getting current user:", error);
     return null;
   }
+}
+
+// Add a debug route to get auth session status
+export function getDebugAuthStatus() {
+  return {
+    status: 'enabled',
+    nextAuthVersion: '4.22.1',
+    providers: ['google', 'credentials'],
+    sessionStrategy: 'jwt',
+    timestamp: new Date().toISOString(),
+  };
 } 
