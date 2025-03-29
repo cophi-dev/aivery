@@ -113,7 +113,9 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
   useEffect(() => {
     const fetchExerciseHistory = async () => {
       try {
-        const response = await fetch('/api/exercises/history')
+        // Add cache-busting query parameter
+        const timestamp = Date.now();
+        const response = await fetch(`/api/exercises/history?t=${timestamp}`)
         if (response.ok) {
           const data = await response.json()
           setExerciseHistory(data)
@@ -204,11 +206,16 @@ export default function EditWorkoutPage({ params }: { params: { id: string } }) 
       setNewExerciseDescription("");
       setNewExerciseMuscleGroups("");
       
+      // Add cache-busting timestamp
+      const timestamp = Date.now();
+      
       // Call the AI service to get exercise details
-      const response = await fetch('/api/exercises/suggest', {
+      const response = await fetch(`/api/exercises/suggest?t=${timestamp}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
         },
         body: JSON.stringify({ exerciseName: newExerciseName.trim() }),
       });

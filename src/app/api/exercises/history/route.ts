@@ -7,10 +7,19 @@ import { ObjectId } from 'mongodb';
 
 export async function GET(req: NextRequest) {
   try {
+    // Set cache control headers to prevent caching
+    const headers = new Headers();
+    headers.append('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    headers.append('Pragma', 'no-cache');
+    headers.append('Expires', '0');
+
     // Get user session
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Authentication required' }, 
+        { status: 401, headers }
+      );
     }
 
     await dbConnect();
@@ -85,13 +94,19 @@ export async function GET(req: NextRequest) {
       });
     });
     
-    return NextResponse.json(exerciseHistory);
+    // Add a timestamp to ensure freshness
+    console.log(`[EXERCISE-HISTORY] Generating history at ${new Date().toISOString()}`);
+    
+    return NextResponse.json(exerciseHistory, { headers });
     
   } catch (error) {
     console.error('Error fetching exercise history:', error);
+    const headers = new Headers();
+    headers.append('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    
     return NextResponse.json(
       { error: 'Failed to fetch exercise history' },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 } 

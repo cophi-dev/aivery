@@ -125,12 +125,21 @@ function findInCommonExercises(exerciseName: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Set cache control headers to prevent caching
+    const headers = new Headers();
+    headers.append('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    headers.append('Pragma', 'no-cache');
+    headers.append('Expires', '0');
+    
     const body = await req.json();
     const { exerciseName } = body;
     
     if (!exerciseName) {
-      return NextResponse.json({ error: 'Exercise name is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Exercise name is required' }, { status: 400, headers });
     }
+    
+    // Log activity to help with debugging
+    console.log(`[EXERCISE-SUGGEST] Suggesting details for: "${exerciseName}" at ${new Date().toISOString()}`);
     
     // Try to find in common exercises first
     const commonMatch = findInCommonExercises(exerciseName);
@@ -139,7 +148,7 @@ export async function POST(req: NextRequest) {
         description: commonMatch.description,
         muscleGroups: commonMatch.muscleGroups,
         source: 'database'
-      });
+      }, { headers });
     }
     
     // Fall back to AI inference
@@ -148,7 +157,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ...aiResult,
         source: 'ai'
-      });
+      }, { headers });
     }
     
     // If all fails, provide generic response
@@ -156,13 +165,17 @@ export async function POST(req: NextRequest) {
       description: `Custom strength exercise: ${exerciseName}`,
       muscleGroups: ["custom"],
       source: 'generic'
-    });
+    }, { headers });
     
   } catch (error) {
     console.error('Error in exercise suggestion API:', error);
+    
+    const headers = new Headers();
+    headers.append('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    
     return NextResponse.json(
       { error: 'Failed to suggest exercise details' },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 } 
