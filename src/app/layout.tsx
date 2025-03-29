@@ -9,12 +9,14 @@ import { authOptions } from "@/lib/auth"
 import { ToastProvider } from "@/components/ui/toast"
 import ForceCleanup from "./cleanup"
 import { Metadata } from "next"
+// Import the dynamic config to force dynamic rendering
+import "./dynamic-config"
 
-// Increase the header size limit to prevent 431 errors
+// Force dynamic rendering for the entire app
 export const dynamic = 'force-dynamic'
-
-// Configure API route handler to allow larger headers
+export const revalidate = 0
 export const fetchCache = 'force-no-store'
+export const runtime = 'nodejs'
 
 const inter = Inter({
   subsets: ["latin"],
@@ -24,6 +26,12 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Aivery - AI Fitness Coach",
   description: "Your personal AI fitness coach",
+  // Add cache control directive 
+  other: {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '-1',
+  },
 }
 
 export default async function RootLayout({
@@ -35,6 +43,12 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Force cache busting for all resources */}
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
+      </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <AuthProvider>
           <ForceCleanup />
