@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LucideSend, LucideUser, LucideLoader, LucideRefreshCw } from "lucide-react"
 import { useSession } from "next-auth/react"
 import Image from "next/image"
+import ReactMarkdown from "react-markdown"
 
 // Simple chat page with manually managed messages
 export default function ChatPage() {
@@ -253,8 +254,7 @@ export default function ChatPage() {
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (scrollAreaRef.current) {
-      const scrollArea = scrollAreaRef.current
-      scrollArea.scrollTop = scrollArea.scrollHeight
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
     }
   }, [messages])
 
@@ -301,7 +301,13 @@ export default function ChatPage() {
                     }`}
                   >
                     <div className="prose prose-sm dark:prose-invert">
-                      {message.content}
+                      {message.role === "assistant" ? (
+                        <ReactMarkdown>
+                          {message.content}
+                        </ReactMarkdown>
+                      ) : (
+                        message.content
+                      )}
                     </div>
                   </div>
                   {message.role === "user" && (

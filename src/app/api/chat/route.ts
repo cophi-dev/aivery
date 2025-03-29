@@ -215,6 +215,447 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
   }
 }
 
+// Helper function to fetch user workout data
+async function fetchUserWorkoutData(userId: string, queryType: string, timeframe?: string) {
+  try {
+    await dbConnect();
+    const workoutsCollection = await getCollection('workouts');
+    
+    // Base filter: workouts for this user
+    const filter: any = { userId: new ObjectId(userId) };
+    
+    // Add date filtering if timeframe is specified
+    if (timeframe) {
+      const now = new Date();
+      let startDate = new Date();
+      
+      if (timeframe.includes('week') || timeframe.includes('this week')) {
+        // Start of current week (Sunday)
+        const day = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        startDate.setDate(now.getDate() - day);
+        startDate.setHours(0, 0, 0, 0);
+      } 
+      else if (timeframe.includes('month') || timeframe.includes('this month')) {
+        // Start of current month
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+      else if (timeframe.includes('year') || timeframe === '2024' || timeframe.includes('2024')) {
+        // Current year or specific year
+        if (timeframe === '2024' || timeframe.includes('2024')) {
+          filter.date = {
+            $gte: new Date('2024-01-01T00:00:00.000Z'),
+            $lt: new Date('2025-01-01T00:00:00.000Z')
+          };
+        } 
+        else if (timeframe.includes('2025')) {
+          filter.date = {
+            $gte: new Date('2025-01-01T00:00:00.000Z'),
+            $lt: new Date('2026-01-01T00:00:00.000Z')
+          };
+        } 
+        else {
+          // Current year
+          startDate = new Date(now.getFullYear(), 0, 1);
+        }
+      }
+      
+      // Apply date filter if not already set for specific years
+      if (!filter.date) {
+        filter.date = { $gte: startDate };
+      }
+    }
+    
+    // Handle specific query types
+    if (queryType === 'longest_run') {
+      // Add type filter for runs
+      filter.type = { $regex: /run/i };
+      
+      // Find the workout with the longest distance
+      const longestRun = await workoutsCollection
+        .find(filter)
+        .sort({ distance: -1 })
+        .limit(1)
+        .toArray();
+        
+      return longestRun.length > 0 ? longestRun[0] : null;
+    }
+    else if (queryType === 'recent_workouts') {
+      // Get recent workouts (last 5)
+      const recentWorkouts = await workoutsCollection
+        .find(filter)
+        .sort({ date: -1 })
+        .limit(5)
+        .toArray();
+        
+      return recentWorkouts;
+    }
+    else if (queryType === 'list_workouts') {
+      // Get workouts for the period, sorted by date
+      const workouts = await workoutsCollection
+        .find(filter)
+        .sort({ date: -1 })
+        .limit(10) // Limit to 10 workouts for readability
+        .toArray();
+        
+      return workouts;
+    }
+    else if (queryType === 'workout_count') {
+      // Count workouts
+      const count = await workoutsCollection.countDocuments(filter);
+      return { count };
+    }
+    else if (queryType === 'workout_summary') {
+      // Get count of all workouts
+      const total = await workoutsCollection.countDocuments(filter);
+      
+      // Get breakdown by workout type
+      const workouts = await workoutsCollection.find(filter).toArray();
+      const types: Record<string, number> = {};
+      
+      workouts.forEach((workout: any) => {
+        const type = workout.type || 'unknown';
+        types[type] = (types[type] || 0) + 1;
+      });
+      
+      return { total, types };
+    }
+    else if (queryType === 'last_run') {
+      // Get the most recent run
+      const runFilter = { ...filter, type: { $regex: /run/i } };
+      const lastRun = await workoutsCollection
+        .find(runFilter)
+        .sort({ date: -1 })
+        .limit(1)
+        .toArray();
+        
+      return lastRun.length > 0 ? lastRun[0] : null;
+    }
+    else if (queryType === 'total_distance') {
+      // Add filter for runs
+      filter.type = { $regex: /run/i };
+      
+      // Get sum of distances for all runs in the timeframe
+      const runs = await workoutsCollection.find(filter).toArray();
+      const totalDistance = runs.reduce((sum: number, run: any) => {
+        return sum + (parseFloat(run.distance) || 0);
+      }, 0);
+      
+      return { totalDistance, count: runs.length };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error fetching workout data:", error);
+    return null;
+  }
+}
+
+// Replace analyzeWorkoutDataQuery with a more flexible approach
+interface AIQueryRequest {
+  query: string;
+  userId: string;
+  queryType: 'workout_data' | 'user_info';
+}
+
+async function processAIDataRequest(request: AIQueryRequest) {
+  try {
+    const { query, userId, queryType } = request;
+
+    // First, use OpenAI to understand what the user is asking for
+    const queryAnalysisResponse = await client.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `You are a data analyst for a fitness app. Analyze the user's query and extract:
+          1. The type of data they're asking for (e.g., runs, workouts, distances)
+          2. The time period they're interested in (e.g., this week, 2024, all time)
+          3. Any specific filters or conditions
+          
+          Return a JSON object with these fields:
+          {
+            "dataType": "runs|workouts|distance|duration|count|lastRun|longestRun|workoutList|etc",
+            "timeFrame": "week|month|year|2024|2025|all",
+            "filters": {
+              "workoutType": "run|strength|cycling|etc", // if applicable
+              "aggregation": "sum|max|min|avg|latest", // if applicable
+              "metric": "distance|duration|pace|count", // if applicable
+              "format": "list|single|summary|detailed", // how to present data
+              "includeDetails": true|false // whether to include full workout details
+            }
+          }
+          
+          IMPORTANT GUIDELINES:
+          - If the user asks to see, show, display or list workouts for a period, use dataType "workoutList" 
+            and set format to "detailed" in filters
+          - When a user asks about "this week's workouts" or similar, set timeFrame to "week" and format to "detailed"
+          - If a user specifically requests to "see" or "take a look" at workouts, set includeDetails to true
+          - When formatting is important (like showing a list), specify format as "detailed"
+          
+          Be precise and only return this JSON object.`
+        },
+        {
+          role: "user", 
+          content: query
+        }
+      ],
+      temperature: 0,
+      response_format: { type: "json_object" }
+    });
+
+    // Parse the AI's analysis of the user query
+    const analysisText = queryAnalysisResponse.choices[0].message?.content || '{}';
+    const queryAnalysis = JSON.parse(analysisText);
+    
+    console.log("Query analysis:", queryAnalysis);
+    
+    // Connect to the database
+    await dbConnect();
+    const workoutsCollection = await getCollection('workouts');
+    
+    // Build a database query based on the AI's analysis
+    const dbFilter: any = { userId: new ObjectId(userId) };
+    
+    // Apply time frame filter
+    if (queryAnalysis.timeFrame) {
+      const now = new Date();
+      
+      if (queryAnalysis.timeFrame === 'week') {
+        const day = now.getDay();
+        const startDate = new Date(now);
+        startDate.setDate(now.getDate() - day);
+        startDate.setHours(0, 0, 0, 0);
+        dbFilter.date = { $gte: startDate };
+      } 
+      else if (queryAnalysis.timeFrame === 'month') {
+        const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        dbFilter.date = { $gte: startDate };
+      }
+      else if (queryAnalysis.timeFrame === '2024') {
+        dbFilter.date = {
+          $gte: new Date('2024-01-01T00:00:00.000Z'),
+          $lt: new Date('2025-01-01T00:00:00.000Z')
+        };
+      }
+      else if (queryAnalysis.timeFrame === '2025') {
+        dbFilter.date = {
+          $gte: new Date('2025-01-01T00:00:00.000Z'),
+          $lt: new Date('2026-01-01T00:00:00.000Z')
+        };
+      }
+      else if (queryAnalysis.timeFrame === 'year') {
+        const startDate = new Date(now.getFullYear(), 0, 1);
+        dbFilter.date = { $gte: startDate };
+      }
+    }
+    
+    // Apply workout type filter
+    if (queryAnalysis.filters?.workoutType) {
+      const typeRegex = new RegExp(queryAnalysis.filters.workoutType, 'i');
+      dbFilter.type = { $regex: typeRegex };
+    }
+    
+    // Execute different queries based on what the user wants
+    let result: any = null;
+    const format = queryAnalysis.filters?.format || 'single';
+    const includeDetails = queryAnalysis.filters?.includeDetails === true;
+    
+    if (queryAnalysis.dataType === 'longestRun' || 
+        (queryAnalysis.dataType === 'runs' && queryAnalysis.filters?.aggregation === 'max' && queryAnalysis.filters?.metric === 'distance')) {
+      // Get the longest run
+      if (!dbFilter.type) dbFilter.type = { $regex: /run/i };
+      
+      const longestRun = await workoutsCollection
+        .find(dbFilter)
+        .sort({ distance: -1 })
+        .limit(1)
+        .toArray();
+        
+      result = longestRun.length > 0 ? longestRun[0] : null;
+    }
+    else if (queryAnalysis.dataType === 'lastRun' || 
+            (queryAnalysis.dataType === 'runs' && queryAnalysis.filters?.aggregation === 'latest')) {
+      // Get the most recent run
+      if (!dbFilter.type) dbFilter.type = { $regex: /run/i };
+      
+      const lastRun = await workoutsCollection
+        .find(dbFilter)
+        .sort({ date: -1 })
+        .limit(1)
+        .toArray();
+        
+      result = lastRun.length > 0 ? lastRun[0] : null;
+    }
+    else if (queryAnalysis.dataType === 'workoutList' || 
+            (queryAnalysis.dataType === 'workouts' && format === 'detailed')) {
+      // Get a detailed list of workouts with full formatting
+      const workouts = await workoutsCollection
+        .find(dbFilter)
+        .sort({ date: -1 })
+        .limit(10)
+        .toArray();
+        
+      // Process workouts to include day names and format dates
+      const processedWorkouts = workouts.map((workout: any) => {
+        const workoutDate = new Date(workout.date);
+        const dayName = workoutDate.toLocaleDateString('en-US', { weekday: 'long' });
+        const dateStr = workoutDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+        
+        return {
+          ...workout,
+          dayName,
+          formattedDate: `${dayName}, ${dateStr}`,
+          // Format duration as hours and minutes if needed
+          formattedDuration: workout.duration ? 
+            (workout.duration >= 60 ? 
+              `${Math.floor(workout.duration / 60)}h ${workout.duration % 60}m` : 
+              `${workout.duration} minutes`) : 
+            null,
+          // Format distance with units
+          formattedDistance: workout.distance ? 
+            `${workout.distance} ${workout.distanceUnit || 'miles'}` : 
+            null
+        };
+      });
+      
+      result = {
+        workouts: processedWorkouts,
+        count: processedWorkouts.length,
+        timeFrame: queryAnalysis.timeFrame || 'recent',
+        includeDetails
+      };
+    }
+    else if (queryAnalysis.dataType === 'workouts' && format === 'list') {
+      // Get a list of workouts
+      const workouts = await workoutsCollection
+        .find(dbFilter)
+        .sort({ date: -1 })
+        .limit(10)
+        .toArray();
+      
+      result = workouts;
+    }
+    else if (queryAnalysis.dataType === 'count' || queryAnalysis.filters?.metric === 'count') {
+      // Count workouts
+      const count = await workoutsCollection.countDocuments(dbFilter);
+      result = { count };
+    }
+    else if (queryAnalysis.dataType === 'distance' && queryAnalysis.filters?.aggregation === 'sum') {
+      // Calculate total distance
+      if (!dbFilter.type && queryAnalysis.filters?.workoutType === 'run') {
+        dbFilter.type = { $regex: /run/i };
+      }
+      
+      const workouts = await workoutsCollection.find(dbFilter).toArray();
+      const totalDistance = workouts.reduce((sum: number, workout: any) => {
+        return sum + (parseFloat(workout.distance) || 0);
+      }, 0);
+      
+      result = { 
+        totalDistance: Math.round(totalDistance * 100) / 100,
+        count: workouts.length,
+        timeFrame: queryAnalysis.timeFrame || 'all time',
+        workoutType: queryAnalysis.filters?.workoutType || 'all workouts'
+      };
+    }
+    else if (queryAnalysis.dataType === 'summary') {
+      // Get workout summary
+      const total = await workoutsCollection.countDocuments(dbFilter);
+      const workouts = await workoutsCollection.find(dbFilter).toArray();
+      
+      const types: Record<string, number> = {};
+      workouts.forEach((workout: any) => {
+        const type = workout.type || 'unknown';
+        types[type] = (types[type] || 0) + 1;
+      });
+      
+      // Also calculate total distance if applicable
+      let totalDistance = 0;
+      if (queryAnalysis.filters?.metric === 'distance') {
+        totalDistance = workouts.reduce((sum: number, workout: any) => {
+          return sum + (parseFloat(workout.distance) || 0);
+        }, 0);
+      }
+      
+      result = { 
+        total, 
+        types,
+        totalDistance: Math.round(totalDistance * 100) / 100
+      };
+    }
+    
+    // Use OpenAI to generate a natural language response
+    if (result) {
+      const contextMessage = JSON.stringify({
+        query,
+        result,
+        analysisType: queryAnalysis.dataType,
+        timeFrame: queryAnalysis.timeFrame,
+        format: format
+      });
+      
+      const responseGeneration = await client.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: `You are a friendly fitness coach. Generate a natural, conversational response based on the user's query and the data provided.
+            Create a response that directly answers their question using the specific data.
+            Be concise but personable - like a real coach would talk to their client.
+            Never mention that you're analyzing data or that data was retrieved from a database.
+            Just present the information conversationally as if you already knew it.
+            
+            FORMATTING INSTRUCTIONS:
+            Format your response using Markdown:
+            - Use **bold** for emphasis and important metrics
+            - Use *italics* for workout types or intensity levels
+            - Use # and ## for headings when showing lists or summaries
+            - Use proper line breaks with double spaces or blank lines between paragraphs
+            - Use bullet points with * or - for lists
+            - For workout entries, format them clearly:
+              
+              ## [Day], [Date]
+              **[Workout Type]** - *[Duration]*
+              - Distance: **[distance] [units]**
+              - Intensity: *[intensity level]*
+              - Average Heart Rate: **[bpm]** 
+              
+            EXAMPLE MARKDOWN OUTPUT:
+            
+            # Your Workouts This Week
+            
+            ## Monday, March 27
+            **Morning Run** - *40 minutes*
+            - Distance: **5.2 miles**
+            - Intensity: *Medium*
+            - Heart Rate: **142 bpm**
+            
+            ## Thursday, March 24
+            **Evening Run** - *33 minutes*
+            - Distance: **5.65 km**
+            - Intensity: *High*
+            - Heart Rate: **156 bpm**
+            `
+          },
+          {
+            role: "user",
+            content: contextMessage
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 300
+      });
+      
+      return responseGeneration.choices[0].message?.content || "Sorry, I couldn't process that request.";
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error processing AI data request:", error);
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     // Parse request body
@@ -332,6 +773,12 @@ YOUR CAPABILITIES:
 - Suggest improvements to workout routines
 - Explain exercise concepts in easy-to-understand terms
 
+IMPORTANT - DATA HANDLING:
+- If the user asks about their specific workout data or statistics, DO NOT make up specific numbers
+- If a user asks about their workouts, the backend system will analyze their question and provide real data
+- Let the system handle questions about when/how far/how many workouts the user has done
+- For general fitness questions, provide helpful and accurate information
+
 RESPONSE GUIDELINES:
 - For greeting messages like "hi" or "hey", respond casually and use their name when possible
 - Be conversational first, informational second
@@ -339,18 +786,9 @@ RESPONSE GUIDELINES:
 - Vary your responses - don't be repetitive or formulaic
 - Be encouraging without being cheesy
 
-IMPORTANT - AVOID DATA VISUALIZATION TRIGGERS:
-DO NOT use any of these exact phrases in your responses unless specifically instructed:
-- "Let me analyze your workouts and show you the data"
-- "Let me check your strength workout data"
-- "Let me pull up your workout statistics"
-
-For ALL conversations, focus on providing helpful advice, answering questions, and engaging in conversation WITHOUT using those trigger phrases.
-
 For example:
-- User: "How was my run?" → "Based on what you've shared, it looks like a solid run! Do you want to talk about specific aspects of it, or are you looking for recovery tips?"
+- User: "How was my run?" → Let the system analyze this query for specific data
 - User: "Can you help with my workouts?" → "For sure! What kind of training are you into right now, and what specifically can I help with?"
-- User: "Show me my running stats" → "I'd be happy to chat about your running! What specific aspects are you curious about - pace, distance, or how you're progressing?"
 - User: "What's my name?" → "${nameResponse}"
 `
     };
@@ -368,13 +806,48 @@ For example:
       });
     }
     
+    // Determine if this question is asking about workout data
+    const dataKeywords = ['workout', 'run', 'exercise', 'distance', 'pace', 'time', 
+                         'how many', 'how much', 'how far', 'how long',
+                         'stats', 'summary', 'progress', 'tracked',
+                         'show me', 'display', 'list', 'see my', 'take a look',
+                         'this week', 'last week', 'recent', 'mile', 'kilometers',
+                         'training', 'activity', 'fitness', 'cardio', 'strength',
+                         'gym', 'session', 'log', 'record', 'history'];
+    
+    const isLikelyDataQuery = dataKeywords.some(keyword => 
+      latestUserMessage.toLowerCase().includes(keyword)
+    );
+    
+    if (isLikelyDataQuery && session?.user?.id) {
+      try {
+        // Try to process as a data query
+        const response = await processAIDataRequest({
+          query: latestUserMessage,
+          userId: session.user.id,
+          queryType: 'workout_data'
+        });
+        
+        if (response) {
+          return new Response(response, {
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error processing data query:", error);
+        // Fall through to normal processing if data query fails
+      }
+    }
+    
+    // Use the OpenAI SDK to get a response for non-data queries
     try {
-      // Use the OpenAI SDK to get a response
       const result = await client.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [systemMessage, ...messages],
-        temperature: 0.8, // Slightly increased for more varied responses
-        max_tokens: 800, // Adjusted for more concise responses
+        temperature: 0.8,
+        max_tokens: 800,
       });
       
       // Safely extract the response text
@@ -406,4 +879,6 @@ For example:
     );
   }
 }
+
+
 
