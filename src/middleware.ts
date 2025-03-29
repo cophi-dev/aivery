@@ -13,54 +13,57 @@ export async function middleware(request: NextRequest) {
   const isNextAuthPath = path.startsWith('/api/auth');
   const isPublicPath = path === '/' || isNextAuthPath;
   
+  // Debug cookie values
+  const cookieHeader = request.headers.get('cookie') || '';
+  const hasSessionToken = cookieHeader.includes('next-auth.session-token');
+  
   // Get token for auth status
   const token = await getToken({ 
     req: request, 
     secret: process.env.NEXTAUTH_SECRET 
   });
   
-  // Add debug header to track auth status in responses
+  // Debug log token info
+  console.log(`[MIDDLEWARE] Path: ${path}, HasToken: ${!!token}, HasSessionCookie: ${hasSessionToken}`);
+  
+  // Create response 
   const response = NextResponse.next();
+  
+  // Add debug header to track auth status in responses
   response.headers.set('X-Auth-Status', token ? 'authenticated' : 'unauthenticated');
   
-  // Case 1: User is on auth page (login/register) but already authenticated
+  // Add CSRF protection header
+  response.headers.set('X-CSRF-Protection', '1; mode=block');
+  
+  // Case 1: All API requests pass through to the route handlers
+  // Let the API routes handle their own authentication
+  if (isApiPath) {
+    // Add cache-busting headers for specific routes
+    if (path === '/api/chat') {
+      response.headers.set('Cache-Control', 'no-store, max-age=0');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+    }
+    return response;
+  }
+  
+  // Case 2: User is on auth page (login/register) but already authenticated
   // Redirect to home page
   if (isAuthPath && token) {
     console.log('[MIDDLEWARE] Authenticated user on auth page, redirecting to home');
     return NextResponse.redirect(new URL('/', request.url));
   }
   
-  // Case 2: User is on protected page but not authenticated
+  // Case 3: User is on protected page but not authenticated
   // Redirect to login
-  if (!isAuthPath && !isPublicPath && !isApiPath && !token) {
+  if (!isAuthPath && !isPublicPath && !token) {
     console.log('[MIDDLEWARE] Unauthenticated user on protected page, redirecting to login');
     const callbackUrl = encodeURIComponent(request.nextUrl.pathname);
     return NextResponse.redirect(new URL(`/login?callbackUrl=${callbackUrl}`, request.url));
   }
   
-  // Case 3: API request that requires authentication
-  // Return 401 if not authenticated, except for auth APIs
-  if (isApiPath && !isNextAuthPath && !token) {
-    // Allow auth API endpoints to work without authentication
-    if (path.startsWith('/api/auth/')) {
-      return response;
-    }
-    
-    // If it's a chat API endpoint, decide based on path
-    if (path === '/api/chat') {
-      // Allow unauthenticated chat access for public routes
-      return response;
-    }
-    
-    console.log('[MIDDLEWARE] Unauthenticated API request');
-    return new NextResponse(
-      JSON.stringify({ error: 'Authentication required' }),
-      { status: 401, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-  
-  // Add cache-busting headers for specific routes
-  if (path === '/api/chat' || path === '/chat') {
+  // Add cache-busting headers for the chat page
+  if (path === '/chat') {
     response.headers.set('Cache-Control', 'no-store, max-age=0');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
