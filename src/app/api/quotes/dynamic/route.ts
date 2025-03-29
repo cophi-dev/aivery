@@ -182,13 +182,31 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lon = searchParams.get('lon');
+    const requestId = searchParams.get('nocache') || Date.now().toString();
     
     // Get a truly unique random seed based on current time
     const now = Date.now();
     const randomSeed = now + Math.floor(Math.random() * 1000000);
     
     // Log to verify the function is being called each time
-    console.log(`[QUOTES-DYNAMIC] Request at ${new Date(now).toISOString()} with seed: ${randomSeed}`);
+    console.log(`[QUOTES-DYNAMIC] Request at ${new Date(now).toISOString()} with seed: ${randomSeed} and ID: ${requestId.substring(0, 10)}`);
+    
+    // Track previously returned quotes using cookies to avoid repeating
+    // Get the last 5 quotes from cookies
+    const lastQuotesCookie = request.cookies.get('last-quotes');
+    let lastQuotes: string[] = [];
+    
+    if (lastQuotesCookie) {
+      try {
+        lastQuotes = JSON.parse(lastQuotesCookie.value);
+        if (!Array.isArray(lastQuotes)) {
+          lastQuotes = [];
+        }
+      } catch (e) {
+        console.error('Error parsing last quotes cookie:', e);
+        lastQuotes = [];
+      }
+    }
     
     // Try to get user session - OPTIONAL
     let userData: any = null;
@@ -262,13 +280,30 @@ export async function GET(request: NextRequest) {
     let quote = null;
     if (userData || workoutCount > 0) {
       quote = await generateAIQuote(quoteContext);
+      console.log(`[QUOTES-DYNAMIC] AI quote generated: ${quote?.substring(0, 30) || 'null'}`);
     }
     
-    // Fall back to static quotes if AI generation fails or we have no user data
+    // If AI failed or we have no user data, use fallback quotes
     if (!quote) {
-      // Use truly random selection with current time
-      const index = Math.abs(randomSeed) % FALLBACK_QUOTES.length;
-      quote = FALLBACK_QUOTES[index];
+      // Create a filtered list without the most recently used quotes
+      let availableQuotes = [...FALLBACK_QUOTES];
+      
+      // Filter out the last used quotes if we have alternates
+      if (lastQuotes.length > 0 && lastQuotes.length < FALLBACK_QUOTES.length - 1) {
+        availableQuotes = FALLBACK_QUOTES.filter(q => !lastQuotes.includes(q));
+      }
+      
+      // Use truly random selection from the filtered list
+      const index = Math.abs(randomSeed) % availableQuotes.length;
+      quote = availableQuotes[index];
+      
+      // Force a different quote if the last one is the same and we have more options
+      if (lastQuotes.length > 0 && quote === lastQuotes[0] && availableQuotes.length > 1) {
+        // Pick a different index
+        const newIndex = (index + 1) % availableQuotes.length;
+        quote = availableQuotes[newIndex];
+        console.log(`[QUOTES-DYNAMIC] Forced different quote to avoid repetition`);
+      }
       
       // If we have a nickname, try to personalize the static quote
       if (userData?.nickname || userData?.name) {
@@ -279,31 +314,50 @@ export async function GET(request: NextRequest) {
         }
       }
       
-      console.log(`[QUOTES-DYNAMIC] Using fallback quote ${index}`);
+      console.log(`[QUOTES-DYNAMIC] Using fallback quote: ${quote.substring(0, 30)}...`);
     } else {
-      console.log(`[QUOTES-DYNAMIC] Using AI-generated quote`);
+      console.log(`[QUOTES-DYNAMIC] Using AI-generated quote: ${quote.substring(0, 30)}...`);
     }
     
-    // Return the quote with rich metadata
-    return NextResponse.json({ 
+    // Update the last quotes list
+    if (quote) {
+      lastQuotes.unshift(quote);
+      // Keep only the last 5 quotes
+      lastQuotes = lastQuotes.slice(0, 5);
+    }
+    
+    // Create response
+    const response = NextResponse.json({ 
       quote, 
       timestamp: now,
       personalized: !!userData,
       timeOfDay,
       dayOfWeek,
-      workoutCount: workoutCount || 0
+      workoutCount: workoutCount || 0,
+      uniqueId: requestId,
+      avoidedRepetition: true
     }, { headers });
     
+    // Set the updated last quotes cookie
+    response.cookies.set({
+      name: 'last-quotes',
+      value: JSON.stringify(lastQuotes),
+      maxAge: 60 * 60 * 24 * 7, // 1 week
+      path: '/',
+    });
+    
+    return response;
   } catch (error) {
     console.error('[QUOTES-DYNAMIC] Error:', error);
     
-    // Even in case of error, return a quote
-    const fallbackIndex = Date.now() % FALLBACK_QUOTES.length;
+    // Even in case of error, return a unique quote
+    const timestamp = Date.now();
+    const fallbackIndex = timestamp % FALLBACK_QUOTES.length;
     
     return NextResponse.json({ 
       quote: FALLBACK_QUOTES[fallbackIndex],
       error: true,
-      timestamp: Date.now()
+      timestamp
     });
   }
 } 

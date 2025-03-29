@@ -64,13 +64,35 @@ export async function getUserData() {
 /**
  * Get quotes with optional lat/lon coordinates
  */
+// Keep track of the last received quote to prevent repeats
+let lastReceivedQuote = '';
+
 export async function getQuote(lat?: number, lon?: number, force: boolean = false) {
   try {
     // Generate a truly unique parameter to ensure no caching
     const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`;
     
-    // Use the dynamic quotes endpoint instead of the AI-based one - with uniqueId in path to ensure no caching
-    const dynamicUrl = `/api/quotes/dynamic?nocache=${uniqueId}`;
+    // Build URL with parameters to force uniqueness and track last quote
+    const params = new URLSearchParams();
+    params.append('nocache', uniqueId);
+    params.append('timestamp', Date.now().toString());
+    
+    // Add the last quote to explicitly avoid repeats
+    if (lastReceivedQuote) {
+      params.append('lastQuote', encodeURIComponent(lastReceivedQuote));
+    }
+    
+    // Add location if available
+    if (lat && lon) {
+      params.append('lat', lat.toString());
+      params.append('lon', lon.toString());
+    }
+    
+    // Force refresh
+    params.append('force', 'true');
+    
+    // Use the dynamic quotes endpoint with all params
+    const dynamicUrl = `/api/quotes/dynamic?${params.toString()}`;
     
     console.log(`[CLIENT] Fetching dynamic quote at ${new Date().toISOString().substring(11, 19)} with ID: ${uniqueId.substring(0, 10)}`);
     
@@ -82,7 +104,8 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Timestamp': Date.now().toString(),
-        'X-Random': uniqueId
+        'X-Random': uniqueId,
+        'X-Last-Quote': lastReceivedQuote ? encodeURIComponent(lastReceivedQuote.substring(0, 30)) : ''
       },
       // Force each request to be fresh using cache: 'no-store'
       cache: 'no-store',
@@ -99,13 +122,45 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     
     const data = await response.json();
     
+    // Make sure we got a different quote
+    if (data.quote === lastReceivedQuote && data.quote) {
+      console.log(`[CLIENT] Warning: Received the same quote again: "${data.quote.substring(0, 20)}..."`);
+      
+      // Generate a fallback different quote
+      const fallbackQuotes = [
+        "Consistency matters more than intensity.",
+        "Small habits add up to big changes.", 
+        "Focus on progress, not perfection.",
+        "Every workout counts, no matter how small.",
+        "Keep moving forward, even if it's just a little each day.",
+        "Today's efforts become tomorrow's results.",
+        "The best time to start was yesterday. The next best time is now.",
+        "You're stronger than you think.",
+        "Just showing up is half the battle."
+      ].filter(q => q !== lastReceivedQuote);
+      
+      const clientRandomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+      
+      // Log client-generated quote
+      console.log(`[CLIENT] Generated different quote client-side: "${clientRandomQuote.substring(0, 20)}..."`);
+      
+      // Save as last quote
+      lastReceivedQuote = clientRandomQuote;
+      return clientRandomQuote;
+    }
+    
+    // Save this quote as the last received
+    if (data.quote) {
+      lastReceivedQuote = data.quote;
+    }
+    
     // Log what we received to debug
     console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
     
     return data.quote || "Stay consistent with your fitness journey.";
   } catch (error) {
     console.error('Error fetching quote:', error);
-    // Generate a completely random fallback quote
+    // Generate a completely random fallback quote - different from last
     const fallbackQuotes = [
       "Consistency matters more than intensity.",
       "Small habits add up to big changes.", 
@@ -116,9 +171,15 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
       "The best time to start was yesterday. The next best time is now.",
       "You're stronger than you think.",
       "Just showing up is half the battle."
-    ];
+    ].filter(q => q !== lastReceivedQuote);
+    
     // Ensure randomness using current timestamp
     const index = Date.now() % fallbackQuotes.length;
-    return fallbackQuotes[index];
+    const newQuote = fallbackQuotes[index];
+    
+    // Update last quote
+    lastReceivedQuote = newQuote;
+    
+    return newQuote;
   }
 } 
