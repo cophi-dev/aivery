@@ -70,8 +70,13 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     let url = '/api/quotes';
     const params = new URLSearchParams();
     
+    // Generate a truly unique identifier
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    const unique = `${timestamp}-${random}`;
+    
     // Add a unique parameter to prevent caching
-    params.append('unique', Date.now().toString() + Math.random().toString(36).substring(2, 15));
+    params.append('unique', unique);
     
     // Add location if available
     if (lat && lon) {
@@ -79,26 +84,29 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
       params.append('lon', lon.toString());
     }
     
-    // Force refresh if needed
-    if (force) {
-      params.append('force', 'true');
-    }
+    // Always force refresh 
+    params.append('force', 'true');
+    
+    // Add a client-specific ID
+    params.append('client', random);
     
     // Combine URL and parameters
     url = `${url}?${params.toString()}`;
     
-    const response = await fetchWithAuth(url, {
-      method: 'GET', // Explicitly set method
+    console.log(`[CLIENT] Fetching quote at ${new Date().toISOString().substring(11, 19)} with unique=${timestamp}`);
+    
+    // Use a no-cache fetch approach
+    const response = await fetch(url, {
+      method: 'GET',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-        // Add a timestamp header to prevent caching
-        'X-Timestamp': Date.now().toString()
+        'X-Timestamp': timestamp.toString(),
+        'X-Client-ID': random
       },
-      // Disable browser cache
-      cache: 'no-store' as RequestCache,
-      // Create a new request each time
+      cache: 'no-store',
+      credentials: 'include',
       next: { revalidate: 0 } as any
     });
     
@@ -107,9 +115,21 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     }
     
     const data = await response.json();
+    
+    // Log what we received to debug
+    console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
+    
     return data.quote || "Stay consistent with your fitness journey.";
   } catch (error) {
     console.error('Error fetching quote:', error);
-    return "Stay consistent with your fitness journey.";
+    // Use a timestamp to make even the fallback different each time
+    const fallbackQuotes = [
+      "Consistency matters more than intensity.",
+      "Small habits add up to big changes.", 
+      "Focus on progress, not perfection.",
+      "Every workout counts, no matter how small."
+    ];
+    const index = Date.now() % fallbackQuotes.length;
+    return fallbackQuotes[index];
   }
 } 

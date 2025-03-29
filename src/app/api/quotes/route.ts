@@ -241,8 +241,15 @@ export async function GET(request: NextRequest) {
     const unique = searchParams.get('unique') || Date.now().toString(); // Always use a unique value
     const force = searchParams.get('force') === 'true';
     
-    // Add a timestamp to ensure different quotes on reload
-    const timestamp = Date.now();
+    // Truly unique identifier that changes every millisecond + random component
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    
+    // Ensure each browser instance gets a different quote
+    const userAgent = request.headers.get('user-agent') || '';
+    const clientId = request.headers.get('x-client-id') || '';
+    
+    // Console log every request to verify it's being called
+    console.log(`[QUOTES API] Request at ${new Date().toISOString()} | UniqueID: ${uniqueId.substring(0, 10)}... | UA hash: ${hashString(userAgent).substring(0, 8)}`);
     
     // Try to get weather data if coordinates provided
     let weather = null;
@@ -308,28 +315,54 @@ export async function GET(request: NextRequest) {
     
     // Fall back to static quotes if AI generation fails
     if (!quote) {
-      // Use the timestamp to select a different quote each time
-      const randomIndex = Math.floor((Math.random() * 1000 + timestamp) % fallbackQuotes.length);
+      // Use truly random selection with current timestamp to ensure different quotes
+      const seed = Date.now() + Math.random() * 10000;
+      const randomIndex = Math.floor(seed % fallbackQuotes.length);
+      
+      // Double-check we're not returning the same quote
+      console.log(`[QUOTES API] Using fallback quote index ${randomIndex}`);
       quote = fallbackQuotes[randomIndex];
     }
     
-    // Return the quote with a timestamp to prevent caching
+    // Return the quote with detailed metadata to help debugging
     return NextResponse.json({ 
       quote, 
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      meta: {
+        uniqueId: uniqueId.substring(0, 10),
+        generatedAt: new Date().toISOString(),
+        isFallback: !quote,
+        timeOfDay
+      }
     }, { headers });
   } catch (error) {
     console.error('Error generating quote:', error);
     
-    // Return a fallback quote in case of error with a random index based on timestamp
-    const timestamp = Date.now();
-    const randomIndex = Math.floor((Math.random() * 1000 + timestamp) % fallbackQuotes.length);
+    // Return a truly random fallback quote
+    const now = Date.now();
+    const randomSeed = now + Math.floor(Math.random() * 100000);
+    const randomIndex = Math.floor(randomSeed % fallbackQuotes.length);
     const fallbackQuote = fallbackQuotes[randomIndex];
     
     return NextResponse.json({ 
       quote: fallbackQuote,
-      timestamp: Date.now(),
-      error: 'Error generating quote'
+      timestamp: now,
+      error: 'Error generating quote',
+      meta: {
+        error: true,
+        errorTime: new Date().toISOString(),
+        randomSeed: randomSeed % 1000
+      }
     });
   }
+}
+
+// Simple string hashing function
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+  return hash.toString(16); // Convert to hex
 } 

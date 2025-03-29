@@ -66,15 +66,23 @@ export default function HomePage() {
 
   // Fetch a quote when the component mounts
   useEffect(() => {
+    // Track if component is mounted
+    let isMounted = true;
+    
     async function fetchQuoteData(forceFresh = false) {
       try {
-        // Use the new utility function
+        console.log(`[PAGE] Fetching fresh quote at ${new Date().toISOString()}`);
+        // Use the new utility function - ALWAYS force fresh
         const quoteText = await getQuote(
           location?.lat, 
           location?.lon, 
-          forceFresh
+          true // Always force fresh quotes
         );
-        setQuote(quoteText);
+        
+        if (isMounted) {
+          setQuote(quoteText);
+          console.log(`[PAGE] Quote updated: ${quoteText.substring(0, 20)}...`);
+        }
       } catch (error) {
         console.error('Error fetching quote:', error);
       }
@@ -86,6 +94,7 @@ export default function HomePage() {
     // Handle window visibility changes (tab focus)
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') {
+        console.log('[PAGE] Tab visible again, refreshing quote');
         fetchQuoteData(true);
       }
     }
@@ -93,12 +102,31 @@ export default function HomePage() {
     // Use the Page Visibility API for tab focus
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Refresh quote every 15 minutes
-    const quoteInterval = setInterval(() => fetchQuoteData(true), 15 * 60 * 1000);
+    // Refresh quote more frequently - every 2 minutes
+    const quoteInterval = setInterval(() => {
+      console.log('[PAGE] Quote refresh interval triggered');
+      fetchQuoteData(true);
+    }, 2 * 60 * 1000);
+    
+    // Also add a manual refresh on mouse movement occasionally
+    let lastRefresh = Date.now();
+    const handleMouseMove = () => {
+      const now = Date.now();
+      // Only refresh at most once every 30 seconds on mouse movement
+      if (now - lastRefresh > 30 * 1000) {
+        lastRefresh = now;
+        fetchQuoteData(true);
+      }
+    };
+    
+    // Add the mouse movement listener
+    document.addEventListener('mousemove', handleMouseMove);
     
     return () => {
+      isMounted = false;
       clearInterval(quoteInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('mousemove', handleMouseMove);
     };
   }, [location]);
 
