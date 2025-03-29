@@ -154,7 +154,7 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        secure: false, // Set to false for localhost
+        secure: process.env.NODE_ENV === 'production', // Secure in production
         maxAge: 30 * 24 * 60 * 60, // 30 days
       },
     },
@@ -163,7 +163,7 @@ export const authOptions: NextAuthOptions = {
       options: {
         sameSite: 'lax',
         path: '/',
-        secure: false, // Set to false for localhost
+        secure: process.env.NODE_ENV === 'production', // Secure in production
       },
     },
     csrfToken: {
@@ -172,7 +172,7 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        secure: false, // Set to false for localhost
+        secure: process.env.NODE_ENV === 'production', // Secure in production
       },
     },
   },
