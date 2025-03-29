@@ -1,39 +1,29 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  // Turn off static optimization for improved dynamic support
+  reactStrictMode: false,
   images: {
     domains: ['localhost', 'vercel.app', 'avatar.vercel.sh'],
     unoptimized: true,
   },
   experimental: {
+    // Add support for dynamic API routes with headers
+    serverActions: true,
+    // Support for larger page data
     largePageDataBytes: 128 * 1000, // 128KB
+    // Support for external packages in server components
+    serverComponentsExternalPackages: ['mongodb', 'headers', 'cookies']
   },
+  // Use standalone output for Vercel
   output: 'standalone',
+  // Generate a unique build ID to prevent caching issues
   generateBuildId: () => {
-    // Generate a unique build ID based on timestamp to prevent caching issues
     return `build-${Date.now()}`
   },
+  // Set cache headers for all routes
   async headers() {
     return [
       {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          },
-          {
-            key: 'Pragma',
-            value: 'no-cache',
-          },
-          {
-            key: 'Expires',
-            value: '0',
-          },
-        ],
-      },
-      {
-        // Add explicit no-cache headers for API routes
         source: '/api/:path*',
         headers: [
           {
@@ -52,18 +42,6 @@ const nextConfig = {
       },
     ]
   },
-  serverRuntimeConfig: {
-    runtimeCaching: true,
-  },
-}
-
-// Force all API routes to be server-side rendered
-if (process.env.NODE_ENV === 'production') {
-  nextConfig.experimental = {
-    ...nextConfig.experimental,
-    // This is needed for routes that use headers() and cookies
-    serverComponentsExternalPackages: ['headers', 'cookies'],
-  }
 }
 
 module.exports = nextConfig 

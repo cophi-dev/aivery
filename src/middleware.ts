@@ -57,15 +57,11 @@ export async function middleware(request: NextRequest) {
   // Add CSRF protection header
   response.headers.set('X-CSRF-Protection', '1; mode=block');
   
-  // Case 1: All API requests pass through to the route handlers
-  // Let the API routes handle their own authentication
+  // For all API routes, always add cache control headers to force dynamic behavior
   if (isApiPath) {
-    // Add cache-busting headers for specific routes
-    if (path === '/api/chat') {
-      response.headers.set('Cache-Control', 'no-store, max-age=0');
-      response.headers.set('Pragma', 'no-cache');
-      response.headers.set('Expires', '0');
-    }
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
     return response;
   }
   
@@ -90,8 +86,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(`/login?callbackUrl=${callbackUrl}`, request.url));
   }
   
-  // Add cache-busting headers for the chat page
-  if (path === '/chat') {
+  // Add cache-busting headers for dynamic pages
+  if (path === '/chat' || path === '/workout/edit' || path.includes('/workout/edit/') || path === '/workouts') {
     response.headers.set('Cache-Control', 'no-store, max-age=0');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
