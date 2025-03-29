@@ -300,15 +300,17 @@ export default function ChatPage() {
                         : "bg-muted"
                     }`}
                   >
-                    <div className={`prose prose-sm ${message.role === "user" ? "prose-invert" : "dark:prose-invert"}`}>
-                      {message.role === "assistant" ? (
+                    {message.role === "assistant" ? (
+                      <div className="prose prose-sm dark:prose-invert">
                         <ReactMarkdown>
                           {message.content}
                         </ReactMarkdown>
-                      ) : (
-                        message.content
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="prose prose-sm prose-invert">
+                        {message.content}
+                      </div>
+                    )}
                   </div>
                   {message.role === "user" && (
                     <Avatar className="h-9 w-9 mt-1">
