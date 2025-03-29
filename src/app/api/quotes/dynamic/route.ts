@@ -219,52 +219,135 @@ export async function GET(request: NextRequest) {
       lastQuotes = lastQuotes.slice(0, 5);
     }
     
-    // TEMPORARY FIX: Use static quotes instead of AI until we can debug the AI
-    // This ensures we always get different quotes
+    // Start by trying to get the user session
+    const token = await getToken({ req: request });
+    const session = await getServerSession(authOptions);
     
-    // Create a filtered list without the most recently used quotes
-    let availableQuotes = [...FALLBACK_QUOTES];
+    // Attempt to generate an AI quote
+    let aiQuote = null;
+    let quoteSource = 'fallback';
     
-    // Filter out all the last used quotes if we have alternates
-    if (lastQuotes.length > 0 && lastQuotes.length < FALLBACK_QUOTES.length - 1) {
-      availableQuotes = FALLBACK_QUOTES.filter(q => !lastQuotes.includes(q));
-      console.log(`[QUOTES-DYNAMIC] ${availableQuotes.length} quotes available after filtering out last ${lastQuotes.length} quotes`);
+    if (session?.user?.id) {
+      try {
+        // Get the user's data for personalization
+        await dbConnect();
+        const userId = session.user.id;
+        
+        // Get the user's recent workouts for context
+        const workoutsCollection = await getCollection('workouts');
+        const recentWorkouts = await workoutsCollection
+          .find({ userId: new ObjectId(userId) })
+          .sort({ date: -1 })
+          .limit(5)
+          .toArray();
+          
+        // Get user's workout count
+        const workoutCount = await workoutsCollection.countDocuments({ 
+          userId: new ObjectId(userId) 
+        });
+        
+        // Get user's activity level based on workout frequency
+        let activityLevel = 'new';
+        if (workoutCount > 20) activityLevel = 'active';
+        else if (workoutCount > 5) activityLevel = 'regular';
+        
+        // Get recent workout types
+        const recentWorkoutTypes = recentWorkouts
+          .map(w => w.type)
+          .filter((value, index, self) => self.indexOf(value) === index); // unique values
+        
+        // Generate a quote with context
+        aiQuote = await generateAIQuote({
+          nickname: session.user.nickname || session.user.name || 'friend',
+          workoutCount,
+          recentWorkoutTypes,
+          activityLevel,
+          timeOfDay: getTimeBasedGreeting(),
+          dayOfWeek: getDayOfWeek(),
+          isWeekend: isWeekend(),
+          forceRefresh: true,
+        });
+        
+        if (aiQuote) {
+          quoteSource = 'ai';
+          // Check if we've used this AI quote before
+          if (lastQuotes.includes(aiQuote)) {
+            console.log(`[QUOTES-DYNAMIC] Generated AI quote has been used recently, forcing regeneration`);
+            
+            // Force it to be different by adding the timestamp to the prompt
+            aiQuote = await generateAIQuote({
+              nickname: session.user.nickname || session.user.name || 'friend',
+              workoutCount,
+              recentWorkoutTypes,
+              activityLevel,
+              timeOfDay: getTimeBasedGreeting(),
+              dayOfWeek: getDayOfWeek(),
+              isWeekend: isWeekend(),
+              forceRefresh: true,
+              weather: { timestamp: Date.now() } // Forcing uniqueness with timestamp
+            });
+            
+            if (aiQuote && lastQuotes.includes(aiQuote)) {
+              console.log(`[QUOTES-DYNAMIC] Still getting duplicate AI quote, falling back to static quotes`);
+              aiQuote = null; // Force fallback to static quotes
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[QUOTES-DYNAMIC] Error generating AI quote:', error);
+        aiQuote = null; // Force fallback to static quotes
+      }
     }
     
-    // Use truly random selection with seed that changes every millisecond
-    const index = (Date.now() % availableQuotes.length);
-    let quote = availableQuotes[index];
+    // Use the AI quote if available, otherwise fall back to static quotes
+    let quote = aiQuote;
     
-    // Force a different quote if the last one is the same and we have more options
-    if (lastQuotes.length > 0 && quote === lastQuotes[0] && availableQuotes.length > 1) {
-      // Pick a different index
-      const newIndex = (index + 1) % availableQuotes.length;
-      quote = availableQuotes[newIndex];
-      console.log(`[QUOTES-DYNAMIC] Forced different quote to avoid repetition`);
-    }
-    
-    // Final safety check - if we're still getting the same quote
-    if (lastQuotes.length > 0 && quote === lastQuotes[0]) {
-      // Pick a hardcoded new quote that's not in the last quotes
-      const emergencyQuotes = [
-        "Challenge yourself, but don't break yourself.",
-        "The best workout is the one that gets done.",
-        "Small consistent steps lead to massive results over time.",
-        "What seems impossible today will become your warm-up tomorrow.",
-        "Your body is your most priceless possession... take care of it!",
-        "Action is the foundational key to all success in fitness.",
-        "Strength does not come from the body. It comes from the will.",
-        "The difference between try and triumph is a little umph.",
-        "Don't count the days, make the days count.",
-        "Discipline is choosing between what you want now and what you want most."
-      ];
+    // If no AI quote, use static quotes
+    if (!quote) {
+      // Create a filtered list without the most recently used quotes
+      let availableQuotes = [...FALLBACK_QUOTES];
       
-      // Find one that's not in the last quotes
-      for (const emergency of emergencyQuotes) {
-        if (!lastQuotes.includes(emergency)) {
-          quote = emergency;
-          console.log('[QUOTES-DYNAMIC] Using emergency quote to avoid repetition');
-          break;
+      // Filter out all the last used quotes if we have alternates
+      if (lastQuotes.length > 0 && lastQuotes.length < FALLBACK_QUOTES.length - 1) {
+        availableQuotes = FALLBACK_QUOTES.filter(q => !lastQuotes.includes(q));
+        console.log(`[QUOTES-DYNAMIC] ${availableQuotes.length} quotes available after filtering out last ${lastQuotes.length} quotes`);
+      }
+      
+      // Use truly random selection with seed that changes every millisecond
+      const index = (Date.now() % availableQuotes.length);
+      quote = availableQuotes[index];
+      
+      // Force a different quote if the last one is the same and we have more options
+      if (lastQuotes.length > 0 && quote === lastQuotes[0] && availableQuotes.length > 1) {
+        // Pick a different index
+        const newIndex = (index + 1) % availableQuotes.length;
+        quote = availableQuotes[newIndex];
+        console.log(`[QUOTES-DYNAMIC] Forced different quote to avoid repetition`);
+      }
+      
+      // Final safety check - if we're still getting the same quote
+      if (lastQuotes.length > 0 && quote === lastQuotes[0]) {
+        // Pick a hardcoded new quote that's not in the last quotes
+        const emergencyQuotes = [
+          "Challenge yourself, but don't break yourself.",
+          "The best workout is the one that gets done.",
+          "Small consistent steps lead to massive results over time.",
+          "What seems impossible today will become your warm-up tomorrow.",
+          "Your body is your most priceless possession... take care of it!",
+          "Action is the foundational key to all success in fitness.",
+          "Strength does not come from the body. It comes from the will.",
+          "The difference between try and triumph is a little umph.",
+          "Don't count the days, make the days count.",
+          "Discipline is choosing between what you want now and what you want most."
+        ];
+        
+        // Find one that's not in the last quotes
+        for (const emergency of emergencyQuotes) {
+          if (!lastQuotes.includes(emergency)) {
+            quote = emergency;
+            console.log('[QUOTES-DYNAMIC] Using emergency quote to avoid repetition');
+            break;
+          }
         }
       }
     }
@@ -279,14 +362,15 @@ export async function GET(request: NextRequest) {
     // Keep only the last 5 quotes
     lastQuotes = lastQuotes.slice(0, 5);
     
-    console.log(`[QUOTES-DYNAMIC] Returning quote: "${quote.substring(0, 30)}..."`);
+    console.log(`[QUOTES-DYNAMIC] Returning quote (${quoteSource}): "${quote.substring(0, 30)}..."`);
     
     // Create response
     const response = NextResponse.json({ 
       quote, 
       timestamp: now,
       uniqueId: requestId,
-      isUnique: true
+      isUnique: true,
+      source: quoteSource
     }, { headers });
     
     // Set the updated last quotes cookie
@@ -311,7 +395,8 @@ export async function GET(request: NextRequest) {
       quote,
       error: true,
       timestamp,
-      isUnique: true
+      isUnique: true,
+      source: 'error-fallback'
     });
   }
 } 
