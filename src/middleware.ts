@@ -14,7 +14,12 @@ export async function middleware(request: NextRequest) {
   const isPublicPath = path === '/' || isNextAuthPath || path === '/api/quotes';
   
   // Check for specific paths that need direct access (protected but no redirect)
-  const isProtectedNoRedirect = path === '/workouts' || path === '/exercises' || path === '/chat';
+  const isProtectedNoRedirect = path === '/workouts' || 
+                               path === '/exercises' || 
+                               path === '/chat' || 
+                               path === '/planner' || 
+                               path.startsWith('/planner/') ||
+                               path === '/plan';
   
   // Debug cookie values
   const cookieHeader = request.headers.get('cookie') || '';
@@ -23,7 +28,9 @@ export async function middleware(request: NextRequest) {
   
   // Skip authentication for specific hosts if needed
   const host = request.headers.get('host') || '';
-  const isSpecialSubdomain = host.startsWith('api.') || host.startsWith('public.');
+  const isSpecialSubdomain = host.startsWith('api.') || 
+                            host.startsWith('public.') || 
+                            host.startsWith('planner.');
   
   // Get token for auth status with appropriate options
   const token = await getToken({ 
@@ -64,6 +71,7 @@ export async function middleware(request: NextRequest) {
   
   // Skip auth redirects for special subdomains
   if (isSpecialSubdomain) {
+    console.log(`[MIDDLEWARE] Skipping auth for subdomain: ${host}`);
     return response;
   }
   

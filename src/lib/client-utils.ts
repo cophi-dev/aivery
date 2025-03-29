@@ -66,44 +66,20 @@ export async function getUserData() {
  */
 export async function getQuote(lat?: number, lon?: number, force: boolean = false) {
   try {
-    // Build the URL with query parameters
-    let url = '/api/quotes';
-    const params = new URLSearchParams();
+    // Use the dynamic quotes endpoint instead of the AI-based one
+    const dynamicUrl = `/api/quotes/dynamic?t=${Date.now()}&r=${Math.random()}`;
     
-    // Generate a truly unique identifier
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 15);
-    const unique = `${timestamp}-${random}`;
-    
-    // Add a unique parameter to prevent caching
-    params.append('unique', unique);
-    
-    // Add location if available
-    if (lat && lon) {
-      params.append('lat', lat.toString());
-      params.append('lon', lon.toString());
-    }
-    
-    // Always force refresh 
-    params.append('force', 'true');
-    
-    // Add a client-specific ID
-    params.append('client', random);
-    
-    // Combine URL and parameters
-    url = `${url}?${params.toString()}`;
-    
-    console.log(`[CLIENT] Fetching quote at ${new Date().toISOString().substring(11, 19)} with unique=${timestamp}`);
+    console.log(`[CLIENT] Fetching dynamic quote at ${new Date().toISOString().substring(11, 19)}`);
     
     // Use a no-cache fetch approach
-    const response = await fetch(url, {
+    const response = await fetch(dynamicUrl, {
       method: 'GET',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-        'X-Timestamp': timestamp.toString(),
-        'X-Client-ID': random
+        'X-Timestamp': Date.now().toString(),
+        'X-Random': Math.random().toString()
       },
       cache: 'no-store',
       credentials: 'include',
@@ -117,7 +93,7 @@ export async function getQuote(lat?: number, lon?: number, force: boolean = fals
     const data = await response.json();
     
     // Log what we received to debug
-    console.log(`[CLIENT] Received quote at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
+    console.log(`[CLIENT] Received quote ${data.index} at ${new Date().toISOString().substring(11, 19)}: ${data.quote?.substring(0, 20)}...`);
     
     return data.quote || "Stay consistent with your fitness journey.";
   } catch (error) {
