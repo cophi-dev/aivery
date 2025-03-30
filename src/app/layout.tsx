@@ -70,21 +70,20 @@ export default async function RootLayout({
         {/* Client-side cache buster */}
         <CacheBuster />
         
-        {/* DEBUG BANNER - Remove after confirming deployment works */}
+        {/* Small debug indicator instead of full banner */}
         <div style={{
-          background: 'red',
+          background: 'rgba(220, 38, 38, 0.8)',
           color: 'white',
-          padding: '10px',
-          textAlign: 'center',
-          fontWeight: 'bold',
-          fontSize: '16px',
+          padding: '4px 8px',
+          fontSize: '12px',
           position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          zIndex: 9999
+          bottom: '10px',
+          right: '10px',
+          zIndex: 9999,
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
         }}>
-          CACHE BUSTING DEBUG BUILD ({VERSION.substring(0, 8)}) - {getTimestamp()}
+          v{VERSION.substring(0, 8)}
         </div>
         
         <AuthProvider>
