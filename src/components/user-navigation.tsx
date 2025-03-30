@@ -17,16 +17,18 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { usePathname } from "next/navigation";
-import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideSettings, LucideUser } from "lucide-react";
+import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideSettings, LucideUser, History, List, BarChart2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "./user-avatar";
 import { useEffect, useState } from "react";
 import { fetchWithAuth } from "@/lib/client-utils";
+import { cn } from "@/lib/utils";
 
 // Inner component that only renders when session is valid
 function UserNavigationInner({ session }: { session: any }) {
   const { setTheme } = useTheme();
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+  const pathname = usePathname();
   
   // Ensure we have safe defaults and type checking for user info
   const [userInfo, setUserInfo] = useState({
@@ -34,6 +36,39 @@ function UserNavigationInner({ session }: { session: any }) {
     email: '',
     nickname: '',
   });
+
+  // Safety check for pathname to fix deployment error
+  const isPath = (path: string) => {
+    return pathname ? pathname.startsWith(path) : false;
+  };
+
+  // Navigation links configuration for mobile menu
+  const navLinks = [
+    {
+      href: "/workouts",
+      label: "Workout History",
+      icon: <History className="h-4 w-4" />,
+      active: isPath("/workouts") || isPath("/workout")
+    },
+    {
+      href: "/exercises",
+      label: "Exercises",
+      icon: <List className="h-4 w-4" />,
+      active: isPath("/exercises")
+    },
+    {
+      href: "/plan",
+      label: "Planner",
+      icon: <BarChart2 className="h-4 w-4" />,
+      active: isPath("/plan")
+    },
+    {
+      href: "/chat",
+      label: "Chat",
+      icon: <MessageSquare className="h-4 w-4" />,
+      active: isPath("/chat")
+    }
+  ];
 
   // Fetch user avatar and info
   useEffect(() => {
@@ -114,6 +149,22 @@ function UserNavigationInner({ session }: { session: any }) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        
+        {/* Navigation links on mobile */}
+        <div className="md:hidden">
+          <DropdownMenuGroup>
+            {navLinks.map((link) => (
+              <Link key={link.href} href={link.href}>
+                <DropdownMenuItem className={cn(link.active ? "bg-accent" : "")}>
+                  {link.icon}
+                  <span className="ml-2">{link.label}</span>
+                </DropdownMenuItem>
+              </Link>
+            ))}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+        </div>
+        
         <DropdownMenuGroup>
           <Link href="/settings">
             <DropdownMenuItem>
