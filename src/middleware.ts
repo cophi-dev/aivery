@@ -14,8 +14,7 @@ export async function middleware(request: NextRequest) {
   const isPublicPath = path === '/' || isNextAuthPath || path === '/api/quotes';
   
   // Check for specific paths that need direct access (protected but no redirect)
-  const isProtectedNoRedirect = path === '/workouts' || 
-                               path === '/exercises' || 
+  const isProtectedNoRedirect = path === '/exercises' || 
                                path === '/chat' || 
                                path === '/planner' || 
                                path.startsWith('/planner/') ||
