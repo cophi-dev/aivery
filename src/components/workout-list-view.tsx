@@ -18,14 +18,25 @@ import {
   X,
   ArrowUpDown,
   Search,
-  AlertCircle
+  AlertCircle,
+  ChevronRight,
+  Info
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
 
 // Define types for sorting
-type SortField = "date" | "name" | "type" | "intensity" | "duration";
+type SortField = "date" | "name" | "type" | "intensity" | "duration" | "volume";
 type SortDirection = "asc" | "desc";
+
+// Explicitly define WorkoutStats interface
+interface WorkoutStats {
+  totalWorkouts: number;
+  totalMinutes: number;
+  totalDistance: number;
+  totalVolume: number;
+  favoriteType: string;
+}
 
 interface WorkoutListViewProps {
   initialWorkouts: WorkoutData[]
@@ -81,6 +92,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
   const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showStatsView, setShowStatsView] = useState<boolean>(true);
   
   // Filter state
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -281,6 +293,14 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               : (b.duration || 0) - (a.duration || 0)
           }
           
+          if (sortField === "volume") {
+            const volA = getWorkoutVolume(a).value;
+            const volB = getWorkoutVolume(b).value;
+            return sortDirection === "asc" 
+              ? volA - volB
+              : volB - volA;
+          }
+          
           // String-based sorting (name, type, intensity)
           const aValue = String(a[sortField] || "").toLowerCase()
           const bValue = String(b[sortField] || "").toLowerCase()
@@ -385,6 +405,83 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     return 0;
   }
 
+  // Get workout volume based on type
+  const getWorkoutVolume = (workout: WorkoutData): { value: number, unit: string } => {
+    try {
+      if (workout.type.toLowerCase() === "running" || workout.type.toLowerCase() === "run") {
+        // For runs, return distance in km
+        return { 
+          value: getWorkoutDistance(workout), 
+          unit: "km" 
+        };
+      } else if (workout.type.toLowerCase() === "strength") {
+        // For strength, return total volume (weight * reps across all exercises)
+        if (workout.volume !== undefined) {
+          return { value: workout.volume, unit: "kg" };
+        }
+        
+        // Calculate volume if not stored directly
+        let totalVolume = 0;
+        if (workout.exercises && workout.exercises.length > 0) {
+          workout.exercises.forEach(exercise => {
+            exercise.sets.forEach(set => {
+              totalVolume += set.weight * set.reps;
+            });
+          });
+        }
+        return { value: totalVolume, unit: "kg" };
+      }
+      
+      // Default return for other workout types
+      return { value: 0, unit: "" };
+    } catch (e) {
+      console.error("Error calculating workout volume:", e);
+      return { value: 0, unit: "" };
+    }
+  };
+
+  // Format workout details for hover
+  const formatWorkoutDetails = (workout: WorkoutData): string => {
+    let details = [];
+    
+    if (workout.name) {
+      details.push(`Name: ${workout.name}`);
+    }
+    
+    if (workout.duration) {
+      details.push(`Duration: ${workout.duration} min`);
+    }
+    
+    if (workout.intensity) {
+      details.push(`Intensity: ${workout.intensity}`);
+    }
+    
+    if (workout.notes) {
+      details.push(`Notes: ${workout.notes}`);
+    }
+    
+    // Add exercise details for strength workouts
+    if (workout.type.toLowerCase() === "strength" && workout.exercises && workout.exercises.length > 0) {
+      const exercisesList = workout.exercises.map(ex => {
+        const setsInfo = ex.sets.map(set => `${set.weight}kg x ${set.reps}`).join(", ");
+        return `${ex.name}: ${setsInfo}`;
+      }).join("; ");
+      details.push(`Exercises: ${exercisesList}`);
+    }
+    
+    // Add cardio details
+    if ((workout.type.toLowerCase() === "running" || workout.type.toLowerCase() === "run") && workout.cardioDetails) {
+      if (workout.cardioDetails.pace) {
+        details.push(`Pace: ${workout.cardioDetails.pace.toFixed(2)} min/km`);
+      }
+      if (workout.cardioDetails.heartRate?.average) {
+        details.push(`Avg HR: ${workout.cardioDetails.heartRate.average} bpm`);
+      }
+    }
+    
+    return details.join("\n");
+  };
+
   // Prepare the ErrorContent separately to avoid conditional hooks
   const errorContent = (
     <Alert variant="destructive">
@@ -403,84 +500,126 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     </Alert>
   );
   
+  // Calculate workout stats
+  const workoutStats = React.useMemo(() => {
+    // Ensure we always return a valid stats object
+    const emptyStats: WorkoutStats = {
+      totalWorkouts: 0,
+      totalMinutes: 0,
+      totalDistance: 0,
+      totalVolume: 0,
+      favoriteType: 'None'
+    };
+    
+    // Skip calculations if we don't have workouts
+    if (!workouts || workouts.length === 0) {
+      return emptyStats;
+    }
+
+    try {
+      // Calculate total workout time
+      const totalMinutes = workouts.reduce((sum, w) => sum + (w.duration || 0), 0);
+      
+      // Calculate total distance for cardio workouts
+      const totalDistance = workouts.reduce((sum, w) => {
+        if (w.type && (w.type.toLowerCase() === "running" || w.type.toLowerCase() === "cycling")) {
+          return sum + getWorkoutDistance(w);
+        }
+        return sum;
+      }, 0);
+      
+      // Calculate total volume for strength workouts
+      const totalVolume = workouts.reduce((sum, w) => {
+        if (w.type && w.type.toLowerCase() === "strength") {
+          return sum + getWorkoutVolume(w).value;
+        }
+        return sum;
+      }, 0);
+      
+      // Find favorite workout type
+      const typeCounts = workouts.reduce((counts, w) => {
+        const type = w.type ? w.type.toLowerCase() : 'unknown';
+        counts[type] = (counts[type] || 0) + 1;
+        return counts;
+      }, {} as Record<string, number>);
+      
+      const entries = Object.entries(typeCounts);
+      const favoriteType = entries.length > 0 
+        ? entries.sort((a, b) => b[1] - a[1])[0]?.[0] || 'None'
+        : 'None';
+      
+      return {
+        totalWorkouts: workouts.length,
+        totalMinutes,
+        totalDistance,
+        totalVolume,
+        favoriteType: favoriteType.charAt(0).toUpperCase() + favoriteType.slice(1)
+      };
+    } catch (err) {
+      console.error("Error calculating workout stats:", err);
+      return emptyStats;
+    }
+  }, [workouts]);
+  
   // Always render the full component structure, conditionally show error content if needed
   return (
     <WorkoutListErrorBoundary>
       <div>
         {error && errorContent}
         
-        {/* Filters */}
-        <div className="mb-6 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
+        {/* Workout Stats - Enhanced for better visibility */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 w-full border-b pb-4">
+          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
+            <span className="text-sm text-muted-foreground">Total Workouts</span>
+            <span className="text-3xl font-bold">{workoutStats.totalWorkouts}</span>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
+            <span className="text-sm text-muted-foreground">Total Time</span>
+            <span className="text-3xl font-bold">{workoutStats.totalMinutes} <span className="text-sm">min</span></span>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
+            <span className="text-sm text-muted-foreground">Total Distance</span>
+            <span className="text-3xl font-bold">{workoutStats.totalDistance.toFixed(1)} <span className="text-sm">km</span></span>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
+            <span className="text-sm text-muted-foreground">Favorite Type</span>
+            <span className="text-3xl font-bold">{workoutStats.favoriteType}</span>
+          </div>
+        </div>
+        
+        {/* Results info and compact filters */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-2">
+          <span className="text-sm text-muted-foreground">
+            Showing {filteredWorkouts.length} of {workouts.length} workouts
+            {filtersActive && " (filtered)"}
+          </span>
+          
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Type Quick Filter */}
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger id="type-filter-compact" className="h-8 text-xs w-[130px]">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {workoutTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
             {/* Search */}
-            <div className="w-full md:w-auto md:min-w-[250px]">
-              <Label htmlFor="search-query">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search-query"
-                  placeholder="Search workouts..."
-                  className="pl-8"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
-            
-            {/* Workout Type */}
-            <div className="w-full md:w-auto md:min-w-[150px]">
-              <Label htmlFor="type-filter">Type</Label>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger id="type-filter">
-                  <SelectValue placeholder="All types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  {workoutTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Intensity */}
-            <div className="w-full md:w-auto md:min-w-[150px]">
-              <Label htmlFor="intensity-filter">Intensity</Label>
-              <Select value={intensityFilter} onValueChange={setIntensityFilter}>
-                <SelectTrigger id="intensity-filter">
-                  <SelectValue placeholder="All intensities" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All intensities</SelectItem>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Medium">Medium</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Date Range */}
-            <div className="flex gap-2 w-full md:w-auto">
-              <div>
-                <Label htmlFor="start-date">From</Label>
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={startDateString}
-                  onChange={(e) => setStartDateString(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="end-date">To</Label>
-                <Input
-                  id="end-date"
-                  type="date"
-                  value={endDateString}
-                  onChange={(e) => setEndDateString(e.target.value)}
-                />
-              </div>
+            <div className="relative w-[180px]">
+              <Search className="absolute left-2 top-1.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="search-query-compact"
+                placeholder="Search..."
+                className="pl-8 h-8 text-xs"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
             
             {/* Reset filters */}
@@ -488,7 +627,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               <Button 
                 variant="ghost" 
                 onClick={resetFilters}
-                className="md:self-end"
+                className="h-8 px-2 text-xs"
               >
                 <X className="h-4 w-4 mr-1" />
                 Clear
@@ -496,19 +635,11 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             )}
           </div>
         </div>
-      
-        {/* Results info */}
-        <div className="flex justify-between items-center mb-4 text-sm text-muted-foreground">
-          <span>
-            Showing {filteredWorkouts.length} of {workouts.length} workouts
-            {filtersActive && " (filtered)"}
-          </span>
-        </div>
         
         {/* Workouts Table */}
         <div className="rounded-md border overflow-hidden">
           <div className="bg-muted">
-            <div className="grid grid-cols-12 gap-2 p-4 text-xs font-medium text-muted-foreground">
+            <div className="grid grid-cols-9 gap-2 p-4 text-xs font-medium text-muted-foreground">
               <div 
                 className="col-span-3 flex items-center cursor-pointer"
                 onClick={() => handleSort("date")}
@@ -518,13 +649,6 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               </div>
               <div 
                 className="col-span-3 flex items-center cursor-pointer"
-                onClick={() => handleSort("name")}
-              >
-                Workout
-                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "name" ? "opacity-100" : "opacity-50"}`} />
-              </div>
-              <div 
-                className="col-span-2 flex items-center cursor-pointer"
                 onClick={() => handleSort("type")}
               >
                 Type
@@ -532,17 +656,10 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               </div>
               <div 
                 className="col-span-2 flex items-center cursor-pointer"
-                onClick={() => handleSort("intensity")}
+                onClick={() => handleSort("volume")}
               >
-                Intensity
-                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "intensity" ? "opacity-100" : "opacity-50"}`} />
-              </div>
-              <div 
-                className="col-span-1 flex items-center cursor-pointer"
-                onClick={() => handleSort("duration")}
-              >
-                Duration
-                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "duration" ? "opacity-100" : "opacity-50"}`} />
+                Volume
+                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "volume" ? "opacity-100" : "opacity-50"}`} />
               </div>
               <div className="col-span-1"></div>
             </div>
@@ -550,49 +667,35 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
           
           <div className="divide-y">
             {filteredWorkouts.length > 0 ? (
-              filteredWorkouts.map((workout) => (
-                <div 
+              filteredWorkouts.map((workout) => {
+                const volume = getWorkoutVolume(workout);
+                return (
+                <Link 
+                  href={`/workout/${workout._id}`}
                   key={typeof workout._id === 'string' ? workout._id : String(workout._id)} 
-                  className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/50"
+                  className="grid grid-cols-9 gap-2 p-4 items-center hover:bg-muted/50 transition-colors duration-150 cursor-pointer group shadow-sm hover:shadow-md"
                 >
                   <div className="col-span-3 flex flex-col">
                     <div className="font-medium">{formatDate(new Date(workout.date))}</div>
                   </div>
                   <div className="col-span-3">
-                    <div className="font-medium">{workout.name || `${workout.type} workout`}</div>
-                  </div>
-                  <div className="col-span-2">
                     <Badge variant="outline" className="flex items-center gap-1 w-fit">
                       {getTypeIcon(workout.type)}
                       {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
                     </Badge>
                   </div>
                   <div className="col-span-2">
-                    <Badge className={`${getIntensityColor(workout.intensity)} w-fit`}>
-                      {workout.intensity || 'Unknown'}
-                    </Badge>
-                  </div>
-                  <div className="col-span-1">
-                    <div className="flex items-center gap-1 text-sm">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
-                      {workout.duration} min
-                    </div>
-                    {(workout.distance || workout.cardioDetails?.distance) && (
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Ruler className="h-3 w-3" />
-                        {getWorkoutDistance(workout).toFixed(1)} km
+                    {volume.value > 0 && (
+                      <div className="text-sm">
+                        {volume.value.toFixed(1)} {volume.unit}
                       </div>
                     )}
                   </div>
                   <div className="col-span-1 text-right">
-                    <Button asChild variant="ghost" size="sm">
-                      <Link href={`/workout/${workout._id}`}>
-                        View
-                      </Link>
-                    </Button>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground opacity-40 group-hover:opacity-100 transition-opacity" />
                   </div>
-                </div>
-              ))
+                </Link>
+              )})
             ) : (
               <div className="py-8 text-center">
                 <p className="text-muted-foreground">No workouts found matching your criteria.</p>
