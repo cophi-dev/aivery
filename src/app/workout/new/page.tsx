@@ -24,7 +24,7 @@ import {
   X
 } from "lucide-react"
 import { createWorkout } from "@/lib/workout-actions"
-import { fetchExercises } from "@/lib/exercise-actions"
+import { fetchExercises, getExerciseHistory } from "@/lib/exercise-actions"
 import { addExerciseToWorkout } from "@/lib/workout-exercise-actions"
 import { createExerciseAction } from "@/lib/exercise-actions"
 import type { ExerciseData } from "@/types/db"
@@ -41,6 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { format } from "date-fns"
 import { Steps, StepContent, StepActions } from "@/components/ui/steps"
 import { generateExerciseDetails } from "@/lib/ai-exercise-generator"
+import { generateExerciseInsights } from "@/lib/ai-workout-insights"
 import { 
   Tooltip,
   TooltipContent,
@@ -82,6 +83,9 @@ export default function NewWorkoutPage() {
   })
   const [muscleGroupInput, setMuscleGroupInput] = useState("")
   const [isGeneratingDetails, setIsGeneratingDetails] = useState(false)
+  const [activeExerciseHistory, setActiveExerciseHistory] = useState<any[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [exerciseInsights, setExerciseInsights] = useState<{ insight: string; suggestion: string } | null>(null)
 
   // Fetch exercises from database
   useEffect(() => {
@@ -144,17 +148,59 @@ export default function NewWorkoutPage() {
     setExercises(newExercises)
   }
 
-  const selectExercise = (exercise: ExerciseData) => {
+  const selectExercise = async (exercise: ExerciseData) => {
     if (activeExerciseIndex === null) return
 
+    // Update the exercise in the current workout
     const newExercises = [...exercises]
     newExercises[activeExerciseIndex].name = exercise.name
     setExercises(newExercises)
+    
+    // Try to get exercise history data
+    try {
+      setIsLoadingHistory(true)
+      setExerciseInsights(null)
+      const history = await getExerciseHistory(exercise._id)
+      setActiveExerciseHistory(history)
+      
+      // If there is history, pre-fill the most recent set values
+      if (history.length > 0) {
+        const lastWorkout = history[0]
+        if (lastWorkout.sets && lastWorkout.sets.length > 0) {
+          // Pre-fill the current exercise with the last workout's sets
+          const updatedExercises = [...newExercises]
+          updatedExercises[activeExerciseIndex].sets = lastWorkout.sets.map(set => ({
+            weight: set.weight,
+            reps: set.reps
+          }))
+          setExercises(updatedExercises)
+        }
+        
+        // Generate AI insights if there's workout history
+        if (history.length > 0) {
+          const insights = await generateExerciseInsights(history)
+          setExerciseInsights(insights)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching exercise history:", error)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+    
+    // Keep the dialog open to show history
+  }
+
+  const closeExerciseDialog = () => {
+    // Clear history and close dialog
+    setActiveExerciseHistory([])
+    setExerciseInsights(null)
     setDialogOpen(false)
   }
 
   const openExerciseDialog = (index: number) => {
     setActiveExerciseIndex(index)
+    setActiveExerciseHistory([])
     setDialogOpen(true)
   }
 
@@ -317,6 +363,25 @@ export default function NewWorkoutPage() {
       ...newExerciseData,
       muscleGroups: newExerciseData.muscleGroups?.filter(g => g !== group)
     })
+  }
+
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return format(date, "MMM d, yyyy")
+  }
+
+  // Calculate average weight and reps from sets
+  const calculateSetAverages = (sets: Array<{weight: number, reps: number}>) => {
+    if (!sets.length) return { avgWeight: 0, avgReps: 0, totalVolume: 0 }
+    
+    const totalWeight = sets.reduce((sum, set) => sum + set.weight, 0)
+    const totalReps = sets.reduce((sum, set) => sum + set.reps, 0)
+    const avgWeight = totalWeight / sets.length
+    const avgReps = totalReps / sets.length
+    const totalVolume = sets.reduce((sum, set) => sum + (set.weight * set.reps), 0)
+    
+    return { avgWeight, avgReps, totalVolume }
   }
 
   return (
@@ -577,8 +642,8 @@ export default function NewWorkoutPage() {
         </div>
       </StepContent>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={dialogOpen} onOpenChange={closeExerciseDialog}>
+        <DialogContent className={isCreatingExercise ? "sm:max-w-md" : "sm:max-w-xl"}>
           <DialogHeader>
             <DialogTitle>
               {isCreatingExercise ? "Create New Exercise" : "Select Exercise"}
@@ -715,6 +780,170 @@ export default function NewWorkoutPage() {
                 </Button>
               </div>
             </div>
+          ) : activeExerciseHistory.length > 0 && !isLoadingHistory ? (
+            <>
+              <div className="flex items-center gap-2 py-4">
+                <Input
+                  placeholder="Search exercises..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1"
+                />
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        onClick={() => setSearchQuery("")}
+                      >
+                        <InfoIcon className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">Search by exercise name or muscle group</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+
+              <div className="border rounded-md p-4 mb-4 bg-muted/30">
+                <h3 className="font-medium mb-2 flex items-center">
+                  <LucideCalendar className="h-4 w-4 mr-2" />
+                  Previous Workout History
+                </h3>
+                
+                <div className="space-y-3">
+                  {activeExerciseHistory.slice(0, 1).map((workout, i) => {
+                    const { avgWeight, avgReps, totalVolume } = calculateSetAverages(workout.sets)
+                    return (
+                      <div key={i} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Last performed:</span>
+                          <span className="font-medium">{formatDate(workout.createdAt)}</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-background rounded-md p-2">
+                            <div className="text-xs text-muted-foreground">Avg Weight</div>
+                            <div className="font-semibold">{avgWeight.toFixed(1)} kg</div>
+                          </div>
+                          <div className="bg-background rounded-md p-2">
+                            <div className="text-xs text-muted-foreground">Avg Reps</div>
+                            <div className="font-semibold">{avgReps.toFixed(1)}</div>
+                          </div>
+                          <div className="bg-background rounded-md p-2">
+                            <div className="text-xs text-muted-foreground">Volume</div>
+                            <div className="font-semibold">{totalVolume} kg</div>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-2">
+                          <div className="text-xs text-muted-foreground mb-1">Sets from last workout:</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {workout.sets.map((set: {weight: number, reps: number}, i: number) => (
+                              <div key={i} className="text-xs bg-background rounded p-1 flex justify-between">
+                                <span>Set {i+1}:</span>
+                                <span className="font-medium">{set.weight} kg × {set.reps}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  
+                  {exerciseInsights && (
+                    <div className="mt-3 border-t pt-3">
+                      <div className="bg-secondary/20 rounded-md p-3">
+                        <h4 className="text-sm font-medium flex items-center mb-2">
+                          <AlertCircle className="h-4 w-4 mr-2" />
+                          AI Workout Insights
+                        </h4>
+                        <p className="text-sm mb-2">{exerciseInsights.insight}</p>
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-medium">Suggestion:</span> {exerciseInsights.suggestion}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="text-xs flex items-center mt-2 text-muted-foreground">
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                    <span>These values have been pre-filled below</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 py-2">
+                <div>
+                  <Label htmlFor="category" className="mb-1 block">Category</Label>
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <SelectTrigger id="category">
+                      <SelectValue placeholder="All categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      <SelectItem value="strength">Strength</SelectItem>
+                      <SelectItem value="cardio">Cardio</SelectItem>
+                      <SelectItem value="flexibility">Flexibility</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="muscle-group" className="mb-1 block">Muscle Group</Label>
+                  <Select value={selectedMuscleGroup} onValueChange={setSelectedMuscleGroup}>
+                    <SelectTrigger id="muscle-group">
+                      <SelectValue placeholder="All muscles" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All muscles</SelectItem>
+                      {uniqueMuscleGroups.map(group => (
+                        <SelectItem key={group} value={group}>{group}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <ScrollArea className="h-[200px] pr-3">
+                <div className="space-y-2">
+                  {filteredExercises.map((exercise) => (
+                    <button
+                      key={exercise._id}
+                      className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground rounded-md flex items-center justify-between"
+                      onClick={() => selectExercise(exercise)}
+                    >
+                      <span>{exercise.name}</span>
+                      {exercise.muscleGroups.length > 0 && (
+                        <Badge variant="secondary" className="ml-2">
+                          {exercise.muscleGroups[0]}
+                        </Badge>
+                      )}
+                    </button>
+                  ))}
+                  {filteredExercises.length === 0 && searchQuery.trim() && (
+                    <div className="p-4 text-center">
+                      <p className="text-muted-foreground mb-2">No exercises found for "{searchQuery}"</p>
+                      <Button onClick={handleCreateMode}>
+                        Create "{searchQuery}" Exercise
+                      </Button>
+                    </div>
+                  )}
+                  {filteredExercises.length === 0 && !searchQuery.trim() && (
+                    <p className="text-center text-muted-foreground py-4">
+                      No exercises found. Try a different filter.
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+              {searchQuery.trim() && filteredExercises.length > 0 && (
+                <div className="mt-2 pt-2 border-t flex justify-center">
+                  <Button variant="outline" onClick={handleCreateMode}>
+                    Create New Exercise
+                  </Button>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <div className="flex items-center gap-2 py-4">
@@ -741,6 +970,12 @@ export default function NewWorkoutPage() {
                   </Tooltip>
                 </TooltipProvider>
               </div>
+
+              {isLoadingHistory && (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4 py-2">
                 <div>
