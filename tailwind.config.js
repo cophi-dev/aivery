@@ -11,6 +11,9 @@ module.exports = {
       fontFamily: {
         sans: ["var(--font-inter)"],
       },
+      screens: {
+        'xs': '480px',
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
