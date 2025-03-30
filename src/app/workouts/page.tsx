@@ -36,14 +36,14 @@ export default async function WorkoutsPage() {
     
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="flex flex-col md:flex-row items-start justify-between mb-8">
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight">Workouts</h1>
+        <div className="flex flex-col mb-8">
+          <div className="mb-4">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Workouts</h1>
             <p className="text-muted-foreground mt-2">Track and manage your training sessions</p>
           </div>
-          <div className="mt-4 md:mt-0">
+          <div className="mt-2">
             <Link href="/workout/new" prefetch={false}>
-              <Button size="lg" className="bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-600 hover:to-cyan-600">
+              <Button size="lg" className="w-full md:w-auto bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-600 hover:to-cyan-600">
                 <LucidePlus className="mr-2 h-5 w-5" />
                 New Workout
               </Button>

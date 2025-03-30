@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Ruler, Timer, Activity, Dumbbell, Pencil } from "lucide-react"
+import { Ruler, Timer, Activity, Dumbbell, Pencil, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
@@ -28,7 +28,7 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
   const pace = distance ? (workout.duration / distance).toFixed(2) : undefined
 
   return (
-    <Card className="w-full group hover:shadow-md transition-shadow">
+    <Card className="w-full group hover:shadow-md transition-shadow relative">
       <CardContent className="p-4">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -43,12 +43,6 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
               <Badge variant={workout.intensity === 'High' ? 'destructive' : 'secondary'}>
                 {workout.intensity || 'Unknown'}
               </Badge>
-              <Button variant="ghost" size="icon" asChild className="opacity-0 group-hover:opacity-100 transition-opacity">
-                <Link href={`/workout/edit/${workout.id}`}>
-                  <Pencil className="h-4 w-4" />
-                  <span className="sr-only">Edit workout</span>
-                </Link>
-              </Button>
             </div>
           </div>
 
@@ -78,14 +72,23 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
               {workout.notes}
             </p>
           )}
-
-          <Link 
-            href={`/workout/${workout.id}`} 
-            className="absolute inset-0 z-10"
-            aria-label={`View details for ${workout.name || workout.type} workout`}
-          >
-            <span className="sr-only">View workout details</span>
-          </Link>
+          
+          {/* Action buttons - separate from the card link */}
+          <div className="flex justify-between mt-2 z-20 relative">
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/workout/${workout.id}`}>
+                View Details
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Link>
+            </Button>
+            
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/workout/edit/${workout.id}`}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </Link>
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

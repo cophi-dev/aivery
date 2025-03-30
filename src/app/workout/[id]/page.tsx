@@ -172,60 +172,66 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
   const power = workout.cardioDetails?.power?.average
 
   return (
-    <div className="container max-w-screen-xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-4 mb-8">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/workouts">
-            <ArrowLeft className="h-5 w-5" />
-            <span className="sr-only">Back to workouts</span>
-          </Link>
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <Activity className="h-6 w-6" />
-            <h1 className="text-2xl font-bold">{workout.name || workout.type}</h1>
-            <Badge variant={workout.intensity === 'High' ? 'destructive' : 'secondary'}>
-              {workout.intensity}
-            </Badge>
+    <div className="container max-w-screen-xl mx-auto px-4 py-6 md:py-8">
+      <div className="flex flex-col gap-4 mb-6 md:mb-8">
+        <div className="flex items-center">
+          <Button variant="ghost" size="icon" asChild className="mr-2">
+            <Link href="/workouts">
+              <ArrowLeft className="h-5 w-5" />
+              <span className="sr-only">Back to workouts</span>
+            </Link>
+          </Button>
+          
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Activity className="h-5 w-5" />
+              <h1 className="text-xl md:text-2xl font-bold">{workout.name || workout.type}</h1>
+              <Badge variant={workout.intensity === 'High' ? 'destructive' : 'secondary'}>
+                {workout.intensity}
+              </Badge>
+            </div>
+            <p className="text-muted-foreground text-sm mt-1">
+              {format(new Date(workout.date), 'EEEE, MMMM d, yyyy')}
+            </p>
           </div>
-          <p className="text-muted-foreground mt-1">
-            {format(new Date(workout.date), 'EEEE, MMMM d, yyyy')}
-          </p>
         </div>
-        <Button asChild>
-          <Link href={`/workout/edit/${workout.id}`}>
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit Workout
-          </Link>
-        </Button>
+        
+        <div className="w-full">
+          <Button asChild className="w-full sm:w-auto">
+            <Link href={`/workout/edit/${workout._id}`}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit Workout
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 mb-6 md:mb-8">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+          <CardHeader className="pb-1 md:pb-2">
+            <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
               Duration
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <Timer className="h-5 w-5 text-primary" />
-              <span className="text-2xl font-bold">{workout.duration} min</span>
+              <Timer className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+              <span className="text-lg md:text-2xl font-bold">{workout.duration} min</span>
             </div>
           </CardContent>
         </Card>
 
         {distance && (
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
                 Distance
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <Ruler className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">{distance.toFixed(2)} km</span>
+                <Ruler className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">{distance.toFixed(2)} km</span>
               </div>
             </CardContent>
           </Card>
@@ -233,15 +239,15 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
 
         {pace && (
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
                 Average Pace
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">{pace} min/km</span>
+                <Activity className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">{pace} min/km</span>
               </div>
             </CardContent>
           </Card>
@@ -249,17 +255,17 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
 
         {avgHeartRate && (
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
                 Heart Rate
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <Heart className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">{avgHeartRate} bpm</span>
+                <Heart className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">{avgHeartRate} bpm</span>
                 {maxHeartRate && (
-                  <span className="text-sm text-muted-foreground ml-2">
+                  <span className="text-xs md:text-sm text-muted-foreground ml-2">
                     max {maxHeartRate}
                   </span>
                 )}
@@ -270,15 +276,15 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
 
         {elevationGain && (
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
                 Elevation Gain
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">{elevationGain} m</span>
+                <TrendingUp className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">{elevationGain} m</span>
               </div>
             </CardContent>
           </Card>
@@ -286,15 +292,15 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
 
         {power && (
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
                 Average Power
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">{power} W</span>
+                <Zap className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">{power} W</span>
               </div>
             </CardContent>
           </Card>
@@ -302,21 +308,21 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
       </div>
 
       {workout.notes && (
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Notes</CardTitle>
+        <Card className="mb-6 md:mb-8">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Notes</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground whitespace-pre-wrap">{workout.notes}</p>
+            <p className="text-sm md:text-base text-muted-foreground whitespace-pre-wrap">{workout.notes}</p>
             
             {isValidStrava && (
               <div className="mt-4">
                 <Button 
-                  className="bg-[#FC4C02] hover:bg-[#d44102] text-white font-semibold py-2 rounded-md transition-colors duration-200"
+                  className="w-full sm:w-auto bg-[#FC4C02] hover:bg-[#d44102] text-white font-semibold py-2 rounded-md transition-colors duration-200"
                   asChild
                 >
                   <Link href={stravaLink!} target="_blank" rel="noopener noreferrer">
-                    <div className="flex items-center">
+                    <div className="flex items-center justify-center">
                       <StravaLogo />
                       <span>View on Strava</span>
                     </div>
@@ -329,17 +335,17 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
       )}
 
       {!workout.notes && isValidStrava && (
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>External Links</CardTitle>
+        <Card className="mb-6 md:mb-8">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">External Links</CardTitle>
           </CardHeader>
           <CardContent>
             <Button 
-              className="bg-[#FC4C02] hover:bg-[#d44102] text-white font-semibold py-2 rounded-md transition-colors duration-200"
+              className="w-full sm:w-auto bg-[#FC4C02] hover:bg-[#d44102] text-white font-semibold py-2 rounded-md transition-colors duration-200"
               asChild
             >
               <Link href={stravaLink!} target="_blank" rel="noopener noreferrer">
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   <StravaLogo />
                   <span>View on Strava</span>
                 </div>
@@ -350,13 +356,13 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
       )}
 
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+        <CardHeader className="pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <BarChart className="h-5 w-5" />
               AI Workout Analysis
             </CardTitle>
-            <Button asChild>
+            <Button asChild className="w-full sm:w-auto">
               <Link href={`/chat?analyze=${workout._id}`}>
                 Analyze Workout
               </Link>
@@ -364,10 +370,10 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">
+          <p className="text-sm md:text-base text-muted-foreground">
             Get personalized feedback on your workout including:
           </p>
-          <ul className="mt-4 space-y-2">
+          <ul className="mt-3 md:mt-4 space-y-2 text-sm md:text-base">
             <li className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-primary" />
               Pace and effort analysis

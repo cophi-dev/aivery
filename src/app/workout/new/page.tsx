@@ -173,31 +173,31 @@ export default function NewWorkoutPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center mb-6">
+    <div className="container mx-auto px-4 py-6 md:py-8">
+      <div className="flex items-center mb-4 md:mb-6">
         <Link href="/workouts">
-          <Button variant="ghost" size="sm" className="mr-4">
+          <Button variant="ghost" size="sm" className="mr-2 md:mr-4">
             <LucideArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
         </Link>
-        <h1 className="text-3xl font-bold tracking-tight">New Workout</h1>
+        <h1 className="text-xl md:text-3xl font-bold tracking-tight">New Workout</h1>
       </div>
 
-      <Tabs defaultValue="manual" className="mb-8">
+      <Tabs defaultValue="manual" className="mb-6 md:mb-8">
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="manual">Manual Entry</TabsTrigger>
           <TabsTrigger value="template">From Template</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="manual" className="mt-6">
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle>Workout Details</CardTitle>
+        <TabsContent value="manual" className="mt-4 md:mt-6">
+          <Card className="mb-6 md:mb-8">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Workout Details</CardTitle>
               <CardDescription>Enter the basic information about your workout</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="workout-name">Workout Name</Label>
                   <Input 
@@ -248,8 +248,8 @@ export default function NewWorkoutPage() {
                     id="workout-duration" 
                     type="number" 
                     placeholder="e.g., 60" 
-                    value={workoutDuration || ''}
-                    onChange={(e) => setWorkoutDuration(Number(e.target.value) || undefined)}
+                    value={workoutDuration}
+                    onChange={(e) => setWorkoutDuration(parseInt(e.target.value))}
                   />
                 </div>
 
@@ -270,11 +270,12 @@ export default function NewWorkoutPage() {
                   </Select>
                 </div>
 
-                <div className="col-span-1 md:col-span-2 space-y-2">
-                  <Label htmlFor="workout-notes">Notes (optional)</Label>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="workout-notes">Notes</Label>
                   <Textarea 
                     id="workout-notes" 
-                    placeholder="Any additional notes about this workout"
+                    placeholder="Optional notes about this workout..." 
+                    className="h-24 resize-none"
                     value={workoutNotes}
                     onChange={(e) => setWorkoutNotes(e.target.value)}
                   />
@@ -284,205 +285,150 @@ export default function NewWorkoutPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Exercises</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center">
+                <LucideDumbbell className="h-5 w-5 mr-2" />
+                Exercises
+              </CardTitle>
               <CardDescription>Add the exercises you performed</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {exercises.map((exercise, exerciseIndex) => (
-                  <div key={exerciseIndex} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <Dialog open={dialogOpen && activeExerciseIndex === exerciseIndex} onOpenChange={setDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            className="w-full text-left justify-start"
-                            onClick={() => openExerciseDialog(exerciseIndex)}
-                          >
-                            <LucideDumbbell className="h-4 w-4 mr-2" />
-                            {exercise.name || "Select Exercise"}
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-3xl">
-                          <DialogHeader>
-                            <DialogTitle>Select Exercise</DialogTitle>
-                            <DialogDescription>
-                              Choose an exercise from the database or create a new one
-                            </DialogDescription>
-                          </DialogHeader>
-                          
-                          <div className="grid grid-cols-2 gap-4 py-4">
-                            <div>
-                              <Label htmlFor="category-filter">Category</Label>
-                              <Select 
-                                value={selectedCategory} 
-                                onValueChange={setSelectedCategory}
-                              >
-                                <SelectTrigger id="category-filter">
-                                  <SelectValue placeholder="Filter by category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">All Categories</SelectItem>
-                                  <SelectItem value="strength">Strength</SelectItem>
-                                  <SelectItem value="cardio">Cardio</SelectItem>
-                                  <SelectItem value="flexibility">Flexibility</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            
-                            <div>
-                              <Label htmlFor="muscle-filter">Muscle Group</Label>
-                              <Select 
-                                value={selectedMuscleGroup} 
-                                onValueChange={setSelectedMuscleGroup}
-                              >
-                                <SelectTrigger id="muscle-filter">
-                                  <SelectValue placeholder="Filter by muscle" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">All Muscle Groups</SelectItem>
-                                  {uniqueMuscleGroups.map(muscle => (
-                                    <SelectItem key={muscle} value={muscle} className="capitalize">
-                                      {muscle}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          
-                          <ScrollArea className="h-[300px] rounded-md border p-4">
-                            <div className="grid grid-cols-1 gap-2">
-                              {filteredExercises.length > 0 ? (
-                                filteredExercises.map(dbExercise => (
-                                  <Button
-                                    key={dbExercise._id}
-                                    variant="outline"
-                                    className="justify-start h-auto py-3"
-                                    onClick={() => selectExercise(dbExercise)}
-                                  >
-                                    <div className="flex flex-col items-start">
-                                      <span className="font-medium">{dbExercise.name}</span>
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {dbExercise.muscleGroups.map(muscle => (
-                                          <Badge key={muscle} variant="secondary" className="text-xs capitalize">
-                                            {muscle}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </Button>
-                                ))
-                              ) : (
-                                <p className="text-center text-muted-foreground p-4">
-                                  No exercises found. Try different filters or add a new exercise.
-                                </p>
-                              )}
-                            </div>
-                          </ScrollArea>
-                          
-                          <div className="mt-4 flex justify-between">
-                            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                            <Link href="/exercises/new" target="_blank">
-                              <Button>Add New Exercise</Button>
-                            </Link>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                      
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        className="ml-2"
-                        onClick={() => removeExercise(exerciseIndex)}
-                      >
-                        <LucideTrash className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    
-                    {/* Sets */}
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-12 gap-2 mb-2">
-                        <div className="col-span-2">
-                          <Label className="text-sm">Set</Label>
-                        </div>
-                        <div className="col-span-4">
-                          <Label className="text-sm">Weight</Label>
-                        </div>
-                        <div className="col-span-4">
-                          <Label className="text-sm">Reps</Label>
-                        </div>
-                        <div className="col-span-2"></div>
-                      </div>
-                      
-                      {exercise.sets.map((set, setIndex) => (
-                        <div key={setIndex} className="grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-2">
-                            <div className="text-center font-medium">{setIndex + 1}</div>
-                          </div>
-                          <div className="col-span-4">
-                            <Input 
-                              type="number" 
-                              value={set.weight || ''} 
-                              onChange={(e) => updateSetValue(exerciseIndex, setIndex, "weight", Number(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="col-span-4">
-                            <Input 
-                              type="number" 
-                              value={set.reps || ''} 
-                              onChange={(e) => updateSetValue(exerciseIndex, setIndex, "reps", Number(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="col-span-2 flex justify-end">
-                            {exercise.sets.length > 1 && (
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => removeSet(exerciseIndex, setIndex)}
-                              >
-                                <LucideMinus className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      
-                      <div className="mt-4">
+            <CardContent className="space-y-6">
+              {exercises.map((exercise, exerciseIndex) => (
+                <div 
+                  key={exerciseIndex}
+                  className="border rounded-lg p-3 md:p-4 space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor={`exercise-${exerciseIndex}`} className="text-sm">Exercise Name</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id={`exercise-${exerciseIndex}`}
+                          placeholder="Enter or select exercise name"
+                          value={exercise.name}
+                          onChange={(e) => updateExerciseName(exerciseIndex, e.target.value)}
+                        />
                         <Button 
-                          variant="outline" 
+                          type="button" 
+                          variant="outline"
                           size="sm"
-                          onClick={() => addSet(exerciseIndex)}
+                          onClick={() => openExerciseDialog(exerciseIndex)}
+                          className="whitespace-nowrap"
                         >
-                          <LucidePlus className="h-4 w-4 mr-2" />
-                          Add Set
+                          Browse
                         </Button>
                       </div>
                     </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeExercise(exerciseIndex)}
+                      className="mt-4 sm:mt-0 self-end sm:self-auto"
+                    >
+                      <LucideTrash className="h-4 w-4" />
+                    </Button>
                   </div>
-                ))}
-                
-                <Button 
-                  variant="outline" 
-                  onClick={addExercise}
-                  className="w-full"
-                >
-                  <LucidePlus className="h-4 w-4 mr-2" />
-                  Add Exercise
-                </Button>
-              </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm">Sets</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addSet(exerciseIndex)}
+                      >
+                        <LucidePlus className="h-3 w-3 mr-1" />
+                        Add Set
+                      </Button>
+                    </div>
+
+                    {exercise.sets.map((set, setIndex) => (
+                      <div 
+                        key={setIndex}
+                        className="grid grid-cols-7 gap-2 items-center"
+                      >
+                        <div className="col-span-3">
+                          <Label className="text-xs" htmlFor={`weight-${exerciseIndex}-${setIndex}`}>
+                            Weight (kg)
+                          </Label>
+                          <Input
+                            id={`weight-${exerciseIndex}-${setIndex}`}
+                            type="number"
+                            min={0}
+                            className="h-8"
+                            value={set.weight}
+                            onChange={(e) => updateSetValue(
+                              exerciseIndex,
+                              setIndex,
+                              "weight",
+                              Number(e.target.value) || 0
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <Label className="text-xs" htmlFor={`reps-${exerciseIndex}-${setIndex}`}>
+                            Reps
+                          </Label>
+                          <Input
+                            id={`reps-${exerciseIndex}-${setIndex}`}
+                            type="number"
+                            min={0}
+                            className="h-8"
+                            value={set.reps}
+                            onChange={(e) => updateSetValue(
+                              exerciseIndex,
+                              setIndex,
+                              "reps",
+                              Number(e.target.value) || 0
+                            )}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeSet(exerciseIndex, setIndex)}
+                          className="w-6 h-6 mt-4 col-span-1"
+                          disabled={exercise.sets.length <= 1}
+                        >
+                          <LucideMinus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addExercise}
+                className="w-full"
+              >
+                <LucidePlus className="h-4 w-4 mr-2" />
+                Add Exercise
+              </Button>
             </CardContent>
           </Card>
-
-          <div className="flex justify-end mt-8">
-            <Button 
-              size="lg" 
+                    
+          <div className="mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push("/workouts")}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
               onClick={saveWorkout}
               disabled={isSubmitting}
+              className="w-full sm:w-auto"
             >
-              <LucideSave className="h-5 w-5 mr-2" />
-              {isSubmitting ? 'Saving...' : 'Save Workout'}
+              {isSubmitting ? "Saving..." : "Save Workout"}
             </Button>
           </div>
         </TabsContent>

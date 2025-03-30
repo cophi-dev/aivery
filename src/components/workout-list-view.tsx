@@ -638,63 +638,75 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         
         {/* Workouts Table */}
         <div className="rounded-md border overflow-hidden">
+          {/* Table header */}
           <div className="bg-muted">
-            <div className="grid grid-cols-9 gap-2 p-4 text-xs font-medium text-muted-foreground">
+            <div className="grid grid-cols-12 gap-2 p-4 text-xs font-medium text-muted-foreground">
               <div 
-                className="col-span-3 flex items-center cursor-pointer"
+                className="col-span-5 md:col-span-3 flex items-center cursor-pointer"
                 onClick={() => handleSort("date")}
               >
                 Date
                 <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "date" ? "opacity-100" : "opacity-50"}`} />
               </div>
               <div 
-                className="col-span-3 flex items-center cursor-pointer"
+                className="col-span-5 md:col-span-3 flex items-center cursor-pointer"
                 onClick={() => handleSort("type")}
               >
                 Type
                 <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "type" ? "opacity-100" : "opacity-50"}`} />
               </div>
               <div 
-                className="col-span-2 flex items-center cursor-pointer"
+                className="hidden md:flex col-span-0 md:col-span-2 items-center cursor-pointer"
                 onClick={() => handleSort("volume")}
               >
                 Volume
                 <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "volume" ? "opacity-100" : "opacity-50"}`} />
               </div>
-              <div className="col-span-1"></div>
+              <div className="col-span-2 md:col-span-4 text-right md:text-center">
+                Actions
+              </div>
             </div>
           </div>
           
+          {/* Table rows */}
           <div className="divide-y">
             {filteredWorkouts.length > 0 ? (
               filteredWorkouts.map((workout) => {
                 const volume = getWorkoutVolume(workout);
                 return (
-                <Link 
-                  href={`/workout/${workout._id}`}
+                <div 
                   key={typeof workout._id === 'string' ? workout._id : String(workout._id)} 
-                  className="grid grid-cols-9 gap-2 p-4 items-center hover:bg-muted/50 transition-colors duration-150 cursor-pointer group shadow-sm hover:shadow-md"
+                  className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/50 transition-colors duration-150 shadow-sm hover:shadow-md"
                 >
-                  <div className="col-span-3 flex flex-col">
+                  <div className="col-span-5 md:col-span-3 flex flex-col">
                     <div className="font-medium">{formatDate(new Date(workout.date))}</div>
                   </div>
-                  <div className="col-span-3">
+                  <div className="col-span-5 md:col-span-3">
                     <Badge variant="outline" className="flex items-center gap-1 w-fit">
                       {getTypeIcon(workout.type)}
                       {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
                     </Badge>
                   </div>
-                  <div className="col-span-2">
+                  <div className="hidden md:block col-span-0 md:col-span-2">
                     {volume.value > 0 && (
                       <div className="text-sm">
                         {volume.value.toFixed(1)} {volume.unit}
                       </div>
                     )}
                   </div>
-                  <div className="col-span-1 text-right">
-                    <ChevronRight className="h-5 w-5 text-muted-foreground opacity-40 group-hover:opacity-100 transition-opacity" />
+                  <div className="col-span-2 md:col-span-4 flex gap-2 justify-end md:justify-center">
+                    <Button variant="outline" size="sm" asChild className="h-8 px-2 py-1">
+                      <Link href={`/workout/${workout._id}`}>
+                        View
+                      </Link>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild className="h-8 px-2 py-1">
+                      <Link href={`/workout/edit/${workout._id}`}>
+                        Edit
+                      </Link>
+                    </Button>
                   </div>
-                </Link>
+                </div>
               )})
             ) : (
               <div className="py-8 text-center">
