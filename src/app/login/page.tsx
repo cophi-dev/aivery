@@ -37,7 +37,9 @@ export default function LoginPage() {
     }
   }, [searchParams])
 
-  // Handle redirection if already authenticated
+  // TEMPORARILY DISABLED - Handle redirection if already authenticated
+  // This was causing redirect loops
+  /*
   useEffect(() => {
     // Only redirect if authenticated and not in the middle of login or reset
     if (status === 'authenticated' && session?.user?.id && !loading && !isResetting && !isRedirecting) {
@@ -57,6 +59,7 @@ export default function LoginPage() {
       return () => clearTimeout(timer);
     }
   }, [status, session, router, callbackUrl, loading, isResetting, isRedirecting, hasAttemptedLogin]);
+  */
 
   // Emergency reset function that works directly on this page
   const resetEverything = async () => {
