@@ -75,6 +75,16 @@ const nextConfig = {
   // Disable any Vercel static optimization
   trailingSlash: false,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
+  
+  // Add explicit route handling for problematic routes
+  async rewrites() {
+    return [
+      {
+        source: '/workouts',
+        destination: '/workouts',
+      }
+    ];
+  }
 }
 
 // Ensure we're using proper configuration for Vercel deployment
