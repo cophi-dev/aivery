@@ -7,39 +7,20 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import WorkoutListView from "@/components/workout-list-view"
 import type { WorkoutData } from "@/types/db"
+import { cookies } from "next/headers"
+import { VERSION } from "@/app/version"
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const fetchCache = 'force-no-store'
 
 export default async function WorkoutsDirectPage() {
-  console.log("[WORKOUTS_DIRECT_PAGE] Starting to render direct workouts page")
+  // Get user session
+  const session = await getServerSession(authOptions);
   
-  // Try to get the session
-  let session;
-  try {
-    session = await getServerSession(authOptions);
-    console.log("[WORKOUTS_DIRECT_PAGE] Session:", JSON.stringify({ 
-      hasSession: !!session, 
-      hasUser: !!session?.user, 
-      userId: session?.user?.id 
-    }));
-  } catch (error) {
-    console.error("[WORKOUTS_DIRECT_PAGE] Error getting session:", error);
-    // Don't redirect here, show a friendly error instead
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold tracking-tight">Authentication Error</h1>
-        <div className="mt-4 text-red-500">
-          There was a problem with your authentication. Please try <Link href="/login" className="underline">logging in</Link> again.
-        </div>
-      </div>
-    );
-  }
-
-  // Don't redirect - just show workouts or a message
-  if (!session || !session.user) {
-    console.log("[WORKOUTS_DIRECT_PAGE] No session or user, showing login suggestion");
+  // If not authenticated, show login message
+  if (!session?.user) {
     return (
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold tracking-tight">Workouts</h1>
@@ -50,16 +31,14 @@ export default async function WorkoutsDirectPage() {
     );
   }
 
-  const userId = session.user.id;
-  console.log("[WORKOUTS_DIRECT_PAGE] Fetching workouts for user:", userId);
-  
   try {
-    const workouts = await getWorkoutsByUserId(userId);
-    console.log("[WORKOUTS_DIRECT_PAGE] Fetched workouts:", workouts?.length || 0);
+    // Fetch workouts for the authenticated user
+    const workouts = await getWorkoutsByUserId(session.user.id);
+    const shortVersion = VERSION.substring(0, 8);
+    const timestamp = new Date().toISOString();
 
     return (
       <div className="container mx-auto px-4 py-8">
-        {/* DEBUG VISUAL CHANGE - Bright background */}
         <div style={{
           background: 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
           padding: '20px',
@@ -67,8 +46,8 @@ export default async function WorkoutsDirectPage() {
           marginBottom: '20px',
           color: 'white'
         }}>
-          <h2 className="text-2xl font-bold mb-3">NEW DESIGN - Workout Tracker</h2>
-          <p>This is the new design deployed on {new Date().toLocaleString()}</p>
+          <h2 className="text-2xl font-bold mb-3">Workout Tracker</h2>
+          <p>Build {shortVersion}</p>
         </div>
         
         <div className="flex flex-col md:flex-row items-start justify-between mb-8">
@@ -97,7 +76,7 @@ export default async function WorkoutsDirectPage() {
       </div>
     );
   } catch (error) {
-    console.error("[WORKOUTS_DIRECT_PAGE] Error fetching workouts:", error);
+    console.error("Error fetching workouts:", error);
     return (
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold tracking-tight">Workouts</h1>

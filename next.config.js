@@ -10,25 +10,20 @@ const nextConfig = {
     unoptimized: true,
   },
   
-  // Force server rendering with absolutely no static generation
+  // Server rendering configuration
   output: 'standalone',
   
-  // Disable any kind of optimization or static generation
   experimental: {
-    // Force dynamic components and prevent static optimization
     serverActions: {
       bodySizeLimit: '10mb',
       allowedOrigins: ['*'],
     },
-    // Support for larger page data
     largePageDataBytes: 128 * 1000, // 128KB
-    // Only transpile external packages
     serverComponentsExternalPackages: ['mongodb'],
-    // Disable static generation
     disableOptimizedLoading: true,
   },
   
-  // Cache busting for builds - ensure unique for every deployment
+  // Cache busting for builds
   generateBuildId: () => {
     return `build-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
   },
@@ -61,27 +56,22 @@ const nextConfig = {
     ]
   },
 
-  // Force server-side rendering for all pages
+  // Rendering configuration
   distDir: '.next',
   poweredByHeader: false,
   compress: true,
-  
-  // Completely disable static generation with extreme timeouts
   staticPageGenerationTimeout: 1,
   serverRuntimeConfig: {
     dynamicRoutes: true
   },
-
-  // Disable any Vercel static optimization
   trailingSlash: false,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
   
-  // Handle route redirects explicitly to prevent loops
   async redirects() {
     return [];
   },
   
-  // Fix the workouts page redirect loop by explicitly showing the workouts page
+  // Route workouts path to dedicated workouts-direct page
   async rewrites() {
     return [
       {
@@ -98,18 +88,15 @@ const nextConfig = {
   }
 }
 
-// Ensure we're using proper configuration for Vercel deployment
+// Vercel deployment configuration
 if (process.env.VERCEL) {
   nextConfig.compiler = {
     ...nextConfig.compiler,
-    // Eliminate static optimization
     styledComponents: true,
-    // Disable all optimizations
     removeConsole: false,
     reactRemoveProperties: false,
   }
   
-  // Force env variables to disable static generation
   process.env.NEXT_DISABLE_STATIC_GENERATION = 'true';
   process.env.VERCEL_FORCE_NO_BUILD_CACHE = '1';
   process.env.NEXT_RUNTIME = 'nodejs';
