@@ -20,6 +20,22 @@ import { getCollection } from "@/lib/db/mongodb"
 import { NextResponse } from "next/server"
 import User from "@/lib/db/models/user"
 import { IUser } from "@/lib/db/models/user"
+import { getFreshWorkouts, getFreshFilteredWorkouts } from "./fresh-data"
+
+// Force dynamic rendering and prevent caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+export const runtime = 'nodejs';
+
+// Function to reset MongoDB connection for fresh data
+async function resetAndGetFreshConnection() {
+  // Clear the cached connection
+  (global as any).mongoose = { conn: null, promise: null };
+  // Get a fresh connection
+  await dbConnect();
+  return getCollection('workouts');
+}
 
 // Initialize the OpenAI SDK
 const client = new OpenAI({
@@ -118,8 +134,6 @@ function analyzeWorkoutQuery(message: string): WorkoutQuery {
 // Add before POST function
 async function generatePersonalizedGreeting(userId: string): Promise<string | null> {
   try {
-    await dbConnect();
-    
     // Get current date and time info for context-aware greetings
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
@@ -129,25 +143,22 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
     const isMorning = hour < 12;
     const isAfternoon = hour >= 12 && hour < 17;
     
-    // Get recent workouts - more of them for better context
-    const workoutsCollection = await getCollection('workouts');
-    const recentWorkouts = await workoutsCollection
-      .find({ userId: new ObjectId(userId) })
-      .sort({ date: -1 })
-      .limit(10)
-      .toArray();
+    // Get fresh workout data using our helper
+    const { 
+      recentWorkouts, 
+      totalWorkoutCount, 
+      thisWeeksWorkouts,
+      hasWorkouts
+    } = await getFreshWorkouts(userId);
     
-    if (!recentWorkouts || recentWorkouts.length === 0) {
+    if (!hasWorkouts) {
       // No workouts found, send a welcoming first-time message
-      return `Welcome to your fitness journey! Ready to log your first workout? Let me know how I can help you get started.`;
+      console.log(`[CHAT] No workouts found for user ${userId}`);
+      return "Welcome to your fitness journey! Ready to log your first workout? Let me know how I can help you get started.";
     }
     
-    // Get total workout count
-    const totalWorkoutCount = await workoutsCollection.countDocuments({ 
-      userId: new ObjectId(userId) 
-    });
-    
     // Get workout stats for most frequent type
+    const workoutsCollection = await getCollection('workouts');
     const workoutTypes = await workoutsCollection.aggregate([
       { $match: { userId: new ObjectId(userId) } },
       { $group: { _id: "$type", count: { $sum: 1 } } },
@@ -155,19 +166,8 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
     ]).toArray();
     
     // Calculate streak and activity patterns
-    let currentStreak = 0;
     let lastWorkoutDate = new Date(recentWorkouts[0].date);
     const daysSinceLastWorkout = Math.floor((now.getTime() - lastWorkoutDate.getTime()) / (1000 * 60 * 60 * 24));
-    
-    // Get this week's workouts for context
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // Start of current week (Sunday)
-    startOfWeek.setHours(0, 0, 0, 0);
-    
-    const thisWeeksWorkouts = await workoutsCollection.find({
-      userId: new ObjectId(userId),
-      date: { $gte: startOfWeek }
-    }).toArray();
     
     // Check if there's a workout scheduled for today
     const startOfToday = new Date(now);
@@ -175,11 +175,13 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
     
-    const scheduledToday = await workoutsCollection.findOne({
+    const todaysWorkouts = await workoutsCollection.find({
       userId: new ObjectId(userId),
-      date: { $gte: startOfToday, $lte: endOfToday },
-      status: { $in: ["scheduled", "planned"] }
-    });
+      date: { $gte: startOfToday, $lte: endOfToday }
+    }).toArray();
+    
+    // Add logic to determine if we need to show total workouts
+    const showTotalWorkouts = thisWeeksWorkouts.length === 0 && totalWorkoutCount > 0;
     
     // Build rich context for the greeting
     const context = {
@@ -195,8 +197,8 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
       totalWorkouts: totalWorkoutCount,
       workoutsThisWeek: thisWeeksWorkouts.length,
       daysSinceLastWorkout,
-      hasWorkoutToday: scheduledToday !== null,
-      scheduledWorkoutToday: scheduledToday ? scheduledToday.type : null,
+      hasWorkoutToday: todaysWorkouts.length > 0,
+      scheduledWorkoutToday: todaysWorkouts.length > 0 ? todaysWorkouts[0].type : null,
       
       // Most recent workout
       lastWorkout: {
@@ -215,7 +217,14 @@ async function generatePersonalizedGreeting(userId: string): Promise<string | nu
       // Achievement context (basic)
       isRecentAchievement: totalWorkoutCount % 10 === 0 || totalWorkoutCount % 25 === 0,
       recentMilestone: totalWorkoutCount % 25 === 0 ? totalWorkoutCount : 
-                      totalWorkoutCount % 10 === 0 ? totalWorkoutCount : null
+                      totalWorkoutCount % 10 === 0 ? totalWorkoutCount : null,
+      
+      // Weekly status
+      showTotalWorkouts,
+      noWorkoutsThisWeek: thisWeeksWorkouts.length === 0,
+      weeklyStatus: thisWeeksWorkouts.length === 0 
+        ? "no workouts yet this week"
+        : `${thisWeeksWorkouts.length} workout${thisWeeksWorkouts.length === 1 ? '' : 's'} this week`
     };
     
     // Safely serialize the context to JSON  
@@ -243,22 +252,25 @@ GUIDELINES:
 - AVOID putting the user's name in bold formatting to prevent visibility issues
 - Use emojis naturally (but sparingly) to add personality: 💪 🏃‍♀️ 🏋️‍♂️ 🎯 🔥
 
-EXAMPLES OF GOOD PERSONALIZED GREETINGS:
-- "Morning, Sam! Ready for that run you scheduled today? Perfect weather for it! 🏃‍♀️"
-- "Hey there! Your strength session yesterday was impressive - **3 workouts** this week already and it's only Wednesday! 💪"
-- "It's been a week since your last run. Weekend plans include getting those running shoes back on? 👟"
-- "Congrats on hitting **50 workouts**! 🎉 Your consistency with those morning runs is really paying off."
-- "Happy Friday! You've crushed **4 workouts** this week - time to celebrate that dedication this weekend! 🔥"
+IMPORTANT GUIDELINES:
+- When the user has no workouts logged this week but has a workout history, mention their TOTAL workout count
+- When showing total workouts and it's been a while since their last workout, always add an encouraging workout suggestion
+- NEVER use the same greeting pattern more than once - vary your style significantly
+- DO NOT start with "Happy [day]!" or similar standard greetings every time
+- Add freshness and variety to each greeting
+- USE DIFFERENT EMOJI combinations each time
 
-Use the context provided to create a truly personalized, timely greeting.`
+CURRENT CONTEXT:
+${JSON.stringify(context, null, 2)}
+`
         },
         {
           role: "user",
           content: safeContext
         }
       ],
-      temperature: 0.8,
-      max_tokens: 100,
+      temperature: 0.9,
+      max_tokens: 300,
     });
     
     return response.choices[0].message?.content || null;
@@ -278,11 +290,20 @@ interface AIQueryRequest {
 // Helper function for fetching user workout data
 const fetchUserWorkoutData = async (userId: string, queryType: string, timeframe?: string) => {
   try {
+    // Force database reconnection to prevent cache issues
     await dbConnect();
+    
+    // Force fresh connection to workouts collection
     const workoutsCollection = await getCollection('workouts');
     
+    // Add a timestamp to the query to prevent caching
+    const cacheKey = Date.now();
+    
     // Base filter: workouts for this user
-    const filter: any = { userId: new ObjectId(userId) };
+    const filter: any = { 
+      userId: new ObjectId(userId),
+      _cacheKey: cacheKey // This doesn't affect the query but ensures uniqueness
+    };
     
     // Add date filtering if timeframe is specified
     if (timeframe) {
@@ -409,6 +430,77 @@ const fetchUserWorkoutData = async (userId: string, queryType: string, timeframe
     return null;
   }
 }
+
+// Helper function to generate consistent workout summaries by type
+const generateWorkoutTypeSummaries = (workouts: any[]) => {
+  // Normalize workout types - map display names to standardized types
+  const normalizeWorkoutType = (type: string) => {
+    type = type.toLowerCase();
+    if (type.includes('run') || type.includes('running')) return 'running';
+    if (type.includes('swim') || type.includes('swimming')) return 'swimming';
+    if (type.includes('strength') || type.includes('weight')) return 'strength training';
+    if (type.includes('cycl') || type.includes('bike')) return 'cycling';
+    if (type.includes('cardio')) return 'cardio';
+    return type;
+  };
+
+  // Group workouts by normalized type
+  const workoutsByType: Record<string, any[]> = {};
+  
+  workouts.forEach(workout => {
+    const normalizedType = normalizeWorkoutType(workout.type || 'other');
+    if (!workoutsByType[normalizedType]) {
+      workoutsByType[normalizedType] = [];
+    }
+    workoutsByType[normalizedType].push(workout);
+  });
+
+  // Calculate summaries for each type
+  const summaries: Record<string, any> = {};
+  
+  Object.entries(workoutsByType).forEach(([type, typeWorkouts]) => {
+    const totalDuration = typeWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0);
+    const workoutsWithDistance = typeWorkouts.filter(w => w.distance && w.distance > 0);
+    
+    // Ensure consistent distance units (convert to km for swimming if needed)
+    const totalDistance = workoutsWithDistance.reduce((sum, w) => {
+      let distance = parseFloat(w.distance) || 0;
+      // Handle unit conversions if needed
+      if (w.distanceUnit === 'miles') {
+        distance *= 1.60934; // Convert miles to km
+      }
+      return sum + distance;
+    }, 0);
+    
+    // Round to 2 decimal places
+    const roundedDistance = Math.round(totalDistance * 100) / 100;
+    
+    summaries[type] = {
+      count: typeWorkouts.length,
+      totalDuration,
+      averageDuration: totalDuration / typeWorkouts.length,
+      totalDistance: roundedDistance,
+      hasDistance: workoutsWithDistance.length > 0,
+      // Calculate average intensity
+      averageIntensity: typeWorkouts.some(w => w.intensity) 
+        ? typeWorkouts.map(w => {
+            const intensity = (w.intensity || '').toLowerCase();
+            if (intensity.includes('high')) return 3;
+            if (intensity.includes('medium')) return 2;
+            if (intensity.includes('low')) return 1;
+            return 0;
+          }).reduce((sum: number, val: number) => sum + val, 0) / typeWorkouts.filter(w => w.intensity).length
+        : null,
+      workouts: typeWorkouts,
+      // Store dates for easy reference
+      dates: typeWorkouts.map(w => new Date(w.date)).sort((a, b) => b.getTime() - a.getTime()),
+      // If applicable (future metrics)
+      totalCalories: typeWorkouts.reduce((sum, w) => sum + (parseInt(w.calories) || 0), 0)
+    };
+  });
+
+  return summaries;
+};
 
 // Process AI data request function
 const processAIDataRequest = async (request: AIQueryRequest) => {
@@ -640,12 +732,18 @@ const processAIDataRequest = async (request: AIQueryRequest) => {
     
     // Use OpenAI to generate a natural language response
     if (result) {
+      // Generate workout type summaries for more consistent data presentation
+      const workoutSummaries = generateWorkoutTypeSummaries(result.workouts);
+      
       const contextMessage = JSON.stringify({
-        query,
-        result,
-        analysisType: queryAnalysis.dataType,
-        timeFrame: queryAnalysis.timeFrame,
-        format: format
+        userQuery: query,
+        workouts: result.workouts || [],
+        workoutSummaries,
+        summariesByType: workoutSummaries.byType,
+        dateRange: workoutSummaries.dateRange,
+        count: result.count,
+        timeFrame: queryAnalysis.timeFrame || 'all',
+        workoutType: queryAnalysis.workoutType
       });
       
       const responseGeneration = await client.chat.completions.create({
@@ -653,42 +751,42 @@ const processAIDataRequest = async (request: AIQueryRequest) => {
         messages: [
           {
             role: "system",
-            content: `You are a friendly fitness coach. Generate a natural, conversational response based on the user's query and the data provided.
+            content: `You are a friendly fitness coach. Generate a natural, conversational response based on the user's query and the workout data provided.
             Create a response that directly answers their question using the specific data.
             Be concise but personable - like a real coach would talk to their client.
             Never mention that you're analyzing data or that data was retrieved from a database.
             Just present the information conversationally as if you already knew it.
             
+            IMPORTANT DATA CONSISTENCY GUIDELINES:
+            - For swimming workouts, always display distance in kilometers (km) or meters (m)
+            - For running or cycling, use the units provided (miles or km)
+            - When summarizing workout types, normalize the names (e.g., "Evening Swimming" → "Swimming")
+            - Ensure swimming distances are consistent across all mentions
+            - When calculating totals, make sure units are consistent
+            - Use the pre-calculated summaries object for accurate aggregated data
+            - Only include workouts from the timeframe the user asked about, do not mention workouts outside that timeframe
+            - Be precise about dates - if the user asks about "this week", only include workouts from Monday to today
+            - IMPORTANT: DO NOT include workouts from a different timeframe than what was requested
+            - The "dateRange" in the provided data shows the exact range of workouts that are relevant to the query
+            - Focus strictly on workouts within the date range specified
+            - Do NOT list workout types with zero workouts in the requested timeframe
+            - If the user asks about activities other than their main workout type and there are none, simply state they didn't do other activities in that timeframe
+            
             FORMATTING INSTRUCTIONS:
-            Format your response using Markdown:
             - Use **bold** for numbers and metrics, NOT for names or workout types
             - Use *italics* for workout types or intensity levels
             - Use # and ## for headings when showing lists or summaries
             - Use proper line breaks with double spaces or blank lines between paragraphs
             - Use bullet points with * or - for lists
-            - For workout entries, format them clearly:
-              
-              ## [Day], [Date]
-              *[Workout Type]* - Duration: **[duration]**
-              - Distance: **[distance] [units]**
-              - Intensity: *[intensity level]*
-              - Average Heart Rate: **[bpm]** 
-              
-            EXAMPLE MARKDOWN OUTPUT:
+            - For workout entries, format them clearly
             
-            # Your Workouts This Week
+            EXAMPLE FOR SWIMMING SUMMARY:
             
-            ## Monday, March 27
-            *Morning Run* - Duration: **40 minutes**
-            - Distance: **5.2 miles**
-            - Intensity: *Medium*
-            - Heart Rate: **142 bpm**
-            
-            ## Thursday, March 24
-            *Evening Run* - Duration: **33 minutes**
-            - Distance: **5.65 km**
-            - Intensity: *High*
-            - Heart Rate: **156 bpm**
+            Swimming
+            - Workout Count: **2**
+            - Total Distance: **1.6 km**
+            - Total Duration: **85 minutes**
+            - Average Intensity: *Medium*
             `
           },
           {
@@ -697,16 +795,66 @@ const processAIDataRequest = async (request: AIQueryRequest) => {
           }
         ],
         temperature: 0.7,
-        max_tokens: 300
+        max_tokens: 500,
       });
       
-      return responseGeneration.choices[0].message?.content || "Sorry, I couldn't process that request.";
+      return new Response(responseGeneration.choices[0].message?.content || "I couldn't find any workout data that matches your request.", {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+        }
+      });
     }
     
-    return null;
+    // No workouts found, let OpenAI handle it
+    console.log("[CHAT] No matching workouts found, falling back to general response");
+    
+    // Create a friendly response about no workouts found
+    const timeFrameText = queryAnalysis.timeFrame === 'week' ? 'this week' : 
+                        queryAnalysis.timeFrame === 'month' ? 'this month' :
+                        queryAnalysis.timeFrame === 'year' ? 'this year' : 'for that time period';
+    
+    const workoutTypeText = queryAnalysis.workoutType ? 
+                          `any ${queryAnalysis.workoutType} workouts ${timeFrameText}` : 
+                          `any workouts ${timeFrameText}`;
+                          
+    // Create a more personalized no-workouts response
+    const noWorkoutsResponse = await client.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `You are a friendly, supportive fitness coach. The user has asked about their workouts ${timeFrameText}, but they don't have any logged. 
+          Generate a brief, encouraging response that:
+          1. Acknowledges they haven't logged any workouts ${timeFrameText}
+          2. Remains positive and supportive
+          3. Encourages them to get moving with a specific suggestion
+          4. Uses a casual, conversational tone
+          5. Includes at most one emoji
+          Keep it short (1-2 sentences max) and make it sound natural and varied.`
+        },
+        {
+          role: "user",
+          content: `Create a response about not having ${workoutTypeText}.`
+        }
+      ],
+      temperature: 0.8,
+      max_tokens: 100,
+    });
+    
+    return new Response(noWorkoutsResponse.choices[0].message?.content || `I don't see ${workoutTypeText}. Would you like to log a workout now?`, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+      }
+    });
   } catch (error) {
     console.error("Error processing AI data request:", error);
-    return null;
+    return new Response(
+      "I'm having trouble processing your workout data request right now. Please try again in a moment.",
+      { 
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        status: 503
+      }
+    );
   }
 }
 
@@ -875,6 +1023,11 @@ For example:
 - User: "What's my name?" → "${nameResponse}"
 `;
     
+    // Ensure system message is properly formatted (no backticks)
+    if (systemMessage.startsWith('`') || systemMessage.endsWith('`')) {
+      systemMessage = systemMessage.replace(/^`|`$/g, '');
+    }
+    
     // Add direct handling for "what's my name" type questions before calling OpenAI
     const isNameQuestion = latestUserMessage.toLowerCase().includes("what's my name") || 
                            latestUserMessage.toLowerCase().includes("whats my name") ||
@@ -903,15 +1056,162 @@ For example:
     
     if (isLikelyDataQuery && session?.user?.id) {
       try {
-        // Try to process as a data query
-        const response = await processAIDataRequest({
-          query: latestUserMessage,
-          userId: session.user.id,
-          queryType: 'workout_data'
-        });
+        console.log("[CHAT] Processing likely data query:", latestUserMessage);
         
-        if (response) {
-          return new Response(response, {
+        // First, analyze the query to understand what the user is asking for
+        const queryAnalysisResponse = await client.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: `You are a data analyst for a fitness app. Analyze the user's query and extract:
+              1. The type of data they're asking for (e.g., runs, workouts, distances)
+              2. The time period they're interested in (e.g., this week, 2024, all time)
+              3. Any specific filters or conditions
+              
+              Return a JSON object with these fields:
+              {
+                "dataType": "runs|workouts|distance|duration|count|lastRun|longestRun|workoutList|etc",
+                "timeFrame": "week|month|year|all",
+                "workoutType": "run|strength|cycling|etc" // if applicable
+              }
+              
+              Keep it simple and direct. Only include fields if they're clearly specified in the query.`
+            },
+            {
+              role: "user", 
+              content: latestUserMessage
+            }
+          ],
+          temperature: 0,
+          response_format: { type: "json_object" }
+        });
+
+        // Parse the analysis
+        const analysisText = queryAnalysisResponse.choices[0].message?.content || '{}';
+        const queryAnalysis = JSON.parse(analysisText);
+        
+        console.log("[CHAT] Query analysis:", queryAnalysis);
+        
+        // Get fresh workout data based on the analysis
+        const { workouts, count } = await getFreshFilteredWorkouts(
+          session.user.id, 
+          queryAnalysis.timeFrame, 
+          queryAnalysis.workoutType
+        );
+        
+        // If we have workout data, format it into a response
+        if (workouts.length > 0 || count > 0) {
+          // Generate workout type summaries for more consistent data presentation
+          const workoutSummaries = generateWorkoutTypeSummaries(workouts);
+          
+          const contextMessage = JSON.stringify({
+            userQuery: latestUserMessage,
+            workouts,
+            workoutSummaries,
+            summariesByType: workoutSummaries.byType,
+            dateRange: workoutSummaries.dateRange,
+            count,
+            timeFrame: queryAnalysis.timeFrame || 'all',
+            workoutType: queryAnalysis.workoutType
+          });
+          
+          // Generate a natural language response
+          const responseGeneration = await client.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+              {
+                role: "system",
+                content: `You are a friendly fitness coach. Generate a natural, conversational response based on the user's query and the workout data provided.
+                Create a response that directly answers their question using the specific data.
+                Be concise but personable - like a real coach would talk to their client.
+                Never mention that you're analyzing data or that data was retrieved from a database.
+                Just present the information conversationally as if you already knew it.
+                
+                IMPORTANT DATA CONSISTENCY GUIDELINES:
+                - For swimming workouts, always display distance in kilometers (km) or meters (m)
+                - For running or cycling, use the units provided (miles or km)
+                - When summarizing workout types, normalize the names (e.g., "Evening Swimming" → "Swimming")
+                - Ensure swimming distances are consistent across all mentions
+                - When calculating totals, make sure units are consistent
+                - Use the pre-calculated summaries object for accurate aggregated data
+                - Only include workouts from the timeframe the user asked about, do not mention workouts outside that timeframe
+                - Be precise about dates - if the user asks about "this week", only include workouts from Monday to today
+                - IMPORTANT: DO NOT include workouts from a different timeframe than what was requested
+                - The "dateRange" in the provided data shows the exact range of workouts that are relevant to the query
+                - Focus strictly on workouts within the date range specified
+                - Do NOT list workout types with zero workouts in the requested timeframe
+                - If the user asks about activities other than their main workout type and there are none, simply state they didn't do other activities in that timeframe
+                
+                FORMATTING INSTRUCTIONS:
+                - Use **bold** for numbers and metrics, NOT for names or workout types
+                - Use *italics* for workout types or intensity levels
+                - Use # and ## for headings when showing lists or summaries
+                - Use proper line breaks with double spaces or blank lines between paragraphs
+                - Use bullet points with * or - for lists
+                - For workout entries, format them clearly
+                
+                EXAMPLE FOR SWIMMING SUMMARY:
+                
+                Swimming
+                - Workout Count: **2**
+                - Total Distance: **1.6 km**
+                - Total Duration: **85 minutes**
+                - Average Intensity: *Medium*
+                `
+              },
+              {
+                role: "user",
+                content: contextMessage
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 500,
+          });
+          
+          return new Response(responseGeneration.choices[0].message?.content || "I couldn't find any workout data that matches your request.", {
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+            }
+          });
+        } else {
+          // No workouts found, create a friendly response
+          console.log("[CHAT] No matching workouts found, creating specific response");
+          
+          // Create friendly response about no workouts found
+          const timeFrameText = queryAnalysis.timeFrame === 'week' ? 'this week' : 
+                              queryAnalysis.timeFrame === 'month' ? 'this month' :
+                              queryAnalysis.timeFrame === 'year' ? 'this year' : 'for that time period';
+          
+          const workoutTypeText = queryAnalysis.workoutType ? 
+                                `any ${queryAnalysis.workoutType} workouts ${timeFrameText}` : 
+                                `any workouts ${timeFrameText}`;
+                                
+          // Create a more personalized no-workouts response
+          const noWorkoutsResponse = await client.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+              {
+                role: "system",
+                content: `You are a friendly, supportive fitness coach. The user has asked about their workouts ${timeFrameText}, but they don't have any logged. 
+                Generate a brief, encouraging response that:
+                1. Acknowledges they haven't logged any workouts ${timeFrameText}
+                2. Remains positive and supportive
+                3. Encourages them to get moving with a specific suggestion
+                4. Uses a casual, conversational tone
+                5. Includes at most one emoji
+                Keep it short (1-2 sentences max) and make it sound natural and varied.`
+              },
+              {
+                role: "user",
+                content: `Create a response about not having ${workoutTypeText}.`
+              }
+            ],
+            temperature: 0.8,
+            max_tokens: 100,
+          });
+          
+          return new Response(noWorkoutsResponse.choices[0].message?.content || `I don't see ${workoutTypeText}. Would you like to log a workout now?`, {
             headers: {
               'Content-Type': 'text/plain; charset=utf-8',
             }
@@ -920,14 +1220,41 @@ For example:
       } catch (error) {
         console.error("Error processing data query:", error);
         // Fall through to normal processing if data query fails
+        return new Response(
+          "I'm having trouble retrieving your workout data right now. Let's try a different approach - what would you like to know?",
+          { 
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+          }
+        );
       }
     }
     
     // Use the OpenAI SDK to get a response for non-data queries
     try {
+      // Ensure system message is properly formatted as an object
+      const messagesForAPI = [
+        { role: "system", content: systemMessage },
+        ...messages.map((m: any) => {
+          // Ensure each message is a properly structured object
+          if (typeof m === 'string') {
+            return { role: 'user', content: m };
+          }
+          // Make sure content is a string
+          if (m.content && typeof m.content !== 'string') {
+            return { ...m, content: String(m.content) };
+          }
+          return m;
+        })
+      ];
+      
+      // Log what we're sending to ensure it's correct
+      console.log("[CHAT] Sending messages to OpenAI:", 
+        JSON.stringify(messagesForAPI.map(m => ({ role: m.role, content_length: m.content?.length || 0 })))
+      );
+      
       const result = await client.chat.completions.create({
         model: "gpt-3.5-turbo",
-        messages: [systemMessage, ...messages],
+        messages: messagesForAPI,
         temperature: 0.8,
         max_tokens: 800,
       });
@@ -949,8 +1276,8 @@ For example:
       return new Response(
         "I'm having trouble connecting right now. Please try again in a moment.",
         { 
-          status: 200, 
-          headers: { 'Content-Type': 'text/plain' }
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          status: 503 
         }
       );
     }
