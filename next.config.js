@@ -76,12 +76,23 @@ const nextConfig = {
   trailingSlash: false,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
   
-  // Add explicit route handling for problematic routes
+  // Handle route redirects explicitly to prevent loops
+  async redirects() {
+    return [];
+  },
+  
+  // Fix the workouts page redirect loop by explicitly showing the workouts page
   async rewrites() {
     return [
       {
         source: '/workouts',
-        destination: '/workouts',
+        destination: '/workouts-direct',
+        has: [
+          {
+            type: 'cookie',
+            key: 'next-auth.session-token',
+          },
+        ],
       }
     ];
   }
