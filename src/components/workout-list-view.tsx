@@ -378,11 +378,11 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const getTypeIcon = (type: string) => {
     switch (type.toLowerCase()) {
       case "running":
-        return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M13 4v16"></path>
-          <path d="M17 4v16"></path>
-          <path d="M21 4v16"></path>
-          <path d="M8 8l-5 3v5l5 3z"></path>
+        return <svg className="h-4 w-4" viewBox="0 0 512 512" fill="currentColor">
+          <g data-name="21_running">
+            <path d="M370.14 457.06v-7a39.86 39.86 0 0 0-24.48-36.73L331 364.87l12.82-38.68c4.48 5.9 12 11.35 23.92 14.52l3.07-11.6c-16.64-4.41-20.19-13.2-20.8-18.25h.52a24.75 24.75 0 0 0 8.49-48l18.27-36.26 103.65-117.21-9-8-104.68 118.44-16.06 31.87a35.21 35.21 0 0 0-34.31-10.26l-5.82 1.46a23.72 23.72 0 0 1-15.48-44.65 8.48 8.48 0 0 0 4.81-9.31l11.43-7.69 90.24-132.12-9.91-6.76-88.93 130.21-8.23 5.53a16.09 16.09 0 0 0-18.17-3.93L183.69 214A23.87 23.87 0 0 0 171 244.61l64.72 161.53 53.43 51.49H94.55v12h316.66v-12h-41.1c.01-.19.03-.38.03-.57zm-17.21-158.41 7-21.14a12.76 12.76 0 0 1-7 21.14z" />
+            <path d="M327.92 414.88a33.8 33.8 0 0 1 33.8 33.8v7a6.57 6.57 0 0 1-6.57 6.57h-39.71a34.32 34.32 0 0 1-23.82-9.61l-53.24-51.3L174.14 241a17.73 17.73 0 0 1 9.49-22.9l93.13-39.78a10.09 10.09 0 0 1 13.24 5.39l1.93 4.58a2.42 2.42 0 0 1-1.24 3.15 29.72 29.72 0 0 0-15.42 38.14 29.71 29.71 0 0 0 34.81 17.8l5.83-1.46a29.09 29.09 0 0 1 34.74 19.22l2.07 6.36-30.46 91.95 16.58 54.76" />
+          </g>
         </svg>
       case "cycling":
         return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -581,21 +581,21 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         
         {/* Workout Stats - Enhanced for better visibility */}
         <div className="grid grid-cols-4 gap-2 mb-4 w-full">
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
-            <span className="text-xs text-muted-foreground">Total Workouts</span>
-            <span className="text-xl font-semibold">{workoutStats.totalWorkouts}</span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-between h-16 border border-muted/40">
+            <span className="text-[10px] text-muted-foreground">Total Workouts</span>
+            <span className="text-lg font-semibold">{workoutStats.totalWorkouts}</span>
           </div>
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
-            <span className="text-xs text-muted-foreground">Total Time</span>
-            <span className="text-xl font-semibold flex items-baseline">{workoutStats.totalMinutes}<span className="text-xs ml-0.5">min</span></span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-between h-16 border border-muted/40">
+            <span className="text-[10px] text-muted-foreground">Total Time</span>
+            <span className="text-lg font-semibold flex items-baseline">{workoutStats.totalMinutes}<span className="text-[8px] ml-0.5">min</span></span>
           </div>
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
-            <span className="text-xs text-muted-foreground">Total Distance</span>
-            <span className="text-xl font-semibold flex items-baseline">{workoutStats.totalDistance.toFixed(1)}<span className="text-xs ml-0.5">km</span></span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-between h-16 border border-muted/40">
+            <span className="text-[10px] text-muted-foreground">Total Distance</span>
+            <span className="text-lg font-semibold flex items-baseline">{workoutStats.totalDistance.toFixed(1)}<span className="text-[8px] ml-0.5">km</span></span>
           </div>
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
-            <span className="text-xs text-muted-foreground">Favorite Type</span>
-            <span className="text-xl font-semibold">{workoutStats.favoriteType}</span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-between h-16 border border-muted/40">
+            <span className="text-[10px] text-muted-foreground">Favorite Type</span>
+            <span className="text-lg font-semibold">{workoutStats.favoriteType}</span>
           </div>
         </div>
         

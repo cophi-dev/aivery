@@ -8,8 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   LucideArrowLeft,
   LucideDumbbell,
-  LucideActivity,
-  LifeBuoyIcon as LucideSwimming,
+  LucideFootprints,
+  LucideWaves,
   LucideBike,
   LucideHeartPulse,
 } from "lucide-react"
@@ -22,32 +22,37 @@ export default function NewActivityPage() {
     {
       id: "strength",
       name: "Strength Training",
-      icon: <LucideDumbbell className="h-6 w-6" />,
+      icon: <LucideDumbbell className="h-8 w-8" />,
       description: "Weight lifting, bodyweight exercises, resistance training",
+      color: "bg-orange-500/10 text-orange-500",
     },
     {
       id: "running",
       name: "Running",
-      icon: <LucideActivity className="h-6 w-6" />,
+      icon: <LucideFootprints className="h-8 w-8" />,
       description: "Outdoor runs, treadmill, track workouts, jogging",
+      color: "bg-blue-500/10 text-blue-500",
     },
     {
       id: "swimming",
       name: "Swimming",
-      icon: <LucideSwimming className="h-6 w-6" />,
+      icon: <LucideWaves className="h-8 w-8" />,
       description: "Pool swimming, open water, different strokes",
+      color: "bg-cyan-500/10 text-cyan-500",
     },
     {
       id: "cycling",
       name: "Cycling",
-      icon: <LucideBike className="h-6 w-6" />,
+      icon: <LucideBike className="h-8 w-8" />,
       description: "Road cycling, mountain biking, indoor cycling, spinning",
+      color: "bg-green-500/10 text-green-500",
     },
     {
       id: "hiit",
       name: "HIIT",
-      icon: <LucideHeartPulse className="h-6 w-6" />,
+      icon: <LucideHeartPulse className="h-8 w-8" />,
       description: "High-intensity interval training, circuit training",
+      color: "bg-red-500/10 text-red-500",
     },
   ]
 
@@ -63,48 +68,39 @@ export default function NewActivityPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center mb-6">
+    <div className="container mx-auto px-4 py-6">
+      <div className="flex items-center mb-4">
         <Link href="/">
-          <Button variant="ghost" size="sm" className="mr-4">
-            <LucideArrowLeft className="h-4 w-4 mr-2" />
+          <Button variant="ghost" size="sm" className="mr-2">
+            <LucideArrowLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
         </Link>
-        <h1 className="text-3xl font-bold tracking-tight">Log Activity</h1>
+        <h1 className="text-xl font-bold tracking-tight">Log Activity</h1>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Choose Activity Type</CardTitle>
-          <CardDescription>Select the type of activity you want to log</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activityTypes.map((activity) => (
-              <Card
-                key={activity.id}
-                className={`cursor-pointer transition-all hover:border-primary ${
-                  selectedActivity === activity.id ? "border-primary bg-primary/5" : ""
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+        {activityTypes.map((activity) => (
+          <div
+            key={activity.id}
+            className={`cursor-pointer rounded-xl border transition-all duration-200 ${
+              selectedActivity === activity.id ? "ring-2 ring-primary" : ""
+            }`}
+            onClick={() => handleActivitySelect(activity.id)}
+          >
+            <div className="p-4 flex flex-col items-center text-center h-full">
+              <div
+                className={`p-5 rounded-full mb-3 ${
+                  selectedActivity === activity.id ? activity.color : "bg-muted"
                 }`}
-                onClick={() => handleActivitySelect(activity.id)}
               >
-                <CardContent className="p-6 flex flex-col items-center text-center">
-                  <div
-                    className={`p-3 rounded-full mb-4 ${
-                      selectedActivity === activity.id ? "bg-primary/20" : "bg-muted"
-                    }`}
-                  >
-                    {activity.icon}
-                  </div>
-                  <h3 className="font-semibold text-lg mb-2">{activity.name}</h3>
-                  <p className="text-sm text-muted-foreground">{activity.description}</p>
-                </CardContent>
-              </Card>
-            ))}
+                {activity.icon}
+              </div>
+              <h3 className="font-medium text-sm">{activity.name}</h3>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        ))}
+      </div>
     </div>
   )
 }

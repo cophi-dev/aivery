@@ -5,13 +5,16 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useSession } from "next-auth/react"
-import { Dumbbell, Calendar, MessageSquare, History, BarChart2, List } from "lucide-react"
+import { Dumbbell, Calendar, MessageSquare, History, BarChart2, List, Menu, X } from "lucide-react"
 import { UserNavigation } from "./user-navigation"
+import { useState } from "react"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
 export function MainHeader() {
   const pathname = usePathname()
   const { data: session, status } = useSession()
   const user = session?.user
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Safety check for pathname to fix deployment error
   const isPath = (path: string) => {
@@ -21,6 +24,34 @@ export function MainHeader() {
   // Add proper error handling for session loading
   const isLoading = status === "loading";
   const isAuthenticated = status === "authenticated" && !!user;
+
+  // Navigation links configuration for reuse
+  const navLinks = [
+    {
+      href: "/workouts",
+      label: "Workout History",
+      icon: <History className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/workouts") || isPath("/workout")
+    },
+    {
+      href: "/exercises",
+      label: "Exercises",
+      icon: <List className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/exercises")
+    },
+    {
+      href: "/plan",
+      label: "Planner",
+      icon: <BarChart2 className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/plan")
+    },
+    {
+      href: "/chat",
+      label: "Chat",
+      icon: <MessageSquare className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/chat")
+    }
+  ]
 
   // Prevent render errors during loading state
   if (isLoading) {
@@ -50,54 +81,63 @@ export function MainHeader() {
             <span className="font-bold text-xl">Aivery</span>
           </Link>
           
-          {/* Only show nav links when user is logged in */}
+          {/* Desktop navigation - only show when user is logged in */}
           {user && (
             <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-              <Link
-                href="/workouts"
-                className={cn(
-                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  isPath("/workouts") || isPath("/workout") ? "text-foreground bg-accent/50" : "text-foreground/70"
-                )}
-              >
-                <History className="h-4 w-4" />
-                <span>Workout History</span>
-              </Link>
-              <Link
-                href="/exercises"
-                className={cn(
-                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  isPath("/exercises") ? "text-foreground bg-accent/50" : "text-foreground/70"
-                )}
-              >
-                <List className="h-4 w-4" />
-                <span>Exercises</span>
-              </Link>
-              <Link
-                href="/plan"
-                className={cn(
-                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  isPath("/plan") ? "text-foreground bg-accent/50" : "text-foreground/70"
-                )}
-              >
-                <BarChart2 className="h-4 w-4" />
-                <span>Planner</span>
-              </Link>
-              <Link
-                href="/chat"
-                className={cn(
-                  "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                  isPath("/chat") ? "text-foreground bg-accent/50" : "text-foreground/70"
-                )}
-              >
-                <MessageSquare className="h-4 w-4" />
-                <span>Chat</span>
-              </Link>
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
+                    link.active ? "text-foreground bg-accent/50" : "text-foreground/70"
+                  )}
+                >
+                  {link.icon}
+                  <span>{link.label}</span>
+                </Link>
+              ))}
             </nav>
           )}
         </div>
         
         <div className="flex items-center gap-3">
+          {/* Mobile menu burger icon */}
+          {user && (
+            <div className="md:hidden flex items-center mr-1">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[250px] sm:w-[300px]">
+                  <div className="py-6 px-2 flex flex-col gap-6">
+                    <div className="flex items-center gap-2 pb-4 border-b">
+                      <Dumbbell className="h-6 w-6 text-primary" />
+                      <span className="font-bold text-xl">Aivery</span>
+                    </div>
+                    <nav className="flex flex-col space-y-3">
+                      {navLinks.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className={cn(
+                            "flex items-center gap-3 py-2 px-3 rounded-md transition-colors hover:bg-accent",
+                            link.active ? "bg-accent" : ""
+                          )}
+                        >
+                          {link.icon}
+                          <span className="font-medium">{link.label}</span>
+                        </Link>
+                      ))}
+                    </nav>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+          )}
+
           {isAuthenticated ? (
             <UserNavigation />
           ) : (

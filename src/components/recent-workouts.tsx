@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { LucideChevronRight, LucideClock, LucideDumbbell, LucideRuler } from "lucide-react"
+import { LucideChevronRight, LucideClock, LucideDumbbell, LucideRuler, LucidePlus } from "lucide-react"
 import { fetchWorkouts } from "@/lib/workout-actions"
 import { format } from "date-fns"
 import type { WorkoutData } from "@/types/db"
@@ -72,11 +72,12 @@ export default function RecentWorkouts() {
         {isLoading ? (
           <div>Loading...</div>
         ) : recentWorkouts.length === 0 ? (
-          <div className="text-center py-4">
-            <p className="text-muted-foreground">No workouts found</p>
-            <Link href="/workout/new">
-              <Button variant="outline" size="sm" className="mt-2">
-                Create Workout
+          <div className="flex flex-col items-center justify-center h-60 text-center">
+            <p className="text-muted-foreground mb-3">You haven't logged any workouts yet.</p>
+            <Link href="/activity/new">
+              <Button>
+                <LucidePlus className="h-4 w-4 mr-2" />
+                Log a Workout
               </Button>
             </Link>
           </div>

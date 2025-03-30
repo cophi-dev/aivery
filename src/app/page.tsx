@@ -442,7 +442,7 @@ export default function HomePage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-2">
-              <Link href="/workout/new">
+              <Link href="/activity/new">
                 <Button variant="secondary" className="w-full" size="sm">
                   Log Workout
                 </Button>
@@ -533,7 +533,7 @@ export default function HomePage() {
               ) : (
                 <div className="w-full text-center">
                   <p className="text-muted-foreground">Log workouts to see your progress</p>
-                  <Link href="/workout/new" className="mt-4 inline-block">
+                  <Link href="/activity/new" className="mt-4 inline-block">
                     <Button>Log Your First Workout</Button>
                   </Link>
                 </div>
