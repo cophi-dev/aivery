@@ -19,6 +19,7 @@ import { ObjectId } from "mongodb"
 import { getCollection } from "@/lib/db/mongodb"
 import { NextResponse } from "next/server"
 import User from "@/lib/db/models/user"
+import { IUser } from "@/lib/db/models/user"
 
 // Initialize the OpenAI SDK
 const client = new OpenAI({
@@ -267,8 +268,15 @@ Use the context provided to create a truly personalized, timely greeting.`
   }
 }
 
-// Helper function to fetch user workout data
-async function fetchUserWorkoutData(userId: string, queryType: string, timeframe?: string) {
+// Add interface definition for AIQueryRequest
+interface AIQueryRequest {
+  query: string;
+  userId: string;
+  queryType: 'workout_data' | 'user_info';
+}
+
+// Helper function for fetching user workout data
+const fetchUserWorkoutData = async (userId: string, queryType: string, timeframe?: string) => {
   try {
     await dbConnect();
     const workoutsCollection = await getCollection('workouts');
@@ -402,14 +410,8 @@ async function fetchUserWorkoutData(userId: string, queryType: string, timeframe
   }
 }
 
-// Replace analyzeWorkoutDataQuery with a more flexible approach
-interface AIQueryRequest {
-  query: string;
-  userId: string;
-  queryType: 'workout_data' | 'user_info';
-}
-
-async function processAIDataRequest(request: AIQueryRequest) {
+// Process AI data request function
+const processAIDataRequest = async (request: AIQueryRequest) => {
   try {
     const { query, userId, queryType } = request;
 
@@ -710,31 +712,64 @@ async function processAIDataRequest(request: AIQueryRequest) {
 
 export async function POST(request: Request) {
   try {
-    // Parse request body
-    let messages;
-    let workoutId;
+    // Validate that the user is authenticated
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    const userId = session.user.id;
+    const body = await request.json();
+    const messages = body.messages;
+    const messageContent = messages[messages.length - 1].content;
     
-    try {
-      const body = await request.json();
-      messages = body.messages;
-      workoutId = body.workoutId;
+    // Default system message
+    let systemMessage = `You are Aivery, a knowledgeable fitness AI assistant that helps users track their workouts and reach their fitness goals. 
+    Keep responses concise, supportive and practical. You can analyze workout data, suggest improvements, and motivate users.`;
+
+    // Fetch user's AI preferences
+    await dbConnect();
+    const userDoc = await User.findById(userId).select('aiPreferences').lean() as any;
+    
+    // If user has AI preferences, include them in the system message
+    if (userDoc && userDoc.aiPreferences) {
+      const prefs = userDoc.aiPreferences;
+      let prefsContext = "";
       
-      if (!messages || !Array.isArray(messages)) {
-        return NextResponse.json(
-          { error: "Invalid messages format" },
-          { status: 400 }
-        );
+      if (prefs.location) {
+        prefsContext += `\nThe user is located in ${prefs.location}.`;
       }
-    } catch (error) {
-      return NextResponse.json(
-        { error: "Invalid request format" },
-        { status: 400 }
-      );
+      
+      if (prefs.units) {
+        prefsContext += `\nThe user prefers ${prefs.units === 'metric' ? 'metric units (kg, km)' : 'imperial units (lb, miles)'}.`;
+      }
+      
+      if (prefs.trainingPreferences) {
+        prefsContext += `\nThe user's training preferences: ${prefs.trainingPreferences}`;
+      }
+      
+      if (prefs.fitnessGoals) {
+        prefsContext += `\nThe user's fitness goals: ${prefs.fitnessGoals}`;
+      }
+      
+      if (prefs.dietaryPreferences) {
+        prefsContext += `\nThe user's dietary preferences: ${prefs.dietaryPreferences}`;
+      }
+      
+      if (prefsContext) {
+        systemMessage += `\n\nUser Personalization Information:${prefsContext}\n\nIncorporate this personalization context when relevant, but there's no need to explicitly mention you have this information unless directly asked.`;
+      }
+    }
+    
+    // Check for special command - greeting
+    if (body.greeting) {
+      const greeting = await generatePersonalizedGreeting(userId);
+      if (greeting) {
+        return NextResponse.json({ greeting });
+      }
     }
     
     // Validate user session
-    const session = await getServerSession(authOptions);
-    
     if (!session || !session.user) {
       return NextResponse.json(
         { error: "You must be logged in to use the chat" },
@@ -800,14 +835,10 @@ export async function POST(request: Request) {
     const userNickname = safeUser.nickname || safeUser.name || 'their name hasn\'t been set yet';
     const nameResponse = `Your name is ${safeUser.nickname || safeUser.name || 'not set in your profile yet'}. How can I help with your fitness goals today?`;
     
-    const systemMessage = {
-      role: "system",
-      content: `You are an authentic, personable AI fitness coach. While you offer expert guidance, your style is more like a friendly workout buddy than a formal trainer.
-      
-USER INFO:
-- The user's name/nickname is "${userNickname}".
-- Always use this name when directly asked about the user's name/nickname.
-- When the user asks "what's my name" or similar questions, directly answer with their name.
+    systemMessage += `\n\nUser Personalization Information:
+    - The user's name/nickname is "${userNickname}".
+    - Always use this name when directly asked about the user's name/nickname.
+    - When the user asks "what's my name" or similar questions, directly answer with their name.
 
 YOUR PERSONALITY & STYLE:
 - Be warm, approachable and use natural language (not robotic or overly formal)
@@ -842,8 +873,7 @@ For example:
 - User: "How was my run?" → Let the system analyze this query for specific data
 - User: "Can you help with my workouts?" → "For sure! What kind of training are you into right now, and what specifically can I help with?"
 - User: "What's my name?" → "${nameResponse}"
-`
-    };
+`;
     
     // Add direct handling for "what's my name" type questions before calling OpenAI
     const isNameQuestion = latestUserMessage.toLowerCase().includes("what's my name") || 
