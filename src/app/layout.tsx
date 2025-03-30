@@ -93,22 +93,6 @@ export default async function RootLayout({
         {/* Client-side cache buster */}
         <CacheBuster />
         
-        {/* Small debug indicator instead of full banner */}
-        <div style={{
-          background: 'rgba(220, 38, 38, 0.8)',
-          color: 'white',
-          padding: '4px 8px',
-          fontSize: '12px',
-          position: 'fixed',
-          bottom: '10px',
-          right: '10px',
-          zIndex: 9999,
-          borderRadius: '4px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-        }}>
-          v{VERSION.substring(0, 8)}
-        </div>
-        
         <AuthProvider>
           <ForceCleanup />
           

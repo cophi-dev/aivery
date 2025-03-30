@@ -33,21 +33,9 @@ export default async function WorkoutsPage() {
   try {
     // Fetch workouts for the authenticated user
     const workouts = await getWorkoutsByUserId(session.user.id);
-    const shortVersion = VERSION.substring(0, 8);
     
     return (
       <div className="container mx-auto px-4 py-8">
-        <div style={{
-          background: 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
-          padding: '20px',
-          borderRadius: '12px',
-          marginBottom: '20px',
-          color: 'white'
-        }}>
-          <h2 className="text-2xl font-bold mb-3">Workout Tracker</h2>
-          <p>Build {shortVersion}</p>
-        </div>
-        
         <div className="flex flex-col md:flex-row items-start justify-between mb-8">
           <div>
             <h1 className="text-4xl font-bold tracking-tight">Workouts</h1>
