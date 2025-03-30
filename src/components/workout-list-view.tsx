@@ -354,7 +354,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   // Format date in a readable way
   const formatDate = (date: Date) => {
     try {
-      return format(new Date(date), "MMM d, yyyy")
+      return format(new Date(date), "EEE, MMM d")
     } catch (e) {
       return "Unknown date"
     }
@@ -376,13 +376,25 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   
   // Get icon based on workout type
   const getTypeIcon = (type: string) => {
-    switch (type) {
+    switch (type.toLowerCase()) {
       case "running":
-        return <Activity className="h-4 w-4" />
+        return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M13 4v16"></path>
+          <path d="M17 4v16"></path>
+          <path d="M21 4v16"></path>
+          <path d="M8 8l-5 3v5l5 3z"></path>
+        </svg>
       case "cycling":
-        return <Activity className="h-4 w-4" />
+        return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
       case "swimming":
-        return <Activity className="h-4 w-4" />
+        return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 12h20"></path>
+          <path d="M4 8c1.333-1.333 2.667-2 4-2 1.333 0 2.667.667 4 2 1.333 1.333 2.667 2 4 2 1.333 0 2.667-.667 4-2"></path>
+          <path d="M4 16c1.333-1.333 2.667-2 4-2 1.333 0 2.667.667 4 2 1.333 1.333 2.667 2 4 2 1.333 0 2.667-.667 4-2"></path>
+        </svg>
       case "strength":
         return <Dumbbell className="h-4 w-4" />
       default:
@@ -568,36 +580,36 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         {error && errorContent}
         
         {/* Workout Stats - Enhanced for better visibility */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 w-full border-b pb-4">
-          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
-            <span className="text-sm text-muted-foreground">Total Workouts</span>
-            <span className="text-3xl font-bold">{workoutStats.totalWorkouts}</span>
+        <div className="grid grid-cols-4 gap-2 mb-4 w-full">
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
+            <span className="text-xs text-muted-foreground">Total Workouts</span>
+            <span className="text-xl font-semibold">{workoutStats.totalWorkouts}</span>
           </div>
-          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
-            <span className="text-sm text-muted-foreground">Total Time</span>
-            <span className="text-3xl font-bold">{workoutStats.totalMinutes} <span className="text-sm">min</span></span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
+            <span className="text-xs text-muted-foreground">Total Time</span>
+            <span className="text-xl font-semibold flex items-baseline">{workoutStats.totalMinutes}<span className="text-xs ml-0.5">min</span></span>
           </div>
-          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
-            <span className="text-sm text-muted-foreground">Total Distance</span>
-            <span className="text-3xl font-bold">{workoutStats.totalDistance.toFixed(1)} <span className="text-sm">km</span></span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
+            <span className="text-xs text-muted-foreground">Total Distance</span>
+            <span className="text-xl font-semibold flex items-baseline">{workoutStats.totalDistance.toFixed(1)}<span className="text-xs ml-0.5">km</span></span>
           </div>
-          <div className="bg-muted/50 rounded-lg p-4 flex flex-col items-center justify-center shadow-sm border border-muted">
-            <span className="text-sm text-muted-foreground">Favorite Type</span>
-            <span className="text-3xl font-bold">{workoutStats.favoriteType}</span>
+          <div className="bg-muted/30 rounded-lg p-2 flex flex-col items-center justify-center border border-muted/40">
+            <span className="text-xs text-muted-foreground">Favorite Type</span>
+            <span className="text-xl font-semibold">{workoutStats.favoriteType}</span>
           </div>
         </div>
         
         {/* Results info and compact filters */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-2">
-          <span className="text-sm text-muted-foreground">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-xs text-muted-foreground">
             Showing {filteredWorkouts.length} of {workouts.length} workouts
             {filtersActive && " (filtered)"}
           </span>
           
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex gap-1 items-center">
             {/* Type Quick Filter */}
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger id="type-filter-compact" className="h-8 text-xs w-[130px]">
+              <SelectTrigger id="type-filter-compact" className="h-7 text-xs w-[100px]">
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
@@ -611,12 +623,12 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             </Select>
             
             {/* Search */}
-            <div className="relative w-[180px]">
-              <Search className="absolute left-2 top-1.5 h-4 w-4 text-muted-foreground" />
+            <div className="relative w-[120px]">
+              <Search className="absolute left-2 top-1.5 h-3 w-3 text-muted-foreground" />
               <Input
                 id="search-query-compact"
                 placeholder="Search..."
-                className="pl-8 h-8 text-xs"
+                className="pl-7 h-7 text-xs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -627,10 +639,10 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               <Button 
                 variant="ghost" 
                 onClick={resetFilters}
-                className="h-8 px-2 text-xs"
+                className="h-7 w-7 p-0"
+                title="Clear filters"
               >
-                <X className="h-4 w-4 mr-1" />
-                Clear
+                <X className="h-3 w-3" />
               </Button>
             )}
           </div>
@@ -640,30 +652,27 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         <div className="rounded-md border overflow-hidden">
           {/* Table header */}
           <div className="bg-muted">
-            <div className="grid grid-cols-12 gap-2 p-4 text-xs font-medium text-muted-foreground">
+            <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs font-medium text-muted-foreground">
               <div 
-                className="col-span-5 md:col-span-3 flex items-center cursor-pointer"
+                className="col-span-6 flex items-center cursor-pointer"
                 onClick={() => handleSort("date")}
               >
                 Date
                 <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "date" ? "opacity-100" : "opacity-50"}`} />
               </div>
               <div 
-                className="col-span-5 md:col-span-3 flex items-center cursor-pointer"
+                className="col-span-3 flex items-center cursor-pointer"
                 onClick={() => handleSort("type")}
               >
                 Type
                 <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "type" ? "opacity-100" : "opacity-50"}`} />
               </div>
               <div 
-                className="hidden md:flex col-span-0 md:col-span-2 items-center cursor-pointer"
+                className="col-span-3 flex items-center cursor-pointer"
                 onClick={() => handleSort("volume")}
               >
                 Volume
                 <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "volume" ? "opacity-100" : "opacity-50"}`} />
-              </div>
-              <div className="col-span-2 md:col-span-4 text-right md:text-center">
-                Actions
               </div>
             </div>
           </div>
@@ -674,45 +683,36 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               filteredWorkouts.map((workout) => {
                 const volume = getWorkoutVolume(workout);
                 return (
-                <div 
+                <Link 
+                  href={`/workout/${workout._id}`}
                   key={typeof workout._id === 'string' ? workout._id : String(workout._id)} 
-                  className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/50 transition-colors duration-150 shadow-sm hover:shadow-md"
+                  className="grid grid-cols-12 gap-2 py-3 px-4 items-center hover:bg-muted/50 transition-colors duration-150 cursor-pointer block"
                 >
-                  <div className="col-span-5 md:col-span-3 flex flex-col">
-                    <div className="font-medium">{formatDate(new Date(workout.date))}</div>
+                  <div className="col-span-6">
+                    <div className="font-medium text-sm">{formatDate(new Date(workout.date))}</div>
                   </div>
-                  <div className="col-span-5 md:col-span-3">
-                    <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                  <div className="col-span-3">
+                    <Badge variant="outline" className="flex items-center gap-1 w-fit py-0.5 h-6">
                       {getTypeIcon(workout.type)}
-                      {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
+                      <span className="hidden sm:inline-block text-xs">
+                        {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
+                      </span>
                     </Badge>
                   </div>
-                  <div className="hidden md:block col-span-0 md:col-span-2">
+                  <div className="col-span-3 text-right">
                     {volume.value > 0 && (
-                      <div className="text-sm">
+                      <div className="text-xs whitespace-nowrap">
                         {volume.value.toFixed(1)} {volume.unit}
                       </div>
                     )}
                   </div>
-                  <div className="col-span-2 md:col-span-4 flex gap-2 justify-end md:justify-center">
-                    <Button variant="outline" size="sm" asChild className="h-8 px-2 py-1">
-                      <Link href={`/workout/${workout._id}`}>
-                        View
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild className="h-8 px-2 py-1">
-                      <Link href={`/workout/edit/${workout._id}`}>
-                        Edit
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
+                </Link>
               )})
             ) : (
-              <div className="py-8 text-center">
-                <p className="text-muted-foreground">No workouts found matching your criteria.</p>
+              <div className="py-6 text-center">
+                <p className="text-muted-foreground text-xs">No workouts found matching your criteria.</p>
                 {filtersActive && (
-                  <Button variant="link" onClick={resetFilters} className="mt-2">
+                  <Button variant="link" onClick={resetFilters} className="mt-1 text-xs h-6">
                     Clear filters
                   </Button>
                 )}
