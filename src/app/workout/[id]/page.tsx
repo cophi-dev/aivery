@@ -16,10 +16,16 @@ import {
   TrendingUp,
   Zap,
   BarChart,
-  ExternalLink
+  ExternalLink,
+  Dumbbell,
+  ChevronRight,
+  Trash,
+  Copy,
+  Trophy
 } from "lucide-react"
 import { format } from "date-fns"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
+import { DeleteWorkoutButton } from "@/components/delete-workout-button"
 import Image from "next/image"
 
 interface CardioDetails {
@@ -47,6 +53,14 @@ interface Workout {
   cardioDetails?: CardioDetails
   stravaLink?: string
   _id: string
+  exercises?: Array<{
+    _id?: string
+    name: string
+    sets: Array<{
+      weight: number
+      reps: number
+    }>
+  }>
 }
 
 // Function to extract Strava links from workout notes
@@ -136,6 +150,76 @@ function getFixedStravaLink(workout: Workout): string | undefined {
   return formatStravaLink(workout.stravaLink || extractStravaLinkFromNotes(workout.notes));
 }
 
+// Estimate weight for common bodyweight exercises
+function estimateBodyweightForExercise(exerciseName: string): number {
+  // Default estimated bodyweight in kg
+  const defaultBodyweight = 70;
+  
+  // Common bodyweight exercises with percentage of bodyweight used
+  const bodyweightExercises: Record<string, number> = {
+    // Full bodyweight exercises (100%)
+    "push-up": 0.65, // ~65% of bodyweight in a push-up
+    "push up": 0.65,
+    "pushup": 0.65,
+    "pull-up": 1.0,  // Full bodyweight
+    "pull up": 1.0,
+    "pullup": 1.0,
+    "chin-up": 1.0,
+    "chin up": 1.0,
+    "chinup": 1.0,
+    "dip": 1.0,
+    "inverted row": 0.8, // ~80% bodyweight
+    "bodyweight squat": 1.0,
+    "squat": 1.0,
+    
+    // Partial bodyweight exercises
+    "plank": 0.6,    // Core exercises use less bodyweight
+    "sit-up": 0.3,
+    "sit up": 0.3,
+    "situp": 0.3,
+    "crunch": 0.2,
+    "mountain climber": 0.4,
+    "lunge": 0.6,    // ~60% bodyweight per leg
+  };
+  
+  // Normalize exercise name for comparison
+  const normalizedName = exerciseName.toLowerCase().trim();
+  
+  // Check if the exercise name contains any of the known bodyweight exercises
+  for (const [exercise, percentage] of Object.entries(bodyweightExercises)) {
+    if (normalizedName.includes(exercise)) {
+      return Math.round(defaultBodyweight * percentage);
+    }
+  }
+  
+  // If no specific match is found
+  return 0;
+}
+
+// Calculate volume with better handling for bodyweight exercises
+function calculateExerciseVolume(exercise: { name: string, sets: Array<{ weight: number, reps: number }> }): number {
+  if (!exercise.sets.length) return 0;
+  
+  // Estimate bodyweight if this might be a bodyweight exercise
+  const estimatedWeight = estimateBodyweightForExercise(exercise.name);
+  
+  // Calculate volume
+  const totalVolume = exercise.sets.reduce((sum, set) => {
+    // If weight is set, use the actual weight
+    if (set.weight > 0) {
+      return sum + (set.weight * set.reps);
+    } 
+    // For bodyweight exercises, use estimated weight
+    else if (estimatedWeight > 0) {
+      return sum + (estimatedWeight * set.reps);
+    }
+    // If no weight and no estimate available, just count reps
+    return sum + set.reps;
+  }, 0);
+  
+  return totalVolume;
+}
+
 export default async function WorkoutPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
   if (!session?.user) {
@@ -196,13 +280,20 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           </div>
         </div>
         
-        <div className="w-full">
+        <div className="w-full flex flex-col sm:flex-row gap-2">
           <Button asChild className="w-full sm:w-auto">
             <Link href={`/workout/edit/${workout._id}`}>
               <Pencil className="h-4 w-4 mr-2" />
               Edit Workout
             </Link>
           </Button>
+          <Button asChild variant="outline" className="w-full sm:w-auto">
+            <Link href={`/workout/new?duplicate=${workout._id}`}>
+              <Copy className="h-4 w-4 mr-2" />
+              Duplicate Workout
+            </Link>
+          </Button>
+          <DeleteWorkoutButton workoutId={workout._id} />
         </div>
       </div>
 
@@ -220,6 +311,50 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
             </div>
           </CardContent>
         </Card>
+
+        {/* Estimated calories burned */}
+        <Card>
+          <CardHeader className="pb-1 md:pb-2">
+            <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
+              Est. Calories
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+              <span className="text-lg md:text-2xl font-bold">
+                {workout.type === 'strength' 
+                  ? Math.round(workout.duration * 7) // ~7 kcal per minute for strength
+                  : workout.type === 'running'
+                    ? Math.round(workout.duration * 10) // ~10 kcal per minute for running
+                    : Math.round(workout.duration * 8) // ~8 kcal per minute for other activities
+                } kcal
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Volume for strength workouts */}
+        {workout.type === 'strength' && workout.exercises && workout.exercises.length > 0 && (
+          <Card>
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
+                Total Volume
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <Dumbbell className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">
+                  {workout.exercises.reduce((total, exercise) => total + calculateExerciseVolume(exercise), 0).toLocaleString()} kg
+                </span>
+                <Badge variant="outline" className="ml-2 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-400/20">
+                  <Trophy className="h-3 w-3 mr-1" /> PR
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {distance && (
           <Card>
@@ -305,6 +440,98 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
             </CardContent>
           </Card>
         )}
+
+        {/* Intensity Score for strength workouts */}
+        {workout.type === 'strength' && workout.exercises && workout.exercises.length > 0 && (
+          <Card>
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
+                Intensity Score
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <BarChart className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">
+                  {(() => {
+                    // Calculate intensity based on volume per minute and exercise count
+                    const totalVolume = workout.exercises.reduce((total, exercise) => 
+                      total + calculateExerciseVolume(exercise), 0);
+                    const volumePerMinute = totalVolume / (workout.duration || 1);
+                    const exerciseCount = workout.exercises.length;
+                    
+                    // Score from 1-10 based on volume per minute
+                    const baseScore = Math.min(10, Math.max(1, Math.round(volumePerMinute / 50)));
+                    
+                    // Adjust for exercise variety (more exercises = higher score)
+                    const finalScore = Math.min(10, Math.max(1, 
+                      Math.round(baseScore * (1 + exerciseCount * 0.05))));
+                    
+                    return finalScore;
+                  })()}/10
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Work-to-rest ratio for running workouts */}
+        {workout.type === 'running' && distance && (
+          <Card>
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
+                Work/Rest Ratio
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">
+                  {(() => {
+                    // Calculate pace in min/km
+                    const paceValue = workout.duration / distance;
+                    
+                    // For running, a good way to evaluate intensity is pace-to-recovery ratio
+                    // We'll use a simple formula where pace < 5 min/km is high intensity (ratio 1:3)
+                    // pace 5-7 min/km is medium (ratio 1:2), and pace > 7 min/km is low (ratio 1:1)
+                    if (paceValue < 5) return "1:3";
+                    if (paceValue < 7) return "1:2";
+                    return "1:1";
+                  })()}
+                </span>
+                <span className="text-xs text-muted-foreground ml-1">recovery ratio</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Sets per exercise ratio for strength workouts */}
+        {workout.type === 'strength' && workout.exercises && workout.exercises.length > 0 && (
+          <Card>
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
+                Workout Density
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <BarChart className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-lg md:text-2xl font-bold">
+                  {(() => {
+                    // Calculate total sets across all exercises
+                    const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+                    const exerciseCount = workout.exercises.length;
+                    
+                    // Calculate sets per exercise
+                    const setsPerExercise = (totalSets / exerciseCount).toFixed(1);
+                    
+                    return `${setsPerExercise} sets/ex`;
+                  })()}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {workout.notes && (
@@ -351,6 +578,57 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
                 </div>
               </Link>
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Display exercises for strength workouts */}
+      {workout.type === "strength" && workout.exercises && workout.exercises.length > 0 && (
+        <Card className="mb-6 md:mb-8">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">
+              <div className="flex items-center gap-2">
+                <Dumbbell className="h-5 w-5" />
+                Exercises
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {workout.exercises.map((exercise, exerciseIndex) => (
+                <div key={exercise._id || exerciseIndex} className="border rounded-md p-4 hover:bg-accent/50 hover:border-primary/20 transition-colors group">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center">
+                      <Link href={`/exercises?name=${encodeURIComponent(exercise.name)}`} className="font-medium text-base group-hover:text-primary transition-colors flex items-center">
+                        {exercise.name}
+                        <ChevronRight className="h-4 w-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-primary" />
+                      </Link>
+                    </div>
+                    <div className="flex items-center">
+                      <span className="text-xs whitespace-nowrap text-muted-foreground">
+                        Total Volume: {calculateExerciseVolume(exercise)} kg
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    {exercise.sets.map((set, setIndex) => (
+                      <div key={setIndex} className="flex items-center text-sm">
+                        <div className="w-10 h-6 bg-muted rounded-md flex items-center justify-center mr-2 text-xs font-medium">
+                          {setIndex + 1}
+                        </div>
+                        <div className="flex-1 flex items-center">
+                          <span className="font-medium mr-1">{set.weight}</span>
+                          <span className="text-muted-foreground mr-3">kg</span>
+                          <span className="font-medium mr-1">{set.reps}</span>
+                          <span className="text-muted-foreground">reps</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
