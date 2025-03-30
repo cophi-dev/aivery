@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
+import { VERSION } from '@/app/version'
 
 // Authentication middleware
 export async function middleware(request: NextRequest) {
@@ -18,6 +19,9 @@ export async function middleware(request: NextRequest) {
   response.headers.set('Surrogate-Control', 'no-store');
   response.headers.set('X-Accel-Expires', '0');
   response.headers.set('X-Middleware-Bypass', 'true');
+  
+  // Add version header to help with debugging and cache busting
+  response.headers.set('X-App-Version', VERSION);
   
   // Allow all requests to proceed without any redirects
   return response;

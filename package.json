@@ -8,6 +8,7 @@
     "dev:fix-buffer": "node scripts/fix-buffer-errors.js",
     "build": "prisma generate && next build",
     "build:dynamic": "NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs prisma generate && next build",
+    "build:super-fresh": "rm -rf .next && rm -rf node_modules/.cache && NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs NEXT_DISABLE_CACHE=1 prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "clean-vercel": "rm -rf .next && rm -rf .vercel/output",
