@@ -1,11 +1,20 @@
 import mongoose from "mongoose"
 import { MongoClient } from "mongodb"
 
-const MONGODB_URI = process.env.MONGODB_URI
+// Clean up MONGODB_URI to ensure it doesn't have unwanted quotes
+const MONGODB_URI = process.env.MONGODB_URI 
+  ? process.env.MONGODB_URI.replace(/^["'](.*)["']$/, '$1')
+  : undefined
 
 if (!MONGODB_URI) {
   console.warn("Please define the MONGODB_URI environment variable")
 }
+
+// Log the connection string format for debugging (hide credentials)
+const logUri = MONGODB_URI 
+  ? MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@') 
+  : 'undefined'
+console.log(`MongoDB URI format: ${logUri.substring(0, 15)}...`)
 
 interface MongooseCache {
   conn: typeof mongoose | null
@@ -30,7 +39,12 @@ async function dbConnect() {
       bufferCommands: false,
     }
 
-    cached.promise = mongoose.connect(MONGODB_URI!, opts).then((mongoose) => {
+    if (!MONGODB_URI || !MONGODB_URI.startsWith('mongodb')) {
+      throw new Error(`Invalid MongoDB URI: ${MONGODB_URI?.substring(0, 10)}... 
+        URI must start with mongodb:// or mongodb+srv://`)
+    }
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
       return mongoose
     })
   }
@@ -39,6 +53,7 @@ async function dbConnect() {
     cached.conn = await cached.promise
   } catch (e) {
     cached.promise = null
+    console.error('MongoDB connection error:', e)
     throw e
   }
 
@@ -47,7 +62,12 @@ async function dbConnect() {
 
 export async function getDatabase() {
   if (!client) {
-    client = new MongoClient(MONGODB_URI!)
+    if (!MONGODB_URI || !MONGODB_URI.startsWith('mongodb')) {
+      throw new Error(`Invalid MongoDB URI: ${MONGODB_URI?.substring(0, 10)}... 
+        URI must start with mongodb:// or mongodb+srv://`)
+    }
+    
+    client = new MongoClient(MONGODB_URI)
   }
   
   try {
