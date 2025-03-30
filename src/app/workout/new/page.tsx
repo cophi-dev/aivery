@@ -59,12 +59,7 @@ export default function NewWorkoutPage() {
   const [workoutIntensity, setWorkoutIntensity] = useState("medium")
   const [workoutNotes, setWorkoutNotes] = useState("")
   
-  const [exercises, setExercises] = useState([
-    {
-      name: "",
-      sets: [{ weight: 0, reps: 0 }],
-    }
-  ])
+  const [exercises, setExercises] = useState<Array<{name: string, sets: Array<{weight: number, reps: number}>}>>([])
 
   const [dbExercises, setDbExercises] = useState<ExerciseData[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
@@ -85,7 +80,16 @@ export default function NewWorkoutPage() {
   const [isGeneratingDetails, setIsGeneratingDetails] = useState(false)
   const [activeExerciseHistory, setActiveExerciseHistory] = useState<any[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [exerciseInsights, setExerciseInsights] = useState<{ insight: string; suggestion: string } | null>(null)
+  const [exerciseInsights, setExerciseInsights] = useState<Record<string, { insight: string; suggestion: string }>>({})
+
+  const [workoutSteps, setWorkoutSteps] = useState({
+    selectExercises: 0,
+    setsAndReps: 1,
+    finalize: 2
+  });
+
+  // Track history for each exercise
+  const [exerciseHistories, setExerciseHistories] = useState<Record<string, any[]>>({});
 
   // Fetch exercises from database
   useEffect(() => {
@@ -95,6 +99,20 @@ export default function NewWorkoutPage() {
     }
     loadExercises()
   }, [])
+
+  // Auto-open exercise dialog when there's a blank exercise
+  useEffect(() => {
+    // Disable this auto-opening behavior for now since it's causing issues
+    // Only run this when on step 1 and there's a blank exercise
+    // if (currentStep === 1 && exercises.length === 1 && !exercises[0].name && !dialogOpen) {
+    //   // Small timeout to ensure UI is rendered first
+    //   const timer = setTimeout(() => {
+    //     openExerciseDialog(0);
+    //   }, 300);
+      
+    //   return () => clearTimeout(timer);
+    // }
+  }, [currentStep, exercises, dialogOpen]);
 
   // Get unique muscle groups from exercises
   const uniqueMuscleGroups = Array.from(
@@ -149,63 +167,179 @@ export default function NewWorkoutPage() {
   }
 
   const selectExercise = async (exercise: ExerciseData) => {
-    if (activeExerciseIndex === null) return
-
-    // Update the exercise in the current workout
-    const newExercises = [...exercises]
-    newExercises[activeExerciseIndex].name = exercise.name
-    setExercises(newExercises)
+    // Check if exercise is already added
+    const existingIndex = exercises.findIndex(e => e.name === exercise.name);
     
-    // Try to get exercise history data
+    if (existingIndex >= 0) {
+      // Exercise already exists, just close dialog
+      setDialogOpen(false);
+      return;
+    }
+    
+    // Get exercise history data first to prefill sets
     try {
-      setIsLoadingHistory(true)
-      setExerciseInsights(null)
-      const history = await getExerciseHistory(exercise._id)
-      setActiveExerciseHistory(history)
+      setIsLoadingHistory(true);
       
-      // If there is history, pre-fill the most recent set values
-      if (history.length > 0) {
-        const lastWorkout = history[0]
+      const history = await getExerciseHistory(exercise._id);
+      
+      // Store history for this specific exercise
+      const updatedHistories = { ...exerciseHistories };
+      updatedHistories[exercise.name] = history;
+      setExerciseHistories(updatedHistories);
+      
+      // Add this exercise to the list with previous set data if available
+      const newExercises = [...exercises];
+      const newExercise = {
+        name: exercise.name,
+        sets: [{ weight: 0, reps: 0 }]
+      };
+      
+      // If there is history, prefill with the last workout's sets
+      if (history && history.length > 0) {
+        const lastWorkout = history[0];
         if (lastWorkout.sets && lastWorkout.sets.length > 0) {
-          // Pre-fill the current exercise with the last workout's sets
-          const updatedExercises = [...newExercises]
-          updatedExercises[activeExerciseIndex].sets = lastWorkout.sets.map(set => ({
+          newExercise.sets = lastWorkout.sets.map(set => ({
             weight: set.weight,
             reps: set.reps
-          }))
-          setExercises(updatedExercises)
+          }));
         }
         
         // Generate AI insights if there's workout history
-        if (history.length > 0) {
-          const insights = await generateExerciseInsights(history)
-          setExerciseInsights(insights)
+        try {
+          const insights = await generateExerciseInsights(history);
+          const updatedInsights = { ...exerciseInsights };
+          updatedInsights[exercise.name] = insights;
+          setExerciseInsights(updatedInsights);
+        } catch (insightError) {
+          console.error("Error generating exercise insights:", insightError);
         }
       }
+      
+      // Add exercise to the list
+      if (activeExerciseIndex !== null && activeExerciseIndex < exercises.length && !exercises[activeExerciseIndex]?.name) {
+        newExercises[activeExerciseIndex] = newExercise;
+      } else {
+        newExercises.push(newExercise);
+      }
+      
+      setExercises(newExercises);
     } catch (error) {
-      console.error("Error fetching exercise history:", error)
+      console.error("Error fetching exercise history:", error);
+      // If history fetch fails, still add the exercise with default values
+      const newExercises = [...exercises];
+      const newExercise = {
+        name: exercise.name,
+        sets: [{ weight: 0, reps: 0 }]
+      };
+      
+      if (activeExerciseIndex !== null && activeExerciseIndex < exercises.length && !exercises[activeExerciseIndex]?.name) {
+        newExercises[activeExerciseIndex] = newExercise;
+      } else {
+        newExercises.push(newExercise);
+      }
+      
+      setExercises(newExercises);
     } finally {
-      setIsLoadingHistory(false)
+      setIsLoadingHistory(false);
+      setDialogOpen(false);
     }
-    
-    // Keep the dialog open to show history
   }
 
   const closeExerciseDialog = () => {
     // Clear history and close dialog
-    setActiveExerciseHistory([])
-    setExerciseInsights(null)
-    setDialogOpen(false)
+    setActiveExerciseHistory([]);
+    setExerciseInsights({});
+    setDialogOpen(false);
+    setIsCreatingExercise(false);
   }
 
   const openExerciseDialog = (index: number) => {
-    setActiveExerciseIndex(index)
-    setActiveExerciseHistory([])
-    setDialogOpen(true)
+    // Now that we have the dialog again, let's properly set it up
+    setActiveExerciseIndex(index);
+    setDialogOpen(true);
+  }
+
+  // Make sure this is the ONLY function used for adding exercises
+  const quickAddExercise = async (exercise: ExerciseData) => {
+    // Check if exercise is already added
+    const existingIndex = exercises.findIndex(e => e.name === exercise.name);
+    
+    if (existingIndex >= 0) {
+      // Exercise already exists, do nothing
+      return;
+    }
+    
+    try {
+      // Get exercise history data for prefilling sets
+      const history = await getExerciseHistory(exercise._id);
+      
+      // Store history for this specific exercise
+      const updatedHistories = { ...exerciseHistories };
+      updatedHistories[exercise.name] = history;
+      setExerciseHistories(updatedHistories);
+      
+      // Add this exercise to the list
+      const newExercises = [...exercises];
+      const newExercise = {
+        name: exercise.name,
+        sets: [{ weight: 0, reps: 0 }]
+      };
+      
+      // If there is history, prefill with the last workout's sets
+      if (history && history.length > 0) {
+        const lastWorkout = history[0];
+        if (lastWorkout.sets && lastWorkout.sets.length > 0) {
+          newExercise.sets = lastWorkout.sets.map(set => ({
+            weight: set.weight,
+            reps: set.reps
+          }));
+        }
+        
+        // Generate AI insights if there's workout history
+        try {
+          const insights = await generateExerciseInsights(history);
+          const updatedInsights = { ...exerciseInsights };
+          updatedInsights[exercise.name] = insights;
+          setExerciseInsights(updatedInsights);
+        } catch (insightError) {
+          console.error("Error generating exercise insights:", insightError);
+        }
+      }
+      
+      // Add the exercise to the list
+      newExercises.push(newExercise);
+      setExercises(newExercises);
+      
+    } catch (error) {
+      console.error("Error fetching exercise history:", error);
+      // If history fetch fails, still add the exercise with default values
+      const newExercises = [...exercises];
+      newExercises.push({
+        name: exercise.name,
+        sets: [{ weight: 0, reps: 0 }]
+      });
+      setExercises(newExercises);
+    }
   }
 
   const handleNextStep = () => {
-    setCurrentStep(prev => prev + 1)
+    // Before proceeding to the next step, clean up empty exercises
+    if (currentStep === workoutSteps.selectExercises) {
+      const cleanedExercises = exercises.filter(ex => ex.name.trim() !== "");
+      
+      // If we removed any exercises, update the state
+      if (cleanedExercises.length !== exercises.length) {
+        setExercises(cleanedExercises);
+      }
+      
+      // If there are no exercises, don't proceed
+      if (cleanedExercises.length === 0) {
+        window.alert("Please select at least one exercise before continuing");
+        return;
+      }
+    }
+    
+    setCurrentStep(prev => prev + 1);
   }
 
   const handlePreviousStep = () => {
@@ -283,22 +417,42 @@ export default function NewWorkoutPage() {
         name: newExerciseData.name,
         description: newExerciseData.description,
         muscleGroups: newExerciseData.muscleGroups || [],
-        category: newExerciseData.category || "strength",
+        category: (newExerciseData.category as "strength" | "cardio" | "flexibility") || "strength",
         equipment: newExerciseData.equipment,
         instructions: newExerciseData.instructions
       })
       
-      if (created && activeExerciseIndex !== null) {
-        // Update local exercise list
-        const updatedExercises = [...exercises]
-        updatedExercises[activeExerciseIndex].name = created.name
-        setExercises(updatedExercises)
+      if (created) {
+        // Check if the exercise already exists in our workout
+        const existingIndex = exercises.findIndex(ex => ex.name === created.name);
+        
+        if (existingIndex >= 0) {
+          // Exercise with this name already exists
+          setIsSubmitting(false);
+          window.alert("This exercise already exists in your workout");
+          return;
+        }
         
         // Add to local DB exercises list
-        setDbExercises([...dbExercises, created])
+        setDbExercises([...dbExercises, created]);
         
-        // Reset creating state
-        setIsCreatingExercise(false)
+        // Add to the workout exercise list
+        const newExercises = [...exercises];
+        
+        // Either update an empty exercise slot or add a new one
+        if (activeExerciseIndex !== null && !exercises[activeExerciseIndex].name) {
+          newExercises[activeExerciseIndex].name = created.name;
+        } else {
+          newExercises.push({
+            name: created.name,
+            sets: [{ weight: 0, reps: 0 }]
+          });
+        }
+        
+        setExercises(newExercises);
+        
+        // Reset creating state and form
+        setIsCreatingExercise(false);
         setNewExerciseData({
           name: "",
           description: "",
@@ -306,10 +460,10 @@ export default function NewWorkoutPage() {
           category: "strength",
           equipment: "",
           instructions: ""
-        })
+        });
         
         // Close dialog
-        setDialogOpen(false)
+        closeExerciseDialog();
       }
     } catch (error) {
       console.error("Error creating exercise:", error)
@@ -326,12 +480,13 @@ export default function NewWorkoutPage() {
     if (name.length >= 3 && !isGeneratingDetails) {
       setIsGeneratingDetails(true)
       try {
+        console.log("Generating exercise details for:", name)
         const details = await generateExerciseDetails(name)
-        setNewExerciseData({
-          ...newExerciseData,
+        setNewExerciseData(prev => ({
+          ...prev,
           ...details,
           name
-        })
+        }))
       } catch (error) {
         console.error("Error generating exercise details:", error)
       } finally {
@@ -384,6 +539,68 @@ export default function NewWorkoutPage() {
     return { avgWeight, avgReps, totalVolume }
   }
 
+  // Add a helper function for fuzzy matching to detect near matches
+  const findSimilarExercise = (query: string, exercises: ExerciseData[]): ExerciseData | null => {
+    if (!query || query.length < 3) return null;
+    
+    // Normalize the query
+    const normalizedQuery = query.toLowerCase().trim();
+    
+    // First check for exercises containing the full query
+    const containsMatch = exercises.find(e => 
+      e.name.toLowerCase().includes(normalizedQuery)
+    );
+    
+    if (containsMatch) return containsMatch;
+    
+    // Check for word matches (e.g. "bench" should match "Bench Press")
+    const words = normalizedQuery.split(/\s+/);
+    if (words.length > 1) {
+      const wordMatch = exercises.find(e => 
+        words.some(word => word.length > 3 && e.name.toLowerCase().includes(word))
+      );
+      if (wordMatch) return wordMatch;
+    }
+    
+    // Check for very similar names using Levenshtein distance
+    // A simple version - we consider anything with more than 70% character overlap
+    for (const exercise of exercises) {
+      const exerciseName = exercise.name.toLowerCase();
+      let matchCount = 0;
+      for (let i = 0; i < normalizedQuery.length; i++) {
+        if (exerciseName.includes(normalizedQuery[i])) {
+          matchCount++;
+        }
+      }
+      const similarity = matchCount / normalizedQuery.length;
+      if (similarity > 0.7) {
+        return exercise;
+      }
+    }
+    
+    return null;
+  };
+
+  // Add a function to create a new exercise from search query
+  const createExerciseFromQuery = async () => {
+    // Instead of creating directly, show the dialog with prefilled name
+    setNewExerciseData({
+      name: searchQuery.trim(),
+      description: "",
+      muscleGroups: [],
+      category: "strength",
+      equipment: "",
+      instructions: ""
+    });
+    
+    // Start generating details with AI
+    handleNewExerciseNameChange(searchQuery.trim());
+    
+    // Show the create exercise dialog
+    setIsCreatingExercise(true);
+    setDialogOpen(true);
+  };
+
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex items-center mb-4">
@@ -396,55 +613,284 @@ export default function NewWorkoutPage() {
         <h1 className="text-xl font-bold tracking-tight">Strength Training</h1>
       </div>
 
-      <Steps current={currentStep} total={3} onStepClick={goToStep} />
+      <Steps current={currentStep} total={3} onStepClick={goToStep}>
+        <div className="text-xs md:text-sm text-center space-x-4 md:space-x-0">
+          <span className={`${currentStep === 0 ? "text-primary font-medium" : "text-muted-foreground"}`}>Select Exercises</span>
+          <span className={`${currentStep === 1 ? "text-primary font-medium" : "text-muted-foreground"}`}>Sets & Reps</span>
+          <span className={`${currentStep === 2 ? "text-primary font-medium" : "text-muted-foreground"}`}>Finish</span>
+        </div>
+      </Steps>
 
-      <StepContent step={0} currentStep={currentStep}>
+      {/* Step 1: Select Exercises */}
+      <StepContent step={workoutSteps.selectExercises} currentStep={currentStep}>
         <Card>
           <CardContent className="p-4 pt-6">
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <div className="bg-orange-500/10 text-orange-500 p-3 rounded-full">
-                <LucideCalendar className="h-6 w-6" />
+                <LucideDumbbell className="h-6 w-6" />
               </div>
-              <h2 className="text-lg font-semibold">When did you work out?</h2>
+              <div>
+                <h2 className="text-lg font-semibold">Select exercises for your workout</h2>
+                <p className="text-sm text-muted-foreground">Choose the exercises you want to include in this workout</p>
+              </div>
             </div>
             
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="workout-date">Date</Label>
-                <Input 
-                  id="workout-date" 
-                  type="date" 
-                  value={workoutDate}
-                  onChange={(e) => setWorkoutDate(e.target.value)}
-                />
+            {/* Always show selected exercises at the top if any exist */}
+            {exercises.length > 0 && (
+              <div className="space-y-4 mb-6">
+                <h3 className="font-medium">Selected Exercises</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {exercises.map((exercise, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center justify-between border rounded-lg px-4 py-3 bg-background"
+                    >
+                      <div className="flex items-center">
+                        <LucideDumbbell className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <span className="font-medium text-sm truncate">{exercise.name}</span>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        className="h-8 w-8 p-0 ml-2"
+                        onClick={() => removeExercise(index)}
+                      >
+                        <LucideTrash className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="workout-intensity">How intense was your workout?</Label>
+            )}
+            
+            {/* Always show exercise selection options */}
+            <div className="space-y-6">
+              {exercises.length === 0 && (
+                <div className="text-center p-6 border border-dashed rounded-md bg-muted/20 mb-6">
+                  <LucideDumbbell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-muted-foreground">No exercises selected yet</p>
+                  <p className="text-sm text-muted-foreground mb-4">Select from exercises below</p>
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                <h3 className="font-medium">Recent Exercises</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                  {dbExercises
+                    .slice(0, 6)
+                    .filter(exercise => !exercises.some(e => e.name === exercise.name))
+                    .map(exercise => (
+                      <Button 
+                        key={exercise._id}
+                        variant="outline"
+                        className="h-auto py-3 justify-start"
+                        onClick={() => quickAddExercise(exercise)}
+                      >
+                        <LucideDumbbell className="h-4 w-4 mr-2 text-primary" />
+                        {exercise.name}
+                      </Button>
+                    ))}
+                  {dbExercises
+                    .slice(0, 6)
+                    .filter(exercise => exercises.some(e => e.name === exercise.name))
+                    .map(exercise => (
+                      <Button 
+                        key={exercise._id}
+                        variant="outline"
+                        disabled
+                        className="h-auto py-3 justify-start bg-muted cursor-not-allowed opacity-60"
+                      >
+                        <LucideDumbbell className="h-4 w-4 mr-2 text-primary" />
+                        {exercise.name}
+                        <Badge variant="secondary" className="ml-2 text-xs">Selected</Badge>
+                      </Button>
+                    ))}
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <h3 className="font-medium">Popular Exercises</h3>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-muted-foreground">Upper Body</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {['Bench Press', 'Push-ups', 'Pull-ups', 'Shoulder Press', 'Bicep Curls', 'Tricep Dips'].map(name => {
+                      const exercise = dbExercises.find(e => e.name.toLowerCase() === name.toLowerCase());
+                      if (!exercise) return null;
+                      
+                      const isSelected = exercises.some(e => e.name === exercise.name);
+                      
+                      return (
+                        <Button 
+                          key={name}
+                          variant="outline"
+                          disabled={isSelected}
+                          className={`h-auto py-3 justify-start ${isSelected ? 'bg-muted cursor-not-allowed opacity-60' : ''}`}
+                          onClick={() => !isSelected && quickAddExercise(exercise)}
+                        >
+                          <LucideDumbbell className="h-4 w-4 mr-2 text-primary" />
+                          {name}
+                          {isSelected && <Badge variant="secondary" className="ml-2 text-xs">Selected</Badge>}
+                        </Button>
+                      );
+                    }).filter(Boolean)}
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-muted-foreground">Full Body</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {['Squats', 'Deadlifts', 'Lunges', 'Burpees', 'Kettlebell Swings', 'Mountain Climbers'].map(name => {
+                      const exercise = dbExercises.find(e => e.name.toLowerCase() === name.toLowerCase());
+                      if (!exercise) return null;
+                      
+                      const isSelected = exercises.some(e => e.name === exercise.name);
+                      
+                      return (
+                        <Button 
+                          key={name}
+                          variant="outline"
+                          disabled={isSelected}
+                          className={`h-auto py-3 justify-start ${isSelected ? 'bg-muted cursor-not-allowed opacity-60' : ''}`}
+                          onClick={() => !isSelected && quickAddExercise(exercise)}
+                        >
+                          <LucideDumbbell className="h-4 w-4 mr-2 text-primary" />
+                          {name}
+                          {isSelected && <Badge variant="secondary" className="ml-2 text-xs">Selected</Badge>}
+                        </Button>
+                      );
+                    }).filter(Boolean)}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 pt-4 border-t">
+                <div className="flex justify-between items-center mb-3">
+                  <Label htmlFor="quick-search">Search other exercises</Label>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    id="quick-search"
+                    placeholder="Type an exercise name..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="flex-1"
+                  />
+                </div>
+                {searchQuery.trim() && (
+                  <div className="mt-3 border rounded-lg p-2">
+                    <h4 className="text-sm font-medium mb-2">Search Results</h4>
+                    <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                      {dbExercises
+                        .filter(e => 
+                          (e.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          e.muscleGroups.some(g => g.toLowerCase().includes(searchQuery.toLowerCase()))) &&
+                          !exercises.some(selected => selected.name === e.name)
+                        )
+                        .slice(0, 8)
+                        .map(exercise => (
+                          <Button 
+                            key={exercise._id}
+                            variant="ghost"
+                            className="w-full justify-start h-auto py-2"
+                            onClick={() => quickAddExercise(exercise)}
+                          >
+                            <LucideDumbbell className="h-4 w-4 mr-2 text-primary" />
+                            {exercise.name}
+                          </Button>
+                        ))}
+                      
+                      {/* Show suggested similar exercise if exact match not found */}
+                      {(() => {
+                        const exactMatchExists = dbExercises.some(e => 
+                          e.name.toLowerCase() === searchQuery.toLowerCase());
+                        
+                        const similarExercise = !exactMatchExists && findSimilarExercise(searchQuery, dbExercises);
+                        
+                        if (similarExercise && !exercises.some(e => e.name === similarExercise.name)) {
+                          return (
+                            <div className="pt-2 pb-1 border-t mt-2">
+                              <p className="text-xs text-muted-foreground mb-2">Did you mean:</p>
+                              <Button 
+                                variant="ghost"
+                                className="w-full justify-start h-auto py-2"
+                                onClick={() => {
+                                  quickAddExercise(similarExercise);
+                                  setSearchQuery("");
+                                }}
+                              >
+                                <LucideDumbbell className="h-4 w-4 mr-2 text-primary" />
+                                {similarExercise.name}
+                              </Button>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                      
+                      {dbExercises.filter(e => 
+                        (e.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        e.muscleGroups.some(g => g.toLowerCase().includes(searchQuery.toLowerCase()))) &&
+                        !exercises.some(selected => selected.name === e.name)
+                      ).length === 0 && (
+                        <div className="text-center py-3 space-y-3">
+                          <p className="text-muted-foreground text-sm">
+                            No exercises found matching "{searchQuery}"
+                          </p>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={createExerciseFromQuery}
+                          >
+                            <LucidePlus className="h-4 w-4 mr-2" />
+                            Create "{searchQuery}" Exercise
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Add back the date, duration, and intensity controls */}
+              <div className="flex items-center justify-between mt-8 pt-4 border-t">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="workout-date">Date:</Label>
+                    <Input 
+                      id="workout-date" 
+                      type="date" 
+                      value={workoutDate}
+                      onChange={(e) => setWorkoutDate(e.target.value)}
+                      className="w-auto"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="workout-duration">Duration:</Label>
+                    <Input 
+                      id="workout-duration" 
+                      type="number" 
+                      placeholder="Minutes" 
+                      value={workoutDuration || ""}
+                      onChange={(e) => setWorkoutDuration(parseInt(e.target.value) || undefined)}
+                      className="w-24"
+                    />
+                    <span className="text-sm">min</span>
+                  </div>
+                </div>
+                
                 <Select 
                   value={workoutIntensity}
                   onValueChange={setWorkoutIntensity}
                 >
-                  <SelectTrigger id="workout-intensity">
-                    <SelectValue placeholder="Select intensity" />
+                  <SelectTrigger className="w-auto">
+                    <SelectValue placeholder="Intensity" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">Light - I could easily talk</SelectItem>
-                    <SelectItem value="medium">Moderate - I was breathing harder</SelectItem>
-                    <SelectItem value="high">Intense - I was really pushing myself</SelectItem>
+                    <SelectItem value="low">Light</SelectItem>
+                    <SelectItem value="medium">Moderate</SelectItem>
+                    <SelectItem value="high">Intense</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="workout-duration">How long did you work out? (minutes)</Label>
-                <Input 
-                  id="workout-duration" 
-                  type="number" 
-                  placeholder="e.g., 60" 
-                  value={workoutDuration || ""}
-                  onChange={(e) => setWorkoutDuration(parseInt(e.target.value) || undefined)}
-                />
               </div>
             </div>
           </CardContent>
@@ -453,121 +899,132 @@ export default function NewWorkoutPage() {
         <StepActions 
           hasPrevious={false} 
           onNext={handleNextStep}
+          isNextDisabled={exercises.length === 0}
         />
       </StepContent>
 
-      <StepContent step={1} currentStep={currentStep}>
+      {/* Step 2: Sets and Reps */}
+      <StepContent step={workoutSteps.setsAndReps} currentStep={currentStep}>
         <Card>
           <CardContent className="p-4 pt-6">
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <div className="bg-orange-500/10 text-orange-500 p-3 rounded-full">
-                <LucideDumbbell className="h-6 w-6" />
+                <LucideListChecks className="h-6 w-6" />
               </div>
-              <h2 className="text-lg font-semibold">What exercises did you do?</h2>
+              <div>
+                <h2 className="text-lg font-semibold">Sets and Reps</h2>
+                <p className="text-sm text-muted-foreground">Enter the weights and repetitions for each exercise</p>
+              </div>
             </div>
             
-            <div className="space-y-4">
-              {exercises.map((exercise, exerciseIndex) => (
-                <div 
-                  key={exerciseIndex} 
-                  className="border rounded-lg p-4 space-y-3"
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex-1">
-                      <Input
-                        value={exercise.name}
-                        onChange={(e) => updateExerciseName(exerciseIndex, e.target.value)}
-                        placeholder="Exercise name"
-                        className="border-none p-0 h-auto text-base font-medium shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => openExerciseDialog(exerciseIndex)}
-                      >
-                        <LucideListChecks className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeExercise(exerciseIndex)}
-                        disabled={exercises.length === 1}
-                      >
-                        <LucideTrash className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {exercise.sets.map((set, setIndex) => (
-                      <div key={setIndex} className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-2 text-sm text-muted-foreground font-medium">
-                          Set {setIndex + 1}
-                        </div>
-                        <div className="col-span-4">
-                          <div className="flex items-center space-x-1">
-                            <Input
-                              type="number"
-                              value={set.weight}
-                              onChange={(e) => updateSetValue(exerciseIndex, setIndex, "weight", parseInt(e.target.value) || 0)}
-                              className="text-right"
-                            />
-                            <span className="text-xs text-muted-foreground">kg</span>
-                          </div>
-                        </div>
-                        <div className="col-span-4">
-                          <div className="flex items-center space-x-1">
-                            <Input
-                              type="number"
-                              value={set.reps}
-                              onChange={(e) => updateSetValue(exerciseIndex, setIndex, "reps", parseInt(e.target.value) || 0)}
-                              className="text-right"
-                            />
-                            <span className="text-xs text-muted-foreground">reps</span>
-                          </div>
-                        </div>
-                        <div className="col-span-2 flex justify-end">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeSet(exerciseIndex, setIndex)}
-                            disabled={exercise.sets.length === 1}
-                            className="h-8 w-8"
-                          >
-                            <LucideMinus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => addSet(exerciseIndex)}
-                    size="sm"
-                    className="w-full"
+            <div className="space-y-6">
+              {exercises.length === 0 ? (
+                <div className="text-center p-8 border border-dashed rounded-md text-muted-foreground">
+                  <p>No exercises selected</p>
+                  <Button 
+                    onClick={() => goToStep(workoutSteps.selectExercises)} 
+                    variant="outline" 
+                    className="mt-2"
                   >
-                    <LucidePlus className="h-4 w-4 mr-2" />
-                    Add Set
+                    Go back to select exercises
                   </Button>
                 </div>
-              ))}
+              ) : (
+                exercises.map((exercise, exerciseIndex) => {
+                  const exerciseHistory = exerciseHistories[exercise.name] || [];
+                  const insight = exerciseInsights[exercise.name];
+                  
+                  return (
+                    <div 
+                      key={exerciseIndex} 
+                      className="border rounded-lg p-4 space-y-3"
+                    >
+                      <div className="flex justify-between items-center border-b pb-2 mb-2">
+                        <h3 className="font-medium text-lg">{exercise.name}</h3>
+                      </div>
+                      
+                      {/* Exercise history note */}
+                      {exerciseHistory.length > 0 && (
+                        <div className="text-sm bg-muted/40 p-2 rounded mb-3">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Last performed:</span>
+                            <span className="font-medium">{formatDate(exerciseHistory[0].createdAt)}</span>
+                          </div>
+                          <div className="mt-1">
+                            <span className="text-muted-foreground">Previous performance:</span>
+                            <span className="ml-1">
+                              {exerciseHistory[0].sets.map((set: {weight: number, reps: number}, i: number) => 
+                                `${set.weight}kg×${set.reps}${i < exerciseHistory[0].sets.length - 1 ? ', ' : ''}`
+                              )}
+                            </span>
+                          </div>
+                          {insight && (
+                            <div className="mt-2 text-xs border-t border-muted pt-2">
+                              <span className="font-medium text-primary">AI Suggestion:</span>
+                              <p className="mt-1">{insight.suggestion}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={addExercise}
-                className="w-full"
-              >
-                <LucidePlus className="h-4 w-4 mr-2" />
-                Add Exercise
-              </Button>
+                      <div className="space-y-2">
+                        {exercise.sets.map((set, setIndex) => (
+                          <div key={setIndex} className="grid grid-cols-12 gap-2 items-center bg-accent/10 p-2 rounded">
+                            <div className="col-span-2 text-sm text-muted-foreground font-medium">
+                              Set {setIndex + 1}
+                            </div>
+                            <div className="col-span-4">
+                              <div className="flex items-center space-x-1">
+                                <Input
+                                  type="number"
+                                  value={set.weight}
+                                  onChange={(e) => updateSetValue(exerciseIndex, setIndex, "weight", parseInt(e.target.value) || 0)}
+                                  className="text-right"
+                                />
+                                <span className="text-xs text-muted-foreground">kg</span>
+                              </div>
+                            </div>
+                            <div className="col-span-4">
+                              <div className="flex items-center space-x-1">
+                                <Input
+                                  type="number"
+                                  value={set.reps}
+                                  onChange={(e) => updateSetValue(exerciseIndex, setIndex, "reps", parseInt(e.target.value) || 0)}
+                                  className="text-right"
+                                />
+                                <span className="text-xs text-muted-foreground">reps</span>
+                              </div>
+                            </div>
+                            <div className="col-span-2 flex justify-end">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeSet(exerciseIndex, setIndex)}
+                                disabled={exercise.sets.length === 1}
+                                className="h-8 w-8"
+                              >
+                                <LucideMinus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addSet(exerciseIndex)}
+                        size="sm"
+                        className="w-full"
+                      >
+                        <LucidePlus className="h-4 w-4 mr-2" />
+                        Add Set
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </CardContent>
         </Card>
@@ -579,14 +1036,18 @@ export default function NewWorkoutPage() {
         />
       </StepContent>
 
-      <StepContent step={2} currentStep={currentStep}>
+      {/* Step 3: Finalize */}
+      <StepContent step={workoutSteps.finalize} currentStep={currentStep}>
         <Card>
           <CardContent className="p-4 pt-6">
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <div className="bg-orange-500/10 text-orange-500 p-3 rounded-full">
                 <LucideSave className="h-6 w-6" />
               </div>
-              <h2 className="text-lg font-semibold">Finalize your workout</h2>
+              <div>
+                <h2 className="text-lg font-semibold">Finalize your workout</h2>
+                <p className="text-sm text-muted-foreground">Add a name and notes to complete your workout</p>
+              </div>
             </div>
             
             <div className="space-y-4">
@@ -642,411 +1103,136 @@ export default function NewWorkoutPage() {
         </div>
       </StepContent>
 
+      {/* Exercise creation/selection dialog */}
       <Dialog open={dialogOpen} onOpenChange={closeExerciseDialog}>
-        <DialogContent className={isCreatingExercise ? "sm:max-w-md" : "sm:max-w-xl"}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {isCreatingExercise ? "Create New Exercise" : "Select Exercise"}
+              Create New Exercise
             </DialogTitle>
             <DialogDescription>
-              {isCreatingExercise 
-                ? "Add a new exercise to your database" 
-                : "Choose from our database or create your own"}
+              Add a new exercise to your workout
             </DialogDescription>
           </DialogHeader>
+          <button 
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none" 
+            onClick={closeExerciseDialog}
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </button>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="exercise-name">Exercise Name</Label>
+              <Input
+                id="exercise-name"
+                value={newExerciseData.name}
+                onChange={(e) => handleNewExerciseNameChange(e.target.value)}
+                placeholder="e.g., Bench Press"
+                className="w-full"
+              />
+            </div>
 
-          {isCreatingExercise ? (
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="exercise-name">Exercise Name</Label>
-                <Input
-                  id="exercise-name"
-                  value={newExerciseData.name}
-                  onChange={(e) => handleNewExerciseNameChange(e.target.value)}
-                  placeholder="e.g., Bench Press"
-                  className="w-full"
-                />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Label>Target Muscle Groups</Label>
+                {isGeneratingDetails && <span className="text-xs text-muted-foreground italic">(Auto-filling...)</span>}
               </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="category">Category</Label>
-                  {isGeneratingDetails && <span className="text-xs text-muted-foreground italic">(Auto-filling...)</span>}
-                </div>
-                <Select 
-                  value={newExerciseData.category as string || "strength"} 
-                  onValueChange={(value: "strength" | "cardio" | "flexibility") => 
-                    setNewExerciseData({...newExerciseData, category: value})
-                  }
-                >
-                  <SelectTrigger id="category">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="strength">Strength</SelectItem>
-                    <SelectItem value="cardio">Cardio</SelectItem>
-                    <SelectItem value="flexibility">Flexibility</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="muscleGroups">Muscle Groups</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="muscleGroups"
-                    value={muscleGroupInput}
-                    onChange={(e) => setMuscleGroupInput(e.target.value)}
-                    placeholder="e.g., chest, shoulders"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        addMuscleGroup(muscleGroupInput)
-                        setMuscleGroupInput("")
-                      }
-                    }}
-                  />
-                  <Button 
-                    type="button" 
-                    onClick={() => {
-                      addMuscleGroup(muscleGroupInput)
-                      setMuscleGroupInput("")
-                    }}
-                    variant="secondary"
-                  >
-                    Add
-                  </Button>
-                </div>
-                
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {newExerciseData.muscleGroups?.map((group) => (
-                    <Badge key={group} className="flex items-center gap-1 capitalize">
-                      {group}
-                      <X 
-                        className="h-3 w-3 cursor-pointer" 
-                        onClick={() => removeMuscleGroup(group)}
-                      />
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="equipment">Equipment (Optional)</Label>
-                <Input
-                  id="equipment"
-                  value={newExerciseData.equipment || ""}
-                  onChange={(e) => setNewExerciseData({...newExerciseData, equipment: e.target.value})}
-                  placeholder="e.g., Barbell, Dumbbells"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Textarea
-                  id="description"
-                  value={newExerciseData.description || ""}
-                  onChange={(e) => setNewExerciseData({...newExerciseData, description: e.target.value})}
-                  placeholder="Briefly describe the exercise"
-                  rows={2}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="instructions">Instructions (Optional)</Label>
-                <Textarea
-                  id="instructions"
-                  value={newExerciseData.instructions || ""}
-                  onChange={(e) => setNewExerciseData({...newExerciseData, instructions: e.target.value})}
-                  placeholder="Step-by-step instructions for performing the exercise"
-                  rows={4}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 mt-4">
-                <Button 
-                  variant="outline" 
-                  type="button"
-                  onClick={() => setIsCreatingExercise(false)}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="button"
-                  onClick={createNewExercise}
-                  disabled={isSubmitting || !newExerciseData.name?.trim() || (newExerciseData.muscleGroups?.length || 0) === 0}
-                >
-                  {isSubmitting ? "Creating..." : "Create Exercise"}
-                </Button>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { label: "Chest", value: "chest" },
+                  { label: "Back", value: "back" },
+                  { label: "Shoulders", value: "shoulders" },
+                  { label: "Arms", value: "biceps" },
+                  { label: "Legs", value: "quadriceps" },
+                  { label: "Core", value: "core" }
+                ].map(group => {
+                  const selected = newExerciseData.muscleGroups?.includes(group.value) || false;
+                  return (
+                    <Button
+                      key={group.value}
+                      type="button"
+                      variant={selected ? "default" : "outline"}
+                      size="sm"
+                      className="h-auto py-2"
+                      onClick={() => {
+                        if (selected) {
+                          // Remove if already selected
+                          setNewExerciseData({
+                            ...newExerciseData,
+                            muscleGroups: newExerciseData.muscleGroups?.filter(g => g !== group.value)
+                          });
+                        } else {
+                          // Add if not selected
+                          setNewExerciseData({
+                            ...newExerciseData,
+                            muscleGroups: [...(newExerciseData.muscleGroups || []), group.value]
+                          });
+                        }
+                      }}
+                    >
+                      {group.label}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
-          ) : activeExerciseHistory.length > 0 && !isLoadingHistory ? (
-            <>
-              <div className="flex items-center gap-2 py-4">
-                <Input
-                  placeholder="Search exercises..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1"
-                />
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        size="icon"
-                        onClick={() => setSearchQuery("")}
-                      >
-                        <InfoIcon className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs max-w-[200px]">Search by exercise name or muscle group</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
 
-              <div className="border rounded-md p-4 mb-4 bg-muted/30">
-                <h3 className="font-medium mb-2 flex items-center">
-                  <LucideCalendar className="h-4 w-4 mr-2" />
-                  Previous Workout History
-                </h3>
-                
-                <div className="space-y-3">
-                  {activeExerciseHistory.slice(0, 1).map((workout, i) => {
-                    const { avgWeight, avgReps, totalVolume } = calculateSetAverages(workout.sets)
-                    return (
-                      <div key={i} className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Last performed:</span>
-                          <span className="font-medium">{formatDate(workout.createdAt)}</span>
-                        </div>
-                        
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div className="bg-background rounded-md p-2">
-                            <div className="text-xs text-muted-foreground">Avg Weight</div>
-                            <div className="font-semibold">{avgWeight.toFixed(1)} kg</div>
-                          </div>
-                          <div className="bg-background rounded-md p-2">
-                            <div className="text-xs text-muted-foreground">Avg Reps</div>
-                            <div className="font-semibold">{avgReps.toFixed(1)}</div>
-                          </div>
-                          <div className="bg-background rounded-md p-2">
-                            <div className="text-xs text-muted-foreground">Volume</div>
-                            <div className="font-semibold">{totalVolume} kg</div>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-2">
-                          <div className="text-xs text-muted-foreground mb-1">Sets from last workout:</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {workout.sets.map((set: {weight: number, reps: number}, i: number) => (
-                              <div key={i} className="text-xs bg-background rounded p-1 flex justify-between">
-                                <span>Set {i+1}:</span>
-                                <span className="font-medium">{set.weight} kg × {set.reps}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  
-                  {exerciseInsights && (
-                    <div className="mt-3 border-t pt-3">
-                      <div className="bg-secondary/20 rounded-md p-3">
-                        <h4 className="text-sm font-medium flex items-center mb-2">
-                          <AlertCircle className="h-4 w-4 mr-2" />
-                          AI Workout Insights
-                        </h4>
-                        <p className="text-sm mb-2">{exerciseInsights.insight}</p>
-                        <p className="text-sm text-muted-foreground">
-                          <span className="font-medium">Suggestion:</span> {exerciseInsights.suggestion}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="text-xs flex items-center mt-2 text-muted-foreground">
-                    <AlertCircle className="h-3 w-3 mr-1" />
-                    <span>These values have been pre-filled below</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 py-2">
-                <div>
-                  <Label htmlFor="category" className="mb-1 block">Category</Label>
-                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger id="category">
-                      <SelectValue placeholder="All categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All categories</SelectItem>
-                      <SelectItem value="strength">Strength</SelectItem>
-                      <SelectItem value="cardio">Cardio</SelectItem>
-                      <SelectItem value="flexibility">Flexibility</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="muscle-group" className="mb-1 block">Muscle Group</Label>
-                  <Select value={selectedMuscleGroup} onValueChange={setSelectedMuscleGroup}>
-                    <SelectTrigger id="muscle-group">
-                      <SelectValue placeholder="All muscles" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All muscles</SelectItem>
-                      {uniqueMuscleGroups.map(group => (
-                        <SelectItem key={group} value={group}>{group}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <ScrollArea className="h-[200px] pr-3">
-                <div className="space-y-2">
-                  {filteredExercises.map((exercise) => (
-                    <button
-                      key={exercise._id}
-                      className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground rounded-md flex items-center justify-between"
-                      onClick={() => selectExercise(exercise)}
-                    >
-                      <span>{exercise.name}</span>
-                      {exercise.muscleGroups.length > 0 && (
-                        <Badge variant="secondary" className="ml-2">
-                          {exercise.muscleGroups[0]}
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-                  {filteredExercises.length === 0 && searchQuery.trim() && (
-                    <div className="p-4 text-center">
-                      <p className="text-muted-foreground mb-2">No exercises found for "{searchQuery}"</p>
-                      <Button onClick={handleCreateMode}>
-                        Create "{searchQuery}" Exercise
-                      </Button>
-                    </div>
-                  )}
-                  {filteredExercises.length === 0 && !searchQuery.trim() && (
-                    <p className="text-center text-muted-foreground py-4">
-                      No exercises found. Try a different filter.
-                    </p>
-                  )}
-                </div>
-              </ScrollArea>
-              {searchQuery.trim() && filteredExercises.length > 0 && (
-                <div className="mt-2 pt-2 border-t flex justify-center">
-                  <Button variant="outline" onClick={handleCreateMode}>
-                    Create New Exercise
-                  </Button>
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="equipment">Equipment (Optional)</Label>
+              <Input
+                id="equipment"
+                value={newExerciseData.equipment || ""}
+                onChange={(e) => setNewExerciseData({...newExerciseData, equipment: e.target.value})}
+                placeholder="e.g., Barbell, Dumbbells"
+              />
+              {isGeneratingDetails && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  AI is suggesting equipment based on the exercise name
+                </p>
               )}
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 py-4">
-                <Input
-                  placeholder="Search exercises..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1"
-                />
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        size="icon"
-                        onClick={() => setSearchQuery("")}
-                      >
-                        <InfoIcon className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs max-w-[200px]">Search by exercise name or muscle group</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
+            </div>
 
-              {isLoadingHistory && (
-                <div className="flex justify-center items-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description (Optional)</Label>
+              <Textarea
+                id="description"
+                value={newExerciseData.description || ""}
+                onChange={(e) => setNewExerciseData({...newExerciseData, description: e.target.value})}
+                placeholder="Briefly describe the exercise"
+                rows={2}
+              />
+              {isGeneratingDetails && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  AI is creating a detailed description...
+                </p>
               )}
+            </div>
 
-              <div className="grid grid-cols-2 gap-4 py-2">
-                <div>
-                  <Label htmlFor="category" className="mb-1 block">Category</Label>
-                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger id="category">
-                      <SelectValue placeholder="All categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All categories</SelectItem>
-                      <SelectItem value="strength">Strength</SelectItem>
-                      <SelectItem value="cardio">Cardio</SelectItem>
-                      <SelectItem value="flexibility">Flexibility</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="muscle-group" className="mb-1 block">Muscle Group</Label>
-                  <Select value={selectedMuscleGroup} onValueChange={setSelectedMuscleGroup}>
-                    <SelectTrigger id="muscle-group">
-                      <SelectValue placeholder="All muscles" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All muscles</SelectItem>
-                      {uniqueMuscleGroups.map(group => (
-                        <SelectItem key={group} value={group}>{group}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <ScrollArea className="h-[300px] pr-3">
-                <div className="space-y-2">
-                  {filteredExercises.map((exercise) => (
-                    <button
-                      key={exercise._id}
-                      className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground rounded-md flex items-center justify-between"
-                      onClick={() => selectExercise(exercise)}
-                    >
-                      <span>{exercise.name}</span>
-                      {exercise.muscleGroups.length > 0 && (
-                        <Badge variant="secondary" className="ml-2">
-                          {exercise.muscleGroups[0]}
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-                  {filteredExercises.length === 0 && searchQuery.trim() && (
-                    <div className="p-4 text-center">
-                      <p className="text-muted-foreground mb-2">No exercises found for "{searchQuery}"</p>
-                      <Button onClick={handleCreateMode}>
-                        Create "{searchQuery}" Exercise
-                      </Button>
-                    </div>
-                  )}
-                  {filteredExercises.length === 0 && !searchQuery.trim() && (
-                    <p className="text-center text-muted-foreground py-4">
-                      No exercises found. Try a different filter.
-                    </p>
-                  )}
-                </div>
-              </ScrollArea>
-              {searchQuery.trim() && filteredExercises.length > 0 && (
-                <div className="mt-2 pt-2 border-t flex justify-center">
-                  <Button variant="outline" onClick={handleCreateMode}>
-                    Create New Exercise
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
+            <div className="flex justify-end gap-2 mt-4">
+              <Button 
+                variant="outline" 
+                type="button"
+                onClick={closeExerciseDialog}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="button"
+                onClick={createNewExercise}
+                disabled={isSubmitting || !newExerciseData.name?.trim() || (newExerciseData.muscleGroups?.length || 0) === 0}
+              >
+                {isSubmitting || isGeneratingDetails ? 
+                  <span className="flex items-center">
+                    <span className="animate-spin mr-2 h-4 w-4 border-2 border-background border-t-transparent rounded-full" />
+                    {isGeneratingDetails ? "Generating..." : "Creating..."}
+                  </span> : 
+                  "Create Exercise"
+                }
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
