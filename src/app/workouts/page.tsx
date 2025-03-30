@@ -5,7 +5,6 @@ import Link from "next/link"
 import { getWorkoutsByUserId } from "@/lib/db/repositories/workoutRepository"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { redirect } from "next/navigation"
 import WorkoutListView from "@/components/workout-list-view"
 import type { WorkoutData } from "@/types/db"
 
@@ -16,24 +15,47 @@ export const revalidate = 0
 export default async function WorkoutsPage() {
   console.log("[WORKOUTS_PAGE] Starting to render workouts page")
   
-  const session = await getServerSession(authOptions)
-  console.log("[WORKOUTS_PAGE] Session:", JSON.stringify({ 
-    hasSession: !!session, 
-    hasUser: !!session?.user, 
-    userId: session?.user?.id 
-  }))
-
-  if (!session || !session.user) {
-    console.log("[WORKOUTS_PAGE] No session or user, redirecting to login")
-    redirect("/login")
+  // Try to get the session
+  let session;
+  try {
+    session = await getServerSession(authOptions);
+    console.log("[WORKOUTS_PAGE] Session:", JSON.stringify({ 
+      hasSession: !!session, 
+      hasUser: !!session?.user, 
+      userId: session?.user?.id 
+    }));
+  } catch (error) {
+    console.error("[WORKOUTS_PAGE] Error getting session:", error);
+    // Don't redirect here, show a friendly error instead
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-4xl font-bold tracking-tight">Authentication Error</h1>
+        <div className="mt-4 text-red-500">
+          There was a problem with your authentication. Please try <Link href="/login" className="underline">logging in</Link> again.
+        </div>
+      </div>
+    );
   }
 
-  const userId = session.user.id
-  console.log("[WORKOUTS_PAGE] Fetching workouts for user:", userId)
+  // If no session, show login suggestion instead of redirecting
+  if (!session || !session.user) {
+    console.log("[WORKOUTS_PAGE] No session or user, showing login suggestion");
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-4xl font-bold tracking-tight">Workouts</h1>
+        <div className="mt-4">
+          <p>Please <Link href="/login" className="text-blue-500 underline">login</Link> to view your workouts.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const userId = session.user.id;
+  console.log("[WORKOUTS_PAGE] Fetching workouts for user:", userId);
   
   try {
-    const workouts = await getWorkoutsByUserId(userId)
-    console.log("[WORKOUTS_PAGE] Fetched workouts:", workouts?.length || 0)
+    const workouts = await getWorkoutsByUserId(userId);
+    console.log("[WORKOUTS_PAGE] Fetched workouts:", workouts?.length || 0);
 
     return (
       <div className="container mx-auto px-4 py-8">
@@ -43,7 +65,7 @@ export default async function WorkoutsPage() {
             <p className="text-muted-foreground mt-2">Track and manage your training sessions</p>
           </div>
           <div className="mt-4 md:mt-0">
-            <Link href="/workout/new">
+            <Link href="/workout/new" prefetch={false}>
               <Button size="lg">
                 <LucidePlus className="mr-2 h-5 w-5" />
                 New Workout
@@ -61,15 +83,15 @@ export default async function WorkoutsPage() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   } catch (error) {
-    console.error("[WORKOUTS_PAGE] Error fetching workouts:", error)
+    console.error("[WORKOUTS_PAGE] Error fetching workouts:", error);
     return (
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold tracking-tight">Workouts</h1>
         <div className="mt-4 text-red-500">Error loading workouts. Please try again later.</div>
       </div>
-    )
+    );
   }
 }
 
