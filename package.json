@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "next lint",
     "clean-vercel": "rm -rf .next && rm -rf .vercel/output",
-    "deploy:force": "npm run clean-vercel && NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs vercel --prod"
+    "deploy:force": "npm run clean-vercel && NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs vercel --prod",
+    "deploy:clear-cache": "npm run clean-vercel && VERCEL_FORCE_NO_BUILD_CACHE=1 NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs NEXT_DISABLE_CACHE=1 vercel --prod --force"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.2.7",
