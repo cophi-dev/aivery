@@ -58,11 +58,34 @@ export default async function RootLayout({
         <meta httpEquiv="Pragma" content="no-cache" />
         <meta httpEquiv="Expires" content="0" />
         <meta name="version" content={VERSION} />
+        {/* Additional cache-busting meta tags */}
+        <meta httpEquiv="Surrogate-Control" content="no-store" />
+        <meta httpEquiv="Clear-Site-Data" content="cache" />
+        <meta name="MobileOptimized" content="width" />
+        <meta name="HandheldFriendly" content="true" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="build-time" content={getTimestamp()} />
+        <meta name="build-id" content={VERSION} />
         {/* Generate unique URLs for all resources */}
         <link rel="manifest" href={`/manifest.json?v=${VERSION}`} />
         <script 
           dangerouslySetInnerHTML={{ 
-            __html: `window.APP_VERSION="${VERSION}";window.BUILD_TIME="${getTimestamp()}";console.log("🔄 App Version:", window.APP_VERSION);` 
+            __html: `
+            window.APP_VERSION="${VERSION}";
+            window.BUILD_TIME="${getTimestamp()}";
+            console.log("🔄 App Version:", window.APP_VERSION);
+            // Immediately clear any caches on page load
+            if ('caches' in window) {
+              caches.keys().then(cacheNames => {
+                cacheNames.forEach(cacheName => {
+                  caches.delete(cacheName);
+                  console.log("Cleared cache:", cacheName);
+                });
+              });
+            }
+            // Add unique timestamp to prevent edge caching
+            window.CACHE_BUSTER = Date.now();
+            ` 
           }} 
         />
       </head>
