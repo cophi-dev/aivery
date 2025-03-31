@@ -30,12 +30,15 @@ export async function GET(request: Request) {
 
     console.log("Found physical info:", user)
 
+    // Type assertion to address TypeScript error
+    const typedUser = user as any;
+
     return NextResponse.json({ 
-      height: user.height,
-      weight: user.weight, 
-      age: user.age,
-      gender: user.gender,
-      activityLevel: user.activityLevel
+      height: typedUser.height,
+      weight: typedUser.weight, 
+      age: typedUser.age,
+      gender: typedUser.gender,
+      activityLevel: typedUser.activityLevel
     })
   } catch (error) {
     console.error("Error fetching physical info:", error)
