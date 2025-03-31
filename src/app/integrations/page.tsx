@@ -99,8 +99,10 @@ export default function IntegrationsPage() {
       if (success) {
         // Format activity types for display
         const typeDetails = [];
-        if (types?.run) typeDetails.push(`${types.run} runs`);
-        if (types?.swim) typeDetails.push(`${types.swim} swims`);
+        // Type assertion for types to avoid TypeScript error
+        const typesRecord = types as Record<string, number>;
+        if (typesRecord && typesRecord.run) typeDetails.push(`${typesRecord.run} runs`);
+        if (typesRecord && typesRecord.swim) typeDetails.push(`${typesRecord.swim} swims`);
         
         const typeMessage = typeDetails.length > 0 
           ? `(${typeDetails.join(", ")})`

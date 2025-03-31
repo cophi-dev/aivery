@@ -90,9 +90,13 @@ export async function POST(request: NextRequest) {
     console.log(`[delete-workouts] Found user: ${user._id}`);
 
     // Find all workouts that match the criteria
+    // Normalize workout types to lowercase to match schema
+    const normalizedWorkoutTypes = workoutTypes.map(type => type.toLowerCase());
+    console.log(`[delete-workouts] Normalized workout types: ${normalizedWorkoutTypes.join(', ')}`);
+    
     const workoutsToDelete = await WorkoutModel.find({
       userId: user._id,
-      type: { $in: workoutTypes }
+      type: { $in: normalizedWorkoutTypes }
     }).select('_id').lean();
     
     // Get the workout IDs to be deleted
@@ -120,7 +124,7 @@ export async function POST(request: NextRequest) {
     // Delete the workouts
     const deleteResult = await WorkoutModel.deleteMany({
       userId: user._id,
-      type: { $in: workoutTypes }
+      type: { $in: normalizedWorkoutTypes }
     });
 
     console.log(`[delete-workouts] Deleted ${deleteResult.deletedCount} workouts`);

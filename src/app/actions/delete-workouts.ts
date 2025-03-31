@@ -56,10 +56,14 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
     
     console.log('[SERVER ACTION] deleteWorkoutsByTypes: Found user with ID:', user._id);
     
+    // Normalize workout types to lowercase to match schema
+    const normalizedWorkoutTypes = workoutTypes.map(type => type.toLowerCase());
+    console.log('[SERVER ACTION] deleteWorkoutsByTypes: Normalized workout types:', normalizedWorkoutTypes);
+    
     // Get workout IDs to delete
     const workoutsToDelete = await WorkoutModel.find({
       userId: user._id,
-      type: { $in: workoutTypes }
+      type: { $in: normalizedWorkoutTypes }
     }).select('_id').lean();
     
     const workoutIdsToDelete = workoutsToDelete.map(workout => workout._id);
@@ -83,7 +87,7 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
     // Delete the workouts
     const deleteResult = await WorkoutModel.deleteMany({
       userId: user._id,
-      type: { $in: workoutTypes }
+      type: { $in: normalizedWorkoutTypes }
     });
     console.log('[SERVER ACTION] deleteWorkoutsByTypes: Deleted', deleteResult.deletedCount, 'workouts');
     
