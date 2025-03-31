@@ -65,6 +65,7 @@ export default async function RootLayout({
         <meta name="MobileOptimized" content="width" />
         <meta name="HandheldFriendly" content="true" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="build-time" content={getTimestamp()} />
         <meta name="build-id" content={VERSION} />
         {/* Generate unique URLs for all resources */}

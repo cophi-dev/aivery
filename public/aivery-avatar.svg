@@ -1,0 +1,27 @@
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="192" height="192" rx="32" fill="#1E293B" />
+  
+  <!-- "A" letter stylized as a dumbbell -->
+  <g transform="translate(40, 40)">
+    <!-- Middle bar of A -->
+    <rect x="20" y="60" width="72" height="12" rx="6" fill="#3B82F6" />
+    
+    <!-- Left leg of A -->
+    <rect x="20" y="12" width="12" height="100" rx="6" transform="rotate(-15 20 12)" fill="#60A5FA" />
+    
+    <!-- Right leg of A -->
+    <rect x="80" y="12" width="12" height="100" rx="6" transform="rotate(15 80 12)" fill="#60A5FA" />
+    
+    <!-- Left dumbbell weight -->
+    <circle cx="15" cy="25" r="15" fill="#3B82F6" />
+    <circle cx="15" cy="25" r="8" fill="#1E293B" />
+    
+    <!-- Right dumbbell weight -->
+    <circle cx="95" cy="25" r="15" fill="#3B82F6" />
+    <circle cx="95" cy="25" r="8" fill="#1E293B" />
+  </g>
+  
+  <!-- Circular accent -->
+  <circle cx="150" cy="150" r="20" fill="#3B82F6" opacity="0.8" />
+</svg> 

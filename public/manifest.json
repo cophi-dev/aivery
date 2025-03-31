@@ -4,15 +4,24 @@
   "description": "AI-powered fitness tracking and planning",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#3b82f6",
+  "background_color": "#1E293B",
+  "theme_color": "#3B82F6",
   "icons": [
+    {
+      "src": "/aivery-avatar.svg", 
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/aivery-avatar.png", 
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
+  "mobile_web_app_capable": "yes",
+  "apple_mobile_web_app_capable": "yes",
   "version": "1.0.0",
   "build_id": "build-dynamic-vercel-prod-2024-04-10-1",
   "timestamp": "2024-04-10T12:00:00Z"

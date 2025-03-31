@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LucideCheck, LucideLoader, LucideRefreshCw, LucideAlertCircle } from "lucide-react"
-import { Header } from "@/components/header"
 import { connectStravaAction, syncStravaWorkoutsAction, getStravaIntegrationAction } from "@/lib/strava-actions"
 import { StravaImport } from "@/components/strava-import"
 import { Separator } from "@/components/ui/separator"
@@ -136,7 +135,6 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <Header />
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row items-start justify-between mb-8">
           <div>
@@ -164,7 +162,7 @@ export default function IntegrationsPage() {
               <CardHeader>
                 <div className="flex items-center gap-4">
                   <div className="bg-muted rounded-full p-2">
-                    <img src="/placeholder.svg?height=40&width=40" alt="Strava" className="h-10 w-10" />
+                    <img src="/placeholder.svg" alt="Strava" className="h-10 w-10" />
                   </div>
                   <div>
                     <CardTitle>Strava</CardTitle>
