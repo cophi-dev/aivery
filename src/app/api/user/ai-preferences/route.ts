@@ -86,16 +86,12 @@ export async function PUT(request: Request) {
  * GET /api/user/ai-preferences - Get AI personalization preferences
  */
 export async function GET(req: NextRequest) {
-  // Get the session - check if user is authenticated
-  const session = await getServerSession(authOptions);
-  
-  if (!session || !session.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  
   try {
-    // Connect to database
-    await dbConnect();
+    // Get user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
     
     // Get user
     const userId = session.user.id;
@@ -105,15 +101,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
     
+    // Define default preferences
+    const defaultPreferences: AIPreferences = {
+      location: "",
+      units: "metric",
+      trainingPreferences: "",
+      fitnessGoals: "",
+      dietaryPreferences: ""
+    };
+    
+    // Check if user.aiPreferences exists
+    const userPreferences = (user as any).aiPreferences || defaultPreferences;
+    
     return NextResponse.json({
       success: true,
-      aiPreferences: user.aiPreferences || {
-        location: "",
-        units: "metric",
-        trainingPreferences: "",
-        fitnessGoals: "",
-        dietaryPreferences: ""
-      }
+      aiPreferences: userPreferences
     });
   } catch (error) {
     console.error('[API] Error getting AI preferences:', error);
