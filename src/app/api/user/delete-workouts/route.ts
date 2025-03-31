@@ -89,15 +89,55 @@ export async function POST(request: NextRequest) {
 
     console.log(`[delete-workouts] Found user: ${user._id}`);
 
-    // Find all workouts that match the criteria
-    // Normalize workout types to lowercase to match schema
-    const normalizedWorkoutTypes = workoutTypes.map(type => type.toLowerCase());
+    // Map workout types to handle both formats (Run -> running, Swim -> swimming, etc.)
+    const typeMapping: Record<string, string> = {
+      'strength': 'strength',
+      'running': 'running',
+      'swimming': 'swimming',
+      'cycling': 'cycling',
+      'hiit': 'hiit',
+      'flexibility': 'flexibility',
+      'other': 'other',
+      
+      // Handle capitalized display names from UI
+      'Strength': 'strength',
+      'Running': 'running',
+      'Swimming': 'swimming',
+      'Cycling': 'cycling',
+      'Hiit': 'hiit',
+      'HIIT': 'hiit',
+      'Flexibility': 'flexibility',
+      'Other': 'other',
+      
+      // Handle short forms from Strava
+      'Run': 'running',
+      'Swim': 'swimming',
+      'Ride': 'cycling',
+      'Workout': 'strength'
+    };
+    
+    // Map each workout type to its standardized form
+    const normalizedWorkoutTypes = workoutTypes.map(type => {
+      const mappedType = typeMapping[type] || type.toLowerCase();
+      return mappedType;
+    });
+    
+    console.log(`[delete-workouts] Original workout types: ${workoutTypes.join(', ')}`);
     console.log(`[delete-workouts] Normalized workout types: ${normalizedWorkoutTypes.join(', ')}`);
     
+    // Find workouts with either the original or normalized types
     const workoutsToDelete = await WorkoutModel.find({
       userId: user._id,
-      type: { $in: normalizedWorkoutTypes }
-    }).select('_id').lean();
+      $or: [
+        { type: { $in: normalizedWorkoutTypes } },
+        { type: { $in: workoutTypes } }
+      ]
+    }).select('_id type').lean();
+    
+    // Log found workout types for debugging
+    const foundTypes = workoutsToDelete.map(w => w.type);
+    const uniqueFoundTypes = foundTypes.filter((v, i, a) => a.indexOf(v) === i);
+    console.log(`[delete-workouts] Found workout types: ${uniqueFoundTypes.join(', ')}`);
     
     // Get the workout IDs to be deleted
     const workoutIdsToDelete = workoutsToDelete.map(workout => workout._id);
@@ -124,7 +164,10 @@ export async function POST(request: NextRequest) {
     // Delete the workouts
     const deleteResult = await WorkoutModel.deleteMany({
       userId: user._id,
-      type: { $in: normalizedWorkoutTypes }
+      $or: [
+        { type: { $in: normalizedWorkoutTypes } },
+        { type: { $in: workoutTypes } }
+      ]
     });
 
     console.log(`[delete-workouts] Deleted ${deleteResult.deletedCount} workouts`);
