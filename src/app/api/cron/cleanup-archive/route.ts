@@ -34,8 +34,10 @@ export async function GET(req: NextRequest) {
     
     // Find and permanently delete workouts that have been in archive for over 30 days
     const deleteResult = await WorkoutModel.deleteMany({
-      deletedAt: { $lt: thirtyDaysAgo },
-      deletedAt: { $ne: null } // Only delete items that have been soft-deleted
+      $and: [
+        { deletedAt: { $lt: thirtyDaysAgo } },
+        { deletedAt: { $ne: null } } // Only delete items that have been soft-deleted
+      ]
     });
     
     console.log(`[CRON] Permanently deleted ${deleteResult.deletedCount} workouts from archive`);
