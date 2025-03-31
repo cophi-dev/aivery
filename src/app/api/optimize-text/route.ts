@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
+import { getTextFromResponse } from "@/lib/utils";
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -102,9 +103,15 @@ Your task is to enhance and structure the user's dietary preferences into a natu
     });
 
     // Extract and return the optimized text
-    const optimizedText = response.content[0].text?.trim() || text;
+    const optimizedText = getTextFromResponse(response.content) || text;
 
-    return NextResponse.json({ optimizedText });
+    // Clean up any introductory text patterns that shouldn't be shown to the user
+    const cleanedText = optimizedText
+      .replace(/^Here is an optimized (training preferences|fitness goal|dietary preferences) (paragraph|statement) based on the information you provided:\s*/i, '')
+      .replace(/^"(.+)"$/, '$1') // Remove any surrounding quotes if present
+      .trim();
+
+    return NextResponse.json({ optimizedText: cleanedText });
   } catch (error) {
     console.error("Error optimizing text:", error);
     return NextResponse.json(
