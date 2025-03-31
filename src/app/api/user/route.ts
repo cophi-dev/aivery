@@ -33,15 +33,18 @@ export const GET = withApiAuth(async (request: NextRequest, session: any) => {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
     
+    // Use type assertion for TypeScript
+    const typedUser = user as any;
+
     console.log("Returning user data with physical info:", {
-      height: user.height,
-      weight: user.weight,
-      age: user.age,
-      gender: user.gender,
-      activityLevel: user.activityLevel
+      height: typedUser.height,
+      weight: typedUser.weight,
+      age: typedUser.age,
+      gender: typedUser.gender,
+      activityLevel: typedUser.activityLevel
     })
     
-    console.log("Returning user data with AI preferences:", user.aiPreferences || "None")
+    console.log("Returning user data with AI preferences:", typedUser.aiPreferences || "None")
     
     // Return user data
     return NextResponse.json({ user }, { status: 200 })
