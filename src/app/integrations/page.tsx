@@ -154,133 +154,118 @@ export default function IntegrationsPage() {
             <AlertDescription>{alert.message}</AlertDescription>
           </Alert>
         )}
+        
+        {/* Live Connections section moved to top */}
+        <div className="mb-10">
+          <h2 className="text-2xl font-bold mb-6">Live Connections</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Strava */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-4">
+                  <div className="bg-muted rounded-full p-2">
+                    <img src="/placeholder.svg?height=40&width=40" alt="Strava" className="h-10 w-10" />
+                  </div>
+                  <div>
+                    <CardTitle>Strava</CardTitle>
+                    <CardDescription>Sync your Strava workouts</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="flex justify-center py-4">
+                    <LucideLoader className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : stravaIntegration ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <LucideCheck className="h-4 w-4 text-green-600" />
+                      <span>Connected</span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Last synced: {formatDate(stravaIntegration.lastSynced)}
+                    </div>
+                    <div className="text-xs bg-muted p-2 rounded-md">
+                      <p>Only running and swimming activities will be synced. Strength training workouts are not imported.</p>
+                    </div>
+                    <Button onClick={handleSyncStrava} disabled={isSyncing} className="w-full">
+                      {isSyncing ? (
+                        <>
+                          <LucideLoader className="h-4 w-4 mr-2 animate-spin" />
+                          Syncing...
+                        </>
+                      ) : (
+                        <>
+                          <LucideRefreshCw className="h-4 w-4 mr-2" />
+                          Sync Runs & Swims
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button onClick={handleConnectStrava} disabled={isConnecting} className="w-full">
+                    {isConnecting ? (
+                      <>
+                        <LucideLoader className="h-4 w-4 mr-2 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : (
+                      "Connect to Strava"
+                    )}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Placeholder for additional services */}
+            <Card className="opacity-60">
+              <CardHeader>
+                <div className="flex items-center gap-4">
+                  <div className="bg-muted rounded-full p-2">
+                    <img src="/placeholder.svg?height=40&width=40" alt="Garmin Connect" className="h-10 w-10" />
+                  </div>
+                  <div>
+                    <CardTitle>Garmin Connect</CardTitle>
+                    <CardDescription>Sync your Garmin workouts</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" disabled>
+                  Coming Soon
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Placeholder for additional services */}
+            <Card className="opacity-60">
+              <CardHeader>
+                <div className="flex items-center gap-4">
+                  <div className="bg-muted rounded-full p-2">
+                    <img src="/placeholder.svg?height=40&width=40" alt="COROS" className="h-10 w-10" />
+                  </div>
+                  <div>
+                    <CardTitle>COROS</CardTitle>
+                    <CardDescription>Sync your COROS workouts</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" disabled>
+                  Coming Soon
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+        
+        <Separator className="my-8" />
 
         {/* Strava Import Section */}
         <div className="mb-10">
           <h2 className="text-2xl font-bold mb-6">Import Workout History</h2>
           <StravaImport />
-        </div>
-        
-        <Separator className="my-8" />
-        
-        <h2 className="text-2xl font-bold mb-6">Live Connections</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Strava */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-4">
-                <div className="bg-muted rounded-full p-2">
-                  <img src="/placeholder.svg?height=40&width=40" alt="Strava" className="h-10 w-10" />
-                </div>
-                <div>
-                  <CardTitle>Strava</CardTitle>
-                  <CardDescription>Sync your Strava workouts</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex justify-center py-4">
-                  <LucideLoader className="h-6 w-6 animate-spin text-primary" />
-                </div>
-              ) : stravaIntegration ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <LucideCheck className="h-4 w-4 text-green-600" />
-                    <span>Connected</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Last synced: {formatDate(stravaIntegration.lastSynced)}
-                  </div>
-                  <div className="text-xs bg-muted p-2 rounded-md">
-                    <p>Only running and swimming activities will be synced. Strength training workouts are not imported.</p>
-                  </div>
-                  <Button onClick={handleSyncStrava} disabled={isSyncing} className="w-full">
-                    {isSyncing ? (
-                      <>
-                        <LucideLoader className="h-4 w-4 mr-2 animate-spin" />
-                        Syncing...
-                      </>
-                    ) : (
-                      <>
-                        <LucideRefreshCw className="h-4 w-4 mr-2" />
-                        Sync Runs & Swims
-                      </>
-                    )}
-                  </Button>
-                </div>
-              ) : (
-                <Button onClick={handleConnectStrava} disabled={isConnecting} className="w-full">
-                  {isConnecting ? (
-                    <>
-                      <LucideLoader className="h-4 w-4 mr-2 animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    "Connect to Strava"
-                  )}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Placeholder for additional services */}
-          <Card className="opacity-60">
-            <CardHeader>
-              <div className="flex items-center gap-4">
-                <div className="bg-muted rounded-full p-2">
-                  <img src="/placeholder.svg?height=40&width=40" alt="Garmin Connect" className="h-10 w-10" />
-                </div>
-                <div>
-                  <CardTitle>Garmin Connect</CardTitle>
-                  <CardDescription>Sync your Garmin workouts</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full" disabled>
-                Coming Soon
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Placeholder for additional services */}
-          <Card className="opacity-60">
-            <CardHeader>
-              <div className="flex items-center gap-4">
-                <div className="bg-muted rounded-full p-2">
-                  <img src="/placeholder.svg?height=40&width=40" alt="COROS" className="h-10 w-10" />
-                </div>
-                <div>
-                  <CardTitle>COROS</CardTitle>
-                  <CardDescription>Sync your COROS workouts</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full" disabled>
-                Coming Soon
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold mb-4">Data Import</h2>
-          <Card>
-            <CardHeader>
-              <CardTitle>Manual Import</CardTitle>
-              <CardDescription>Import your workout data from files</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  You can import your workout data from various file formats, including GPX, TCX, and FIT files.
-                </p>
-                <Button>Import Files</Button>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </>

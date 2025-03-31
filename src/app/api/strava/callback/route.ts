@@ -29,18 +29,28 @@ function checkStravaConfig() {
 }
 
 export async function GET(request: NextRequest) {
+  console.log('🔄 Strava callback: Received callback request', {
+    url: request.url,
+    timestamp: new Date().toISOString()
+  })
+
   try {
     // Check authentication
     const session = await getServerSession(authOptions)
+    console.log('🔐 Strava callback: Auth check', {
+      isAuthenticated: !!session?.user,
+      userId: session?.user?.id || 'not authenticated'
+    })
+
     if (!session?.user) {
-      console.log('Strava callback: User not authenticated')
+      console.log('❌ Strava callback: User not authenticated')
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
     // Check for Strava configuration issues
     const configIssues = checkStravaConfig()
     if (configIssues.length > 0) {
-      console.error('Strava callback: Configuration issues detected:', configIssues)
+      console.error('⚠️ Strava callback: Configuration issues detected:', configIssues)
       return NextResponse.redirect(
         new URL(`/integrations?error=strava_config_error&details=${encodeURIComponent(configIssues.join(', '))}`, request.url)
       )
@@ -50,28 +60,37 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get('code')
     const error = searchParams.get('error')
+    
+    console.log('📝 Strava callback: URL parameters', {
+      hasCode: !!code,
+      codePrefix: code ? code.substring(0, 4) + '...' : 'none',
+      error: error || 'none',
+      scope: searchParams.get('scope'),
+      state: searchParams.get('state'),
+      allParams: Object.fromEntries(searchParams.entries())
+    })
 
     if (error) {
-      console.error('Strava callback: Error from Strava', error)
+      console.error('❌ Strava callback: Error from Strava', error)
       return NextResponse.redirect(new URL(`/integrations?error=${encodeURIComponent(error)}`, request.url))
     }
 
     if (!code) {
-      console.error('Strava callback: No code provided')
+      console.error('❌ Strava callback: No code provided')
       return NextResponse.redirect(new URL('/integrations?error=no_code', request.url))
     }
 
-    console.log('Strava callback: Processing code for user', session.user.id)
+    console.log('✅ Strava callback: Processing code for user', session.user.id)
 
     try {
       // Connect to Strava with the auth code
       const result = await connectStrava(session.user.id, code)
-      console.log('Strava connection successful:', result)
+      console.log('🎉 Strava connection successful:', result)
 
       // Redirect back to the integrations page with success
       return NextResponse.redirect(new URL('/integrations?success=strava_connected', request.url))
     } catch (connectionError) {
-      console.error('Strava callback: Connection error:', connectionError)
+      console.error('❌ Strava callback: Connection error:', connectionError)
       
       // Get a more specific error message
       const errorMessage = connectionError instanceof Error 
@@ -79,13 +98,14 @@ export async function GET(request: NextRequest) {
         : 'strava_connection_failed'
       
       // Add more detailed error logging
-      console.error('Strava connection error details:', {
+      console.error('🔍 Strava connection error details:', {
         userId: session.user.id,
         error: errorMessage,
         stack: connectionError instanceof Error ? connectionError.stack : 'No stack trace',
         clientId: STRAVA_CONFIG.clientId ? STRAVA_CONFIG.clientId.substring(0, 4) + '...' : 'not set',
         hasClientSecret: !!STRAVA_CONFIG.clientSecret,
         redirectUri: STRAVA_CONFIG.redirectUri,
+        callbackUrl: request.url
       })
       
       // Categorize common errors for better user experience
@@ -108,15 +128,16 @@ export async function GET(request: NextRequest) {
     }
   } catch (error) {
     // Handle any other unexpected errors
-    console.error('Strava callback: Unexpected error:', error)
+    console.error('❌ Strava callback: Unexpected error:', error)
     
     // Add more detailed error logging
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : 'No stack trace';
     
-    console.error('Strava callback unexpected error details:', {
+    console.error('🔍 Strava callback unexpected error details:', {
       error: errorMessage,
       stack: errorStack,
+      requestUrl: request.url,
       stravaConfig: {
         hasClientId: !!STRAVA_CONFIG.clientId,
         hasClientSecret: !!STRAVA_CONFIG.clientSecret,
