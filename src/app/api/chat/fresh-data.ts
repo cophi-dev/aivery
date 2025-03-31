@@ -63,7 +63,7 @@ export async function getFreshWorkouts(userId: string) {
  * Get fresh workout data for data queries with specific filtering
  */
 export async function getFreshFilteredWorkouts(userId: string, timeframe?: string, workoutType?: string) {
-  console.log(`[FRESH-DATA] Getting filtered workouts for user ${userId}`);
+  console.log(`[FRESH-DATA] Getting filtered workouts for user ${userId}, timeframe: ${timeframe}, type: ${workoutType || 'any'}`);
   
   // Force reconnection to the database
   (global as any).mongoose = { conn: null, promise: null };
@@ -89,13 +89,66 @@ export async function getFreshFilteredWorkouts(userId: string, timeframe?: strin
       filter.date = { $gte: startDate };
       console.log(`[FRESH-DATA] Setting week start date to: ${startDate.toISOString()}`);
     } 
+    else if (timeframe === 'last-week') {
+      // First get the start of this week (Monday)
+      const day = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
+      const daysFromMonday = day === 0 ? 6 : day - 1; // Convert to Monday=0, Sunday=6
+      const thisWeekStart = new Date(now);
+      thisWeekStart.setDate(now.getDate() - daysFromMonday);
+      thisWeekStart.setHours(0, 0, 0, 0);
+      
+      // Last week is 7 days before the start of this week
+      const lastWeekStart = new Date(thisWeekStart);
+      lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+      
+      const lastWeekEnd = new Date(thisWeekStart);
+      lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
+      lastWeekEnd.setHours(23, 59, 59, 999);
+      
+      filter.date = { 
+        $gte: lastWeekStart, 
+        $lte: lastWeekEnd 
+      };
+      
+      console.log(`[FRESH-DATA] Setting last week date range (Monday-Sunday):`);
+      console.log(`[FRESH-DATA] Start: ${lastWeekStart.toISOString()}`);
+      console.log(`[FRESH-DATA] End: ${lastWeekEnd.toISOString()}`);
+      console.log(`[FRESH-DATA] Current now: ${now.toISOString()}`);
+    }
     else if (timeframe === 'month') {
       const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       filter.date = { $gte: startDate };
     }
+    else if (timeframe === 'last-month') {
+      // Calculate last month
+      const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const lastMonthYear = lastMonth === 11 ? now.getFullYear() - 1 : now.getFullYear();
+      
+      const startDate = new Date(lastMonthYear, lastMonth, 1);
+      const endDate = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999); // Last day of month
+      
+      filter.date = { 
+        $gte: startDate, 
+        $lte: endDate 
+      };
+      
+      console.log(`[FRESH-DATA] Setting last month date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    }
     else if (timeframe === 'year') {
       const startDate = new Date(now.getFullYear(), 0, 1);
       filter.date = { $gte: startDate };
+    }
+    else if (timeframe === 'last-year') {
+      const lastYear = now.getFullYear() - 1;
+      const startDate = new Date(lastYear, 0, 1);
+      const endDate = new Date(lastYear, 11, 31, 23, 59, 59, 999);
+      
+      filter.date = { 
+        $gte: startDate, 
+        $lte: endDate 
+      };
+      
+      console.log(`[FRESH-DATA] Setting last year date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
     }
   }
   

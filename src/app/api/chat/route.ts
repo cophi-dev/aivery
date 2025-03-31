@@ -22,6 +22,20 @@ import { IUser } from "@/lib/db/models/user";
 import { getFreshWorkouts, getFreshFilteredWorkouts } from "./fresh-data";
 import { Document } from "mongoose";
 
+// Define QueryAnalysis interface for workout data queries
+interface QueryAnalysis {
+  dataType?: string;
+  timeFrame?: string;
+  filters?: {
+    workoutType?: string;
+    format?: string;
+    includeDetails?: boolean;
+    aggregation?: string;
+    metric?: string;
+  };
+  workoutType?: string;
+}
+
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -611,12 +625,65 @@ MAPPINGS:
       ],
     });
 
-    // Parse the Claude's analysis of the user query
+    // Parse the analysis
     const analysisText =
       getTextFromResponse(queryAnalysisResponse.content) || "{}";
-    const queryAnalysis = JSON.parse(analysisText);
-
-    console.log("Query analysis:", queryAnalysis);
+    console.log("[CHAT] Analysis text:", analysisText);
+    
+    let queryAnalysis: QueryAnalysis = {
+      dataType: '',
+      timeFrame: '',
+      filters: {
+        workoutType: '',
+        format: '',
+        includeDetails: false,
+        aggregation: '',
+        metric: ''
+      },
+      workoutType: ''
+    };
+    
+    try {
+      const parsed = JSON.parse(analysisText);
+      queryAnalysis = {
+        ...queryAnalysis,
+        ...parsed
+      };
+      
+      // Check if this is a query about last week, month, or year
+      if (query.toLowerCase().includes("last week") && queryAnalysis.timeFrame === "week") {
+        console.log("[CHAT] Detected 'last week' query, adjusting timeFrame");
+        queryAnalysis.timeFrame = "last-week";
+      } else if (query.toLowerCase().includes("last month") && queryAnalysis.timeFrame === "month") {
+        console.log("[CHAT] Detected 'last month' query, adjusting timeFrame");
+        queryAnalysis.timeFrame = "last-month";
+      } else if (query.toLowerCase().includes("last year") && queryAnalysis.timeFrame === "year") {
+        console.log("[CHAT] Detected 'last year' query, adjusting timeFrame");
+        queryAnalysis.timeFrame = "last-year";
+      }
+      
+      // Detect workout type from query if not provided by analysis
+      if (!queryAnalysis.workoutType && !queryAnalysis.filters?.workoutType) {
+        if (query.toLowerCase().includes("run")) {
+          console.log("[CHAT] Detected running query");
+          queryAnalysis.workoutType = "running";
+        } else if (query.toLowerCase().includes("swim")) {
+          console.log("[CHAT] Detected swimming query");
+          queryAnalysis.workoutType = "swimming";
+        } else if (query.toLowerCase().includes("bike") || 
+                 query.toLowerCase().includes("cycle") || 
+                 query.toLowerCase().includes("cycling")) {
+          console.log("[CHAT] Detected cycling query");
+          queryAnalysis.workoutType = "cycling";
+        }
+      }
+      
+      console.log("[CHAT] Final query analysis:", queryAnalysis);
+    } catch (error) {
+      console.error("[CHAT] Error parsing query analysis:", error);
+      console.error("[CHAT] Raw analysis text:", analysisText);
+      // Keep default structure on parse error
+    }
 
     // Connect to the database
     await dbConnect();
@@ -630,14 +697,61 @@ MAPPINGS:
       const now = new Date();
 
       if (queryAnalysis.timeFrame === "week") {
-        const day = now.getDay();
-        const startDate = new Date(now);
-        startDate.setDate(now.getDate() - day);
-        startDate.setHours(0, 0, 0, 0);
-        dbFilter.date = { $gte: startDate };
+        // Check if query is asking about "last week" vs "this week"
+        const isLastWeek = query.toLowerCase().includes("last week");
+        
+        if (isLastWeek) {
+          // First get the start of this week (Monday)
+          const day = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
+          const daysFromMonday = day === 0 ? 6 : day - 1; // Convert to Monday=0, Sunday=6
+          const thisWeekStart = new Date(now);
+          thisWeekStart.setDate(now.getDate() - daysFromMonday);
+          thisWeekStart.setHours(0, 0, 0, 0);
+          
+          // Last week is 7 days before the start of this week
+          const startDate = new Date(thisWeekStart);
+          startDate.setDate(thisWeekStart.getDate() - 7);
+          
+          const endDate = new Date(thisWeekStart);
+          endDate.setDate(thisWeekStart.getDate() - 1);
+          endDate.setHours(23, 59, 59, 999);
+          
+          console.log("[CHAT] Looking for workouts from last week (Monday-Sunday):", 
+            startDate.toISOString(), "to", endDate.toISOString());
+          
+          dbFilter.date = { 
+            $gte: startDate,
+            $lte: endDate 
+          };
+        } else {
+          // This week (default)
+          const day = now.getDay();
+          const startDate = new Date(now);
+          startDate.setDate(now.getDate() - day);
+          startDate.setHours(0, 0, 0, 0);
+          dbFilter.date = { $gte: startDate };
+        }
       } else if (queryAnalysis.timeFrame === "month") {
-        const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        dbFilter.date = { $gte: startDate };
+        // Check if query is asking about "last month" vs "this month"
+        const isLastMonth = query.toLowerCase().includes("last month");
+        
+        if (isLastMonth) {
+          // Last month
+          const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+          const lastMonthYear = lastMonth === 11 ? now.getFullYear() - 1 : now.getFullYear();
+          
+          const startDate = new Date(lastMonthYear, lastMonth, 1);
+          const endDate = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999);
+          
+          dbFilter.date = { 
+            $gte: startDate,
+            $lte: endDate 
+          };
+        } else {
+          // This month (default)
+          const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          dbFilter.date = { $gte: startDate };
+        }
       } else if (queryAnalysis.timeFrame === "2024") {
         dbFilter.date = {
           $gte: new Date("2024-01-01T00:00:00.000Z"),
@@ -649,8 +763,20 @@ MAPPINGS:
           $lt: new Date("2026-01-01T00:00:00.000Z"),
         };
       } else if (queryAnalysis.timeFrame === "year") {
-        const startDate = new Date(now.getFullYear(), 0, 1);
-        dbFilter.date = { $gte: startDate };
+        // Check if query is asking about "last year"
+        const isLastYear = query.toLowerCase().includes("last year");
+        
+        if (isLastYear) {
+          const lastYear = now.getFullYear() - 1;
+          dbFilter.date = {
+            $gte: new Date(`${lastYear}-01-01T00:00:00.000Z`),
+            $lt: new Date(`${lastYear + 1}-01-01T00:00:00.000Z`),
+          };
+        } else {
+          // This year (default)
+          const startDate = new Date(now.getFullYear(), 0, 1);
+          dbFilter.date = { $gte: startDate };
+        }
       }
     }
 
@@ -808,11 +934,54 @@ MAPPINGS:
       // Generate workout type summaries for more consistent data presentation
       const workoutSummaries = generateWorkoutTypeSummaries(result.workouts);
 
+      // Format workouts for better readability
+      const formatWorkouts = (workouts: any[]) => {
+        return workouts.map(w => ({
+          id: w._id.toString(),
+          type: w.type,
+          date: new Date(w.date).toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric'
+          }),
+          distance: w.distance ? `${parseFloat(w.distance).toFixed(1)} km` : '',
+          duration: w.duration ? formatDuration(w.duration) : '',
+          notes: w.notes || ''
+        }));
+      };
+      
+      // Format duration in hours and minutes
+      const formatDuration = (minutes: number) => {
+        const hours = Math.floor(minutes / 60);
+        const mins = Math.floor(minutes % 60);
+        
+        if (hours > 0) {
+          return `${hours}h ${mins}m`;
+        }
+        return `${mins} min`;
+      };
+      
+      // Add workout summaries for each type
+      const formatWorkoutSummaries = (summaries: any, type: string) => {
+        const typeSummary = summaries?.byType?.[type];
+        if (!typeSummary || !typeSummary.hasWorkouts) return null;
+        
+        return {
+          count: typeSummary.count,
+          totalDistance: typeSummary.hasDistance 
+            ? `${parseFloat(typeSummary.totalDistance).toFixed(1)} km` 
+            : null,
+          totalDuration: formatDuration(typeSummary.totalDuration),
+          dateRange: typeSummary.dateRange?.formatted || null
+        };
+      };
+      
       const contextMessage = JSON.stringify({
         userQuery: query,
-        workouts: result.workouts || [],
+        workouts: formatWorkouts(result.workouts),
         workoutSummaries,
         summariesByType: workoutSummaries.byType,
+        formattedSummary: formatWorkoutSummaries(workoutSummaries, queryAnalysis.workoutType || 'running'),
         dateRange: workoutSummaries.dateRange,
         count: result.count,
         timeFrame: queryAnalysis.timeFrame || "all",
@@ -823,18 +992,25 @@ MAPPINGS:
         model: "claude-3-haiku-20240307",
         max_tokens: 500,
         temperature: 0.7,
-        system: `Act as a fitness coach answering workout questions.
+        system: `Act as a fitness coach answering workout questions based on real user data.
 
-FORMAT:
-- Use **bold** for numbers
-- Use *italics* for workout types 
-- Use bullet points for lists
-- Be conversational, not technical
+FORMAT GUIDELINES:
+- Use **bold** for important numbers (distance, duration, counts)
+- Use *italics* for workout types
+- Use bullet points for listing multiple workouts
+- Be conversational and encouraging
 
-REQUIREMENTS:
-- Use exact data units provided
-- Include only requested timeframe data
-- Direct answer first, then stats, then encouragement`,
+RESPONSE STRUCTURE:
+1. Direct answer to the question first with specific data values
+2. Include specific details for individual workouts if relevant
+3. Provide context about the time period (clearly specify "last week", "this week", etc.)
+4. End with personalized encouragement
+
+ACCURACY REQUIREMENTS:
+- Always use the exact data units provided (km, minutes, etc.)
+- Only include data from the timeframe that was requested
+- Don't invent workouts or details not in the data
+- For date ranges, use formatted dates from the data`,
         messages: [
           {
             role: "user",
@@ -924,14 +1100,34 @@ function getTextFromResponse(content: any): string | undefined {
 
 export async function POST(request: Request) {
   try {
-    // Validate that the user is authenticated
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    }
-
-    const userId = session.user.id;
+    // TEMPORARY DEBUG MODE - Add test user ID bypass
+    // TO BE REMOVED IN PRODUCTION
     const body = await request.json();
+    const testUserId = body.testUserId;
+    const isDebugMode = body.debug === true && testUserId;
+    let userId;
+    let session;
+    
+    if (isDebugMode) {
+      console.log("[CHAT] DEBUG MODE - Using test user ID:", testUserId);
+      userId = testUserId;
+      // Create a minimal session object for the rest of the code
+      session = { 
+        user: { 
+          id: testUserId,
+          name: "Test User",
+          nickname: "Tester"
+        } 
+      };
+    } else {
+      // Normal authentication flow
+      session = await getServerSession(authOptions);
+      if (!session || !session.user) {
+        return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      }
+      userId = session.user.id;
+    }
+    
     const messages = body.messages;
     const messageContent = messages[messages.length - 1].content;
 
@@ -1125,6 +1321,7 @@ For example:
     }
 
     // Determine if this question is asking about workout data
+    console.log("[CHAT] Checking if message is a data query:", latestUserMessage);
     const dataKeywords = [
       "workout",
       "run",
@@ -1166,7 +1363,10 @@ For example:
       latestUserMessage.toLowerCase().includes(keyword),
     );
 
+    console.log("[CHAT] Is data query?", isLikelyDataQuery, "User ID:", session?.user?.id);
+
     if (isLikelyDataQuery && session?.user?.id) {
+      console.log("[CHAT] Starting data query processing for user:", session.user.id);
       try {
         console.log("[CHAT] Processing likely data query:", latestUserMessage);
 
@@ -1202,27 +1402,192 @@ MAPPINGS:
         // Parse the analysis
         const analysisText =
           getTextFromResponse(queryAnalysisResponse.content) || "{}";
-        const queryAnalysis = JSON.parse(analysisText);
-
-        console.log("[CHAT] Query analysis:", queryAnalysis);
+        console.log("[CHAT] Analysis text:", analysisText);
+        
+        let queryAnalysis: QueryAnalysis = {
+          dataType: '',
+          timeFrame: '',
+          filters: {
+            workoutType: '',
+            format: '',
+            includeDetails: false,
+            aggregation: '',
+            metric: ''
+          },
+          workoutType: ''
+        };
+        
+        try {
+          const parsed = JSON.parse(analysisText);
+          queryAnalysis = {
+            ...queryAnalysis,
+            ...parsed
+          };
+          
+          // Check if this is a query about last week, month, or year
+          if (latestUserMessage.toLowerCase().includes("last week")) {
+            console.log("[CHAT] Detected 'last week' query, setting timeFrame to last-week");
+            queryAnalysis.timeFrame = "last-week";
+          } else if (latestUserMessage.toLowerCase().includes("last month")) {
+            console.log("[CHAT] Detected 'last month' query, setting timeFrame to last-month");
+            queryAnalysis.timeFrame = "last-month";
+          } else if (latestUserMessage.toLowerCase().includes("last year")) {
+            console.log("[CHAT] Detected 'last year' query, setting timeFrame to last-year");
+            queryAnalysis.timeFrame = "last-year";
+          }
+          
+          // Detect workout type from query if not provided by analysis
+          if (!queryAnalysis.workoutType && !queryAnalysis.filters?.workoutType) {
+            if (latestUserMessage.toLowerCase().includes("run")) {
+              console.log("[CHAT] Detected running query");
+              queryAnalysis.workoutType = "running";
+            } else if (latestUserMessage.toLowerCase().includes("swim")) {
+              console.log("[CHAT] Detected swimming query");
+              queryAnalysis.workoutType = "swimming";
+            } else if (latestUserMessage.toLowerCase().includes("bike") || 
+                     latestUserMessage.toLowerCase().includes("cycle") || 
+                     latestUserMessage.toLowerCase().includes("cycling")) {
+              console.log("[CHAT] Detected cycling query");
+              queryAnalysis.workoutType = "cycling";
+            }
+          }
+          
+          console.log("[CHAT] Final query analysis:", queryAnalysis);
+        } catch (error) {
+          console.error("[CHAT] Error parsing query analysis:", error);
+          console.error("[CHAT] Raw analysis text:", analysisText);
+          // Keep default structure on parse error
+        }
 
         // Get fresh workout data based on the analysis
-        const { workouts, count } = await getFreshFilteredWorkouts(
-          session.user.id,
-          queryAnalysis.timeFrame,
-          queryAnalysis.workoutType,
-        );
+        let workouts = [];
+        let count = 0;
+        
+        // Handle special time cases like "last week"
+        if (queryAnalysis.timeFrame === "last-week" || queryAnalysis.timeFrame === "last-month" || queryAnalysis.timeFrame === "last-year") {
+          const now = new Date();
+          let startDate = new Date();
+          let endDate = new Date();
+          
+          if (queryAnalysis.timeFrame === "last-week") {
+            // First get the start of this week (Monday)
+            const day = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
+            const daysFromMonday = day === 0 ? 6 : day - 1; // Convert to Monday=0, Sunday=6
+            const thisWeekStart = new Date(now);
+            thisWeekStart.setDate(now.getDate() - daysFromMonday);
+            thisWeekStart.setHours(0, 0, 0, 0);
+            
+            // Last week is 7 days before the start of this week
+            startDate = new Date(thisWeekStart);
+            startDate.setDate(thisWeekStart.getDate() - 7);
+            
+            endDate = new Date(thisWeekStart);
+            endDate.setDate(thisWeekStart.getDate() - 1);
+            endDate.setHours(23, 59, 59, 999);
+            
+            console.log("[CHAT] Looking for workouts from last week (Monday-Sunday):", 
+              startDate.toISOString(), "to", endDate.toISOString());
+          } else if (queryAnalysis.timeFrame === "last-month") {
+            // Calculate last month's start and end dates
+            const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+            const lastMonthYear = lastMonth === 11 ? now.getFullYear() - 1 : now.getFullYear();
+            
+            startDate = new Date(lastMonthYear, lastMonth, 1);
+            endDate = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999);
+          } else if (queryAnalysis.timeFrame === "last-year") {
+            // Calculate last year's start and end dates
+            const lastYear = now.getFullYear() - 1;
+            startDate = new Date(lastYear, 0, 1);
+            endDate = new Date(lastYear, 11, 31, 23, 59, 59, 999);
+          }
+          
+          // Connect to DB and find workouts in the specific date range
+          await dbConnect();
+          const workoutsCollection = await getCollection("workouts");
+          
+          // Create filter for specific time period
+          const filter: any = { 
+            userId: new ObjectId(session.user.id),
+            date: { $gte: startDate, $lte: endDate }
+          };
+          
+          // Add workout type filter if specified
+          const workoutType = queryAnalysis.workoutType;
+          if (workoutType && typeof workoutType === 'string') {
+            const typeRegex = new RegExp(workoutType, "i");
+            filter.type = { $regex: typeRegex };
+          }
+          
+          // Get workouts for the specific time period
+          workouts = await workoutsCollection.find(filter).sort({ date: -1 }).toArray();
+          count = workouts.length;
+          
+          console.log(`[CHAT] Found ${count} workouts in specified time period`);
+        } else {
+          // Use the normal filtered workout function for other time periods
+          const result = await getFreshFilteredWorkouts(
+            session.user.id,
+            queryAnalysis.timeFrame,
+            queryAnalysis.workoutType,
+          );
+          
+          workouts = result.workouts;
+          count = result.count;
+        }
 
         // If we have workout data, format it into a response
         if (workouts.length > 0 || count > 0) {
           // Generate workout type summaries for more consistent data presentation
           const workoutSummaries = generateWorkoutTypeSummaries(workouts);
 
+          // Format workouts for better readability
+          const formatWorkouts = (workouts: any[]) => {
+            return workouts.map(w => ({
+              id: w._id.toString(),
+              type: w.type,
+              date: new Date(w.date).toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+              }),
+              distance: w.distance ? `${parseFloat(w.distance).toFixed(1)} km` : '',
+              duration: w.duration ? formatDuration(w.duration) : '',
+              notes: w.notes || ''
+            }));
+          };
+          
+          // Format duration in hours and minutes
+          const formatDuration = (minutes: number) => {
+            const hours = Math.floor(minutes / 60);
+            const mins = Math.floor(minutes % 60);
+            
+            if (hours > 0) {
+              return `${hours}h ${mins}m`;
+            }
+            return `${mins} min`;
+          };
+          
+          // Add workout summaries for each type
+          const formatWorkoutSummaries = (summaries: any, type: string) => {
+            const typeSummary = summaries?.byType?.[type];
+            if (!typeSummary || !typeSummary.hasWorkouts) return null;
+            
+            return {
+              count: typeSummary.count,
+              totalDistance: typeSummary.hasDistance 
+                ? `${parseFloat(typeSummary.totalDistance).toFixed(1)} km` 
+                : null,
+              totalDuration: formatDuration(typeSummary.totalDuration),
+              dateRange: typeSummary.dateRange?.formatted || null
+            };
+          };
+          
           const contextMessage = JSON.stringify({
             userQuery: latestUserMessage,
-            workouts,
+            workouts: formatWorkouts(workouts),
             workoutSummaries,
             summariesByType: workoutSummaries.byType,
+            formattedSummary: formatWorkoutSummaries(workoutSummaries, queryAnalysis.workoutType || 'running'),
             dateRange: workoutSummaries.dateRange,
             count,
             timeFrame: queryAnalysis.timeFrame || "all",
@@ -1234,18 +1599,25 @@ MAPPINGS:
             model: "claude-3-haiku-20240307",
             max_tokens: 500,
             temperature: 0.7,
-            system: `Act as a fitness coach answering workout questions.
+            system: `Act as a fitness coach answering workout questions based on real user data.
 
-FORMAT:
-- Use **bold** for numbers
-- Use *italics* for workout types 
-- Use bullet points for lists
-- Be conversational, not technical
+FORMAT GUIDELINES:
+- Use **bold** for important numbers (distance, duration, counts)
+- Use *italics* for workout types
+- Use bullet points for listing multiple workouts
+- Be conversational and encouraging
 
-REQUIREMENTS:
-- Use exact data units provided
-- Include only requested timeframe data
-- Direct answer first, then stats, then encouragement`,
+RESPONSE STRUCTURE:
+1. Direct answer to the question first with specific data values
+2. Include specific details for individual workouts if relevant
+3. Provide context about the time period (clearly specify "last week", "this week", etc.)
+4. End with personalized encouragement
+
+ACCURACY REQUIREMENTS:
+- Always use the exact data units provided (km, minutes, etc.)
+- Only include data from the timeframe that was requested
+- Don't invent workouts or details not in the data
+- For date ranges, use formatted dates from the data`,
             messages: [
               {
                 role: "user",
@@ -1315,44 +1687,25 @@ REQUIREMENTS:
       }
     }
 
-    // No workouts found, let Anthropic handle it
-    console.log(
-      "[CHAT] No matching workouts found, falling back to general response",
-    );
-
-    // Create a friendly response about no workouts found
-    const timeFrameText = "recently"; // Default to a generic timeframe if no specific analysis available
-
-    const workoutTypeText = "any workouts recently"; // Default to generic workout type
-
-    // Create a more personalized no-workouts response
-    const noWorkoutsResponse = await client.messages.create({
+    // If we've gotten here, it's not a data query or name question - let's handle it as a regular chat message
+    const response = await client.messages.create({
       model: "claude-3-haiku-20240307",
-      max_tokens: 100,
-      temperature: 0.8,
-      system: `Act as a fitness coach responding to someone with no workouts.
-
-1. One encouraging sentence only
-2. Acknowledge missing workouts 
-3. Include specific action suggestion
-4. Be positive, optional single emoji`,
-      messages: [
-        {
-          role: "user",
-          content: `Create a response about not having ${workoutTypeText}.`,
-        },
-      ],
+      max_tokens: 500,
+      temperature: 0.7,
+      system: systemMessage,
+      messages: messages.map((m: any) => ({
+        role: m.role,
+        content: m.content,
+      })),
     });
 
-    return new Response(
-      getTextFromResponse(noWorkoutsResponse.content) ||
-        `I don't see ${workoutTypeText}. Would you like to log a workout now?`,
-      {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-        },
+    const responseText = getTextFromResponse(response.content);
+
+    return new Response(responseText, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
       },
-    );
+    });
   } catch (error) {
     console.error("Error processing chat request:", error);
     return new Response(
