@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
     
     // Map each workout type to its standardized form
     const normalizedWorkoutTypes = workoutTypes.map(type => {
+      console.log(`[delete-workouts] Mapping workout type: '${type}' -> '${typeMapping[type] || type.toLowerCase()}'`);
       const mappedType = typeMapping[type] || type.toLowerCase();
       return mappedType;
     });
@@ -130,14 +131,32 @@ export async function POST(request: NextRequest) {
       userId: user._id,
       $or: [
         { type: { $in: normalizedWorkoutTypes } },
-        { type: { $in: workoutTypes } }
+        { type: { $in: workoutTypes } },
+        // Add direct condition for swimming workouts when type Swim is selected
+        ...(workoutTypes.includes('Swim') ? [{ type: 'swimming' }] : []),
+        // Add reverse condition for all workouts with types in lowercase
+        { type: { $in: workoutTypes.map(t => t.toLowerCase()) } }
       ]
     }).select('_id type').lean();
     
+    // Detailed debug logging
+    console.log(`[delete-workouts] Original types requested: ${JSON.stringify(workoutTypes)}`);
+    console.log(`[delete-workouts] Normalized types: ${JSON.stringify(normalizedWorkoutTypes)}`);
+
     // Log found workout types for debugging
     const foundTypes = workoutsToDelete.map(w => w.type);
     const uniqueFoundTypes = foundTypes.filter((v, i, a) => a.indexOf(v) === i);
     console.log(`[delete-workouts] Found workout types: ${uniqueFoundTypes.join(', ')}`);
+    console.log(`[delete-workouts] Found workout type list: ${JSON.stringify(uniqueFoundTypes)}`);
+    console.log(`[delete-workouts] Query used: ${JSON.stringify({
+      userId: user._id,
+      $or: [
+        { type: { $in: normalizedWorkoutTypes } },
+        { type: { $in: workoutTypes } },
+        ...(workoutTypes.includes('Swim') ? [{ type: 'swimming' }] : []),
+        { type: { $in: workoutTypes.map(t => t.toLowerCase()) } }
+      ]
+    })}`);
     
     // Get the workout IDs to be deleted
     const workoutIdsToDelete = workoutsToDelete.map(workout => workout._id);
@@ -166,7 +185,11 @@ export async function POST(request: NextRequest) {
       userId: user._id,
       $or: [
         { type: { $in: normalizedWorkoutTypes } },
-        { type: { $in: workoutTypes } }
+        { type: { $in: workoutTypes } },
+        // Add direct condition for swimming workouts when type Swim is selected
+        ...(workoutTypes.includes('Swim') ? [{ type: 'swimming' }] : []),
+        // Add reverse condition for all workouts with types in lowercase
+        { type: { $in: workoutTypes.map(t => t.toLowerCase()) } }
       ]
     });
 

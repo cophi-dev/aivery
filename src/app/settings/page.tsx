@@ -1720,7 +1720,7 @@ export default function SettingsPage() {
                     <div className="mb-4">
                       <Label className="mb-2 block">Select workout types to delete</Label>
                       <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
-                        {["strength", "running", "swimming", "cycling", "hiit", "flexibility", "other"].map((type) => (
+                        {["strength", "running", "swimming", "Swim", "cycling", "hiit", "flexibility", "other"].map((type) => (
                           <div key={type} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
                             <Checkbox 
                               id={`workout-type-${type}`} 
