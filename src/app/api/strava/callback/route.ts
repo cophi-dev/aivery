@@ -1,10 +1,32 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { exchangeCodeForToken } from "@/lib/strava/config"
+import { exchangeCodeForToken, STRAVA_CONFIG } from "@/lib/strava/config"
 import { connectStrava } from "@/lib/services/stravaService"
 
 export const dynamic = 'force-dynamic'
+
+// Helper function to check for Strava configuration issues
+function checkStravaConfig() {
+  const issues = []
+
+  if (!STRAVA_CONFIG.clientId) {
+    issues.push("STRAVA_CLIENT_ID is not configured")
+  }
+
+  if (!STRAVA_CONFIG.clientSecret) {
+    issues.push("STRAVA_CLIENT_SECRET is not configured")
+  }
+
+  const redirectUri = STRAVA_CONFIG.redirectUri
+  if (!redirectUri) {
+    issues.push("Redirect URI is not configured")
+  } else if (!redirectUri.startsWith('http')) {
+    issues.push(`Redirect URI '${redirectUri}' appears to be invalid`)
+  }
+
+  return issues
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +35,15 @@ export async function GET(request: NextRequest) {
     if (!session?.user) {
       console.log('Strava callback: User not authenticated')
       return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    // Check for Strava configuration issues
+    const configIssues = checkStravaConfig()
+    if (configIssues.length > 0) {
+      console.error('Strava callback: Configuration issues detected:', configIssues)
+      return NextResponse.redirect(
+        new URL(`/integrations?error=strava_config_error&details=${encodeURIComponent(configIssues.join(', '))}`, request.url)
+      )
     }
 
     // Get the authorization code from the URL
@@ -51,7 +82,10 @@ export async function GET(request: NextRequest) {
       console.error('Strava connection error details:', {
         userId: session.user.id,
         error: errorMessage,
-        stack: connectionError instanceof Error ? connectionError.stack : 'No stack trace'
+        stack: connectionError instanceof Error ? connectionError.stack : 'No stack trace',
+        clientId: STRAVA_CONFIG.clientId ? STRAVA_CONFIG.clientId.substring(0, 4) + '...' : 'not set',
+        hasClientSecret: !!STRAVA_CONFIG.clientSecret,
+        redirectUri: STRAVA_CONFIG.redirectUri,
       })
       
       // Categorize common errors for better user experience
@@ -59,7 +93,7 @@ export async function GET(request: NextRequest) {
       
       if (errorMessage.includes('Invalid authorization code')) {
         userFriendlyError = 'strava_invalid_code';
-      } else if (errorMessage.includes('Authentication failed')) {
+      } else if (errorMessage.includes('Authentication failed') || errorMessage.includes('credentials')) {
         userFriendlyError = 'strava_auth_failed';
       } else if (errorMessage.includes('Network error')) {
         userFriendlyError = 'strava_network_error';
@@ -82,7 +116,12 @@ export async function GET(request: NextRequest) {
     
     console.error('Strava callback unexpected error details:', {
       error: errorMessage,
-      stack: errorStack
+      stack: errorStack,
+      stravaConfig: {
+        hasClientId: !!STRAVA_CONFIG.clientId,
+        hasClientSecret: !!STRAVA_CONFIG.clientSecret,
+        redirectUri: STRAVA_CONFIG.redirectUri
+      }
     })
     
     return NextResponse.redirect(

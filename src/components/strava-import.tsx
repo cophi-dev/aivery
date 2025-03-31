@@ -14,6 +14,7 @@ import { getStravaIntegrationAction, syncStravaWorkoutsAction, getSupportedActiv
 import { useRouter, useSearchParams } from "next/navigation"
 import { Switch } from "@/components/ui/switch"
 import Link from "next/link"
+import { disconnectStravaAction } from "@/lib/integration-actions"
 
 interface ImportStats {
   count: number;
@@ -52,6 +53,7 @@ export function StravaImport() {
   const [webhookStatus, setWebhookStatus] = useState<any>(null)
   const [isWebhookLoading, setIsWebhookLoading] = useState(false)
   const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -87,6 +89,7 @@ export function StravaImport() {
     if (searchParams) {
       const success = searchParams.get('success')
       const error = searchParams.get('error')
+      const details = searchParams.get('details')
       
       if (success === 'strava_connected') {
         toast({
@@ -119,6 +122,12 @@ export function StravaImport() {
           case 'strava_auth_failed':
             errorMessage = "Strava authentication failed";
             errorDescription = "Please check your Strava API credentials (Client ID and Client Secret) are correctly configured.";
+            break;
+          case 'strava_config_error':
+            errorMessage = "Strava configuration error";
+            errorDescription = details ? 
+              `Configuration issues detected: ${details}` : 
+              "Your Strava integration is not properly configured. Check environment variables.";
             break;
           case 'strava_invalid_code':
             errorMessage = "Invalid authorization code";
@@ -626,6 +635,39 @@ export function StravaImport() {
     }
   }
 
+  // Handle disconnect from Strava
+  const handleDisconnectStrava = async () => {
+    try {
+      setIsDisconnecting(true)
+      const result = await disconnectStravaAction()
+      
+      if (result.success) {
+        setStravaIntegration(null)
+        setWebhookStatus(null)
+        
+        toast({
+          title: "Disconnected from Strava",
+          description: "Your Strava account has been disconnected successfully."
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to disconnect from Strava",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error("Error disconnecting from Strava:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
+    } finally {
+      setIsDisconnecting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -659,12 +701,15 @@ export function StravaImport() {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => {
-                        setStravaIntegration(null);
-                        setWebhookStatus(null);
-                      }}
+                      onClick={handleDisconnectStrava}
+                      disabled={isDisconnecting}
                     >
-                      Disconnect
+                      {isDisconnecting ? (
+                        <>
+                          <div className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                          Disconnecting...
+                        </>
+                      ) : "Disconnect"}
                     </Button>
                   </div>
 

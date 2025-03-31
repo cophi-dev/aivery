@@ -12,6 +12,11 @@ import {
 import { getUserIntegrations } from "./db/repositories/integrationRepository"
 import type { IIntegration } from "./db/models/integration"
 import type { Document } from "mongoose"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "./auth"
+import { getCollection } from "./db/mongodb"
+import { ObjectId } from "mongodb"
+import { getWebhookSubscription, deleteWebhookSubscription } from "./strava/webhook"
 
 // Mock user ID for demo purposes
 const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
@@ -107,13 +112,60 @@ export async function getUserIntegrationsAction() {
 
 export async function disconnectStravaAction() {
   try {
-    await connectStrava(MOCK_USER_ID, "disconnect")
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    
+    // Get the integration collection
+    const collection = await getCollection("integrations")
+    
+    // Find the current integration to get details if needed
+    const integration = await collection.findOne({
+      userId: new ObjectId(userId),
+      provider: "strava"
+    })
+    
+    if (!integration) {
+      // No integration found, nothing to disconnect
+      return { success: true, message: "No Strava integration found" }
+    }
+    
+    // Try to delete any webhook subscription
+    try {
+      const webhookStatus = await getWebhookSubscription()
+      if (webhookStatus && webhookStatus.id) {
+        await deleteWebhookSubscription(webhookStatus.id)
+        console.log(`Deleted webhook subscription ${webhookStatus.id}`)
+      }
+    } catch (webhookError) {
+      // Log but continue - this shouldn't prevent disconnection
+      console.error("Error cleaning up webhook during disconnect:", webhookError)
+    }
+    
+    // Delete the integration from the database
+    const result = await collection.deleteOne({
+      _id: integration._id
+    })
+    
+    if (result.deletedCount === 0) {
+      throw new Error("Failed to delete Strava integration")
+    }
+    
+    console.log(`Disconnected Strava for user ${userId}`)
+    
+    // Revalidate relevant paths
     revalidatePath("/settings")
     revalidatePath("/integrations")
+    
     return { success: true }
   } catch (error) {
     console.error("Error disconnecting Strava:", error)
-    return { success: false, error: "Failed to disconnect Strava" }
+    const errorMessage = error instanceof Error ? error.message : "Failed to disconnect Strava"
+    return { success: false, error: errorMessage }
   }
 }
 
