@@ -5,18 +5,59 @@ import { getStravaAuthUrl, STRAVA_CONFIG } from "@/lib/strava/config"
 
 export const dynamic = 'force-dynamic'
 
+// Test that we can reach Strava API
+async function testStravaConnectivity() {
+  try {
+    // Try a HEAD request to the Strava authorization endpoint to check connectivity
+    const response = await fetch("https://www.strava.com", {
+      method: "HEAD",
+      cache: "no-cache",
+    });
+    
+    return {
+      reachable: response.ok,
+      status: response.status,
+      statusText: response.statusText
+    };
+  } catch (error) {
+    console.error("❌ Cannot reach Strava:", error);
+    return {
+      reachable: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 export async function GET(request: NextRequest) {
   console.log('🔄 Strava authorize: Starting authorization process', {
     url: request.url,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    nextPublicAppUrl: process.env.NEXT_PUBLIC_APP_URL,
+    nodeEnv: process.env.NODE_ENV
   })
   
   try {
+    // Test Strava connectivity first
+    const connectivityTest = await testStravaConnectivity();
+    console.log("🔍 Strava connectivity test:", connectivityTest);
+    
+    if (!connectivityTest.reachable) {
+      return NextResponse.json({ 
+        error: "Cannot connect to Strava API", 
+        details: connectivityTest 
+      }, { status: 502 });
+    }
+    
     // Check authentication
     const session = await getServerSession(authOptions)
     console.log('🔐 Strava authorize: Auth check', {
       isAuthenticated: !!session?.user,
-      userId: session?.user?.id || 'not authenticated'
+      userId: session?.user?.id || 'not authenticated',
+      user: session?.user ? {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name
+      } : null
     })
     
     if (!session?.user) {
@@ -31,7 +72,11 @@ export async function GET(request: NextRequest) {
     if (!STRAVA_CONFIG.clientId || !STRAVA_CONFIG.clientSecret) {
       console.error('⚠️ Strava authorize: Missing API credentials', {
         hasClientId: !!STRAVA_CONFIG.clientId,
-        hasClientSecret: !!STRAVA_CONFIG.clientSecret
+        hasClientSecret: !!STRAVA_CONFIG.clientSecret,
+        clientId: STRAVA_CONFIG.clientId || 'missing',
+        clientIdLength: STRAVA_CONFIG.clientId ? STRAVA_CONFIG.clientId.length : 0,
+        hasClientSecretValue: !!STRAVA_CONFIG.clientSecret,
+        secretLength: STRAVA_CONFIG.clientSecret ? STRAVA_CONFIG.clientSecret.length : 0
       })
       return NextResponse.json({
         error: "Strava API credentials are not configured",
@@ -44,7 +89,9 @@ export async function GET(request: NextRequest) {
     console.log('✅ Strava authorize: Generated auth URL', {
       authUrlBase: authUrl.split('?')[0],
       clientIdPrefix: STRAVA_CONFIG.clientId.substring(0, 4) + '...',
-      redirectUri: STRAVA_CONFIG.redirectUri,
+      redirectUri: process.env.NODE_ENV === 'development' 
+        ? 'http://localhost:3000/api/strava/callback'
+        : 'https://aivery2.vercel.app/api/strava/callback',
       scopes: STRAVA_CONFIG.scopes
     })
     
@@ -52,26 +99,13 @@ export async function GET(request: NextRequest) {
     console.log('🔀 Strava authorize: Redirecting to Strava authorization page')
     return NextResponse.redirect(authUrl)
   } catch (error) {
-    console.error('❌ Strava authorize: Error generating auth URL:', error)
+    // Log any errors
+    console.error('⚠️ Strava authorize: Error', error)
     
-    // Add detailed error context
-    const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    const errorStack = error instanceof Error ? error.stack : "No stack trace"
-    
-    console.error('🔍 Strava authorize error details:', {
-      error: errorMessage,
-      stack: errorStack,
-      stravaConfig: {
-        hasClientId: !!STRAVA_CONFIG.clientId,
-        hasClientSecret: !!STRAVA_CONFIG.clientSecret,
-        redirectUri: STRAVA_CONFIG.redirectUri,
-        scopes: STRAVA_CONFIG.scopes
-      }
-    })
-    
-    return NextResponse.json({
-      error: "Failed to generate Strava authorization URL",
-      message: errorMessage
+    // Return error response
+    return NextResponse.json({ 
+      error: "Failed to generate Strava authorization URL", 
+      details: error instanceof Error ? error.message : String(error) 
     }, { status: 500 })
   }
 } 

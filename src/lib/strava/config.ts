@@ -6,7 +6,7 @@ export const STRAVA_CONFIG = {
     : `https://aivery2.vercel.app/api/strava/callback`,
   scopes: ['read', 'activity:read_all'],
   authUrl: 'https://www.strava.com/oauth/authorize',
-  tokenUrl: 'https://www.strava.com/oauth/token',
+  tokenUrl: 'https://www.strava.com/api/v3/oauth/token',
   apiUrl: 'https://www.strava.com/api/v3'
 }
 
@@ -19,16 +19,30 @@ export function getStravaAuthUrl() {
   const state = Math.random().toString(36).substring(2, 15) + 
                 Math.random().toString(36).substring(2, 15);
 
+  // Make sure the redirect URI is properly set for the environment
+  const redirectUri = process.env.NODE_ENV === 'development'
+    ? 'http://localhost:3000/api/strava/callback'
+    : 'https://aivery2.vercel.app/api/strava/callback';
+
+  console.log('Creating Strava auth URL with:', {
+    clientId: STRAVA_CONFIG.clientId,
+    redirect_uri: redirectUri,
+    environment: process.env.NODE_ENV || 'unknown'
+  });
+
   const params = new URLSearchParams({
     client_id: STRAVA_CONFIG.clientId,
-    redirect_uri: STRAVA_CONFIG.redirectUri,
+    redirect_uri: redirectUri,
     response_type: 'code',
     scope: STRAVA_CONFIG.scopes.join(','),
     approval_prompt: 'force',
     state: state
-  })
+  });
 
-  return `${STRAVA_CONFIG.authUrl}?${params.toString()}`
+  const authUrl = `${STRAVA_CONFIG.authUrl}?${params.toString()}`;
+  console.log('Generated Strava auth URL:', authUrl.split('?')[0] + '?...');
+  
+  return authUrl;
 }
 
 export async function exchangeCodeForToken(code: string) {
@@ -44,13 +58,15 @@ export async function exchangeCodeForToken(code: string) {
     grant_type: 'authorization_code'
   });
 
-  console.log('Exchanging code for token with data:', {
+  // Log attempt with detailed info
+  console.log('Attempting to exchange code for token:', {
     url: STRAVA_CONFIG.tokenUrl,
     client_id: STRAVA_CONFIG.clientId,
-    // Hide secret
     has_client_secret: !!STRAVA_CONFIG.clientSecret,
-    code: code.substring(0, 5) + '...',
+    code_prefix: code.substring(0, 5) + '...',
     redirect_uri: STRAVA_CONFIG.redirectUri,
+    environment: process.env.NODE_ENV || 'unknown',
+    app_url: process.env.NEXT_PUBLIC_APP_URL || 'not set'
   });
 
   let retryCount = 0;
@@ -62,7 +78,12 @@ export async function exchangeCodeForToken(code: string) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-      const response = await fetch(STRAVA_CONFIG.tokenUrl, {
+      // Let's try a direct POST to the correct Strava token endpoint
+      const tokenEndpoint = 'https://www.strava.com/oauth/token';
+      
+      console.log(`Attempt ${retryCount + 1}/${maxRetries + 1} - Posting to token endpoint:`, tokenEndpoint);
+      
+      const response = await fetch(tokenEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -112,7 +133,7 @@ export async function exchangeCodeForToken(code: string) {
           throw new Error('Authentication failed. Please check your Strava API credentials (Client ID and Client Secret).');
         } else if (response.status === 404) {
           if (retryCount < maxRetries) {
-            console.log(`Strava API returned 404, retrying in ${retryDelay}ms... (${retryCount + 1}/${maxRetries})`);
+            console.log(`Strava API returned 404, retrying with different endpoint in ${retryDelay}ms... (${retryCount + 1}/${maxRetries})`);
             await new Promise(resolve => setTimeout(resolve, retryDelay));
             retryCount++;
             continue;

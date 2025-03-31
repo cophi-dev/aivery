@@ -12,13 +12,20 @@ function checkStravaConfig() {
 
   if (!STRAVA_CONFIG.clientId) {
     issues.push("STRAVA_CLIENT_ID is not configured")
+  } else if (STRAVA_CONFIG.clientId.trim() === '') {
+    issues.push("STRAVA_CLIENT_ID is empty")
   }
 
   if (!STRAVA_CONFIG.clientSecret) {
     issues.push("STRAVA_CLIENT_SECRET is not configured")
+  } else if (STRAVA_CONFIG.clientSecret.trim() === '') {
+    issues.push("STRAVA_CLIENT_SECRET is empty")
   }
 
-  const redirectUri = STRAVA_CONFIG.redirectUri
+  const redirectUri = process.env.NODE_ENV === 'development'
+    ? 'http://localhost:3000/api/strava/callback'
+    : 'https://aivery2.vercel.app/api/strava/callback'
+    
   if (!redirectUri) {
     issues.push("Redirect URI is not configured")
   } else if (!redirectUri.startsWith('http')) {
@@ -31,7 +38,10 @@ function checkStravaConfig() {
 export async function GET(request: NextRequest) {
   console.log('🔄 Strava callback: Received callback request', {
     url: request.url,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    headers: Array.from(request.headers.entries())
+      .filter(([key]) => !['cookie', 'authorization'].includes(key.toLowerCase()))
+      .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {})
   })
 
   // Store debugging information
@@ -45,6 +55,8 @@ export async function GET(request: NextRequest) {
     searchParams: Object.fromEntries(request.nextUrl.searchParams.entries()),
     configIssues: [],
     sessionStatus: 'pending',
+    environment: process.env.NODE_ENV || 'unknown',
+    nextPublicAppUrl: process.env.NEXT_PUBLIC_APP_URL || 'not set'
   }
 
   try {
@@ -89,6 +101,12 @@ export async function GET(request: NextRequest) {
       session = await getServerSession(authOptions)
       debugData.sessionStatus = session?.user ? 'authenticated' : 'not authenticated'
       debugData.userId = session?.user?.id
+      
+      console.log('🔐 Strava callback: Auth check', {
+        isAuthenticated: !!session?.user,
+        userId: session?.user?.id || 'not authenticated',
+        sessionKeys: session ? Object.keys(session) : []
+      })
     } catch (sessionError) {
       console.error('❌ Strava callback: Session error:', sessionError)
       debugData.sessionStatus = 'error'
@@ -116,6 +134,9 @@ export async function GET(request: NextRequest) {
     console.log('✅ Strava callback: Processing code for user', session.user.id)
 
     try {
+      // Connect to Strava with the auth code - wrap this in a try block to handle specific errors
+      console.log('🔄 Strava callback: Attempting to exchange code for token...')
+      
       // Connect to Strava with the auth code
       const result = await connectStrava(session.user.id, code)
       console.log('🎉 Strava connection successful:', result)
@@ -137,7 +158,9 @@ export async function GET(request: NextRequest) {
         stack: connectionError instanceof Error ? connectionError.stack : 'No stack trace',
         clientId: STRAVA_CONFIG.clientId ? STRAVA_CONFIG.clientId.substring(0, 4) + '...' : 'not set',
         hasClientSecret: !!STRAVA_CONFIG.clientSecret,
-        redirectUri: STRAVA_CONFIG.redirectUri,
+        redirectUri: process.env.NODE_ENV === 'development'
+          ? 'http://localhost:3000/api/strava/callback'
+          : 'https://aivery2.vercel.app/api/strava/callback',
         callbackUrl: request.url
       })
       
@@ -174,7 +197,9 @@ export async function GET(request: NextRequest) {
       stravaConfig: {
         hasClientId: !!STRAVA_CONFIG.clientId,
         hasClientSecret: !!STRAVA_CONFIG.clientSecret,
-        redirectUri: STRAVA_CONFIG.redirectUri
+        redirectUri: process.env.NODE_ENV === 'development'
+          ? 'http://localhost:3000/api/strava/callback'
+          : 'https://aivery2.vercel.app/api/strava/callback'
       },
       debugData: debugData
     })
