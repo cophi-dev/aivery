@@ -33,25 +33,25 @@ export async function createWebhookSubscription() {
     // Create new subscription
     const callbackUrl = `${callbackBaseUrl}/api/strava/webhook`;
     
-    const params = new URLSearchParams({
-      client_id: STRAVA_CONFIG.clientId as string,
-      client_secret: STRAVA_CONFIG.clientSecret as string,
+    // Prepare the form data parameters
+    const clientId = STRAVA_CONFIG.clientId as string;
+    const clientSecret = STRAVA_CONFIG.clientSecret as string;
+    
+    // Log request details
+    console.log("Creating webhook subscription with params:", {
+      url: SUBSCRIPTION_URL,
+      client_id: clientId,
       callback_url: callbackUrl,
-      verify_token: WEBHOOK_VERIFY_TOKEN
+      verify_token: WEBHOOK_VERIFY_TOKEN,
+      method: 'Direct URL request without URLSearchParams'
     });
     
-    console.log("Subscription request parameters:", {
-      client_id: STRAVA_CONFIG.clientId,
-      callback_url: callbackUrl,
-      verify_token: WEBHOOK_VERIFY_TOKEN
-    });
+    // Make a direct URL-encoded request
+    // This approach avoids Content-Type header issues that can occur with URLSearchParams
+    const url = `${SUBSCRIPTION_URL}?client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}&callback_url=${encodeURIComponent(callbackUrl)}&verify_token=${encodeURIComponent(WEBHOOK_VERIFY_TOKEN)}`;
     
-    const response = await fetch(SUBSCRIPTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: params.toString()
+    const response = await fetch(url, {
+      method: 'POST'
     });
     
     if (!response.ok) {
