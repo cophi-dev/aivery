@@ -15,20 +15,12 @@ const nextConfig = {
   
   experimental: {
     serverActions: {
-      bodySizeLimit: '10mb',
+      bodySizeLimit: '50mb',
       allowedOrigins: ['*'],
     },
     largePageDataBytes: 128 * 1000, // 128KB
     serverComponentsExternalPackages: ['mongodb'],
     disableOptimizedLoading: true,
-  },
-  
-  // API route body size limit
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-    responseLimit: false, // No limit on API response size
   },
   
   // Cache busting for builds
