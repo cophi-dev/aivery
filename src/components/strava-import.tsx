@@ -169,17 +169,49 @@ export function StravaImport() {
   }, [searchParams, router, toast])
 
   // Handle connect to Strava
-  const handleConnectStrava = () => {
+  const handleConnectStrava = async () => {
     setIsConnecting(true)
     
     try {
-      // Redirect to Strava OAuth page
-      window.location.href = `/api/strava/authorize`
+      // Try to fetch the authorization URL directly instead of redirecting
+      const response = await fetch('/api/strava/authorize')
+      
+      if (!response.ok) {
+        // Handle non-200 responses
+        const errText = await response.text()
+        console.error("Error getting Strava authorization URL:", {
+          status: response.status,
+          statusText: response.statusText,
+          body: errText
+        })
+        
+        if (response.status === 404) {
+          toast({
+            title: "API route not found",
+            description: "The Strava authorization API route (/api/strava/authorize) couldn't be found.",
+            variant: "destructive"
+          })
+        } else {
+          toast({
+            title: "Error",
+            description: `Failed to connect to Strava: ${response.status} ${response.statusText}`,
+            variant: "destructive"
+          })
+        }
+        setIsConnecting(false)
+        return
+      }
+      
+      // Get the redirect URL
+      const authUrl = await response.text()
+      
+      // Redirect to Strava
+      window.location.href = authUrl
     } catch (error) {
       console.error("Error connecting to Strava:", error)
       toast({
         title: "Error",
-        description: "Failed to connect to Strava",
+        description: "Failed to connect to Strava. Check console for details.",
         variant: "destructive"
       })
       setIsConnecting(false)
