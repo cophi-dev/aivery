@@ -3,7 +3,7 @@ export const STRAVA_CONFIG = {
   clientSecret: process.env.STRAVA_CLIENT_SECRET,
   redirectUri: process.env.NODE_ENV === 'development' 
     ? 'http://localhost:3000/api/strava/callback'
-    : `${process.env.NEXT_PUBLIC_APP_URL}/api/strava/callback`,
+    : `https://aivery2.vercel.app/api/strava/callback`,
   scopes: ['read', 'activity:read_all'],
   authUrl: 'https://www.strava.com/oauth/authorize',
   tokenUrl: 'https://www.strava.com/oauth/token',
@@ -49,78 +49,140 @@ export async function exchangeCodeForToken(code: string) {
     client_id: STRAVA_CONFIG.clientId,
     // Hide secret
     has_client_secret: !!STRAVA_CONFIG.clientSecret,
-    code: code.substring(0, 5) + '...'
+    code: code.substring(0, 5) + '...',
+    redirect_uri: STRAVA_CONFIG.redirectUri,
   });
 
-  try {
-    const response = await fetch(STRAVA_CONFIG.tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: params.toString()
-    });
+  let retryCount = 0;
+  const maxRetries = 2;
+  const retryDelay = 1000; // 1 second delay between retries
 
-    // Get response text first to ensure we have it for error reporting
-    const responseText = await response.text();
-    
-    if (!response.ok) {
-      let errorData;
-      try {
-        // Try to parse as JSON if possible
-        errorData = JSON.parse(responseText);
-      } catch (e) {
-        // Not JSON, use text as is
-        errorData = { error: responseText };
-      }
+  while (retryCount <= maxRetries) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(STRAVA_CONFIG.tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        body: params.toString(),
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeoutId));
+
+      // Get response text first to ensure we have it for error reporting
+      const responseText = await response.text();
       
-      console.error('Strava token exchange error:', {
+      // Debug log the raw response
+      console.log('Strava token exchange raw response:', {
         status: response.status,
         statusText: response.statusText,
-        error: errorData
+        responseText: responseText.substring(0, 200) + (responseText.length > 200 ? '...' : ''),
+        headers: Object.fromEntries(response.headers.entries())
       });
       
-      // Create specific error messages based on status code
-      if (response.status === 400) {
-        if (errorData.error === 'invalid_grant') {
-          throw new Error('Invalid authorization code. The code may have expired or been used already.');
-        } else {
-          throw new Error(`Bad request: ${errorData.error || 'Invalid parameters'}`);
+      if (!response.ok) {
+        let errorData;
+        try {
+          // Try to parse as JSON if possible
+          errorData = JSON.parse(responseText);
+        } catch (e) {
+          // Not JSON, use text as is
+          errorData = { error: responseText };
         }
-      } else if (response.status === 401) {
-        throw new Error('Authentication failed. Please check your Strava API credentials (Client ID and Client Secret).');
-      } else {
-        throw new Error(`Failed to exchange code for token: ${response.status} ${response.statusText} - ${errorData.error || responseText}`);
+        
+        console.error('Strava token exchange error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          attempt: retryCount + 1,
+          maxRetries: maxRetries
+        });
+        
+        // Create specific error messages based on status code
+        if (response.status === 400) {
+          if (errorData.error === 'invalid_grant') {
+            throw new Error('Invalid authorization code. The code may have expired or been used already.');
+          } else {
+            throw new Error(`Bad request: ${errorData.error || 'Invalid parameters'}`);
+          }
+        } else if (response.status === 401) {
+          throw new Error('Authentication failed. Please check your Strava API credentials (Client ID and Client Secret).');
+        } else if (response.status === 404) {
+          if (retryCount < maxRetries) {
+            console.log(`Strava API returned 404, retrying in ${retryDelay}ms... (${retryCount + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            retryCount++;
+            continue;
+          } else {
+            throw new Error(`Strava API endpoint not found (404). Please check if Strava's API endpoints have changed.`);
+          }
+        } else {
+          throw new Error(`Failed to exchange code for token: ${response.status} ${response.statusText} - ${errorData.error || responseText}`);
+        }
       }
-    }
 
-    // Parse the successful response
-    try {
-      const data = JSON.parse(responseText);
-      
-      // Validate the response has the expected fields
-      if (!data.access_token || !data.refresh_token || !data.expires_at) {
-        console.error('Strava token exchange returned incomplete data:', data);
-        throw new Error('Received incomplete response from Strava API');
+      // Parse the successful response
+      try {
+        const data = JSON.parse(responseText);
+        
+        // Log successful token exchange (redacted)
+        console.log('Strava token exchange successful:', {
+          has_access_token: !!data.access_token,
+          has_refresh_token: !!data.refresh_token,
+          expires_at: data.expires_at ? new Date(data.expires_at * 1000).toISOString() : 'missing',
+          athlete_id: data.athlete?.id || 'missing'
+        });
+        
+        // Validate the response has the expected fields
+        if (!data.access_token || !data.refresh_token || !data.expires_at) {
+          console.error('Strava token exchange returned incomplete data:', data);
+          throw new Error('Received incomplete response from Strava API');
+        }
+        
+        return data;
+      } catch (parseError) {
+        console.error('Failed to parse Strava token response:', parseError, responseText);
+        throw new Error('Invalid response from Strava API');
+      }
+    } catch (error) {
+      // Check if this is a timeout error
+      if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+        if (retryCount < maxRetries) {
+          console.log(`Strava API request timed out, retrying in ${retryDelay}ms... (${retryCount + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          retryCount++;
+          continue;
+        } else {
+          throw new Error(`Network timeout connecting to Strava API after ${maxRetries} attempts`);
+        }
       }
       
-      return data;
-    } catch (parseError) {
-      console.error('Failed to parse Strava token response:', parseError, responseText);
-      throw new Error('Invalid response from Strava API');
+      // Log network errors
+      if (error && typeof error === 'object' && 
+          ('name' in error) && 
+          (error.name === 'TypeError' || error.name === 'NetworkError')) {
+        console.error('Network error during token exchange:', error);
+        
+        if (retryCount < maxRetries) {
+          console.log(`Network error, retrying in ${retryDelay}ms... (${retryCount + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          retryCount++;
+          continue;
+        } else {
+          throw new Error(`Network error connecting to Strava after ${maxRetries} attempts: ${(error as Error).message}`);
+        }
+      }
+      
+      // Re-throw the error if it was already handled above or if we've exhausted retries
+      throw error;
     }
-  } catch (error) {
-    // Log network errors
-    if (error && typeof error === 'object' && 
-        ('name' in error) && 
-        (error.name === 'TypeError' || error.name === 'NetworkError')) {
-      console.error('Network error during token exchange:', error);
-      throw new Error(`Network error connecting to Strava: ${(error as Error).message}`);
-    }
-    
-    // Re-throw the error if it was already handled above
-    throw error;
   }
+  
+  // This should never be reached due to the throw in the loop
+  throw new Error(`Failed to exchange code for token after ${maxRetries} attempts`);
 }
 
 export async function refreshToken(refreshToken: string) {
