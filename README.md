@@ -1,3 +1,7 @@
+## Aivery - AI-powered personal fitness coach
+
+Latest update: Fixed workout deletion for "Run" and "Swim" workout types with better case handling.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Database Configuration
