@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp } from "lucide-react"
+import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -520,6 +520,12 @@ export function StravaImport() {
       const result = await updateStravaSyncPreferencesAction(enabledTypes)
       
       if (result.success) {
+        // Refresh the preferences from the server to ensure we have the latest state
+        const typesResult = await getSupportedActivityTypes()
+        if (typesResult.success && typesResult.activityTypes) {
+          setSyncPreferences(typesResult.activityTypes)
+        }
+        
         toast({
           title: "Success",
           description: "Sync preferences updated"
@@ -540,6 +546,8 @@ export function StravaImport() {
       })
     } finally {
       setIsSavingPreferences(false)
+      // Close the preferences panel after successful save
+      setIsPreferencesOpen(false)
     }
   }
 
@@ -685,8 +693,8 @@ export function StravaImport() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Badge variant="outline" className="bg-green-50">
-                      <Check className="w-4 h-4 mr-1" />
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                      <Check className="w-4 h-4 mr-1 text-green-600 dark:text-green-400" />
                       Connected
                     </Badge>
                     <span className="text-sm text-muted-foreground">
@@ -803,6 +811,118 @@ export function StravaImport() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ZIP Import Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center space-x-2">
+            <FileUp className="h-5 w-5 text-blue-500" />
+            <div>
+              <CardTitle>Import from ZIP File</CardTitle>
+              <CardDescription>Upload workout data exported from other fitness platforms</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!selectedFile ? (
+            <div className="space-y-4">
+              <input
+                type="file"
+                accept=".zip"
+                onChange={handleFileSelect}
+                ref={fileInputRef}
+                className="hidden"
+                id="zip-file-input"
+              />
+              <label
+                htmlFor="zip-file-input"
+                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Click to select a ZIP file or drag and drop
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Supported: Garmin, Fitbit, and other major fitness platforms
+                  </p>
+                </div>
+              </label>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <FileUp className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm font-medium">{selectedFile.name}</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                >
+                  Change File
+                </Button>
+              </div>
+
+              {showTypeSelector && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">Select Workout Types to Import</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {allWorkoutTypes.map((type) => (
+                      <div key={type.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`type-${type.id}`}
+                          checked={selectedWorkoutTypes.includes(type.id)}
+                          onCheckedChange={(checked) => {
+                            setSelectedWorkoutTypes(prev =>
+                              checked
+                                ? [...prev, type.id]
+                                : prev.filter(t => t !== type.id)
+                            );
+                          }}
+                        />
+                        <label
+                          htmlFor={`type-${type.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {type.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Button
+                onClick={handleUpload}
+                disabled={isUploading || selectedWorkoutTypes.length === 0}
+                className="w-full"
+              >
+                {isUploading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpToLine className="w-4 h-4 mr-2" />
+                    Upload and Import
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Import Summary Card */}
+      {importStats && renderImportSummary()}
     </div>
   )
 } 

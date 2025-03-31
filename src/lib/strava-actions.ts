@@ -5,6 +5,8 @@ import { connectStrava, syncStravaWorkouts, getStravaIntegration, updateStravaSy
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "./auth"
 import { createWebhookSubscription, getWebhookSubscription, deleteWebhookSubscription } from "./strava/webhook"
+import { getCollection } from "@/lib/db/mongodb"
+import { ObjectId } from "mongodb"
 
 export async function connectStravaAction(authCode: string) {
   try {
@@ -103,7 +105,34 @@ export async function updateStravaSyncPreferencesAction(activityTypes: string[])
 }
 
 export async function getSupportedActivityTypes() {
-  return { success: true, activityTypes: SUPPORTED_ACTIVITY_TYPES }
+  try {
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    
+    // Get user's preferences
+    const collection = await getCollection("preferences")
+    const preferences = await collection.findOne({
+      userId: new ObjectId(userId),
+      type: "strava_sync"
+    })
+    
+    // Map the user's preferences to the activity types
+    const activityTypes = SUPPORTED_ACTIVITY_TYPES.map(type => ({
+      ...type,
+      enabled: preferences?.activityTypes?.includes(type.id) ?? type.enabled
+    }))
+    
+    return { success: true, activityTypes }
+  } catch (error) {
+    console.error("Error getting activity types:", error)
+    const errorMessage = error instanceof Error ? error.message : "Failed to get activity types"
+    return { success: false, error: errorMessage }
+  }
 }
 
 export async function getStravaWebhookStatusAction() {
