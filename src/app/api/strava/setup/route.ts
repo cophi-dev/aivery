@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createWebhookSubscription, getWebhookSubscription, deleteWebhookSubscription } from "@/lib/strava/webhook";
+import { STRAVA_CONFIG } from "@/lib/strava/config";
 
 // A simple secret key to prevent unauthorized access
 // In a real app, use a proper authentication system
@@ -11,7 +12,21 @@ export async function GET(request: NextRequest) {
   try {
     // Check admin authorization
     const authHeader = request.headers.get("Authorization");
+    
+    console.log("Setup API called with:", {
+      authHeader: authHeader ? "Present" : "Missing",
+      expectedKey: `Bearer ${ADMIN_KEY}`,
+      clientId: STRAVA_CONFIG.clientId ? "Set" : "Missing",
+      clientSecret: STRAVA_CONFIG.clientSecret ? "Set" : "Missing",
+      callbackUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/strava/webhook`,
+      adminKey: ADMIN_KEY
+    });
+    
     if (authHeader !== `Bearer ${ADMIN_KEY}`) {
+      console.error("Unauthorized access attempt to setup API:", {
+        providedAuth: authHeader,
+        expectedAuth: `Bearer ${ADMIN_KEY}`
+      });
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -20,12 +35,25 @@ export async function GET(request: NextRequest) {
 
     // Get current subscription status
     if (action === "status") {
-      const subscription = await getWebhookSubscription();
-      return NextResponse.json({
-        success: true,
-        subscribed: !!subscription,
-        subscription,
-      });
+      try {
+        const subscription = await getWebhookSubscription();
+        return NextResponse.json({
+          success: true,
+          subscribed: !!subscription,
+          subscription,
+        });
+      } catch (error) {
+        console.error("Error getting webhook subscription in setup API:", error);
+        return NextResponse.json({
+          success: false, 
+          error: error instanceof Error ? error.message : "Unknown error",
+          details: {
+            clientId: STRAVA_CONFIG.clientId,
+            clientSecret: STRAVA_CONFIG.clientSecret ? "Present" : "Missing",
+            nextPublicAppUrl: process.env.NEXT_PUBLIC_APP_URL
+          }
+        }, { status: 500 });
+      }
     }
 
     // Create new subscription

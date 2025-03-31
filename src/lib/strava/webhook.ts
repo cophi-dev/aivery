@@ -87,6 +87,21 @@ export async function createWebhookSubscription() {
 // Get current webhook subscription status
 export async function getWebhookSubscription() {
   try {
+    // Check if client ID and client secret are available
+    if (!STRAVA_CONFIG.clientId || !STRAVA_CONFIG.clientSecret) {
+      console.error("Missing Strava credentials:", {
+        hasClientId: !!STRAVA_CONFIG.clientId,
+        hasClientSecret: !!STRAVA_CONFIG.clientSecret
+      });
+      throw new Error("Strava credentials are not configured");
+    }
+
+    console.log("Getting webhook subscriptions with params:", {
+      url: SUBSCRIPTION_URL,
+      clientId: STRAVA_CONFIG.clientId,
+      hasClientSecret: !!STRAVA_CONFIG.clientSecret
+    });
+    
     const params = new URLSearchParams({
       client_id: STRAVA_CONFIG.clientId as string,
       client_secret: STRAVA_CONFIG.clientSecret as string
@@ -96,6 +111,12 @@ export async function getWebhookSubscription() {
       method: 'GET'
     });
     
+    console.log("Webhook subscription response:", {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    });
+    
     if (!response.ok) {
       if (response.status === 404) {
         // No subscriptions found
@@ -103,10 +124,17 @@ export async function getWebhookSubscription() {
       }
       
       const errorText = await response.text();
+      console.error("Failed to get webhook subscriptions:", {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText,
+        clientId: STRAVA_CONFIG.clientId
+      });
       throw new Error(`Failed to get webhook subscriptions: ${response.status} ${errorText}`);
     }
     
     const subscriptions = await response.json();
+    console.log("Received webhook subscriptions:", subscriptions);
     
     // Return the first subscription if any exist
     return subscriptions && subscriptions.length > 0 ? subscriptions[0] : null;
