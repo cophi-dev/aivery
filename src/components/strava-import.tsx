@@ -1,14 +1,19 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell } from "lucide-react"
+import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Checkbox } from "@/components/ui/checkbox"
+import { getStravaIntegrationAction, syncStravaWorkoutsAction, getSupportedActivityTypes, updateStravaSyncPreferencesAction, getStravaWebhookStatusAction, setupStravaWebhookAction, removeStravaWebhookAction } from "@/lib/strava-actions"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Switch } from "@/components/ui/switch"
+import Link from "next/link"
 
 interface ImportStats {
   count: number;
@@ -25,6 +30,202 @@ export function StravaImport() {
   const [importStats, setImportStats] = useState<ImportStats | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const [selectedWorkoutTypes, setSelectedWorkoutTypes] = useState<string[]>([
+    "running", "cycling", "swimming", "strength", "walking", "hiking", "flexibility", "hiit", "other"
+  ])
+  const [showTypeSelector, setShowTypeSelector] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // Strava live connection states
+  const [stravaIntegration, setStravaIntegration] = useState<any>(null)
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Strava sync preferences state
+  const [syncPreferences, setSyncPreferences] = useState<{ id: string, label: string, enabled: boolean, disabled?: boolean }[]>([])
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(false)
+  const [isSavingPreferences, setIsSavingPreferences] = useState(false)
+
+  // Add these state variables to the component
+  const [webhookStatus, setWebhookStatus] = useState<any>(null)
+  const [isWebhookLoading, setIsWebhookLoading] = useState(false)
+  const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
+
+  // Load Strava integration and activity types on component mount
+  useEffect(() => {
+    const loadStravaData = async () => {
+      try {
+        setIsLoading(true)
+        setIsLoadingPreferences(true)
+        
+        // Load Strava integration status
+        const { success, integration } = await getStravaIntegrationAction()
+        if (success && integration) {
+          setStravaIntegration(integration)
+        }
+        
+        // Load available activity types
+        const typesResult = await getSupportedActivityTypes()
+        if (typesResult.success && typesResult.activityTypes) {
+          setSyncPreferences(typesResult.activityTypes)
+        }
+      } catch (error) {
+        console.error("Error loading Strava data:", error)
+      } finally {
+        setIsLoading(false)
+        setIsLoadingPreferences(false)
+      }
+    }
+    
+    loadStravaData()
+  }, [])
+
+  // Handle URL parameters for OAuth flow
+  useEffect(() => {
+    if (searchParams) {
+      const success = searchParams.get('success')
+      const error = searchParams.get('error')
+      
+      if (success === 'strava_connected') {
+        toast({
+          title: "Connected to Strava",
+          description: "Your Strava account is now connected. You can now sync your activities.",
+          variant: "default"
+        });
+        
+        // Refresh the integration status
+        const loadStravaIntegration = async () => {
+          try {
+            const { success, integration } = await getStravaIntegrationAction();
+            if (success && integration) {
+              setStravaIntegration(integration);
+            }
+          } catch (error) {
+            console.error("Error refreshing Strava integration:", error);
+          }
+        };
+        loadStravaIntegration();
+        
+        // Clear the URL parameters to avoid showing the message again on refresh
+        router.replace('/integrations', { scroll: false })
+      } else if (error) {
+        let errorMessage = "Failed to connect to Strava";
+        let errorDescription = "Please try again or contact support if the issue persists.";
+        
+        // Handle specific error cases
+        switch (error) {
+          case 'strava_auth_failed':
+            errorMessage = "Strava authentication failed";
+            errorDescription = "You may have denied the authorization or there was an issue with Strava's authentication.";
+            break;
+          case 'no_code':
+            errorMessage = "No authorization code received";
+            errorDescription = "The authorization process was interrupted. Please try again.";
+            break;
+          case 'strava_callback_failed':
+            errorMessage = "Error processing Strava callback";
+            errorDescription = "There was an error while connecting to Strava. Please try again later.";
+            break;
+          case 'failed_to_exchange_code_for_token':
+            errorMessage = "Failed to get Strava access token";
+            errorDescription = "Check that your Strava account is active and try again.";
+            break;
+          default:
+            if (error.includes('token') || error.includes('auth')) {
+              errorMessage = "Strava authorization error";
+              errorDescription = "There was an issue authorizing with Strava. Please ensure your Strava account is active.";
+            }
+        }
+        
+        toast({
+          title: errorMessage,
+          description: errorDescription,
+          variant: "destructive"
+        });
+        
+        // Clear the URL parameters to avoid showing the message again on refresh
+        router.replace('/integrations', { scroll: false })
+      }
+    }
+  }, [searchParams, router, toast])
+
+  // Handle connect to Strava
+  const handleConnectStrava = () => {
+    setIsConnecting(true)
+    
+    try {
+      // Redirect to Strava OAuth page
+      window.location.href = `/api/strava/authorize`
+    } catch (error) {
+      console.error("Error connecting to Strava:", error)
+      toast({
+        title: "Error",
+        description: "Failed to connect to Strava",
+        variant: "destructive"
+      })
+      setIsConnecting(false)
+    }
+  }
+
+  // Handle sync Strava workouts
+  const handleSyncStrava = async () => {
+    setIsSyncing(true)
+    
+    try {
+      const { success, count, types, error } = await syncStravaWorkoutsAction()
+      
+      if (success) {
+        // Format activity types for display
+        const typeDetails = []
+        if (types?.run) typeDetails.push(`${types.run} runs`)
+        if (types?.swim) typeDetails.push(`${types.swim} swims`)
+        
+        const typeMessage = typeDetails.length > 0 
+          ? ` (${typeDetails.join(", ")})`
+          : ""
+        
+        toast({
+          title: "Success",
+          description: `Successfully synced ${count} activities from Strava${typeMessage}`
+        })
+        
+        // Refresh Strava integration
+        const result = await getStravaIntegrationAction()
+        if (result.success && result.integration) {
+          setStravaIntegration(result.integration)
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: error || "Failed to sync Strava workouts",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error("Error syncing Strava workouts:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const allWorkoutTypes = [
+    { id: "running", label: "Running" },
+    { id: "cycling", label: "Cycling" },
+    { id: "swimming", label: "Swimming" },
+    { id: "strength", label: "Strength" },
+    { id: "walking", label: "Walking" },
+    { id: "hiking", label: "Hiking" },
+    { id: "flexibility", label: "Flexibility" },
+    { id: "hiit", label: "HIIT" },
+    { id: "other", label: "Other" }
+  ]
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -48,6 +249,8 @@ export function StravaImport() {
 
     setSelectedFile(file)
     setImportStats(null) // Reset import stats when selecting a new file
+    // Show type selector after selecting a file
+    setShowTypeSelector(true)
   }
 
   const handleUpload = async () => {
@@ -60,12 +263,25 @@ export function StravaImport() {
       return
     }
 
+    if (selectedWorkoutTypes.length === 0) {
+      toast({
+        title: "No workout types selected",
+        description: "Please select at least one workout type to import",
+        variant: "destructive"
+      })
+      return
+    }
+
     try {
       setIsUploading(true)
-      console.log('Starting upload of file:', selectedFile.name)
+      console.log('Starting upload of file:', selectedFile.name, 'with workout types:', selectedWorkoutTypes)
 
       const formData = new FormData()
       formData.append('file', selectedFile)
+      // Add selected workout types to the form data
+      selectedWorkoutTypes.forEach(type => {
+        formData.append('workoutTypes', type)
+      })
 
       console.log('Sending request to /api/strava/import')
       const response = await fetch('/api/strava/import', {
@@ -137,16 +353,14 @@ export function StravaImport() {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '';
+  // Format date for display
+  const formatDate = (date: string | Date | undefined | null) => {
+    if (!date) return "Never";
     try {
-      return new Date(dateString).toLocaleDateString(undefined, { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-    } catch (e) {
-      return dateString;
+      return new Date(date).toLocaleString();
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Invalid date";
     }
   }
 
@@ -262,116 +476,360 @@ export function StravaImport() {
     );
   };
 
+  // Toggle a sync preference
+  const toggleSyncPreference = (id: string) => {
+    setSyncPreferences(prev => 
+      prev.map(item => 
+        item.id === id && !item.disabled 
+          ? { ...item, enabled: !item.enabled } 
+          : item
+      )
+    )
+  }
+  
+  // Save sync preferences
+  const saveSyncPreferences = async () => {
+    try {
+      setIsSavingPreferences(true)
+      
+      // Get enabled activity type IDs
+      const enabledTypes = syncPreferences
+        .filter(item => item.enabled)
+        .map(item => item.id)
+      
+      // Update preferences
+      const result = await updateStravaSyncPreferencesAction(enabledTypes)
+      
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Sync preferences updated"
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to update preferences",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error("Error saving preferences:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSavingPreferences(false)
+    }
+  }
+
+  // Add this useEffect to load webhook status
+  useEffect(() => {
+    const loadWebhookStatus = async () => {
+      if (stravaIntegration) {
+        try {
+          setIsWebhookLoading(true)
+          const result = await getStravaWebhookStatusAction()
+          if (result.success) {
+            setWebhookStatus(result)
+          }
+        } catch (error) {
+          console.error("Error loading webhook status:", error)
+        } finally {
+          setIsWebhookLoading(false)
+        }
+      }
+    }
+    
+    loadWebhookStatus()
+  }, [stravaIntegration])
+
+  // Add these functions to handle webhook subscription
+  const handleSetupWebhook = async () => {
+    try {
+      setIsSettingUpWebhook(true)
+      const result = await setupStravaWebhookAction()
+      
+      if (result.success) {
+        setWebhookStatus({
+          success: true,
+          subscribed: true,
+          subscription: result.subscription
+        })
+        
+        toast({
+          title: "Auto-sync enabled",
+          description: "New Strava activities will now be automatically synced"
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to set up auto-sync",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error("Error setting up webhook:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSettingUpWebhook(false)
+    }
+  }
+
+  const handleRemoveWebhook = async () => {
+    if (!webhookStatus?.subscription?.id) return
+    
+    try {
+      setIsSettingUpWebhook(true)
+      const result = await removeStravaWebhookAction(webhookStatus.subscription.id)
+      
+      if (result.success) {
+        setWebhookStatus({
+          success: true,
+          subscribed: false,
+          subscription: null
+        })
+        
+        toast({
+          title: "Auto-sync disabled",
+          description: "New Strava activities will no longer be automatically synced"
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to disable auto-sync",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error("Error removing webhook:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSettingUpWebhook(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <Alert className="bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800">
-        <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-        <AlertTitle className="text-amber-800 dark:text-amber-400">Recommended First Step</AlertTitle>
-        <AlertDescription className="text-amber-700 dark:text-amber-300">
-          For the best experience, we recommend first importing your workout history by uploading your Strava archive. 
-          This will give you immediate access to all your past training data.
-        </AlertDescription>
-      </Alert>
-      
-      {importStats ? renderImportSummary() : (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center">
-                  Import Strava Archive
-                  <Badge variant="outline" className="ml-2 bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800">
-                    Recommended
-                  </Badge>
-                </CardTitle>
-                <CardDescription className="mt-2">
-                  Import your entire workout history in one step
-                </CardDescription>
-              </div>
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold">Import Your Workouts</h3>
+        <p className="text-sm text-muted-foreground">
+          Choose how you want to import your workout data
+        </p>
+        
+        <div className="mt-4 border rounded-md p-4 space-y-4">
+          <div className="flex items-start space-x-3">
+            <div className="bg-orange-500/10 text-orange-500 p-2 rounded-md mt-0.5">
+              <ArrowLeftRight className="h-5 w-5" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="text-sm text-muted-foreground">
-                <ol className="list-decimal pl-5 space-y-2">
-                  <li>Download your archive from your <a href="https://www.strava.com/settings/profile" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Strava Settings page</a></li>
-                  <li>Select "Request Your Archive" and wait for the email from Strava</li>
-                  <li>Download the ZIP file from the email and upload it below</li>
-                </ol>
-              </div>
+            <div className="space-y-2 flex-1">
+              <h4 className="font-medium">Import from Strava</h4>
+              <p className="text-sm text-muted-foreground">
+                Connect your Strava account to import past activities and optionally enable auto-syncing for new workouts.
+              </p>
               
-              <div className="mt-4">
-                <div className="flex flex-col sm:flex-row gap-4 items-center">
-                  <label 
-                    htmlFor="strava-file-input"
-                    className="cursor-pointer flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-4 border-2 border-dashed rounded-md text-sm font-medium bg-background hover:bg-accent transition-colors"
-                  >
-                    <Upload className="h-5 w-5" />
-                    <span>{selectedFile ? selectedFile.name : "Choose Strava Archive"}</span>
-                    <input
-                      id="strava-file-input"
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".zip"
-                      onChange={handleFileSelect}
-                      disabled={isUploading}
-                      className="sr-only"
-                    />
-                  </label>
-                  
-                  {selectedFile && (
+              {stravaIntegration ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                        Connected
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        Athlete: {stravaIntegration.athleteId}
+                      </span>
+                    </div>
                     <Button 
-                      onClick={handleUpload}
-                      size="lg"
-                      disabled={isUploading}
-                      className="w-full sm:w-auto"
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setStravaIntegration(null);
+                        setWebhookStatus(null);
+                      }}
                     >
-                      {isUploading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                          Importing...
-                        </>
-                      ) : (
-                        <>
-                          <Check className="mr-2 h-5 w-5" />
-                          Import Workouts
-                        </>
-                      )}
+                      Disconnect
                     </Button>
-                  )}
-                </div>
-                
-                {selectedFile && !importStats && (
-                  <div className="mt-2 text-sm text-green-600 dark:text-green-400 flex items-center">
-                    <Check className="h-4 w-4 mr-1" /> File selected: {selectedFile.name}
                   </div>
-                )}
+
+                  <div className="border-t pt-4 space-y-4">
+                    <div>
+                      <h5 className="text-sm font-medium mb-2">One-time Import</h5>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Import your existing Strava activities from the past 30 days.
+                      </p>
+                      <Button 
+                        onClick={handleSyncStrava}
+                        disabled={isSyncing}
+                        className="w-full"
+                      >
+                        {isSyncing ? (
+                          <>
+                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent"></div>
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <ArrowDownToLine className="mr-2 h-4 w-4" />
+                            Sync Existing Activities
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    
+                    <div className="border-t pt-4 space-y-2">
+                      <h5 className="text-sm font-medium">Sync Preferences</h5>
+                      <p className="text-xs text-muted-foreground">
+                        Select which activity types to import from Strava.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {syncPreferences.map(activityType => (
+                          <div key={activityType.id} className="flex items-center space-x-2">
+                            <Checkbox 
+                              id={`sync-${activityType.id}`} 
+                              checked={activityType.enabled}
+                              disabled={activityType.disabled}
+                              onCheckedChange={() => toggleSyncPreference(activityType.id)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                              <label
+                                htmlFor={`sync-${activityType.id}`}
+                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                              >
+                                {activityType.label}
+                              </label>
+                              {activityType.id === 'run' && (
+                                <p className="text-sm text-muted-foreground">
+                                  Import runs, jogs, and treadmill workouts
+                                </p>
+                              )}
+                              {activityType.id === 'swim' && (
+                                <p className="text-sm text-muted-foreground">
+                                  Import pool and open water swims
+                                </p>
+                              )}
+                              {activityType.id === 'ride' && (
+                                <p className="text-sm text-muted-foreground">
+                                  Import outdoor rides and indoor cycling
+                                </p>
+                              )}
+                              {activityType.id === 'workout' && (
+                                <p className="text-sm text-muted-foreground">
+                                  Not recommended - create strength workouts in Aivery instead
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <Button 
+                        onClick={saveSyncPreferences}
+                        disabled={isSavingPreferences}
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                      >
+                        {isSavingPreferences ? "Saving..." : "Save Preferences"}
+                      </Button>
+                    </div>
+
+                    <div className="border-t pt-4 space-y-2">
+                      <h5 className="text-sm font-medium">Automatic Syncing</h5>
+                      <p className="text-xs text-muted-foreground">
+                        Enable auto-sync to automatically import new Strava activities as they are created.
+                      </p>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Auto-sync new activities</span>
+                        <div className="flex items-center space-x-2">
+                          {isWebhookLoading || isSettingUpWebhook ? (
+                            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <Switch 
+                              checked={webhookStatus?.subscribed || false} 
+                              onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
+                              disabled={isWebhookLoading || isSettingUpWebhook || window.location.hostname === "localhost"}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {window.location.hostname === "localhost" ? (
+                          <>
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">
+                              Auto-sync requires a public URL
+                            </span>
+                            <br />
+                            To test auto-sync locally, use ngrok to expose your local server to the internet. 
+                            See the README for details.
+                          </>
+                        ) : webhookStatus?.subscribed ? (
+                          "New activities from Strava will be automatically synced as they are created."
+                        ) : (
+                          "Turn on to automatically sync new activities from Strava as they are created."
+                        )}
+                      </p>
+                      {webhookStatus?.subscribed && webhookStatus?.subscription && (
+                        <div className="text-xs bg-muted p-2 rounded">
+                          <p>Webhook ID: {webhookStatus.subscription.id || 'Unknown'}</p>
+                          <p>Last updated: {webhookStatus.subscription.created_at ? formatDate(webhookStatus.subscription.created_at) : 'Unknown'}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Connect to Strava to import your activities and enable syncing.
+                  </p>
+                  <Button 
+                    variant="default" 
+                    onClick={handleConnectStrava}
+                    className="w-full"
+                  >
+                    <Activity className="mr-2 h-4 w-4" />
+                    Connect with Strava
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-4 border rounded-md p-4">
+          <div className="flex items-start space-x-3">
+            <div className="bg-blue-500/10 text-blue-500 p-2 rounded-md mt-0.5">
+              <FileUp className="h-5 w-5" />
+            </div>
+            <div className="space-y-2 flex-1">
+              <h4 className="font-medium">Import from ZIP File</h4>
+              <p className="text-sm text-muted-foreground mb-3">
+                Upload workout data exported from other fitness platforms.
+              </p>
+              
+              <div>
+                <Link href="/import" className="w-full block">
+                  <Button variant="outline" className="w-full">
+                    <FileUp className="mr-2 h-4 w-4" />
+                    Upload ZIP File
+                  </Button>
+                </Link>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Supported formats: Exported ZIP files from Garmin, Fitbit, and other major fitness platforms.
+                </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Live Strava Connection</CardTitle>
-          <CardDescription>
-            Connect your Strava account to automatically sync future workouts
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-sm text-muted-foreground mb-4">
-            <p>Coming soon! This feature will allow you to automatically sync all your new Strava workouts to Aivery as they happen.</p>
           </div>
-          <Button disabled className="flex items-center">
-            <ArrowRight className="mr-2 h-4 w-4" />
-            Connect with Strava
-            <Badge variant="outline" className="ml-2 bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800">
-              Coming Soon
-            </Badge>
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 } 

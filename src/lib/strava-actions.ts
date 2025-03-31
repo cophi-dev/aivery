@@ -1,42 +1,164 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { connectStrava, syncStravaWorkouts, getStravaIntegration } from "./services/stravaService"
-
-// Mock user ID for demo purposes
-const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
+import { connectStrava, syncStravaWorkouts, getStravaIntegration, updateStravaSyncPreferences, SUPPORTED_ACTIVITY_TYPES } from "./services/stravaService"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "./auth"
+import { createWebhookSubscription, getWebhookSubscription, deleteWebhookSubscription } from "./strava/webhook"
 
 export async function connectStravaAction(authCode: string) {
   try {
-    const result = await connectStrava(MOCK_USER_ID, authCode)
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    
+    // Connect Strava using real user ID
+    const result = await connectStrava(userId, authCode)
+    
+    // Revalidate relevant pages
     revalidatePath("/integrations")
     return { success: true, data: result }
   } catch (error) {
     console.error("Error connecting to Strava:", error)
-    return { success: false, error: "Failed to connect to Strava" }
+    const errorMessage = error instanceof Error ? error.message : "Failed to connect to Strava"
+    return { success: false, error: errorMessage }
   }
 }
 
 export async function syncStravaWorkoutsAction() {
   try {
-    const result = await syncStravaWorkouts(MOCK_USER_ID)
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    
+    // Sync Strava workouts (only runs and swims)
+    const result = await syncStravaWorkouts(userId)
+    
+    // Revalidate relevant pages
     revalidatePath("/calendar")
     revalidatePath("/activity")
+    revalidatePath("/dashboard")
     revalidatePath("/integrations")
-    return { success: true, count: result.count }
+    
+    return { 
+      success: true, 
+      count: result.count,
+      types: result.types,
+      message: "Successfully synced runs and swims from Strava"
+    }
   } catch (error) {
     console.error("Error syncing Strava workouts:", error)
-    return { success: false, error: "Failed to sync Strava workouts" }
+    const errorMessage = error instanceof Error ? error.message : "Failed to sync Strava workouts"
+    return { success: false, error: errorMessage }
   }
 }
 
 export async function getStravaIntegrationAction() {
   try {
-    const integration = await getStravaIntegration(MOCK_USER_ID)
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    
+    // Get Strava integration
+    const integration = await getStravaIntegration(userId)
     return { success: true, integration }
   } catch (error) {
     console.error("Error getting Strava integration:", error)
-    return { success: false, error: "Failed to get Strava integration" }
+    const errorMessage = error instanceof Error ? error.message : "Failed to get Strava integration"
+    return { success: false, error: errorMessage }
+  }
+}
+
+export async function updateStravaSyncPreferencesAction(activityTypes: string[]) {
+  try {
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    
+    // Update preferences
+    const result = await updateStravaSyncPreferences(userId, activityTypes)
+    
+    return { success: true }
+  } catch (error) {
+    console.error("Error updating Strava sync preferences:", error)
+    const errorMessage = error instanceof Error ? error.message : "Failed to update Strava sync preferences"
+    return { success: false, error: errorMessage }
+  }
+}
+
+export async function getSupportedActivityTypes() {
+  return { success: true, activityTypes: SUPPORTED_ACTIVITY_TYPES }
+}
+
+export async function getStravaWebhookStatusAction() {
+  try {
+    const subscription = await getWebhookSubscription();
+    return { 
+      success: true, 
+      subscribed: !!subscription,
+      subscription 
+    };
+  } catch (error) {
+    console.error("Error getting Strava webhook status:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to get Strava webhook status";
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function setupStravaWebhookAction() {
+  try {
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated");
+    }
+    
+    // Create or verify webhook subscription
+    const subscription = await createWebhookSubscription();
+    
+    return { 
+      success: true, 
+      subscription 
+    };
+  } catch (error) {
+    console.error("Error setting up Strava webhook:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to set up Strava webhook";
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function removeStravaWebhookAction(subscriptionId: number) {
+  try {
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated");
+    }
+    
+    // Delete webhook subscription
+    const result = await deleteWebhookSubscription(subscriptionId);
+    
+    return { success: true };
+  } catch (error) {
+    console.error("Error removing Strava webhook:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to remove Strava webhook";
+    return { success: false, error: errorMessage };
   }
 }
 

@@ -19,7 +19,22 @@ export interface IUser extends Document {
   emailVerified?: Date
   createdAt: Date
   updatedAt: Date
+  aiPreferences?: {
+    location?: string
+    units?: string
+    trainingPreferences?: string
+    fitnessGoals?: string
+    dietaryPreferences?: string
+  }
 }
+
+const AiPreferencesSchema = new Schema({
+  location: { type: String },
+  units: { type: String, default: 'metric' },
+  trainingPreferences: { type: String },
+  fitnessGoals: { type: String },
+  dietaryPreferences: { type: String }
+}, { _id: false })
 
 const UserSchema: Schema = new Schema(
   {
@@ -43,6 +58,7 @@ const UserSchema: Schema = new Schema(
     emailVerified: { type: Date },
     accounts: [{ type: Schema.Types.ObjectId, ref: 'Account' }],
     sessions: [{ type: Schema.Types.ObjectId, ref: 'Session' }],
+    aiPreferences: { type: AiPreferencesSchema }
   },
   { timestamps: true },
 )

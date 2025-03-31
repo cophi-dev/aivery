@@ -2,108 +2,76 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import dbConnect from "@/lib/db/mongodb"
-import User from "@/lib/db/models/user"
-import { toClientData } from "@/lib/db/utils"
-import mongoose from "mongoose"
+import UserModel from "@/lib/db/models/user"
 
 export async function PUT(request: Request) {
   try {
-    // Get the user session
+    // Check authentication
     const session = await getServerSession(authOptions)
-    
-    // Check if user is authenticated
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Not authenticated" },
-        { status: 401 }
-      )
+      console.error("Authentication failed in profile update route")
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
+
+    // Parse request body
+    const data = await request.json()
+    const { firstName, lastName, email, nickname } = data
 
     // Connect to database
     await dbConnect()
-    
-    // Find the user by ID
-    const user = await User.findById(session.user.id)
 
-    // If user not found, return 404
+    // Find user
+    const user = await UserModel.findById(session.user.id)
+    
     if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    // Track changes for response
+    // Track changes
     const changes = []
 
-    // Get data from request
-    const data = await request.json()
-    console.log('Received profile update data:', data)
-    
-    // Update fields if they exist in the request
-    if (data.firstName !== undefined || data.lastName !== undefined) {
-      // Construct the full name
-      const firstName = data.firstName || user.name.split(' ')[0]
-      const lastName = data.lastName || (user.name.split(' ').length > 1 ? user.name.split(' ').slice(1).join(' ') : '')
+    // Update name if both first and last name are provided
+    if (firstName && lastName) {
       const fullName = `${firstName} ${lastName}`.trim()
-      
-      if (fullName !== user.name) {
+      if (user.name !== fullName) {
         user.name = fullName
         changes.push({ field: 'name', value: fullName })
       }
     }
-    
-    if (data.nickname !== undefined && data.nickname !== user.nickname) {
-      user.nickname = data.nickname
-      changes.push({ field: 'nickname', value: data.nickname })
+
+    // Update email if changed and not empty
+    if (email && email !== user.email) {
+      user.email = email
+      changes.push({ field: 'email', value: email })
     }
-    
-    if (data.email !== undefined && data.email !== user.email) {
-      // Note: In a real app, you would probably want to verify this email first
-      user.email = data.email
-      changes.push({ field: 'email', value: data.email })
+
+    // Update nickname if provided
+    if (nickname !== undefined) {
+      user.nickname = nickname
+      changes.push({ field: 'nickname', value: nickname })
     }
-    
-    // Only save if there are changes
+
+    // Save changes
     if (changes.length > 0) {
       await user.save()
-      
-      // As a fallback, try a direct MongoDB update
-      if (data.nickname && changes.some(c => c.field === 'nickname')) {
-        try {
-          // Get connection and use type assertion for TypeScript
-          const conn = mongoose.connection;
-          const db = conn.db as any;
-          
-          if (!db) {
-            console.error('Database not available for direct update')
-            return
-          }
-          
-          const collection = db.collection('users')
-          
-          // Update using direct MongoDB command
-          await collection.updateOne(
-            { _id: new mongoose.Types.ObjectId(session.user.id) },
-            { $set: { nickname: data.nickname } }
-          )
-        } catch (directUpdateError) {
-          console.error('Error in direct MongoDB update:', directUpdateError)
-        }
-      }
+      console.log(`Updated profile for user ${session.user.id} with ${changes.length} changes`)
+    } else {
+      console.log(`No changes detected for user ${session.user.id}`)
     }
-    
-    // Return updated user data and changes
-    return NextResponse.json({
+
+    return NextResponse.json({ 
       message: "Profile updated successfully",
-      user: toClientData(user),
+      user: {
+        name: user.name,
+        email: user.email,
+        nickname: user.nickname
+      },
       changes
-    }, { status: 200 })
-    
+    })
   } catch (error) {
     console.error("Error updating profile:", error)
     return NextResponse.json(
-      { error: "Server error", details: String(error) },
+      { error: "Failed to update profile" },
       { status: 500 }
     )
   }

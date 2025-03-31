@@ -6,7 +6,7 @@ import { redirect, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw } from "lucide-react";
+import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen } from "lucide-react";
 import type { WorkoutData } from "@/types/db";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -467,8 +467,36 @@ export default function HomePage() {
                   Settings
                 </Button>
               </Link>
+              <Link href="/my-story">
+                <Button variant="secondary" className="w-full" size="sm">
+                  My Story
+                </Button>
+              </Link>
             </div>
           </CardContent>
+        </Card>
+
+        {/* My Story Feature */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xl flex items-center">
+              <BookOpen className="mr-2 h-5 w-5" />
+              My Fitness Story
+            </CardTitle>
+            <CardDescription>AI-generated article about your journey</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground mb-3">
+              Let Aivery create a personalized story about your fitness journey, progress, and achievements.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Link href="/my-story" className="w-full">
+              <Button className="w-full" variant="outline">
+                Read My Story
+              </Button>
+            </Link>
+          </CardFooter>
         </Card>
 
         {/* Recent Activity */}

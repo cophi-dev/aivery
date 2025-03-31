@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -13,11 +13,44 @@ import { Separator } from "@/components/ui/separator"
 
 export default function IntegrationsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [stravaIntegration, setStravaIntegration] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null)
+
+  // Handle URL parameters for OAuth flow
+  useEffect(() => {
+    if (searchParams) {
+      const success = searchParams.get('success')
+      const error = searchParams.get('error')
+      
+      if (success === 'strava_connected') {
+        setAlert({ type: "success", message: "Successfully connected to Strava" })
+        // Clear the URL parameters to avoid showing the message again on refresh
+        router.replace('/integrations', { scroll: false })
+      } else if (error) {
+        let errorMessage = "Failed to connect to Strava"
+        
+        switch (error) {
+          case 'strava_auth_failed':
+            errorMessage = "Strava authentication failed. Please try again."
+            break
+          case 'no_code':
+            errorMessage = "No authorization code received from Strava"
+            break
+          case 'strava_callback_failed':
+            errorMessage = "Error processing Strava callback"
+            break
+        }
+        
+        setAlert({ type: "error", message: errorMessage })
+        // Clear the URL parameters to avoid showing the message again on refresh
+        router.replace('/integrations', { scroll: false })
+      }
+    }
+  }, [searchParams, router])
 
   // Load Strava integration on page load
   useEffect(() => {
@@ -42,30 +75,16 @@ export default function IntegrationsPage() {
   }, [])
 
   // Handle connect to Strava
-  const handleConnectStrava = async () => {
+  const handleConnectStrava = () => {
     setIsConnecting(true)
     setAlert(null)
 
     try {
-      // In a real app, we would redirect to Strava OAuth page
-      // For demo, we'll simulate with a mock auth code
-      const authCode = "mock_auth_code"
-      const { success, data, error } = await connectStravaAction(authCode)
-
-      if (success && data) {
-        setStravaIntegration({
-          id: data.id,
-          provider: "strava",
-          lastSynced: null,
-        })
-        setAlert({ type: "success", message: "Successfully connected to Strava" })
-      } else {
-        setAlert({ type: "error", message: error || "Failed to connect to Strava" })
-      }
+      // Redirect to Strava OAuth page
+      window.location.href = `/api/strava/authorize`
     } catch (error) {
       console.error("Error connecting to Strava:", error)
       setAlert({ type: "error", message: "An unexpected error occurred" })
-    } finally {
       setIsConnecting(false)
     }
   }
@@ -76,10 +95,23 @@ export default function IntegrationsPage() {
     setAlert(null)
 
     try {
-      const { success, count, error } = await syncStravaWorkoutsAction()
+      const { success, count, types, error, message } = await syncStravaWorkoutsAction()
 
       if (success) {
-        setAlert({ type: "success", message: `Successfully synced ${count} workouts from Strava` })
+        // Format activity types for display
+        const typeDetails = [];
+        if (types?.run) typeDetails.push(`${types.run} runs`);
+        if (types?.swim) typeDetails.push(`${types.swim} swims`);
+        
+        const typeMessage = typeDetails.length > 0 
+          ? `(${typeDetails.join(", ")})`
+          : "";
+        
+        setAlert({ 
+          type: "success", 
+          message: message || `Successfully synced ${count} activities from Strava ${typeMessage}` 
+        });
+        
         // Refresh Strava integration to update lastSynced
         const result = await getStravaIntegrationAction()
         if (result.success && result.integration) {
@@ -160,6 +192,9 @@ export default function IntegrationsPage() {
                   <div className="text-sm text-muted-foreground">
                     Last synced: {formatDate(stravaIntegration.lastSynced)}
                   </div>
+                  <div className="text-xs bg-muted p-2 rounded-md">
+                    <p>Only running and swimming activities will be synced. Strength training workouts are not imported.</p>
+                  </div>
                   <Button onClick={handleSyncStrava} disabled={isSyncing} className="w-full">
                     {isSyncing ? (
                       <>
@@ -169,7 +204,7 @@ export default function IntegrationsPage() {
                     ) : (
                       <>
                         <LucideRefreshCw className="h-4 w-4 mr-2" />
-                        Sync Workouts
+                        Sync Runs & Swims
                       </>
                     )}
                   </Button>

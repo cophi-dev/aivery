@@ -90,8 +90,8 @@
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.85 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -165,7 +165,7 @@
   }
   
   .bg-muted .prose strong {
-    @apply text-primary-foreground dark:text-primary;
+    @apply text-primary-foreground dark:text-white;
   }
   
   .bg-primary .prose strong {
@@ -177,7 +177,7 @@
   }
   
   .prose a {
-    @apply text-blue-600 dark:text-blue-400 hover:underline;
+    @apply text-blue-600 dark:text-blue-300 hover:underline;
   }
   
   .prose pre {
@@ -189,11 +189,11 @@
   }
   
   .prose blockquote {
-    @apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-2;
+    @apply border-l-4 border-gray-300 dark:border-gray-400 pl-4 italic my-2;
   }
   
   .prose hr {
-    @apply my-4 border-t border-gray-300 dark:border-gray-600;
+    @apply my-4 border-t border-gray-300 dark:border-gray-400;
   }
   
   .prose table {
@@ -201,11 +201,20 @@
   }
   
   .prose th, .prose td {
-    @apply border border-gray-300 dark:border-gray-600 px-2 py-1;
+    @apply border border-gray-300 dark:border-gray-400 px-2 py-1;
   }
   
   .prose th {
-    @apply bg-gray-100 dark:bg-gray-800 font-semibold;
+    @apply bg-gray-100 dark:bg-gray-700 font-semibold;
+  }
+  
+  /* Add specific styles for dark mode chat messages */
+  .dark .bg-muted {
+    @apply text-gray-50;
+  }
+  
+  .dark .prose p, .dark .prose li, .dark .prose h1, .dark .prose h2, .dark .prose h3 {
+    @apply text-gray-50;
   }
 }
 

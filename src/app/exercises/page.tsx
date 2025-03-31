@@ -1,4 +1,4 @@
-import { fetchExercises } from "@/lib/exercise-actions"
+import { fetchExercises, fetchExerciseByName } from "@/lib/exercise-actions"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { 
@@ -11,14 +11,35 @@ import { Badge } from "@/components/ui/badge"
 import { LucideArrowLeft, LucidePlus } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ExerciseData } from "@/types/db"
+import { redirect } from "next/navigation"
 
 export const metadata = {
   title: "Exercises | Aivery",
   description: "Browse and manage exercises",
 }
 
-export default async function ExercisesPage() {
+export default async function ExercisesPage({
+  searchParams
+}: {
+  searchParams: { [key: string]: string | string[] | undefined }
+}) {
+  // Check if we have a name parameter to search for
+  const nameParam = searchParams.name as string | undefined
+  
+  // If a name is provided, try to find the matching exercise and redirect
+  if (nameParam) {
+    const exercise = await fetchExerciseByName(nameParam)
+    if (exercise) {
+      // If found, redirect to the exercise detail page
+      redirect(`/exercises/${exercise._id}`)
+    }
+    // If not found, continue to show the list with a note
+  }
+  
   const exercises = await fetchExercises()
+  
+  // Track if a name was searched but not found
+  const exerciseNotFound = nameParam ? true : false
   
   // Group exercises by category
   const strengthExercises = exercises.filter(ex => ex.category === "strength")
@@ -45,6 +66,13 @@ export default async function ExercisesPage() {
           </Button>
         </Link>
       </div>
+      
+      {/* Show notification if exercise was not found */}
+      {exerciseNotFound && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 p-4 rounded-md mb-6">
+          <p>Exercise &quot;{nameParam}&quot; not found. You can create it or browse existing exercises below.</p>
+        </div>
+      )}
       
       {exercises.length === 0 ? (
         <div className="text-center py-12">

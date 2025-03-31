@@ -79,6 +79,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
+    // Get selected workout types from form data
+    const selectedWorkoutTypes = formData.getAll('workoutTypes').map(type => type.toString())
+    console.log('Strava import: Selected workout types:', selectedWorkoutTypes)
+    
+    // If no workout types are selected, use all types
+    if (selectedWorkoutTypes.length === 0) {
+      console.log('Strava import: No workout types selected, using all types')
+    }
+
     console.log('Strava import: Processing file:', file.name, 'size:', file.size)
 
     // Convert File to ArrayBuffer
@@ -294,6 +303,16 @@ export async function POST(request: NextRequest) {
 
         // Map Strava sport types to our workout types
         const mappedType = mapStravaType(activityData.sport, activityData.sub_sport)
+        
+        // Skip if not in selected workout types (if any are selected)
+        if (selectedWorkoutTypes.length > 0 && !selectedWorkoutTypes.includes(mappedType)) {
+          console.log('Skipping activity - type not selected:', {
+            file: file.name,
+            mappedType,
+            selectedTypes: selectedWorkoutTypes
+          })
+          continue
+        }
 
         // Calculate average pace in min/km if we have distance and time
         let avgPace = undefined
@@ -670,73 +689,21 @@ function extractStravaIdFromFilename(filename: string): string | undefined {
 
 // Function to generate comprehensive notes for AI queries
 function generateActivityNotes(activityData: any, startTime: Date, fileName: string): string {
-  const formattedDate = startTime.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-  
-  const formattedTime = startTime.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-  
-  let notes = `Strava ${activityData.sport} Activity\n`;
-  notes += `Date: ${formattedDate} at ${formattedTime}\n`;
-  
-  // Include original activity description/notes if available
-  if (activityData.description) {
-    notes += `\nOriginal Description: ${activityData.description}\n`;
-  }
-  
-  if (activityData.total_distance && activityData.total_distance > 0) {
-    notes += `Distance: ${(Math.round(activityData.total_distance * 100) / 100).toFixed(2)} km\n`;
-  }
-  
-  if (activityData.total_elapsed_time) {
-    const hours = Math.floor(activityData.total_elapsed_time / 3600);
-    const minutes = Math.floor((activityData.total_elapsed_time % 3600) / 60);
-    const seconds = Math.floor(activityData.total_elapsed_time % 60);
-    let durationStr = '';
-    if (hours > 0) durationStr += `${hours}h `;
-    if (minutes > 0 || hours > 0) durationStr += `${minutes}m `;
-    durationStr += `${seconds}s`;
-    notes += `Duration: ${durationStr}\n`;
-  }
-  
-  if (activityData.total_calories) {
-    notes += `Calories: ${Math.round(activityData.total_calories)}\n`;
-  }
-  
-  if (activityData.total_ascent) {
-    notes += `Elevation Gain: ${Math.round(activityData.total_ascent)}m\n`;
-  }
-  
-  if (activityData.avg_heart_rate) {
-    notes += `Average Heart Rate: ${Math.round(activityData.avg_heart_rate)} bpm\n`;
-  }
-  
-  if (activityData.max_heart_rate) {
-    notes += `Max Heart Rate: ${Math.round(activityData.max_heart_rate)} bpm\n`;
-  }
-  
-  if (activityData.avg_power) {
-    notes += `Average Power: ${Math.round(activityData.avg_power)} watts\n`;
-  }
-  
-  if (activityData.avg_speed || activityData.enhanced_avg_speed) {
-    const speed = activityData.enhanced_avg_speed || activityData.avg_speed;
-    notes += `Average Speed: ${(Math.round(speed * 10) / 10).toFixed(1)} km/h\n`;
-  }
-  
-  // Include Strava link
+  // Extract Strava link
   const stravaLink = extractStravaIdFromFilename(fileName);
+  
+  // Create notes with only the Strava link
+  let notes = "";
+  
+  // Include Strava link if available
   if (stravaLink) {
-    notes += `\nView on Strava: ${stravaLink}\n`;
+    notes += `View on Strava: ${stravaLink}`;
   }
   
-  notes += `\nImported from Strava Archive`;
+  // Add original description if it exists
+  if (activityData.description) {
+    notes += notes ? `\n\n${activityData.description}` : activityData.description;
+  }
   
   return notes;
 }

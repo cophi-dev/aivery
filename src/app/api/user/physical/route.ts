@@ -7,184 +7,116 @@ import WeightHistory from "@/lib/db/models/weightHistory"
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 
+export async function GET(request: Request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      console.error("Authentication failed in physical info GET route")
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
+    }
+
+    console.log("Fetching physical info for user:", session.user.id)
+
+    await dbConnect()
+
+    const user = await User.findById(session.user.id)
+      .select('height weight age gender activityLevel')
+      .lean()
+    
+    if (!user) {
+      console.error("User not found in physical info route")
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    console.log("Found physical info:", user)
+
+    return NextResponse.json({ 
+      height: user.height,
+      weight: user.weight, 
+      age: user.age,
+      gender: user.gender,
+      activityLevel: user.activityLevel
+    })
+  } catch (error) {
+    console.error("Error fetching physical info:", error)
+    return NextResponse.json(
+      { error: "Failed to fetch physical info" },
+      { status: 500 }
+    )
+  }
+}
+
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { message: "Not authenticated" },
-        { status: 401 }
-      )
+    if (!session?.user?.id) {
+      console.error("Authentication failed in physical info PUT route")
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
+
+    const data = await request.json()
+    const { height, weight, age, gender, activityLevel } = data
+
+    console.log("Updating physical info for user:", session.user.id, data)
 
     await dbConnect()
-    const user = await User.findOne({ email: session.user.email })
 
+    const user = await User.findById(session.user.id)
+    
     if (!user) {
-      return NextResponse.json(
-        { message: "User not found" },
-        { status: 404 }
-      )
+      console.error("User not found in physical info PUT route")
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    // Track changes for response
     const changes = []
 
-    // Check content type to determine how to parse the request
-    const contentType = request.headers.get('content-type') || ''
-    
-    if (contentType.includes('application/json')) {
-      // Handle JSON data
-      const data = await request.json()
-      console.log('Received JSON data:', data)
-      
-      // Update physical information from JSON
-      if (data.height !== undefined) {
-        user.height = Number(data.height)
-        changes.push({ field: 'height', value: data.height })
-      }
-      
-      if (data.weight !== undefined) {
-        const oldWeight = user.weight
-        const newWeight = Number(data.weight)
-        user.weight = newWeight
-        changes.push({ field: 'weight', value: data.weight })
-
-        // Store in weight history if this is the first weight entry or if weight has changed
-        if (oldWeight === undefined || Math.abs(oldWeight - newWeight) > 0.01) {
-          try {
-            await WeightHistory.create({
-              userId: user._id,
-              weight: newWeight,
-              date: new Date(),
-            })
-            console.log('Weight history entry created:', { oldWeight, newWeight })
-          } catch (error) {
-            console.error('Error creating weight history entry:', error)
-            // Continue with the update even if weight history fails
-          }
-        }
-      }
-
-      if (data.age !== undefined) {
-        user.age = Number(data.age)
-        changes.push({ field: 'age', value: data.age })
-      }
-
-      if (data.gender !== undefined) {
-        user.gender = data.gender
-        changes.push({ field: 'gender', value: data.gender })
-      }
-
-      if (data.activityLevel !== undefined) {
-        user.activityLevel = data.activityLevel
-        changes.push({ field: 'activityLevel', value: data.activityLevel })
-      }
-    } else if (contentType.includes('multipart/form-data')) {
-      // Handle multipart form data
-      const formData = await request.formData()
-      
-      // Handle image upload
-      const image = formData.get('image') as File | null
-      if (image) {
-        try {
-          const bytes = await image.arrayBuffer()
-          const buffer = Buffer.from(bytes)
-
-          // Create unique filename with timestamp
-          const timestamp = Date.now()
-          const filename = `profile-${timestamp}.png`
-          
-          // Save to public directory
-          const publicDir = join(process.cwd(), 'public', 'uploads')
-          const filepath = join(publicDir, filename)
-          await writeFile(filepath, buffer)
-          
-          // Update user's image URL with absolute path
-          const imageUrl = `/uploads/${filename}`
-          user.image = imageUrl
-          changes.push({ field: 'image', value: imageUrl })
-        } catch (error: any) {
-          console.error('Error saving image:', error)
-          return NextResponse.json(
-            { message: "Failed to save image" },
-            { status: 500 }
-          )
-        }
-      }
-
-      // Update physical information
-      const height = formData.get('height')
-      if (height) {
-        user.height = Number(height)
-        changes.push({ field: 'height', value: height })
-      }
-      
-      const weight = formData.get('weight')
-      if (weight) {
-        const oldWeight = user.weight
-        const newWeight = Number(weight)
-        user.weight = newWeight
-        changes.push({ field: 'weight', value: weight })
-
-        // Store in weight history if this is the first weight entry or if weight has changed
-        if (oldWeight === undefined || Math.abs(oldWeight - newWeight) > 0.01) {
-          try {
-            await WeightHistory.create({
-              userId: user._id,
-              weight: newWeight,
-              date: new Date(),
-            })
-            console.log('Weight history entry created:', { oldWeight, newWeight })
-          } catch (error) {
-            console.error('Error creating weight history entry:', error)
-            // Continue with the update even if weight history fails
-          }
-        }
-      }
-
-      const age = formData.get('age')
-      if (age) {
-        user.age = Number(age)
-        changes.push({ field: 'age', value: age })
-      }
-
-      const gender = formData.get('gender')
-      if (gender) {
-        user.gender = gender as string
-        changes.push({ field: 'gender', value: gender })
-      }
-
-      const activityLevel = formData.get('activityLevel')
-      if (activityLevel) {
-        user.activityLevel = activityLevel as string
-        changes.push({ field: 'activityLevel', value: activityLevel })
-      }
-    } else {
-      return NextResponse.json(
-        { message: "Unsupported content type" },
-        { status: 400 }
-      )
+    if (height !== undefined && user.height !== height) {
+      user.height = height
+      changes.push({ field: 'height', value: height })
     }
 
-    await user.save()
+    if (weight !== undefined && user.weight !== weight) {
+      user.weight = weight
+      changes.push({ field: 'weight', value: weight })
+    }
 
-    return NextResponse.json({
-      message: "Profile updated successfully",
+    if (age !== undefined && user.age !== age) {
+      user.age = age
+      changes.push({ field: 'age', value: age })
+    }
+
+    if (gender !== undefined && user.gender !== gender) {
+      user.gender = gender
+      changes.push({ field: 'gender', value: gender })
+    }
+
+    if (activityLevel !== undefined && user.activityLevel !== activityLevel) {
+      user.activityLevel = activityLevel
+      changes.push({ field: 'activityLevel', value: activityLevel })
+    }
+
+    if (changes.length > 0) {
+      await user.save()
+      console.log(`Updated physical info for user ${session.user.id} with ${changes.length} changes:`, changes)
+    } else {
+      console.log(`No physical info changes detected for user ${session.user.id}`)
+    }
+
+    return NextResponse.json({ 
+      message: "Physical info updated successfully",
       user: {
         height: user.height,
         weight: user.weight,
         age: user.age,
         gender: user.gender,
-        activityLevel: user.activityLevel,
-        image: user.image
+        activityLevel: user.activityLevel
       },
       changes
-    }, { status: 200 })
+    })
   } catch (error) {
-    console.error("Error updating profile:", error)
+    console.error("Error updating physical info:", error)
     return NextResponse.json(
-      { message: "Failed to update profile", error: String(error) },
+      { error: "Failed to update physical info" },
       { status: 500 }
     )
   }

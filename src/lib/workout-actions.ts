@@ -73,7 +73,6 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       name: workoutData.name,
       date: workoutData.date ? new Date(workoutData.date) : new Date(),
       duration: workoutData.duration,
-      intensity: workoutData.intensity,
       notes: workoutData.notes,
       type: workoutData.type || "strength", // Default to strength if type not provided
       exercises: workoutData.exercises?.map(exercise => ({
@@ -317,7 +316,6 @@ export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Pr
       name: workoutData.name || "Cardio Workout",
       date: workoutData.date ? new Date(workoutData.date) : new Date(),
       duration: workoutData.duration || 0,
-      intensity: workoutData.intensity || "Medium",
       type: workoutData.type || "running",
       distance: workoutData.distance ?? undefined,
       cardioDetails: workoutData.cardioDetails ?? undefined,

@@ -1,8 +1,7 @@
 import Link from "next/link"
-import { LucideBrain } from "lucide-react"
+import { LucideBrain, Menu, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { Menu } from "lucide-react"
 
 export function Header() {
   return (
@@ -16,6 +15,12 @@ export function Header() {
           <Link href="/chat">
             <Button variant="outline" size="sm">
               AI Coach
+            </Button>
+          </Link>
+          <Link href="/my-story">
+            <Button variant="outline" size="sm">
+              <BookOpen className="h-4 w-4 mr-2" />
+              My Story
             </Button>
           </Link>
           <Sheet>
@@ -55,6 +60,10 @@ export function Header() {
                   </Link>
                   <Link href="/settings" className="px-2 py-1 hover:underline">
                     Settings
+                  </Link>
+                  <Link href="/my-story" className="px-2 py-1 hover:underline flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    My Story
                   </Link>
                   <div className="h-px bg-border my-1"></div>
                   <Link href="/init-db" className="px-2 py-1 hover:underline text-green-600">

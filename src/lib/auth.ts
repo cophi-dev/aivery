@@ -5,6 +5,12 @@ import dbConnect from "@/lib/db/mongodb"
 import UserModel from "@/lib/db/models/user"
 import { serializeMongoDoc } from "@/lib/db/utils"
 
+// Add debug info about cookie domain
+const cookieDomain = process.env.COOKIE_DOMAIN;
+console.log('[AUTH CONFIG] Environment:', process.env.NODE_ENV);
+console.log('[AUTH CONFIG] Cookie domain:', cookieDomain || 'Not set');
+console.log('[AUTH CONFIG] NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'Not set');
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -175,40 +181,40 @@ export const authOptions: NextAuthOptions = {
       }
     }
   },
-  // Keep cookie options minimal
+  // Modify cookie options to fix cross-domain issues
   cookies: {
     sessionToken: {
       name: `next-auth.session-token`,
       options: {
         httpOnly: true,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'none' in production for cross-domain
+        sameSite: 'lax', // Change to 'lax' for all environments to fix cookie issues
         path: '/',
         secure: process.env.NODE_ENV === 'production', // Secure in production
         maxAge: 30 * 24 * 60 * 60, // 30 days
-        domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined, // Use COOKIE_DOMAIN in production if set
+        domain: undefined, // Remove domain restriction to fix cookie issues
       },
     },
     callbackUrl: {
       name: `next-auth.callback-url`,
       options: {
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'none' in production for cross-domain
+        sameSite: 'lax', // Change to 'lax' for all environments to fix cookie issues
         path: '/',
         secure: process.env.NODE_ENV === 'production', // Secure in production
-        domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined, // Use COOKIE_DOMAIN in production if set
+        domain: undefined, // Remove domain restriction to fix cookie issues
       },
     },
     csrfToken: {
       name: `next-auth.csrf-token`,
       options: {
         httpOnly: true,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Use 'none' in production for cross-domain
+        sameSite: 'lax', // Change to 'lax' for all environments to fix cookie issues
         path: '/',
         secure: process.env.NODE_ENV === 'production', // Secure in production
-        domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined, // Use COOKIE_DOMAIN in production if set
+        domain: undefined, // Remove domain restriction to fix cookie issues
       },
     },
   },
-  debug: false, // Disable debug mode to reduce console logs
+  debug: true, // Enable debug mode temporarily to diagnose issues
   secret: process.env.NEXTAUTH_SECRET
 }
 

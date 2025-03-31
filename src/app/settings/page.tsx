@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useTransition } from "react"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,6 +23,7 @@ import UserNicknameDisplay from "@/components/UserNicknameDisplay"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { deleteWorkoutsByTypes, deleteWorkoutsAction } from '../actions/delete-workouts'
 
 interface Change {
   field: string;
@@ -1008,62 +1009,106 @@ export default function SettingsPage() {
   }
 
   const [selectedWorkoutTypes, setSelectedWorkoutTypes] = useState<string[]>([])
-  const [deleteWorkoutsPassword, setDeleteWorkoutsPassword] = useState('')
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [deleteWorkoutsError, setDeleteWorkoutsError] = useState('')
   const [deleteWorkoutsSuccess, setDeleteWorkoutsSuccess] = useState('')
   const [isDeletingWorkouts, setIsDeletingWorkouts] = useState(false)
 
-  const handleDeleteWorkouts = async () => {
-    setIsDeletingWorkouts(true)
-    setDeleteWorkoutsError('')
-    setDeleteWorkoutsSuccess('')
-    try {
-      const response = await fetch('/api/user/delete-workouts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          workoutTypes: selectedWorkoutTypes,
-          password: deleteWorkoutsPassword
-        }),
-        credentials: 'include',
-      })
+  const [isPending, startTransition] = useTransition();
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to delete workouts')
-      }
-
-      const data = await response.json()
-
-      // Format workout types for display
-      const workoutTypesList = data.workoutTypes?.map((type: string) => 
-        type.charAt(0).toUpperCase() + type.slice(1)
-      ).join(', ');
-
-      // Show success message with number of deleted workouts and types
-      const successMessage = `Successfully deleted ${data.deletedCount} ${data.deletedCount === 1 ? 'workout' : 'workouts'} ` +
-        `of type${selectedWorkoutTypes.length > 1 ? 's' : ''}: ${workoutTypesList}`;
-      
-      setDeleteWorkoutsSuccess(successMessage)
-      
-      // Reset form
-      setSelectedWorkoutTypes([])
-      setDeleteWorkoutsPassword('')
-      
-      // Show toast notification
-      toast({
-        description: successMessage,
-        variant: "default"
-      })
-    } catch (error) {
-      console.error('Error deleting workouts:', error)
-      setDeleteWorkoutsError(error instanceof Error ? error.message : 'An error occurred')
-    } finally {
-      setIsDeletingWorkouts(false)
+  const handleDeleteWorkoutsSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    // Get form data
+    const formData = new FormData(e.currentTarget);
+    const types = formData.getAll('workoutTypes').map(t => t.toString());
+    const confirmation = formData.get('confirmation')?.toString() || '';
+    
+    // Validate
+    if (confirmation !== 'delete') {
+      setDeleteWorkoutsError("Please type 'delete' to confirm");
+      return;
     }
-  }
+    
+    if (types.length === 0) {
+      setDeleteWorkoutsError("Please select at least one workout type");
+      return;
+    }
+    
+    // Reset state
+    setIsDeletingWorkouts(true);
+    setDeleteWorkoutsError('');
+    setDeleteWorkoutsSuccess('');
+    
+    // Show toast
+    const loadingToast = toast({
+      title: "Deleting workouts...",
+      description: "This might take a few seconds",
+    });
+    
+    // Use fetchWithAuth to call the API endpoint instead of server action
+    (async () => {
+      try {
+        const response = await fetchWithAuth('/api/user/delete-workouts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            workoutTypes: types,
+            confirmation: confirmation
+          }),
+        });
+        
+        const result = await response.json();
+        
+        loadingToast.dismiss();
+        
+        if (!response.ok || !result.success) {
+          setDeleteWorkoutsError(result.error || 'Failed to delete workouts');
+          toast({
+            title: "Error",
+            description: result.error || 'Failed to delete workouts',
+            variant: "destructive"
+          });
+        } else {
+          // Format workout types for display
+          const workoutTypesList = types
+            .map(type => type.charAt(0).toUpperCase() + type.slice(1))
+            .join(', ');
+
+          // Create success message
+          const successMessage = result.deletedCount === 0 
+            ? `No workouts found matching the selected types: ${workoutTypesList}.`
+            : `Successfully deleted ${result.deletedCount} ${result.deletedCount === 1 ? 'workout' : 'workouts'} ` +
+              `of type${types.length > 1 ? 's' : ''}: ${workoutTypesList}.`;
+          
+          setDeleteWorkoutsSuccess(successMessage);
+          setSelectedWorkoutTypes([]);
+          
+          toast({
+            title: "Success",
+            description: successMessage,
+          });
+          
+          // Reset the form
+          (e.target as HTMLFormElement).reset();
+        }
+      } catch (error) {
+        loadingToast.dismiss();
+        const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+        
+        setDeleteWorkoutsError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive"
+        });
+      } finally {
+        setIsDeletingWorkouts(false);
+      }
+    })();
+  };
 
   // Add this function to handle AI preference changes
   const handleAiPreferenceChange = (field: string, value: string) => {
@@ -1205,6 +1250,15 @@ export default function SettingsPage() {
     }
   }
 
+  // Debug log email values
+  useEffect(() => {
+    console.log('Email debug values:', {
+      'session?.user?.email': session?.user?.email,
+      'userData.email': userData.email,
+      'profileChanges.email': profileChanges.email
+    });
+  }, [session?.user?.email, userData.email, profileChanges.email]);
+
   return (
     <div className="container mx-auto px-4 py-4 sm:py-8">
       <div className="mb-4 sm:mb-8">
@@ -1290,12 +1344,16 @@ export default function SettingsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input 
-                      id="email" 
-                      type="email" 
-                      value={profileChanges.email} 
+                    <Input
+                      id="email"
+                      type="email"
+                      className="mt-1"
+                      value={profileChanges.email}
                       onChange={(e) => handleProfileChange('email', e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Your email address is used for login and notifications.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="nickname">Nickname (shown in app)</Label>
@@ -1652,79 +1710,61 @@ export default function SettingsPage() {
             <CardContent className="px-4 sm:px-6">
               <div className="space-y-6 sm:space-y-8">
                 {/* Delete Workouts Section */}
-                <div className="space-y-4 border-b pb-6">
-                  <div>
-                    <h4 className="font-medium text-destructive mb-2">Delete Workout Data</h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Delete workout history by type. This action cannot be undone.
-                    </p>
-                    
-                    <div className="space-y-1 p-2 sm:p-3 bg-muted rounded-md mb-4">
-                      <p className="text-sm">
-                        <span className="font-medium">Tip:</span> After deleting workout data, you can use the integrations tab to reimport your 
-                        data from connected services like Strava.
-                      </p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <Label className="mb-2 block">Select workout types to delete</Label>
-                        <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
-                          {["strength", "running", "swimming", "cycling", "hiit", "flexibility", "other"].map((type) => (
-                            <div key={type} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
-                              <Checkbox 
-                                id={`workout-type-${type}`} 
-                                checked={selectedWorkoutTypes.includes(type)}
-                                onCheckedChange={(checked) => {
-                                  if (checked) {
-                                    setSelectedWorkoutTypes([...selectedWorkoutTypes, type]);
-                                  } else {
-                                    setSelectedWorkoutTypes(
-                                      selectedWorkoutTypes.filter((t) => t !== type)
-                                    );
-                                  }
-                                }}
-                              />
-                              <label
-                                htmlFor={`workout-type-${type}`}
-                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 capitalize"
-                              >
-                                {type}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
+                <div>
+                  <p className="text-lg font-semibold mb-2">Delete Workout Data</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    This will permanently delete all selected workout types. This cannot be undone.
+                  </p>
+                  
+                  <form onSubmit={handleDeleteWorkoutsSubmit}>
+                    <div className="mb-4">
+                      <Label className="mb-2 block">Select workout types to delete</Label>
+                      <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
+                        {["strength", "running", "swimming", "cycling", "hiit", "flexibility", "other"].map((type) => (
+                          <div key={type} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
+                            <Checkbox 
+                              id={`workout-type-${type}`} 
+                              name="workoutTypes"
+                              value={type}
+                              defaultChecked={selectedWorkoutTypes.includes(type)}
+                            />
+                            <label
+                              htmlFor={`workout-type-${type}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 capitalize"
+                            >
+                              {type}
+                            </label>
+                          </div>
+                        ))}
                       </div>
-                      <div>
-                        <Label htmlFor="confirm-delete-password">Confirm with your password</Label>
-                        <Input
-                          id="confirm-delete-password"
-                          type="password"
-                          value={deleteWorkoutsPassword}
-                          onChange={(e) => setDeleteWorkoutsPassword(e.target.value)}
-                          className="mt-1"
-                          placeholder="Enter your password to confirm"
-                        />
-                      </div>
-                      {deleteWorkoutsError && (
-                        <div className="text-sm text-destructive">{deleteWorkoutsError}</div>
-                      )}
-                      {deleteWorkoutsSuccess && (
-                        <div className="text-sm text-green-600">{deleteWorkoutsSuccess}</div>
-                      )}
-                      <Button 
-                        variant="destructive"
-                        onClick={handleDeleteWorkouts}
-                        disabled={
-                          isDeletingWorkouts || 
-                          selectedWorkoutTypes.length === 0 || 
-                          !deleteWorkoutsPassword
-                        }
-                      >
-                        {isDeletingWorkouts ? "Deleting..." : "Delete Selected Workout Types"}
-                      </Button>
                     </div>
-                  </div>
+
+                    <div className="mb-4">
+                      <Label htmlFor="confirm-delete">Type 'delete' to confirm</Label>
+                      <Input
+                        id="confirm-delete"
+                        name="confirmation"
+                        type="text"
+                        className="mt-1"
+                        placeholder="Type 'delete' to confirm"
+                      />
+                    </div>
+
+                    {deleteWorkoutsError && (
+                      <div className="text-sm text-destructive mb-2">{deleteWorkoutsError}</div>
+                    )}
+                    {deleteWorkoutsSuccess && (
+                      <div className="text-sm text-green-600 mb-2">{deleteWorkoutsSuccess}</div>
+                    )}
+
+                    <Button 
+                      type="submit"
+                      variant="destructive"
+                      disabled={isDeletingWorkouts}
+                    >
+                      {isDeletingWorkouts ? "Deleting..." : "Delete Selected Workout Types"}
+                    </Button>
+                  </form>
                 </div>
                 
                 {/* Delete Account Section */}

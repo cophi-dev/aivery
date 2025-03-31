@@ -6,7 +6,8 @@ import { MainHeader } from "@/components/main-header"
 import { PersistentChat } from "@/components/persistent-chat"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { ToastProvider } from "@/components/ui/toast"
+import { ToastProvider } from "@/components/ui/use-toast"
+import { Toaster } from "@/components/ui/use-toast"
 import ForceCleanup from "./cleanup"
 import { Metadata } from "next"
 // Import the dynamic config to force dynamic rendering
@@ -107,6 +108,7 @@ export default async function RootLayout({
               <MainHeader />
               <main className="min-h-screen pt-14">{children}</main>
               {session?.user && <PersistentChat />}
+              <Toaster />
             </ToastProvider>
           </ThemeProvider>
         </AuthProvider>

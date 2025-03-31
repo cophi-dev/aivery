@@ -275,25 +275,29 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
   try {
     await dbConnect()
     
-    const workout = new WorkoutModel({
+    // Create workout object with only the properties that exist
+    const workoutObj: any = {
       userId: new ObjectId(workoutData.userId),
       name: workoutData.name || "",
       date: workoutData.date || new Date(),
       duration: workoutData.duration || 0,
-      intensity: workoutData.intensity || "",
       type: workoutData.type || "strength",
       volume: workoutData.volume || 0,
-      distance: workoutData.distance ?? undefined,
-      exercises: workoutData.exercises || [],
-      cardioDetails: workoutData.cardioDetails ?? undefined,
       notes: workoutData.notes || "",
-      stravaLink: workoutData.stravaLink,
-      source: workoutData.source,
-      sourceId: workoutData.sourceId,
-      importedFrom: workoutData.importedFrom,
-      importId: workoutData.importId,
-    })
-
+    };
+    
+    // Only add optional properties if they exist
+    if (workoutData.intensity) workoutObj.intensity = workoutData.intensity;
+    if (workoutData.distance !== undefined) workoutObj.distance = workoutData.distance;
+    if (workoutData.exercises) workoutObj.exercises = workoutData.exercises;
+    if (workoutData.cardioDetails) workoutObj.cardioDetails = workoutData.cardioDetails;
+    if (workoutData.stravaLink) workoutObj.stravaLink = workoutData.stravaLink;
+    if (workoutData.source) workoutObj.source = workoutData.source;
+    if (workoutData.sourceId) workoutObj.sourceId = workoutData.sourceId;
+    if (workoutData.importedFrom) workoutObj.importedFrom = workoutData.importedFrom;
+    if (workoutData.importId) workoutObj.importId = workoutData.importId;
+    
+    const workout = new WorkoutModel(workoutObj);
     const savedWorkout = await workout.save()
     const result = savedWorkout.toObject()
 

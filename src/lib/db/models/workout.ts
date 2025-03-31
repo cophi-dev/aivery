@@ -49,7 +49,7 @@ export interface IWorkout extends Document {
   name: string
   date: Date
   duration: number
-  intensity: "Low" | "Medium" | "High"
+  intensity?: "Low" | "Medium" | "High"
   type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "other"
   volume?: number
   distance?: number
@@ -66,6 +66,7 @@ export interface IWorkout extends Document {
   stravaLink?: string
   createdAt: Date
   updatedAt: Date
+  deletedAt?: Date
 }
 
 const SetSchema = new Schema({
@@ -136,7 +137,7 @@ const WorkoutSchema: Schema = new Schema(
     name: { type: String, required: true },
     date: { type: Date, required: true },
     duration: { type: Number, required: true },
-    intensity: { type: String, enum: ["Low", "Medium", "High"], required: true },
+    intensity: { type: String, enum: ["Low", "Medium", "High"], required: false },
     type: {
       type: String,
       enum: ["strength", "running", "swimming", "cycling", "hiit", "flexibility", "other"],
@@ -155,6 +156,7 @@ const WorkoutSchema: Schema = new Schema(
     importedFrom: { type: String },
     importId: { type: String },
     stravaLink: { type: String },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true },
 )

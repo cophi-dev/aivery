@@ -16,6 +16,74 @@ Replace the URI with your actual MongoDB connection string if using a remote ins
 3. To initialize the database with sample data, run the application and navigate to `/init-db`
 4. To verify database connectivity, navigate to `/check-db`
 
+## Strava Integration
+
+The application supports integration with Strava to import running and swimming activities. Users can choose to sync activities manually or enable automatic sync of new activities via Strava webhooks.
+
+### Setup
+
+1. Create a Strava API application at https://www.strava.com/settings/api
+2. Set the Authorization Callback Domain to your app's domain (or `localhost:3000` for development)
+3. Add the Strava credentials to your environment variables:
+
+```
+STRAVA_CLIENT_ID=your_client_id
+STRAVA_CLIENT_SECRET=your_client_secret
+NEXT_PUBLIC_APP_URL=http://localhost:3000 # or your production URL
+```
+
+### Webhook Configuration
+
+For automatic syncing of new Strava activities, set up a webhook subscription:
+
+1. Deploy your app to a public URL (webhooks require public HTTPS endpoints)
+2. Set up the webhook via the admin API:
+
+```
+curl -X GET "https://your-app-url/api/strava/setup?action=create" \
+  -H "Authorization: Bearer your_admin_key"
+```
+
+The webhook subscription will listen for new activities created in Strava and automatically import them based on user preferences.
+
+### Local Testing with ngrok
+
+For local development, you can use ngrok to expose your local server:
+
+1. Install ngrok: https://ngrok.com/
+2. Create a free ngrok account and get your authtoken
+3. Configure ngrok with your auth token:
+   ```
+   ngrok config add-authtoken YOUR_AUTH_TOKEN
+   ```
+4. Start your Next.js app: `npm run dev`
+5. Run ngrok to expose port 3000: `ngrok http 3000`
+6. Copy the HTTPS URL provided by ngrok (e.g., https://a1b2c3d4.ngrok.io)
+7. Update your `.env.local`:
+   ```
+   NEXT_PUBLIC_APP_URL=https://your-ngrok-url
+   ALLOW_LOCALHOST_WEBHOOK=true
+   ```
+8. Restart your app and set up the webhook
+
+#### Testing Webhooks Without Strava
+
+You can test webhook functionality locally without connecting to Strava using the debug endpoint:
+
+```bash
+curl -X POST http://localhost:3000/api/strava/test-webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "object_type": "activity",
+    "object_id": 12345678987654321,
+    "aspect_type": "create",
+    "owner_id": YOUR_ATHLETE_ID,
+    "event_time": 1516126040
+  }'
+```
+
+Replace `YOUR_ATHLETE_ID` with the Strava athlete ID from your database.
+
 ## Getting Started
 
 First, run the development server:

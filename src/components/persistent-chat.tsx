@@ -224,7 +224,9 @@ export function PersistentChat() {
                         : "bg-muted"
                     }`}
                   >
-                    <p>{message.content}</p>
+                    <div className={`${message.role === "assistant" ? "prose prose-sm dark:prose-invert" : ""}`}>
+                      <p>{message.content}</p>
+                    </div>
                   </div>
                 </div>
               ))}
