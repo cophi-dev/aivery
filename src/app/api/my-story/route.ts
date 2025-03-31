@@ -4,17 +4,35 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db/mongodb';
 import UserModel, { IUser } from '@/lib/db/models/user';
 import WorkoutModel from '@/lib/db/models/workout';
-import { OpenAI } from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Helper function to safely extract text from Claude response content
+function getTextFromResponse(content: any): string | undefined {
+  if (!content || !Array.isArray(content) || content.length === 0) {
+    return undefined;
+  }
+  
+  const firstBlock = content[0];
+  
+  // Handle different content block types safely
+  if (firstBlock && typeof firstBlock === 'object') {
+    if ('text' in firstBlock) {
+      return firstBlock.text as string;
+    }
+  }
+  
+  return undefined;
+}
+
 /**
- * Generate a simple fallback story when the OpenAI API fails
+ * Generate a simple fallback story when the Anthropic API fails
  */
 function generateFallbackStory(user: IUser, workoutCount: number, workoutTypes: Record<string, number>) {
   const userName = user.name || user.nickname || "Fitness Enthusiast";
@@ -117,52 +135,51 @@ export async function GET(req: NextRequest) {
       date: new Date(w.date).toLocaleDateString() 
     }));
 
-    // Generate the story with GPT-3.5 instead of GPT-4 to reduce rate limit issues
+    // Generate the story with Claude
     let generatedStory = "";
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo", // Changed from gpt-4 to gpt-3.5-turbo
+      const completion = await client.messages.create({
+        model: "claude-3-haiku-20240307",
         messages: [
           {
-            role: "system",
-            content: `You are a professional fitness journalist and writer. 
-            Create an engaging and personalized blog post about the user's fitness journey.
-            Write in a positive, motivational tone. 
-            Format the response as HTML with appropriate headings, paragraphs, and styling.
-            Include a catchy title and organized sections. Focus on highlighting achievements, consistency, and progress.
-            If the user has no workout data, create an encouraging article about getting started on their fitness journey.
-            Keep your response concise but meaningful.`
-          },
-          {
             role: "user",
-            content: `Create a personalized article about my fitness journey based on this data:
-            
-            User Info:
-            Name: ${userInfo.name}
-            Location: ${userInfo.aiPreferences.location}
-            Goals: ${userInfo.aiPreferences.fitnessGoals}
-            Training preferences: ${userInfo.aiPreferences.trainingPreferences}
-            Stats: ${userInfo.age ? userInfo.age + ' years old, ' : ''}${userInfo.height ? userInfo.height + 'cm, ' : ''}${userInfo.weight ? userInfo.weight + 'kg' : ''}
-            
-            Workout Summary:
-            - Total Workouts: ${workouts.length}
-            - Workout Types: ${Object.entries(workoutTypes).map(([type, count]) => `${type} (${count})`).join(', ')}
-            - Total Duration: ${totalStats.duration} minutes
-            - Total Volume: ${totalStats.volume} kg
-            - Total Distance: ${totalStats.distance} km
-            
-            Generate a well-formatted HTML article with a catchy title, introduction, and sections highlighting my fitness journey.
-            Make it personal and motivational. Suggest next steps in my fitness journey.
-            Keep it positive and uplifting.`
+            content: `Create fitness journey article:
+
+USER:
+Name: ${userInfo.name}
+Location: ${userInfo.aiPreferences.location}
+Goals: ${userInfo.aiPreferences.fitnessGoals}
+Training: ${userInfo.aiPreferences.trainingPreferences}
+Stats: ${userInfo.age ? userInfo.age + 'y, ' : ''}${userInfo.height ? userInfo.height + 'cm, ' : ''}${userInfo.weight ? userInfo.weight + 'kg' : ''}
+
+WORKOUTS:
+Total: ${workouts.length}
+Types: ${Object.entries(workoutTypes).map(([type, count]) => `${type} (${count})`).join(', ')}
+Duration: ${totalStats.duration} minutes
+Volume: ${totalStats.volume} kg
+Distance: ${totalStats.distance} km
+
+Format as HTML with title, sections, and next steps.`
           }
         ],
+        system: `Act as a fitness writer creating a personalized journey article.
+
+FORMAT: HTML, ~500 words
+STRUCTURE:
+1. Catchy title
+2. Personal introduction
+3. Workout highlights with stats
+4. Progress section
+5. Next steps/goals
+
+TONE: Motivational, specific to actual data`,
         temperature: 0.7,
         max_tokens: 1000, // Reduced from 1500 to 1000
       });
       
-      generatedStory = completion.choices[0].message.content || "";
+      generatedStory = getTextFromResponse(completion.content) || "";
     } catch (apiError) {
-      console.error("OpenAI API error:", apiError);
+      console.error("Anthropic API error:", apiError);
       // Use the fallback story generator if the API call fails
       generatedStory = generateFallbackStory(user, workouts.length, workoutTypes);
     }

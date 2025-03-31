@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine } from "lucide-react"
+import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Switch } from "@/components/ui/switch"
 import Link from "next/link"
 import { disconnectStravaAction } from "@/lib/integration-actions"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 interface ImportStats {
   count: number;
@@ -54,6 +55,7 @@ export function StravaImport() {
   const [isWebhookLoading, setIsWebhookLoading] = useState(false)
   const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -669,220 +671,138 @@ export function StravaImport() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h3 className="text-lg font-semibold">Import Your Workouts</h3>
-        <p className="text-sm text-muted-foreground">
-          Choose how you want to import your workout data
-        </p>
-        
-        <div className="mt-4 border rounded-md p-4 space-y-4">
-          <div className="flex items-start space-x-3">
-            <div className="bg-orange-500/10 text-orange-500 p-2 rounded-md mt-0.5">
-              <ArrowLeftRight className="h-5 w-5" />
-            </div>
-            <div className="space-y-2 flex-1">
-              <h4 className="font-medium">Import from Strava</h4>
-              <p className="text-sm text-muted-foreground">
-                Connect your Strava account to import past activities and optionally enable auto-syncing for new workouts.
-              </p>
-              
-              {stravaIntegration ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
-                        Connected
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        Athlete: {stravaIntegration.athleteId}
-                      </span>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={handleDisconnectStrava}
-                      disabled={isDisconnecting}
-                    >
-                      {isDisconnecting ? (
-                        <>
-                          <div className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                          Disconnecting...
-                        </>
-                      ) : "Disconnect"}
-                    </Button>
-                  </div>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Import Your Workouts</CardTitle>
+          <CardDescription>Choose how you want to import your workout data</CardDescription>
+        </CardHeader>
 
-                  <div className="border-t pt-4 space-y-4">
-                    <div>
-                      <h5 className="text-sm font-medium mb-2">One-time Import</h5>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        Import your existing Strava activities from the past 30 days.
-                      </p>
-                      <Button 
-                        onClick={handleSyncStrava}
-                        disabled={isSyncing}
-                        className="w-full"
-                      >
-                        {isSyncing ? (
-                          <>
-                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent"></div>
-                            Syncing...
-                          </>
-                        ) : (
-                          <>
-                            <ArrowDownToLine className="mr-2 h-4 w-4" />
-                            Sync Existing Activities
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                    
-                    <div className="border-t pt-4 space-y-2">
-                      <h5 className="text-sm font-medium">Sync Preferences</h5>
-                      <p className="text-xs text-muted-foreground">
-                        Select which activity types to import from Strava.
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {syncPreferences.map(activityType => (
-                          <div key={activityType.id} className="flex items-center space-x-2">
-                            <Checkbox 
-                              id={`sync-${activityType.id}`} 
-                              checked={activityType.enabled}
-                              disabled={activityType.disabled}
-                              onCheckedChange={() => toggleSyncPreference(activityType.id)}
-                            />
-                            <div className="grid gap-1.5 leading-none">
-                              <label
-                                htmlFor={`sync-${activityType.id}`}
-                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                              >
-                                {activityType.label}
-                              </label>
-                              {activityType.id === 'run' && (
-                                <p className="text-sm text-muted-foreground">
-                                  Import runs, jogs, and treadmill workouts
-                                </p>
-                              )}
-                              {activityType.id === 'swim' && (
-                                <p className="text-sm text-muted-foreground">
-                                  Import pool and open water swims
-                                </p>
-                              )}
-                              {activityType.id === 'ride' && (
-                                <p className="text-sm text-muted-foreground">
-                                  Import outdoor rides and indoor cycling
-                                </p>
-                              )}
-                              {activityType.id === 'workout' && (
-                                <p className="text-sm text-muted-foreground">
-                                  Not recommended - create strength workouts in Aivery instead
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <Button 
-                        onClick={saveSyncPreferences}
-                        disabled={isSavingPreferences}
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                      >
-                        {isSavingPreferences ? "Saving..." : "Save Preferences"}
-                      </Button>
-                    </div>
-
-                    <div className="border-t pt-4 space-y-2">
-                      <h5 className="text-sm font-medium">Automatic Syncing</h5>
-                      <p className="text-xs text-muted-foreground">
-                        Enable auto-sync to automatically import new Strava activities as they are created.
-                      </p>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm">Auto-sync new activities</span>
-                        <div className="flex items-center space-x-2">
-                          {isWebhookLoading || isSettingUpWebhook ? (
-                            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                          ) : (
-                            <Switch 
-                              checked={webhookStatus?.subscribed || false} 
-                              onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
-                              disabled={isWebhookLoading || isSettingUpWebhook || window.location.hostname === "localhost"}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {window.location.hostname === "localhost" ? (
-                          <>
-                            <span className="text-amber-600 dark:text-amber-400 font-medium">
-                              Auto-sync requires a public URL
-                            </span>
-                            <br />
-                            To test auto-sync locally, use ngrok to expose your local server to the internet. 
-                            See the README for details.
-                          </>
-                        ) : webhookStatus?.subscribed ? (
-                          "New activities from Strava will be automatically synced as they are created."
-                        ) : (
-                          "Turn on to automatically sync new activities from Strava as they are created."
-                        )}
-                      </p>
-                      {webhookStatus?.subscribed && webhookStatus?.subscription && (
-                        <div className="text-xs bg-muted p-2 rounded">
-                          <p>Webhook ID: {webhookStatus.subscription.id || 'Unknown'}</p>
-                          <p>Last updated: {webhookStatus.subscription.created_at ? formatDate(webhookStatus.subscription.created_at) : 'Unknown'}</p>
-                        </div>
-                      )}
-                    </div>
+        <CardContent className="space-y-4">
+          {/* Strava Connection Section */}
+          <div className="space-y-4">
+            {stravaIntegration ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline" className="bg-green-50">
+                      <Check className="w-4 h-4 mr-1" />
+                      Connected
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Athlete: {stravaIntegration.athleteId}
+                    </span>
                   </div>
+                  <Button variant="outline" onClick={() => handleDisconnectStrava()} disabled={isDisconnecting}>
+                    Disconnect
+                  </Button>
                 </div>
-              ) : (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Connect to Strava to import your activities and enable syncing.
-                  </p>
+
+                {/* One-time Import Section */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">One-time Import</h3>
+                  <p className="text-sm text-muted-foreground">Import your existing Strava activities from the past 30 days.</p>
                   <Button 
-                    variant="default" 
-                    onClick={handleConnectStrava}
+                    variant="secondary" 
                     className="w-full"
+                    onClick={handleSyncStrava}
+                    disabled={isSyncing}
                   >
-                    <Activity className="mr-2 h-4 w-4" />
-                    Connect with Strava
+                    {isSyncing ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Syncing...
+                      </>
+                    ) : (
+                      <>
+                        <ArrowDownToLine className="w-4 h-4 mr-2" />
+                        Sync Existing Activities
+                      </>
+                    )}
                   </Button>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div className="mt-4 border rounded-md p-4">
-          <div className="flex items-start space-x-3">
-            <div className="bg-blue-500/10 text-blue-500 p-2 rounded-md mt-0.5">
-              <FileUp className="h-5 w-5" />
-            </div>
-            <div className="space-y-2 flex-1">
-              <h4 className="font-medium">Import from ZIP File</h4>
-              <p className="text-sm text-muted-foreground mb-3">
-                Upload workout data exported from other fitness platforms.
-              </p>
-              
-              <div>
-                <Link href="/import" className="w-full block">
-                  <Button variant="outline" className="w-full">
-                    <FileUp className="mr-2 h-4 w-4" />
-                    Upload ZIP File
-                  </Button>
-                </Link>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Supported formats: Exported ZIP files from Garmin, Fitbit, and other major fitness platforms.
-                </p>
+
+                {/* Collapsible Sync Preferences */}
+                <Collapsible open={isPreferencesOpen} onOpenChange={setIsPreferencesOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="w-full flex justify-between">
+                      <span>Sync Preferences</span>
+                      {isPreferencesOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-2 pt-2">
+                    <p className="text-sm text-muted-foreground">Select which activity types to import from Strava.</p>
+                    <div className="space-y-2">
+                      {syncPreferences.map((type) => (
+                        <div key={type.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={type.id}
+                            checked={type.enabled}
+                            onCheckedChange={() => toggleSyncPreference(type.id)}
+                            disabled={type.disabled || isSavingPreferences}
+                          />
+                          <label htmlFor={type.id} className="text-sm font-medium">
+                            {type.label}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={saveSyncPreferences}
+                      disabled={isSavingPreferences}
+                      className="mt-2"
+                    >
+                      {isSavingPreferences ? "Saving..." : "Save Preferences"}
+                    </Button>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* Simplified Automatic Sync Section */}
+                <div className="space-y-2 pt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">Automatic Syncing</h3>
+                      <p className="text-sm text-muted-foreground">
+                        New activities from Strava will be automatically synced.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={webhookStatus?.active}
+                      onCheckedChange={webhookStatus?.active ? handleRemoveWebhook : handleSetupWebhook}
+                      disabled={isSettingUpWebhook || isWebhookLoading}
+                    />
+                  </div>
+                  {webhookStatus?.active && (
+                    <p className="text-xs text-muted-foreground">
+                      Last updated: {new Date(webhookStatus.lastUpdated).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <Button
+                onClick={handleConnectStrava}
+                disabled={isConnecting}
+                className="w-full"
+              >
+                {isConnecting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeftRight className="w-4 h-4 mr-2" />
+                    Connect with Strava
+                  </>
+                )}
+              </Button>
+            )}
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   )
 } 

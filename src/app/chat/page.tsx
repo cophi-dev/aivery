@@ -87,7 +87,7 @@ export default function ChatPage() {
       `Hey there ${name}! 💪 What aspect of your fitness journey can I support you with today?`,
       `Hi ${name}! I'm your personal fitness assistant. What's on your workout agenda?`
     ]
-    return welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)]
+    return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)]
   }
 
   // Handle input change

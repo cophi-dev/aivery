@@ -43,7 +43,7 @@ export function PersistentChat() {
       `Hey there! 💪 What aspect of your fitness journey can I support you with today?`,
       `Hi! I'm your personal fitness assistant. What's on your workout agenda?`
     ]
-    return welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)]
+    return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)]
   }
 
   // Initialize chat on first open
