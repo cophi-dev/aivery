@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import Link from "next/link"
 import { disconnectStravaAction } from "@/lib/integration-actions"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { v4 as uuidv4 } from 'uuid'
 
 interface ImportStats {
   count: number;
@@ -56,6 +57,10 @@ export function StravaImport() {
   const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [isUsingChunkedUpload, setIsUsingChunkedUpload] = useState(false)
+  const [totalChunks, setTotalChunks] = useState(0)
+  const [currentChunk, setCurrentChunk] = useState(0)
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -271,6 +276,124 @@ export function StravaImport() {
     setImportStats(null) // Reset import stats when selecting a new file
     // Show type selector after selecting a file
     setShowTypeSelector(true)
+  }
+
+  const handleChunkedUpload = async () => {
+    if (!selectedFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select a Strava export ZIP file",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsUploading(true)
+    setUploadProgress(0)
+    setImportStats(null)
+    setIsUsingChunkedUpload(true)
+
+    try {
+      // Generate a unique ID for this file upload
+      const fileId = uuidv4()
+      
+      // Get file size info for chunking
+      const fileSize = selectedFile.size
+      const chunkSize = 2 * 1024 * 1024 // 2MB chunks
+      const chunks = Math.ceil(fileSize / chunkSize)
+      setTotalChunks(chunks)
+      
+      console.log(`File size: ${fileSize} bytes, will be split into ${chunks} chunks of ${chunkSize} bytes each`)
+      
+      // Upload each chunk
+      for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
+        setCurrentChunk(chunkIndex + 1)
+        
+        // Prepare chunk
+        const start = chunkIndex * chunkSize
+        const end = Math.min(fileSize, start + chunkSize)
+        const chunk = selectedFile.slice(start, end)
+        
+        // Create form data for chunk
+        const formData = new FormData()
+        formData.append('chunk', chunk)
+        formData.append('chunkIndex', chunkIndex.toString())
+        formData.append('totalChunks', chunks.toString())
+        formData.append('fileId', fileId)
+        formData.append('fileName', selectedFile.name)
+        
+        // Add selected workout types to form data
+        if (selectedWorkoutTypes.length > 0) {
+          selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type))
+        }
+        
+        // Upload this chunk
+        const response = await fetch('/api/strava/chunk-upload', {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (!response.ok) {
+          throw new Error(`Chunk upload failed with status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        
+        // Calculate progress
+        const progressPercent = Math.round(((chunkIndex + 1) / chunks) * 100)
+        setUploadProgress(progressPercent)
+        
+        // If this was the last chunk and upload is complete
+        if (data.complete) {
+          // Now that all chunks are uploaded and combined, process the file
+          const processResponse = await fetch('/api/strava/import', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              filePath: data.filePath,
+              fileName: data.fileName,
+              workoutTypes: selectedWorkoutTypes.length > 0 ? selectedWorkoutTypes : undefined
+            })
+          })
+          
+          if (!processResponse.ok) {
+            throw new Error(`File processing failed with status: ${processResponse.status}`)
+          }
+          
+          const processResult = await processResponse.json()
+          
+          if (processResult.error) {
+            throw new Error(processResult.error)
+          }
+          
+          // Handle successful processing
+          toast({
+            title: "Success",
+            description: `Successfully imported ${processResult.count} activities`
+          })
+          
+          // Set import stats
+          if (processResult.stats) {
+            setImportStats(processResult.stats)
+          }
+          
+          // Reset state
+          resetFileInput()
+        }
+      }
+    } catch (error) {
+      console.error('Chunked upload error:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload file",
+        variant: "destructive"
+      })
+    } finally {
+      setIsUploading(false)
+      setIsUsingChunkedUpload(false)
+    }
   }
 
   const handleUpload = async () => {
@@ -895,23 +1018,29 @@ export function StravaImport() {
               )}
 
               <Button
-                onClick={handleUpload}
-                disabled={isUploading || selectedWorkoutTypes.length === 0}
+                onClick={selectedFile && selectedFile.size > 5 * 1024 * 1024 ? handleChunkedUpload : handleUpload}
+                disabled={isUploading || !selectedFile}
                 className="w-full"
               >
                 {isUploading ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Uploading...
+                    {isUsingChunkedUpload 
+                      ? `Uploading chunks (${currentChunk}/${totalChunks}) - ${uploadProgress}%` 
+                      : "Uploading..."}
                   </>
                 ) : (
                   <>
-                    <ArrowUpToLine className="w-4 h-4 mr-2" />
-                    Upload and Import
+                    <FileUp className="h-4 w-4 mr-2" />
+                    Upload Strava Archive
                   </>
                 )}
               </Button>
             </div>
+          )}
+
+          {isUploading && isUsingChunkedUpload && (
+            <Progress value={uploadProgress} className="h-2 mt-2" />
           )}
         </CardContent>
       </Card>

@@ -71,28 +71,62 @@ export async function POST(request: NextRequest) {
     const userId = session.user.id
     console.log('Processing import for user:', userId)
 
-    // Get the form data
-    const formData = await request.formData()
-    const file = formData.get('file') as File
-    if (!file) {
-      console.error('Strava import: No file provided in form data')
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+    let file: File | null = null
+    let selectedWorkoutTypes: string[] = []
+    let arrayBuffer: ArrayBuffer
+    let isChunkedUpload = false
+    let filePath: string | undefined
+
+    // Check if this is a JSON request (from chunked upload)
+    if (request.headers.get('content-type')?.includes('application/json')) {
+      const jsonData = await request.json()
+      
+      // This is a request from the chunked upload API
+      filePath = jsonData.filePath
+      selectedWorkoutTypes = jsonData.workoutTypes || []
+      isChunkedUpload = true
+      
+      if (!filePath) {
+        return NextResponse.json({ error: "No file path provided" }, { status: 400 })
+      }
+      
+      try {
+        // Read the file from disk
+        const fs = require('fs').promises
+        const fileData = await fs.readFile(filePath)
+        arrayBuffer = fileData.buffer
+        
+        console.log('Strava import: Reading chunked upload file from disk:', filePath)
+        console.log('Strava import: File size:', arrayBuffer.byteLength)
+      } catch (error) {
+        console.error('Error reading file from disk:', error)
+        return NextResponse.json({ error: "Failed to read uploaded file" }, { status: 500 })
+      }
+    } else {
+      // This is a regular form data upload
+      const formData = await request.formData()
+      file = formData.get('file') as File
+      
+      if (!file) {
+        console.error('Strava import: No file provided in form data')
+        return NextResponse.json({ error: "No file provided" }, { status: 400 })
+      }
+      
+      // Get selected workout types from form data
+      selectedWorkoutTypes = formData.getAll('workoutTypes').map(type => type.toString())
+      console.log('Strava import: Selected workout types:', selectedWorkoutTypes)
+      
+      // If no workout types are selected, use all types
+      if (selectedWorkoutTypes.length === 0) {
+        console.log('Strava import: No workout types selected, using all types')
+      }
+
+      console.log('Strava import: Processing direct upload file:', file.name, 'size:', file.size)
+
+      // Convert File to ArrayBuffer
+      arrayBuffer = await file.arrayBuffer()
+      console.log('Strava import: File converted to ArrayBuffer, size:', arrayBuffer.byteLength)
     }
-
-    // Get selected workout types from form data
-    const selectedWorkoutTypes = formData.getAll('workoutTypes').map(type => type.toString())
-    console.log('Strava import: Selected workout types:', selectedWorkoutTypes)
-    
-    // If no workout types are selected, use all types
-    if (selectedWorkoutTypes.length === 0) {
-      console.log('Strava import: No workout types selected, using all types')
-    }
-
-    console.log('Strava import: Processing file:', file.name, 'size:', file.size)
-
-    // Convert File to ArrayBuffer
-    const arrayBuffer = await file.arrayBuffer()
-    console.log('Strava import: File converted to ArrayBuffer, size:', arrayBuffer.byteLength)
 
     // Load the ZIP file
     const zip = new JSZip()
@@ -445,6 +479,19 @@ export async function POST(request: NextRequest) {
       totalDuration: workouts.reduce((sum, workout) => sum + (workout.duration || 0), 0)
     }
     
+    // If this was a chunked upload, clean up the temporary file
+    if (isChunkedUpload && filePath) {
+      try {
+        // Clean up the temporary file
+        const fs = require('fs').promises
+        await fs.unlink(filePath)
+        console.log('Strava import: Cleaned up temporary file:', filePath)
+      } catch (error) {
+        // Just log the error, don't fail the request
+        console.error('Error cleaning up temporary file:', error)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       count: importedCount,
