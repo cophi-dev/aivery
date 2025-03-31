@@ -134,6 +134,8 @@ export async function POST(request: NextRequest) {
         { type: { $in: workoutTypes } },
         // Add direct condition for swimming workouts when type Swim is selected
         ...(workoutTypes.includes('Swim') ? [{ type: 'swimming' }] : []),
+        // Add direct condition for running workouts when type Run is selected
+        ...(workoutTypes.includes('Run') ? [{ type: 'running' }] : []),
         // Add reverse condition for all workouts with types in lowercase
         { type: { $in: workoutTypes.map(t => t.toLowerCase()) } }
       ]
@@ -154,6 +156,7 @@ export async function POST(request: NextRequest) {
         { type: { $in: normalizedWorkoutTypes } },
         { type: { $in: workoutTypes } },
         ...(workoutTypes.includes('Swim') ? [{ type: 'swimming' }] : []),
+        ...(workoutTypes.includes('Run') ? [{ type: 'running' }] : []),
         { type: { $in: workoutTypes.map(t => t.toLowerCase()) } }
       ]
     })}`);
@@ -188,6 +191,8 @@ export async function POST(request: NextRequest) {
         { type: { $in: workoutTypes } },
         // Add direct condition for swimming workouts when type Swim is selected
         ...(workoutTypes.includes('Swim') ? [{ type: 'swimming' }] : []),
+        // Add direct condition for running workouts when type Run is selected
+        ...(workoutTypes.includes('Run') ? [{ type: 'running' }] : []),
         // Add reverse condition for all workouts with types in lowercase
         { type: { $in: workoutTypes.map(t => t.toLowerCase()) } }
       ]
