@@ -15,12 +15,17 @@ export function getStravaAuthUrl() {
     throw new Error('STRAVA_CLIENT_ID is not configured')
   }
 
+  // Generate a random state value for security
+  const state = Math.random().toString(36).substring(2, 15) + 
+                Math.random().toString(36).substring(2, 15);
+
   const params = new URLSearchParams({
     client_id: STRAVA_CONFIG.clientId,
     redirect_uri: STRAVA_CONFIG.redirectUri,
     response_type: 'code',
     scope: STRAVA_CONFIG.scopes.join(','),
-    approval_prompt: 'force'
+    approval_prompt: 'force',
+    state: state
   })
 
   return `${STRAVA_CONFIG.authUrl}?${params.toString()}`

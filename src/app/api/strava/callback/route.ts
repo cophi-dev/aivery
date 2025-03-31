@@ -34,21 +34,24 @@ export async function GET(request: NextRequest) {
     timestamp: new Date().toISOString()
   })
 
+  // Store debugging information
+  const debugData: any = {
+    timestamp: new Date().toISOString(),
+    url: request.url,
+    headers: Object.fromEntries(
+      Array.from(request.headers.entries())
+        .filter(([key]) => !['cookie', 'authorization'].includes(key.toLowerCase()))
+    ),
+    searchParams: Object.fromEntries(request.nextUrl.searchParams.entries()),
+    configIssues: [],
+    sessionStatus: 'pending',
+  }
+
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions)
-    console.log('🔐 Strava callback: Auth check', {
-      isAuthenticated: !!session?.user,
-      userId: session?.user?.id || 'not authenticated'
-    })
-
-    if (!session?.user) {
-      console.log('❌ Strava callback: User not authenticated')
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-
     // Check for Strava configuration issues
     const configIssues = checkStravaConfig()
+    debugData.configIssues = configIssues
+    
     if (configIssues.length > 0) {
       console.error('⚠️ Strava callback: Configuration issues detected:', configIssues)
       return NextResponse.redirect(
@@ -60,13 +63,13 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get('code')
     const error = searchParams.get('error')
+    const state = searchParams.get('state')
     
     console.log('📝 Strava callback: URL parameters', {
       hasCode: !!code,
       codePrefix: code ? code.substring(0, 4) + '...' : 'none',
       error: error || 'none',
-      scope: searchParams.get('scope'),
-      state: searchParams.get('state'),
+      state: state || 'none',
       allParams: Object.fromEntries(searchParams.entries())
     })
 
@@ -78,6 +81,36 @@ export async function GET(request: NextRequest) {
     if (!code) {
       console.error('❌ Strava callback: No code provided')
       return NextResponse.redirect(new URL('/integrations?error=no_code', request.url))
+    }
+
+    // Check authentication - try without failing if session not found
+    let session = null
+    try {
+      session = await getServerSession(authOptions)
+      debugData.sessionStatus = session?.user ? 'authenticated' : 'not authenticated'
+      debugData.userId = session?.user?.id
+    } catch (sessionError) {
+      console.error('❌ Strava callback: Session error:', sessionError)
+      debugData.sessionStatus = 'error'
+      debugData.sessionError = sessionError instanceof Error ? sessionError.message : String(sessionError)
+    }
+
+    // If no authenticated user, redirect to login with return URL to come back here
+    if (!session?.user) {
+      console.log('❌ Strava callback: User not authenticated')
+      
+      // Store the code and state in query params to use after login
+      let returnUrl = `/api/strava/callback?code=${encodeURIComponent(code)}`
+      if (state) {
+        returnUrl += `&state=${encodeURIComponent(state)}`
+      }
+      
+      // Encode the return URL
+      const encodedReturnUrl = encodeURIComponent(returnUrl)
+      
+      return NextResponse.redirect(
+        new URL(`/login?callbackUrl=${encodedReturnUrl}`, request.url)
+      )
     }
 
     console.log('✅ Strava callback: Processing code for user', session.user.id)
@@ -142,7 +175,8 @@ export async function GET(request: NextRequest) {
         hasClientId: !!STRAVA_CONFIG.clientId,
         hasClientSecret: !!STRAVA_CONFIG.clientSecret,
         redirectUri: STRAVA_CONFIG.redirectUri
-      }
+      },
+      debugData: debugData
     })
     
     return NextResponse.redirect(
