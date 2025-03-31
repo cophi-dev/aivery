@@ -26,6 +26,16 @@ export const fetchCache = 'force-no-store'
 // Import the FitParser class
 const { default: FitParser } = require('fit-file-parser')
 
+// Add size limit configuration for this API route
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+    responseLimit: false
+  },
+}
+
 interface FitActivity {
   timestamp: string | number;
   total_elapsed_time: number;

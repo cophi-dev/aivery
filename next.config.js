@@ -23,6 +23,14 @@ const nextConfig = {
     disableOptimizedLoading: true,
   },
   
+  // API route body size limit
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+    responseLimit: false, // No limit on API response size
+  },
+  
   // Cache busting for builds
   generateBuildId: () => {
     return `build-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`

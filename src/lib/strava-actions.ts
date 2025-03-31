@@ -50,6 +50,14 @@ export async function syncStravaWorkoutsAction() {
     revalidatePath("/dashboard")
     revalidatePath("/integrations")
     
+    // Handle result - the result now always has a success property
+    if (!result.success) {
+      return { 
+        success: false, 
+        error: result.error || "Failed to sync Strava workouts" 
+      }
+    }
+    
     return { 
       success: true, 
       count: result.count,

@@ -198,8 +198,9 @@ export function StravaImport() {
       if (success) {
         // Format activity types for display
         const typeDetails = []
-        if (types?.run) typeDetails.push(`${types.run} runs`)
-        if (types?.swim) typeDetails.push(`${types.swim} swims`)
+        const typesRecord = types as Record<string, number>
+        if (typesRecord.run) typeDetails.push(`${typesRecord.run} runs`)
+        if (typesRecord.swim) typeDetails.push(`${typesRecord.swim} swims`)
         
         const typeMessage = typeDetails.length > 0 
           ? ` (${typeDetails.join(", ")})`
@@ -276,55 +277,51 @@ export function StravaImport() {
     if (!selectedFile) {
       toast({
         title: "No file selected",
-        description: "Please select a Strava archive file to import",
+        description: "Please select a Strava export ZIP file",
         variant: "destructive"
       })
       return
     }
 
-    if (selectedWorkoutTypes.length === 0) {
-      toast({
-        title: "No workout types selected",
-        description: "Please select at least one workout type to import",
-        variant: "destructive"
-      })
-      return
-    }
+    setIsUploading(true)
+    setImportStats(null)
 
     try {
-      setIsUploading(true)
-      console.log('Starting upload of file:', selectedFile.name, 'with workout types:', selectedWorkoutTypes)
-
       const formData = new FormData()
       formData.append('file', selectedFile)
-      // Add selected workout types to the form data
-      selectedWorkoutTypes.forEach(type => {
-        formData.append('workoutTypes', type)
-      })
 
-      console.log('Sending request to /api/strava/import')
+      // Add selected workout types to form data
+      if (selectedWorkoutTypes.length > 0) {
+        selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type))
+      }
+
       const response = await fetch('/api/strava/import', {
         method: 'POST',
         body: formData,
       })
 
-      console.log('Response status:', response.status)
-      const data = await response.json()
-      console.log('Response data:', data)
-
-      if (!response.ok || !data.success) {
-        const errorMessage = data.details || data.error || 'Failed to import data'
-        const errorDetails = data.file ? `File: ${data.file}\n${errorMessage}` : errorMessage
-        throw new Error(errorDetails)
+      if (!response.ok) {
+        // Handle specific HTTP error codes
+        if (response.status === 413) {
+          throw new Error("The file is too large. Please try a smaller export file or use the direct Strava connection instead.")
+        }
+        
+        // Try to get error details from response
+        let errorMessage = 'Import failed'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || 'Import failed with status: ' + response.status
+        } catch (e) {
+          errorMessage = 'Import failed with status: ' + response.status
+        }
+        
+        throw new Error(errorMessage)
       }
 
-      if (data.count === 0) {
-        toast({
-          title: "No activities imported",
-          description: data.message || "No activities were successfully imported from the Strava archive.",
-          variant: "destructive"
-        })
-        return
+      const data = await response.json()
+
+      if (data.error) {
+        throw new Error(data.error)
       }
 
       // Process and set import stats
@@ -348,10 +345,7 @@ export function StravaImport() {
       })
 
       // Reset the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-      // Don't reset the selected file so we can show what was imported
+      resetFileInput()
     } catch (error) {
       console.error('Import error:', error)
       // Log the full error details
@@ -483,10 +477,7 @@ export function StravaImport() {
           <Button 
             variant="outline" 
             className="w-full border-green-300 text-green-700 hover:bg-green-100 hover:text-green-800 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/50"
-            onClick={() => {
-              setSelectedFile(null);
-              setImportStats(null);
-            }}
+            onClick={resetFileInput}
           >
             Import Another Archive
           </Button>
@@ -678,6 +669,15 @@ export function StravaImport() {
     }
   }
 
+  // Define resetFileInput function early in the component
+  const resetFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+    setSelectedFile(null)
+    setImportStats(null)
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -859,12 +859,7 @@ export function StravaImport() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setSelectedFile(null);
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = '';
-                    }
-                  }}
+                  onClick={resetFileInput}
                 >
                   Change File
                 </Button>

@@ -378,12 +378,18 @@ export async function syncStravaWorkouts(userId: string) {
     );
 
     return { 
+      success: true,
       count: importedCount,
       types: typeCounts
     };
   } catch (error) {
     console.error("Error syncing Strava workouts:", error);
-    throw error;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error while syncing Strava workouts",
+      count: 0,
+      types: {}
+    };
   }
 }
 
