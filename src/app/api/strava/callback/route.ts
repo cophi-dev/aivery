@@ -34,7 +34,6 @@ export async function GET(request: NextRequest) {
 
     try {
       // Connect to Strava with the auth code
-      // Our connectStrava function already handles the token exchange internally
       const result = await connectStrava(session.user.id, code)
       console.log('Strava connection successful:', result)
 
@@ -48,8 +47,26 @@ export async function GET(request: NextRequest) {
         ? connectionError.message 
         : 'strava_connection_failed'
       
+      // Add more detailed error logging
+      console.error('Strava connection error details:', {
+        userId: session.user.id,
+        error: errorMessage,
+        stack: connectionError instanceof Error ? connectionError.stack : 'No stack trace'
+      })
+      
+      // Categorize common errors for better user experience
+      let userFriendlyError = 'strava_connection_failed';
+      
+      if (errorMessage.includes('Invalid authorization code')) {
+        userFriendlyError = 'strava_invalid_code';
+      } else if (errorMessage.includes('Authentication failed')) {
+        userFriendlyError = 'strava_auth_failed';
+      } else if (errorMessage.includes('Network error')) {
+        userFriendlyError = 'strava_network_error';
+      }
+      
       // Encode the error for the URL
-      const encodedError = encodeURIComponent(errorMessage.replace(/\s+/g, '_').toLowerCase())
+      const encodedError = encodeURIComponent(userFriendlyError)
       
       return NextResponse.redirect(
         new URL(`/integrations?error=${encodedError}`, request.url)
@@ -58,6 +75,15 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     // Handle any other unexpected errors
     console.error('Strava callback: Unexpected error:', error)
+    
+    // Add more detailed error logging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+    
+    console.error('Strava callback unexpected error details:', {
+      error: errorMessage,
+      stack: errorStack
+    })
     
     return NextResponse.redirect(
       new URL('/integrations?error=strava_callback_failed', request.url)

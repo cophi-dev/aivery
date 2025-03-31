@@ -118,7 +118,15 @@ export function StravaImport() {
         switch (error) {
           case 'strava_auth_failed':
             errorMessage = "Strava authentication failed";
-            errorDescription = "You may have denied the authorization or there was an issue with Strava's authentication.";
+            errorDescription = "Please check your Strava API credentials (Client ID and Client Secret) are correctly configured.";
+            break;
+          case 'strava_invalid_code':
+            errorMessage = "Invalid authorization code";
+            errorDescription = "The authorization code may have expired or already been used. Please try connecting again.";
+            break;
+          case 'strava_network_error':
+            errorMessage = "Network connection error";
+            errorDescription = "Could not connect to Strava API. Please check your internet connection and try again.";
             break;
           case 'no_code':
             errorMessage = "No authorization code received";

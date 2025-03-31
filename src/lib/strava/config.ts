@@ -56,19 +56,64 @@ export async function exchangeCodeForToken(code: string) {
       body: params.toString()
     });
 
+    // Get response text first to ensure we have it for error reporting
+    const responseText = await response.text();
+    
     if (!response.ok) {
-      const errorText = await response.text();
+      let errorData;
+      try {
+        // Try to parse as JSON if possible
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        // Not JSON, use text as is
+        errorData = { error: responseText };
+      }
+      
       console.error('Strava token exchange error:', {
         status: response.status,
         statusText: response.statusText,
-        body: errorText
+        error: errorData
       });
-      throw new Error(`Failed to exchange code for token: ${response.status} ${response.statusText}`);
+      
+      // Create specific error messages based on status code
+      if (response.status === 400) {
+        if (errorData.error === 'invalid_grant') {
+          throw new Error('Invalid authorization code. The code may have expired or been used already.');
+        } else {
+          throw new Error(`Bad request: ${errorData.error || 'Invalid parameters'}`);
+        }
+      } else if (response.status === 401) {
+        throw new Error('Authentication failed. Please check your Strava API credentials (Client ID and Client Secret).');
+      } else {
+        throw new Error(`Failed to exchange code for token: ${response.status} ${response.statusText} - ${errorData.error || responseText}`);
+      }
     }
 
-    return response.json();
+    // Parse the successful response
+    try {
+      const data = JSON.parse(responseText);
+      
+      // Validate the response has the expected fields
+      if (!data.access_token || !data.refresh_token || !data.expires_at) {
+        console.error('Strava token exchange returned incomplete data:', data);
+        throw new Error('Received incomplete response from Strava API');
+      }
+      
+      return data;
+    } catch (parseError) {
+      console.error('Failed to parse Strava token response:', parseError, responseText);
+      throw new Error('Invalid response from Strava API');
+    }
   } catch (error) {
-    console.error('Error during token exchange:', error);
+    // Log network errors
+    if (error && typeof error === 'object' && 
+        ('name' in error) && 
+        (error.name === 'TypeError' || error.name === 'NetworkError')) {
+      console.error('Network error during token exchange:', error);
+      throw new Error(`Network error connecting to Strava: ${(error as Error).message}`);
+    }
+    
+    // Re-throw the error if it was already handled above
     throw error;
   }
 }
