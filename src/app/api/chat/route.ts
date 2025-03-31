@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import User from "@/lib/db/models/user";
 import { IUser } from "@/lib/db/models/user";
 import { getFreshWorkouts, getFreshFilteredWorkouts } from "./fresh-data";
+import { Document } from "mongoose";
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
@@ -168,14 +169,26 @@ function analyzeWorkoutQuery(message: string): WorkoutQuery {
   return query;
 }
 
+// Add interface definition for UserDocument
+interface UserDocument {
+  _id: string;
+  nickname?: string;
+  name?: string;
+  aiPreferences?: Record<string, any>;
+}
+
 // Add before POST function
 async function generatePersonalizedGreeting(
   userId: string,
 ): Promise<string | null> {
   try {
+    // Get user information first
+    const user = await User.findById(userId).select("nickname name").lean() as UserDocument;
+    const userDisplayName = user?.nickname || user?.name;
+
     // Get current date and time info for context-aware greetings
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+    const dayOfWeek = now.getDay();
     const hour = now.getHours();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const isEvening = hour >= 17;
@@ -193,7 +206,9 @@ async function generatePersonalizedGreeting(
     if (!hasWorkouts) {
       // No workouts found, send a welcoming first-time message
       console.log(`[CHAT] No workouts found for user ${userId}`);
-      return "Welcome to your fitness journey! Ready to log your first workout? Let me know how I can help you get started.";
+      return userDisplayName 
+        ? `Welcome to your fitness journey, ${userDisplayName}! Ready to log your first workout? Let me know how I can help you get started.`
+        : "Welcome to your fitness journey! Ready to log your first workout? Let me know how I can help you get started.";
     }
 
     // Get workout stats for most frequent type
@@ -231,6 +246,9 @@ async function generatePersonalizedGreeting(
 
     // Build rich context for the greeting
     const context = {
+      // User context
+      userDisplayName,
+      
       // Time context
       isWeekend,
       isMorning,
@@ -298,10 +316,13 @@ async function generatePersonalizedGreeting(
       temperature: 0.9,
       system: `Act as a fitness coach creating a personalized greeting.
 
+IMPORTANT: The user's name is "${userDisplayName}". ALWAYS use this exact name when addressing them. NEVER use any other names or generic terms.
+
+REQUIREMENTS:
 1. Keep to 1-2 short sentences
 2. Mention one specific workout data point
 3. Reference time of day/week
-4. Use client's name naturally
+4. Use the user's exact name naturally
 5. Avoid generic greetings
 6. Be motivational but authentic`,
       messages: [
@@ -839,18 +860,9 @@ REQUIREMENTS:
     );
 
     // Create a friendly response about no workouts found
-    const timeFrameText =
-      queryAnalysis.timeFrame === "week"
-        ? "this week"
-        : queryAnalysis.timeFrame === "month"
-          ? "this month"
-          : queryAnalysis.timeFrame === "year"
-            ? "this year"
-            : "for that time period";
+    const timeFrameText = "recently"; // Default to a generic timeframe if no specific analysis available
 
-    const workoutTypeText = queryAnalysis.workoutType
-      ? `any ${queryAnalysis.workoutType} workouts ${timeFrameText}`
-      : `any workouts ${timeFrameText}`;
+    const workoutTypeText = "any workouts recently"; // Default to generic workout type
 
     // Create a more personalized no-workouts response
     const noWorkoutsResponse = await client.messages.create({
@@ -941,14 +953,14 @@ export async function POST(request: Request) {
         const userId = session.user.id;
         const user = await User.findById(userId)
           .select("aiPreferences nickname name")
-          .lean();
+          .lean() as UserDocument;
 
         if (user) {
-          aiPreferences = (user as any).aiPreferences || {};
+          aiPreferences = user.aiPreferences || {};
 
           // Add user's name information to system message if available
-          const userNickname = (user as any).nickname;
-          const userName = (user as any).name;
+          const userNickname = user.nickname;
+          const userName = user.name;
 
           if (userNickname || userName) {
             systemMessage += `\n\nThe user's name is "${userNickname || userName}". Always address them by this exact name when appropriate. NEVER substitute it with any other name like "Alex" or generic terms if you know their actual name.`;
@@ -1258,18 +1270,9 @@ REQUIREMENTS:
           );
 
           // Create friendly response about no workouts found
-          const timeFrameText =
-            queryAnalysis.timeFrame === "week"
-              ? "this week"
-              : queryAnalysis.timeFrame === "month"
-                ? "this month"
-                : queryAnalysis.timeFrame === "year"
-                  ? "this year"
-                  : "for that time period";
+          const timeFrameText = "recently"; // Default to a generic timeframe if no specific analysis available
 
-          const workoutTypeText = queryAnalysis.workoutType
-            ? `any ${queryAnalysis.workoutType} workouts ${timeFrameText}`
-            : `any workouts ${timeFrameText}`;
+          const workoutTypeText = "any workouts recently"; // Default to generic workout type
 
           // Create a more personalized no-workouts response
           const noWorkoutsResponse = await client.messages.create({
@@ -1318,18 +1321,9 @@ REQUIREMENTS:
     );
 
     // Create a friendly response about no workouts found
-    const timeFrameText =
-      queryAnalysis.timeFrame === "week"
-        ? "this week"
-        : queryAnalysis.timeFrame === "month"
-          ? "this month"
-          : queryAnalysis.timeFrame === "year"
-            ? "this year"
-            : "for that time period";
+    const timeFrameText = "recently"; // Default to a generic timeframe if no specific analysis available
 
-    const workoutTypeText = queryAnalysis.workoutType
-      ? `any ${queryAnalysis.workoutType} workouts ${timeFrameText}`
-      : `any workouts ${timeFrameText}`;
+    const workoutTypeText = "any workouts recently"; // Default to generic workout type
 
     // Create a more personalized no-workouts response
     const noWorkoutsResponse = await client.messages.create({
