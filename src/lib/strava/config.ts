@@ -220,18 +220,23 @@ export async function refreshToken(refreshToken: string) {
   });
 
   console.log('Refreshing token with data:', {
-    url: STRAVA_CONFIG.tokenUrl,
     client_id: STRAVA_CONFIG.clientId,
-    // Hide sensitive info
     has_client_secret: !!STRAVA_CONFIG.clientSecret,
-    refresh_token: refreshToken.substring(0, 5) + '...'
+    refresh_token: refreshToken.substring(0, 5) + '...',
+    environment: process.env.NODE_ENV || 'unknown'
   });
 
   try {
-    const response = await fetch(STRAVA_CONFIG.tokenUrl, {
+    // Use the same direct endpoint that works for token exchange
+    const tokenEndpoint = 'https://www.strava.com/oauth/token';
+    
+    console.log('Posting refresh token request to:', tokenEndpoint);
+    
+    const response = await fetch(tokenEndpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
       },
       body: params.toString()
     });
@@ -246,7 +251,16 @@ export async function refreshToken(refreshToken: string) {
       throw new Error(`Failed to refresh token: ${response.status} ${response.statusText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    
+    // Log successful token refresh (redacted)
+    console.log('Strava token refresh successful:', {
+      has_access_token: !!data.access_token,
+      has_refresh_token: !!data.refresh_token,
+      expires_at: data.expires_at ? new Date(data.expires_at * 1000).toISOString() : 'missing'
+    });
+    
+    return data;
   } catch (error) {
     console.error('Error during token refresh:', error);
     throw error;

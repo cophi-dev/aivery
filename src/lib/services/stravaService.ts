@@ -53,7 +53,17 @@ const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
 
 export async function connectStrava(userId: string, authCode: string) {
   try {
-    console.log(`Connecting Strava for user ${userId} with auth code ${authCode}`)
+    console.log(`Connecting Strava for user ${userId} with auth code ${authCode.substring(0, 5)}...`)
+
+    // Log environment variables for debugging
+    console.log('Strava connection environment:', {
+      nodeEnv: process.env.NODE_ENV || 'not set',
+      stravaClientId: process.env.STRAVA_CLIENT_ID ? `${process.env.STRAVA_CLIENT_ID.substring(0, 3)}...` : 'not set',
+      stravaClientIdLength: process.env.STRAVA_CLIENT_ID ? process.env.STRAVA_CLIENT_ID.length : 0,
+      hasStravaSecret: !!process.env.STRAVA_CLIENT_SECRET,
+      secretLength: process.env.STRAVA_CLIENT_SECRET ? process.env.STRAVA_CLIENT_SECRET.length : 0,
+      appUrl: process.env.NEXT_PUBLIC_APP_URL || 'not set'
+    });
 
     // Exchange auth code for tokens using Strava's OAuth API
     const tokenData = await exchangeCodeForToken(authCode);
@@ -69,6 +79,7 @@ export async function connectStrava(userId: string, authCode: string) {
 
     if (existingIntegration) {
       // Update existing integration
+      console.log(`Updating existing Strava integration for user ${userId}`);
       await collection.updateOne(
         { _id: existingIntegration._id },
         {
@@ -84,6 +95,7 @@ export async function connectStrava(userId: string, authCode: string) {
       return { id: existingIntegration._id.toString(), provider: "strava" }
     } else {
       // Create new integration
+      console.log(`Creating new Strava integration for user ${userId}`);
       const result = await collection.insertOne({
         userId: new ObjectId(userId),
         provider: "strava",
@@ -98,8 +110,21 @@ export async function connectStrava(userId: string, authCode: string) {
       return { id: result.insertedId.toString(), provider: "strava" }
     }
   } catch (error) {
-    console.error("Error connecting to Strava:", error)
-    throw error;
+    console.error("Error connecting to Strava:", error);
+    
+    // Add more context to the error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const enhancedError = new Error(
+      `Failed to connect Strava account: ${errorMessage}. ` +
+      `Check that Strava API credentials are correctly configured.`
+    );
+    
+    // Preserve the original stack trace if possible
+    if (error instanceof Error && error.stack) {
+      enhancedError.stack = error.stack;
+    }
+    
+    throw enhancedError;
   }
 }
 
