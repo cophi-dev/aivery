@@ -1037,7 +1037,7 @@ export async function POST(request: Request) {
       await dbConnect();
       const userDoc = await User.findById(session.user.id)
         .select("nickname name")
-        .lean();
+        .lean() as UserDocument;
       if (userDoc) {
         const userName = userDoc.nickname || userDoc.name;
 
