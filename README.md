@@ -113,6 +113,39 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## AI Integration
+
+This application integrates with Anthropic's Claude API for generating personalized fitness content:
+
+### Key Features
+- Dynamic fitness quotes with user context awareness
+- Personalized chat responses based on fitness goals and history
+- Timestamp-based randomization for consistent variety
+
+### Prompt Design
+- Optimized for Claude's concise response style
+- Short system roles with clear numbered instructions
+- User messages include specific context (time of day, workout history, goals)
+- Temperature set to 0.7 for balance between creativity and consistency
+- Character limits enforced (100-150 chars for quotes)
+
+### Transition from OpenAI to Claude
+- Codebase cleaned up after Claude transition: Removed OpenAI references, standardized formatting, and ensured consistency in prompts and API calls
+- Consistent temperature settings (0.7 for creative tasks, 0.3 for structured tasks)
+- Standardized max_tokens values (75 for quotes, 100-500 for longer responses)
+- Unified response handling with common getTextFromResponse utility function
+- Improved error handling and fallback mechanisms
+
+### Local Testing
+Test the AI endpoints with:
+```bash
+# Test dynamic quotes (authenticated)
+curl "http://localhost:3000/api/quotes/dynamic?name=YourName"
+
+# Test regular quotes
+curl "http://localhost:3000/api/quotes"
+```
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
