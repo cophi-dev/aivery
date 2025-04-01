@@ -20,7 +20,7 @@ const gunzipAsync = promisify(gunzip)
 // Use Node.js runtime instead of Edge
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300 // 5 minutes timeout
+export const maxDuration = 60 // 60 seconds maximum for Hobby plan
 export const preferredRegion = 'auto'
 
 // Configure the route to handle large files
