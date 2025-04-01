@@ -1013,16 +1013,109 @@ export default function SettingsPage() {
   const [deleteWorkoutsError, setDeleteWorkoutsError] = useState('')
   const [deleteWorkoutsSuccess, setDeleteWorkoutsSuccess] = useState('')
   const [isDeletingWorkouts, setIsDeletingWorkouts] = useState(false)
+  
+  // Add state for workout type categories
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+    strength: true,
+    cardio: true,
+    other: true
+  })
+
+  // Define workout type mapping to show standard display names but send correct backend values
+  const workoutTypeMapping: Record<string, string[]> = {
+    "Strength Training": ["strength", "Strength", "Workout"],
+    "Running": ["running", "Running", "Run", "run"],
+    "Swimming": ["swimming", "Swimming", "Swim", "swim"],
+    "Cycling": ["cycling", "Cycling", "Ride", "ride", "bike"],
+    "HIIT": ["hiit", "Hiit", "HIIT"],
+    "Flexibility": ["flexibility", "Flexibility", "stretch", "Stretch"],
+    "Other": ["other", "Other"],
+  }
+
+  type CategoryKey = 'strength' | 'cardio' | 'other';
+
+  const workoutTypeCategories: Record<CategoryKey, string[]> = {
+    strength: ["Strength Training"],
+    cardio: ["Running", "Swimming", "Cycling"],
+    other: ["HIIT", "Flexibility", "Other"]
+  }
+
+  const toggleCategory = (category: CategoryKey) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }))
+  }
+
+  const selectAllWorkoutTypes = () => {
+    const allTypes: string[] = []
+    Object.entries(workoutTypeMapping).forEach(([displayName, variants]) => {
+      allTypes.push(...variants)
+    })
+    setSelectedWorkoutTypes(allTypes)
+  }
+
+  const clearAllWorkoutTypes = () => {
+    setSelectedWorkoutTypes([])
+  }
+
+  const toggleWorkoutTypeGroup = (displayName: string) => {
+    const variants = workoutTypeMapping[displayName] || []
+    
+    // Check if all variants of this type are already selected
+    const allSelected = variants.every(variant => selectedWorkoutTypes.includes(variant))
+    
+    if (allSelected) {
+      // Remove all variants of this type
+      setSelectedWorkoutTypes(prev => 
+        prev.filter(t => !variants.includes(t))
+      )
+    } else {
+      // Add all variants that aren't already selected
+      setSelectedWorkoutTypes(prev => {
+        const newSelection = [...prev]
+        variants.forEach(variant => {
+          if (!newSelection.includes(variant)) {
+            newSelection.push(variant)
+          }
+        })
+        return newSelection
+      })
+    }
+  }
+
+  const isWorkoutTypeSelected = (displayName: string) => {
+    const variants = workoutTypeMapping[displayName] || []
+    return variants.some(variant => selectedWorkoutTypes.includes(variant))
+  }
+
+  const getSelectedCountForCategory = (category: CategoryKey) => {
+    const displayNames = workoutTypeCategories[category]
+    let selectedCount = 0
+    let totalCount = 0
+    
+    displayNames.forEach((displayName: string) => {
+      const variants = workoutTypeMapping[displayName] || []
+      totalCount += 1
+      if (variants.some(variant => selectedWorkoutTypes.includes(variant))) {
+        selectedCount += 1
+      }
+    })
+    
+    return { selectedCount, totalCount }
+  }
 
   const [isPending, startTransition] = useTransition();
 
   const handleDeleteWorkoutsSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    // Get form data
+    // Get form data for the confirmation field
     const formData = new FormData(e.currentTarget);
-    const types = formData.getAll('workoutTypes').map(t => t.toString());
     const confirmation = formData.get('confirmation')?.toString() || '';
+    
+    // Use the selectedWorkoutTypes state instead of reading from form data
+    const types = selectedWorkoutTypes;
     
     // Validate
     if (confirmation !== 'delete') {
@@ -1078,10 +1171,28 @@ export default function SettingsPage() {
             .join(', ');
 
           // Create success message
-          const successMessage = result.deletedCount === 0 
-            ? `No workouts found matching the selected types: ${workoutTypesList}.`
-            : `Successfully deleted ${result.deletedCount} ${result.deletedCount === 1 ? 'workout' : 'workouts'} ` +
+          let successMessage = '';
+          
+          if (result.deletedCount === 0) {
+            if (result.userHasWorkouts && result.availableTypes && result.availableTypes.length > 0) {
+              // The user has workouts but not of the selected types
+              const availableTypesList = result.availableTypes
+                .map((type: string) => type.charAt(0).toUpperCase() + type.slice(1))
+                .join(', ');
+              
+              successMessage = `No workouts found matching the selected types: ${workoutTypesList}. ` +
+                `Your account has workouts with these types: ${availableTypesList}. ` +
+                `Please select one of these types to delete workouts.`;
+            } else if (result.userHasWorkouts) {
+              successMessage = `No workouts found matching the selected types: ${workoutTypesList}. ` +
+                `You have workouts, but they use different workout type names than selected.`;
+            } else {
+              successMessage = `No workouts found matching the selected types: ${workoutTypesList}.`;
+            }
+          } else {
+            successMessage = `Successfully deleted ${result.deletedCount} ${result.deletedCount === 1 ? 'workout' : 'workouts'} ` +
               `of type${types.length > 1 ? 's' : ''}: ${workoutTypesList}.`;
+          }
           
           setDeleteWorkoutsSuccess(successMessage);
           setSelectedWorkoutTypes([]);
@@ -1718,24 +1829,152 @@ export default function SettingsPage() {
                   
                   <form onSubmit={handleDeleteWorkoutsSubmit}>
                     <div className="mb-4">
-                      <Label className="mb-2 block">Select workout types to delete</Label>
-                      <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
-                        {["strength", "running", "Run", "swimming", "Swim", "cycling", "hiit", "flexibility", "other"].map((type) => (
-                          <div key={type} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
-                            <Checkbox 
-                              id={`workout-type-${type}`} 
-                              name="workoutTypes"
-                              value={type}
-                              defaultChecked={selectedWorkoutTypes.includes(type)}
-                            />
-                            <label
-                              htmlFor={`workout-type-${type}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 capitalize"
-                            >
-                              {type}
-                            </label>
-                          </div>
-                        ))}
+                      <div className="flex justify-between items-center mb-2">
+                        <Label className="block">Select workout types to delete</Label>
+                        <div className="space-x-2 flex items-center">
+                          <span className="text-xs text-muted-foreground mr-2">
+                            {selectedWorkoutTypes.length} selected
+                          </span>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm"
+                            onClick={selectAllWorkoutTypes}
+                          >
+                            Select All
+                          </Button>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm"
+                            onClick={clearAllWorkoutTypes}
+                            disabled={selectedWorkoutTypes.length === 0}
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3 border p-3 rounded-md">
+                        {/* Strength category */}
+                        <div className="border rounded-md overflow-hidden">
+                          <button 
+                            type="button"
+                            className="w-full flex justify-between items-center p-2 bg-muted/50 hover:bg-muted text-left font-medium"
+                            onClick={() => toggleCategory('strength')}
+                          >
+                            <span>Strength Training</span>
+                            <span className="flex items-center">
+                              <span className="text-xs text-muted-foreground mr-2">
+                                {getSelectedCountForCategory('strength').selectedCount}/
+                                {getSelectedCountForCategory('strength').totalCount}
+                              </span>
+                              {expandedCategories.strength ? '▼' : '►'}
+                            </span>
+                          </button>
+                          
+                          {expandedCategories.strength && (
+                            <div className="grid grid-cols-1 gap-2 p-2">
+                              {workoutTypeCategories.strength.map((displayName) => (
+                                <div key={displayName} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
+                                  <Checkbox 
+                                    id={`workout-type-${displayName}`} 
+                                    name="workoutTypes"
+                                    value={displayName}
+                                    checked={isWorkoutTypeSelected(displayName)}
+                                    onCheckedChange={() => toggleWorkoutTypeGroup(displayName)}
+                                  />
+                                  <label
+                                    htmlFor={`workout-type-${displayName}`}
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                  >
+                                    {displayName}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Cardio category */}
+                        <div className="border rounded-md overflow-hidden">
+                          <button 
+                            type="button"
+                            className="w-full flex justify-between items-center p-2 bg-muted/50 hover:bg-muted text-left font-medium"
+                            onClick={() => toggleCategory('cardio')}
+                          >
+                            <span>Cardio Workouts</span>
+                            <span className="flex items-center">
+                              <span className="text-xs text-muted-foreground mr-2">
+                                {getSelectedCountForCategory('cardio').selectedCount}/
+                                {getSelectedCountForCategory('cardio').totalCount}
+                              </span>
+                              {expandedCategories.cardio ? '▼' : '►'}
+                            </span>
+                          </button>
+                          
+                          {expandedCategories.cardio && (
+                            <div className="grid grid-cols-1 gap-2 p-2">
+                              {workoutTypeCategories.cardio.map((displayName) => (
+                                <div key={displayName} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
+                                  <Checkbox 
+                                    id={`workout-type-${displayName}`} 
+                                    name="workoutTypes"
+                                    value={displayName}
+                                    checked={isWorkoutTypeSelected(displayName)}
+                                    onCheckedChange={() => toggleWorkoutTypeGroup(displayName)}
+                                  />
+                                  <label
+                                    htmlFor={`workout-type-${displayName}`}
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                  >
+                                    {displayName}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Other category */}
+                        <div className="border rounded-md overflow-hidden">
+                          <button 
+                            type="button"
+                            className="w-full flex justify-between items-center p-2 bg-muted/50 hover:bg-muted text-left font-medium"
+                            onClick={() => toggleCategory('other')}
+                          >
+                            <span>Other Workouts</span>
+                            <span className="flex items-center">
+                              <span className="text-xs text-muted-foreground mr-2">
+                                {getSelectedCountForCategory('other').selectedCount}/
+                                {getSelectedCountForCategory('other').totalCount}
+                              </span>
+                              {expandedCategories.other ? '▼' : '►'}
+                            </span>
+                          </button>
+                          
+                          {expandedCategories.other && (
+                            <div className="grid grid-cols-1 gap-2 p-2">
+                              {workoutTypeCategories.other.map((displayName) => (
+                                <div key={displayName} className="flex items-center space-x-2 p-1.5 hover:bg-muted/50 rounded-md">
+                                  <Checkbox 
+                                    id={`workout-type-${displayName}`} 
+                                    name="workoutTypes"
+                                    value={displayName}
+                                    checked={isWorkoutTypeSelected(displayName)}
+                                    onCheckedChange={() => toggleWorkoutTypeGroup(displayName)}
+                                  />
+                                  <label
+                                    htmlFor={`workout-type-${displayName}`}
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                  >
+                                    {displayName}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
