@@ -70,6 +70,12 @@ async function parseJsonFromBuffer(buffer: Buffer): Promise<any> {
 
 export async function POST(request: NextRequest) {
   try {
+    // Check content length to ensure it's not too large (100MB limit)
+    const contentLength = request.headers.get('content-length')
+    if (contentLength && parseInt(contentLength) > 100 * 1024 * 1024) {
+      return NextResponse.json({ error: "File too large, maximum size is 100MB" }, { status: 413 })
+    }
+    
     // Initialize database connection
     await dbConnect()
     console.log('Database connected successfully')
