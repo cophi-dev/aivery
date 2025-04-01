@@ -21,8 +21,7 @@ import User from "@/lib/db/models/user";
 import { IUser } from "@/lib/db/models/user";
 import { getFreshWorkouts, getFreshFilteredWorkouts } from "./fresh-data";
 import { Document } from "mongoose";
-import { analyzeWorkoutQuery } from "./workout-analysis";
-import { QueryAnalysis } from "./workout-analysis";
+import { QueryAnalysis as ImportedQueryAnalysis } from "./workout-analysis";
 
 // Define QueryAnalysis interface for workout data queries
 interface QueryAnalysis {
