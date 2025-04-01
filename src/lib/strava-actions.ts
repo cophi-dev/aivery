@@ -1,7 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { connectStrava, syncStravaWorkouts, getStravaIntegration, updateStravaSyncPreferences, SUPPORTED_ACTIVITY_TYPES } from "./services/stravaService"
+import { connectStrava, getStravaIntegration, updateStravaSyncPreferences, SUPPORTED_ACTIVITY_TYPES } from "./services/stravaService"
+import { syncStravaWorkouts } from "./services/integrationService"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "./auth"
 import { createWebhookSubscription, getWebhookSubscription, deleteWebhookSubscription } from "./strava/webhook"
@@ -42,7 +43,7 @@ export async function syncStravaWorkoutsAction() {
     const userId = session.user.id
     
     // Sync Strava workouts (only runs and swims)
-    const result = await syncStravaWorkouts(userId)
+    const count = await syncStravaWorkouts(userId)
     
     // Revalidate relevant pages
     revalidatePath("/calendar")
@@ -50,18 +51,10 @@ export async function syncStravaWorkoutsAction() {
     revalidatePath("/dashboard")
     revalidatePath("/integrations")
     
-    // Handle result - the result now always has a success property
-    if (!result.success) {
-      return { 
-        success: false, 
-        error: result.error || "Failed to sync Strava workouts" 
-      }
-    }
-    
     return { 
       success: true, 
-      count: result.count,
-      types: result.types,
+      count,
+      types: ['running', 'swimming'], // Default types
       message: "Successfully synced runs and swims from Strava"
     }
   } catch (error) {
