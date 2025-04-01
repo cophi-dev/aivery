@@ -367,47 +367,103 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
               </CardContent>
             </Card>
             
-            <Card>
-              <CardHeader>
-                <CardTitle>Stats</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <h3 className="text-sm text-muted-foreground">Personal Best</h3>
-                  <p className="text-2xl font-bold">
-                    {personalBest 
-                      ? `${personalBest.weight} kg × ${personalBest.reps}` 
-                      : "No data yet"}
-                  </p>
-                </div>
-                
-                <div>
-                  <h3 className="text-sm text-muted-foreground">Last Workout</h3>
-                  <p>
-                    {history.length > 0 
-                      ? formatDate(history[0].createdAt) 
-                      : "No workouts yet"}
-                  </p>
-                </div>
-                
-                <div>
-                  <h3 className="text-sm text-muted-foreground">Total Training Sessions</h3>
-                  <p>{history.length}</p>
-                </div>
-                
-                {progressPercentage && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Stats</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div>
-                    <h3 className="text-sm text-muted-foreground">Progress Since Start</h3>
-                    <div className="flex items-center">
-                      <LucideTrendingUp className={`h-4 w-4 mr-1 ${Number(progressPercentage) >= 0 ? 'text-green-500' : 'text-red-500'}`} />
-                      <span className={Number(progressPercentage) >= 0 ? 'text-green-500' : 'text-red-500'}>
-                        {Number(progressPercentage) >= 0 ? '+' : ''}{progressPercentage}%
-                      </span>
-                    </div>
+                    <h3 className="text-sm text-muted-foreground">Personal Best</h3>
+                    <p className="text-2xl font-bold">
+                      {personalBest 
+                        ? `${personalBest.weight} kg × ${personalBest.reps}` 
+                        : "No data yet"}
+                    </p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  
+                  <div>
+                    <h3 className="text-sm text-muted-foreground">Last Workout</h3>
+                    <p>
+                      {history.length > 0 
+                        ? formatDate(history[0].createdAt) 
+                        : "No workouts yet"}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-sm text-muted-foreground">Total Training Sessions</h3>
+                    <p>{history.length}</p>
+                  </div>
+                  
+                  {progressPercentage && (
+                    <div>
+                      <h3 className="text-sm text-muted-foreground">Progress Since Start</h3>
+                      <div className="flex items-center">
+                        <LucideTrendingUp className={`h-4 w-4 mr-1 ${Number(progressPercentage) >= 0 ? 'text-green-500' : 'text-red-500'}`} />
+                        <span className={Number(progressPercentage) >= 0 ? 'text-green-500' : 'text-red-500'}>
+                          {Number(progressPercentage) >= 0 ? '+' : ''}{progressPercentage}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Progress Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {history.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Best Weight</div>
+                          <div className="text-xl font-bold">
+                            {Math.max(...history.map(w => Math.max(...w.sets.map(s => Number(s.weight) || 0))))} kg
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Best Reps</div>
+                          <div className="text-xl font-bold">
+                            {Math.max(...history.map(w => Math.max(...w.sets.map(s => Number(s.reps) || 0))))}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Avg Weight</div>
+                          <div className="text-xl font-bold">
+                            {(history.reduce((sum, w) => sum + w.sets.reduce((s, set) => s + (Number(set.weight) || 0), 0), 0) / 
+                              history.reduce((sum, w) => sum + w.sets.length, 0)).toFixed(1)} kg
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Avg Reps</div>
+                          <div className="text-xl font-bold">
+                            {(history.reduce((sum, w) => sum + w.sets.reduce((s, set) => s + (Number(set.reps) || 0), 0), 0) / 
+                              history.reduce((sum, w) => sum + w.sets.length, 0)).toFixed(1)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-muted/50 p-3 rounded-lg">
+                        <div className="text-sm text-muted-foreground">Total Volume</div>
+                        <div className="text-xl font-bold">
+                          {history.reduce((sum, w) => sum + w.sets.reduce((s, set) => s + ((Number(set.weight) || 0) * (Number(set.reps) || 0)), 0), 0)} kg
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground">
+                      No training history yet
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </TabsContent>
         
@@ -486,42 +542,110 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
             </CardHeader>
             <CardContent>
               {chartData.length > 0 ? (
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                      data={chartData}
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="date" 
-                        tickFormatter={(value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      />
-                      <YAxis />
-                      <Tooltip 
-                        formatter={(value: number, name: string) => [`${value} ${name === 'weight' ? 'kg' : ''}`, name === 'weight' ? 'Weight' : 'Reps']}
-                        labelFormatter={(label: string) => new Date(label).toLocaleDateString()}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="weight" 
-                        stroke="#8884d8" 
-                        name="Weight"
-                        strokeWidth={2}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="reps" 
-                        stroke="#82ca9d" 
-                        name="Reps"
-                        strokeWidth={2}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div className="space-y-6">
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={chartData}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tickFormatter={(value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        />
+                        <YAxis yAxisId="left" />
+                        <YAxis yAxisId="right" orientation="right" />
+                        <Tooltip 
+                          formatter={(value: number, name: string) => [`${value} ${name === 'weight' ? 'kg' : ''}`, name === 'weight' ? 'Weight' : 'Reps']}
+                          labelFormatter={(label: string) => new Date(label).toLocaleDateString()}
+                        />
+                        <Line 
+                          yAxisId="left"
+                          type="monotone" 
+                          dataKey="weight" 
+                          stroke="#8884d8" 
+                          name="Weight"
+                          strokeWidth={2}
+                          dot={{ r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line 
+                          yAxisId="right"
+                          type="monotone" 
+                          dataKey="reps" 
+                          stroke="#82ca9d" 
+                          name="Reps"
+                          strokeWidth={2}
+                          dot={{ r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-muted/50 p-4 rounded-lg">
+                      <h3 className="text-sm font-medium mb-2">Weight Progression</h3>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Starting Weight:</span>
+                          <span className="font-medium">{chartData[0].weight} kg</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Current Weight:</span>
+                          <span className="font-medium">{chartData[chartData.length - 1].weight} kg</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Total Increase:</span>
+                          <span className="font-medium text-green-500">
+                            +{(chartData[chartData.length - 1].weight - chartData[0].weight).toFixed(1)} kg
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-muted/50 p-4 rounded-lg">
+                      <h3 className="text-sm font-medium mb-2">Rep Progression</h3>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Starting Reps:</span>
+                          <span className="font-medium">{chartData[0].reps}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Current Reps:</span>
+                          <span className="font-medium">{chartData[chartData.length - 1].reps}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Total Change:</span>
+                          <span className={`font-medium ${chartData[chartData.length - 1].reps - chartData[0].reps >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {chartData[chartData.length - 1].reps - chartData[0].reps >= 0 ? '+' : ''}
+                            {chartData[chartData.length - 1].reps - chartData[0].reps}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-muted/50 p-4 rounded-lg">
+                      <h3 className="text-sm font-medium mb-2">Volume Progression</h3>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Starting Volume:</span>
+                          <span className="font-medium">{chartData[0].total} kg</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Current Volume:</span>
+                          <span className="font-medium">{chartData[chartData.length - 1].total} kg</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Total Increase:</span>
+                          <span className="font-medium text-green-500">
+                            +{(chartData[chartData.length - 1].total - chartData[0].total).toFixed(1)} kg
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">

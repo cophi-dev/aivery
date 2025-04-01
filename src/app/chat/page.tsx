@@ -266,15 +266,35 @@ export default function ChatPage() {
           <h1 className="text-4xl font-bold tracking-tight">AI Fitness Coach</h1>
           <p className="text-muted-foreground mt-2">Get personalized advice and track your fitness journey</p>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm"
-          onClick={resetChat}
-          className="mt-4 md:mt-0 flex items-center gap-2"
-        >
-          <LucideRefreshCw className="h-4 w-4" />
-          Reset Chat
-        </Button>
+        <div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={resetChat}
+            className="mt-4 md:mt-0 flex items-center gap-2"
+          >
+            <LucideRefreshCw className="h-4 w-4" />
+            Reset Chat
+          </Button>
+          {/* Temporary debug button - remove in production */}
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              // Copy ID to clipboard
+              if (session?.user?.id) {
+                navigator.clipboard.writeText(session.user.id)
+                  .then(() => alert(`User ID copied to clipboard: ${session.user.id}`))
+                  .catch(() => alert(`Your user ID is: ${session.user.id}`));
+              } else {
+                alert("Not logged in or no user ID available");
+              }
+            }}
+            className="mt-4 md:mt-0 ml-2 flex items-center gap-2"
+          >
+            Debug: Copy User ID
+          </Button>
+        </div>
       </div>
 
       <Card className="mb-8">
