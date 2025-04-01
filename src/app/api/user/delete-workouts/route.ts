@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     }).select('type').lean();
     
     const userWorkoutTypes = allUserWorkouts.map(w => w.type);
-    const uniqueUserWorkoutTypes = [...new Set(userWorkoutTypes)];
+    const uniqueUserWorkoutTypes = Array.from(new Set(userWorkoutTypes));
     
     console.log(`[delete-workouts] User has ${allUserWorkouts.length} total workouts`);
     console.log(`[delete-workouts] User has workout types: ${JSON.stringify(uniqueUserWorkoutTypes)}`);
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     
     // Log found workout types for debugging
     const foundTypes = workoutsToDelete.map(w => w.type);
-    const uniqueFoundTypes = [...new Set(foundTypes)];
+    const uniqueFoundTypes = Array.from(new Set(foundTypes));
     console.log(`[delete-workouts] Found workout types: ${uniqueFoundTypes.join(', ')}`);
     
     // Get the workout IDs to be deleted
