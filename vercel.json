@@ -51,5 +51,15 @@
       "maxDuration": 60,
       "includeFiles": "node_modules/fit-file-parser/**"
     }
+  },
+  "experimental": {
+    "outputFileTracingIncludes": {
+      "/api/strava/import": ["node_modules/fit-file-parser/**/*"]
+    }
+  },
+  "limits": {
+    "bodySize": {
+      "/api/strava/import": "100mb"
+    }
   }
 } 
