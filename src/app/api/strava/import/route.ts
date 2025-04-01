@@ -57,10 +57,6 @@ interface ParsedActivity {
   activities: FitActivity[];
 }
 
-export const bodyParser = {
-  sizeLimit: '500mb' // Adjust based on your needs
-};
-
 // Helper function to parse JSON files from the zip
 async function parseJsonFromBuffer(buffer: Buffer): Promise<any> {
   try {
