@@ -169,42 +169,8 @@ async function getValidAccessToken(userId: string) {
   return integration.accessToken;
 }
 
-// Function to fetch activities from Strava API
-async function fetchStravaActivities(accessToken: string) {
-  const perPage = 100; // Max allowed by Strava API
-  let page = 1;
-  let allActivities: any[] = [];
-  let hasMoreActivities = true;
-
-  while (hasMoreActivities) {
-    const response = await fetch(
-      `https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch activities: ${response.statusText}`);
-    }
-
-    const activities = await response.json();
-    
-    if (activities.length === 0) {
-      hasMoreActivities = false;
-    } else {
-      allActivities = [...allActivities, ...activities];
-      page++;
-    }
-  }
-
-  return allActivities;
-}
-
 // Function to transform Strava activity to our workout format
-function transformStravaActivity(activity: any) {
+export function transformStravaActivity(activity: any) {
   // Common fields for all activities
   const workout: any = {
     sourceId: activity.id.toString(),
@@ -234,11 +200,6 @@ function transformStravaActivity(activity: any) {
   if (activity.type.toLowerCase() === 'swim') {
     workout.cardioDetails.poolLength = activity.pool_length;
     workout.cardioDetails.strokeType = activity.stroke_type;
-  }
-
-  if (activity.type.toLowerCase() === 'run') {
-    // Additional running-specific data if available
-    // Laps data would require another API call to get detailed info
   }
 
   return workout;
@@ -316,80 +277,53 @@ export async function updateStravaSyncPreferences(userId: string, activityTypes:
   }
 }
 
-// Update the sync function to use preferences
-export async function syncStravaWorkouts(userId: string) {
+// Function to handle single activity sync (used by webhook)
+export async function syncStravaActivity(userId: string, activityId: string) {
   try {
-    console.log(`Syncing Strava workouts for user ${userId}`);
-
-    // Get user preferences for which activity types to sync
-    const activityTypes = await getUserStravaSyncPreferences(userId);
-    console.log(`User preferences for activity types:`, activityTypes);
-    
-    // Get valid access token
     const accessToken = await getValidAccessToken(userId);
+    const activity = await fetchStravaActivity(accessToken, activityId);
     
-    // Fetch activities from Strava API
-    const activities = await fetchStravaActivities(accessToken);
-    
-    // Filter based on user preferences
-    const filteredActivities = activities.filter(activity => 
-      activityTypes.includes(activity.type.toLowerCase())
-    );
-    
-    console.log(`Fetched ${activities.length} activities, filtered to ${filteredActivities.length} based on user preferences`);
-
-    // Transform activities to our format
-    const workouts = filteredActivities.map(transformStravaActivity);
-
-    // Store workouts in the database
-    const workoutsCollection = await getCollection(WORKOUTS_COLLECTION);
-    const integrationCollection = await getCollection(INTEGRATIONS_COLLECTION);
-
-    let importedCount = 0;
-    const typeCounts: Record<string, number> = {};
-
-    for (const workout of workouts) {
-      // Track activity type counts
-      const type = workout.type;
-      typeCounts[type] = (typeCounts[type] || 0) + 1;
-      
-      // Check if workout already exists
-      const existingWorkout = await workoutsCollection.findOne({
-        userId: new ObjectId(userId),
-        sourceId: workout.sourceId,
-        source: "strava",
-      });
-
-      if (!existingWorkout) {
-        await workoutsCollection.insertOne({
-          ...workout,
-          userId: new ObjectId(userId),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        importedCount++;
-      }
+    if (!activity) {
+      throw new Error(`No activity found with ID ${activityId}`);
     }
 
-    // Update last synced timestamp
-    await integrationCollection.updateOne(
-      { userId: new ObjectId(userId), provider: "strava" },
-      { $set: { lastSynced: new Date(), updatedAt: new Date() } },
-    );
+    const workout = transformStravaActivity(activity);
+    
+    // Get the workouts collection
+    const workoutsCollection = await getCollection(WORKOUTS_COLLECTION);
+    
+    // Check if workout already exists
+    const existingWorkout = await workoutsCollection.findOne({
+      userId: new ObjectId(userId),
+      sourceId: activityId,
+      source: "strava"
+    });
 
-    return { 
-      success: true,
-      count: importedCount,
-      types: typeCounts
-    };
+    if (existingWorkout) {
+      // Update existing workout
+      await workoutsCollection.updateOne(
+        { _id: existingWorkout._id },
+        { 
+          $set: {
+            ...workout,
+            updatedAt: new Date()
+          }
+        }
+      );
+      return { success: true, action: "updated" };
+    } else {
+      // Insert new workout
+      await workoutsCollection.insertOne({
+        ...workout,
+        userId: new ObjectId(userId),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      return { success: true, action: "created" };
+    }
   } catch (error) {
-    console.error("Error syncing Strava workouts:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error while syncing Strava workouts",
-      count: 0,
-      types: {}
-    };
+    console.error(`Error syncing Strava activity ${activityId}:`, error);
+    throw error;
   }
 }
 
@@ -451,76 +385,5 @@ async function findUserByStravaAthleteId(athleteId: number | string) {
   }
   
   return integration.userId;
-}
-
-// Sync a single activity from Strava based on webhook event
-export async function syncStravaActivity(athleteId: number | string, activityId: string) {
-  try {
-    console.log(`Syncing Strava activity ${activityId} for athlete ${athleteId}`);
-    
-    // Find the user associated with this athlete ID
-    const userId = await findUserByStravaAthleteId(athleteId);
-    
-    if (!userId) {
-      console.log(`No matching user found for athlete ${athleteId}`);
-      return { success: false, error: "No matching user found" };
-    }
-    
-    // Get the user's preferences for which activity types to sync
-    const activityTypes = await getUserStravaSyncPreferences(userId.toString());
-    
-    // Get a valid access token for API calls
-    const accessToken = await getValidAccessToken(userId.toString());
-    
-    // Fetch the activity details
-    const activity = await fetchStravaActivity(accessToken, activityId);
-    
-    // Check if the activity type is one the user wants to sync
-    if (!activityTypes.includes(activity.type.toLowerCase())) {
-      console.log(`Activity type ${activity.type} is not in user's sync preferences: ${activityTypes.join(', ')}`);
-      return { success: true, skipped: true, reason: "Activity type not in sync preferences" };
-    }
-    
-    // Transform the activity to our format
-    const workout = transformStravaActivity(activity);
-    
-    // Check if this activity already exists in our database
-    const workoutsCollection = await getCollection(WORKOUTS_COLLECTION);
-    const existingWorkout = await workoutsCollection.findOne({
-      userId: new ObjectId(userId),
-      sourceId: workout.sourceId,
-      source: "strava",
-    });
-    
-    if (existingWorkout) {
-      // Update the existing workout
-      await workoutsCollection.updateOne(
-        { _id: existingWorkout._id },
-        { 
-          $set: {
-            ...workout,
-            updatedAt: new Date()
-          }
-        }
-      );
-      
-      console.log(`Updated existing workout for activity ${activityId}`);
-      return { success: true, updated: true };
-    } else {
-      // Insert as a new workout
-      await workoutsCollection.insertOne({
-        ...workout,
-        userId: new ObjectId(userId),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      
-      console.log(`Imported new workout for activity ${activityId}`);
-      return { success: true, created: true };
-    }
-  } catch (error) {
-    console.error(`Error syncing Strava activity ${activityId}:`, error);
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
-  }
 }
 

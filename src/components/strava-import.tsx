@@ -61,6 +61,8 @@ export function StravaImport() {
   const [isUsingChunkedUpload, setIsUsingChunkedUpload] = useState(false)
   const [totalChunks, setTotalChunks] = useState(0)
   const [currentChunk, setCurrentChunk] = useState(0)
+  const [uploadStats, setUploadStats] = useState<ImportStats | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -801,6 +803,64 @@ export function StravaImport() {
     setImportStats(null)
   }
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Check if it's a zip file
+    if (!file.name.endsWith('.zip')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a ZIP file from your Strava export",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsUploading(true)
+    setError(null)
+    setUploadStats(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/strava/import', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to import workouts')
+      }
+
+      if (data.success) {
+        toast({
+          title: "Import successful",
+          description: data.message
+        })
+        setUploadStats(data.results)
+      } else {
+        throw new Error(data.error || 'Failed to import workouts')
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      setError(error instanceof Error ? error.message : 'Failed to upload file')
+      toast({
+        title: "Import failed",
+        description: error instanceof Error ? error.message : 'Failed to upload file',
+        variant: "destructive"
+      })
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -952,7 +1012,7 @@ export function StravaImport() {
               <input
                 type="file"
                 accept=".zip"
-                onChange={handleFileSelect}
+                onChange={handleFileUpload}
                 ref={fileInputRef}
                 className="hidden"
                 id="zip-file-input"

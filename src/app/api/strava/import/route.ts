@@ -11,13 +11,16 @@ import { promisify } from 'util'
 import dbConnect from "@/lib/db/mongoose"
 import { getCollection } from "@/lib/db/mongoose"
 import { ObjectId } from "mongodb"
+import { transformStravaActivity } from "@/lib/services/stravaService"
+import AdmZip from "adm-zip"
+import { Readable } from "stream"
 
 const gunzipAsync = promisify(gunzip)
 
 // Use Node.js runtime instead of Edge
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300 // 5 minutes timeout
 export const preferredRegion = 'auto'
 
 // Configure the route to handle large files
@@ -54,6 +57,21 @@ interface ParsedActivity {
   activities: FitActivity[];
 }
 
+export const bodyParser = {
+  sizeLimit: '500mb' // Adjust based on your needs
+};
+
+// Helper function to parse JSON files from the zip
+async function parseJsonFromBuffer(buffer: Buffer): Promise<any> {
+  try {
+    const content = buffer.toString('utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("Error parsing JSON:", error);
+    throw new Error("Invalid JSON file");
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Initialize database connection
@@ -71,393 +89,89 @@ export async function POST(request: NextRequest) {
     const userId = session.user.id
     console.log('Processing import for user:', userId)
 
-    let file: File | null = null
-    let selectedWorkoutTypes: string[] = []
-    let arrayBuffer: ArrayBuffer
-    let isChunkedUpload = false
-    let filePath: string | undefined
-
-    // Check if this is a JSON request (from chunked upload)
-    if (request.headers.get('content-type')?.includes('application/json')) {
-      const jsonData = await request.json()
-      
-      // This is a request from the chunked upload API
-      filePath = jsonData.filePath
-      selectedWorkoutTypes = jsonData.workoutTypes || []
-      isChunkedUpload = true
-      
-      if (!filePath) {
-        return NextResponse.json({ error: "No file path provided" }, { status: 400 })
-      }
-      
-      try {
-        // Read the file from disk
-        const fs = require('fs').promises
-        const fileData = await fs.readFile(filePath)
-        arrayBuffer = fileData.buffer
-        
-        console.log('Strava import: Reading chunked upload file from disk:', filePath)
-        console.log('Strava import: File size:', arrayBuffer.byteLength)
-      } catch (error) {
-        console.error('Error reading file from disk:', error)
-        return NextResponse.json({ error: "Failed to read uploaded file" }, { status: 500 })
-      }
-    } else {
-      // This is a regular form data upload
-      const formData = await request.formData()
-      file = formData.get('file') as File
-      
-      if (!file) {
-        console.error('Strava import: No file provided in form data')
-        return NextResponse.json({ error: "No file provided" }, { status: 400 })
-      }
-      
-      // Get selected workout types from form data
-      selectedWorkoutTypes = formData.getAll('workoutTypes').map(type => type.toString())
-      console.log('Strava import: Selected workout types:', selectedWorkoutTypes)
-      
-      // If no workout types are selected, use all types
-      if (selectedWorkoutTypes.length === 0) {
-        console.log('Strava import: No workout types selected, using all types')
-      }
-
-      console.log('Strava import: Processing direct upload file:', file.name, 'size:', file.size)
-
-      // Convert File to ArrayBuffer
-      arrayBuffer = await file.arrayBuffer()
-      console.log('Strava import: File converted to ArrayBuffer, size:', arrayBuffer.byteLength)
+    // Get the form data
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+    
+    if (!file) {
+      console.error('Strava import: No file provided in form data')
+      return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    // Load the ZIP file
-    const zip = new JSZip()
-    const zipContent = await zip.loadAsync(arrayBuffer)
-    console.log('Strava import: ZIP entries found:', Object.keys(zipContent.files).length)
-
-    // Find all .fit.gz files in the activities folder
-    const activityFiles = Object.values(zipContent.files).filter(file => 
-      file.name.startsWith('activities/') && 
-      file.name.endsWith('.fit.gz')
-    )
-
-    console.log('Strava import: Found activity files:', activityFiles.map(f => f.name))
-
-    if (activityFiles.length === 0) {
-      console.error('Strava import: No .fit.gz files found in activities folder')
-      return NextResponse.json({ 
-        error: "No activity files found. Make sure your Strava archive contains .fit.gz files in the activities folder." 
-      }, { status: 400 })
+    // Check file type
+    if (!file.name.endsWith('.zip')) {
+      console.error('Strava import: Please upload a zip file')
+      return NextResponse.json({ error: "Please upload a zip file" }, { status: 400 })
     }
 
-    // Process each activity file
-    let importedCount = 0
-    let failedCount = 0
-    let countedWorkoutTypes: Record<string, number> = {}
-    let workouts: any[] = []
+    // Convert File to Buffer
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    
+    // Create zip instance
+    const zip = new AdmZip(buffer)
+    const zipEntries = zip.getEntries()
 
-    for (const file of activityFiles) {
+    // Get collections
+    const workoutsCollection = await getCollection("workouts")
+    
+    const results = {
+      processed: 0,
+      imported: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [] as string[]
+    }
+
+    // Process each file in the zip
+    for (const entry of zipEntries) {
       try {
-        console.log('Processing activity:', file.name)
-        
-        // Get the compressed data
-        const compressedData = await file.async('nodebuffer')
-        console.log('Got compressed data, size:', compressedData.length)
-        
-        // Decompress the .gz file
-        const fitData = await gunzipAsync(compressedData)
-        console.log('Decompressed data, size:', fitData.length)
-        
-        // Parse the FIT file
-        const fitParser = new FitParser({
-          force: true,
-          speedUnit: 'km/h',
-          lengthUnit: 'km',
-          temperatureUnit: 'celsius',
-          elapsedRecordField: true,
-          mode: 'cascade',
-          includeAllData: true,
-          checkIntegrity: false,
-        })
+        results.processed++
 
-        console.log('Created FitParser instance, attempting to parse...')
-        const activity = await new Promise<ParsedActivity>((resolve, reject) => {
-          try {
-            fitParser.parse(fitData, (error: Error | null, data: any) => {
-              if (error) {
-                console.error('Error parsing FIT file:', {
-                  file: file.name,
-                  error: error.message,
-                  stack: error.stack
-                })
-                reject(error)
-              } else {
-                // Log the complete raw data structure
-                console.log('Complete FIT data structure:', {
-                  file: file.name,
-                  keys: Object.keys(data),
-                  hasActivity: !!data.activity,
-                  hasSessions: !!data.activity?.sessions,
-                  activity: data.activity ? {
-                    timestamp: data.activity.timestamp,
-                    total_timer_time: data.activity.total_timer_time,
-                    type: data.activity.type,
-                    sport: data.activity.sport,
-                    sub_sport: data.activity.sub_sport,
-                    sessions: data.activity.sessions?.map((s: any) => ({
-                      sport: s.sport,
-                      sub_sport: s.sub_sport,
-                      total_elapsed_time: s.total_elapsed_time,
-                      total_timer_time: s.total_timer_time,
-                      total_distance: s.total_distance,
-                      total_calories: s.total_calories,
-                      avg_speed: s.avg_speed,
-                      max_speed: s.max_speed,
-                      avg_heart_rate: s.avg_heart_rate,
-                      max_heart_rate: s.max_heart_rate
-                    }))
-                  } : null
-                })
-
-                // Try to get activity data from different sources
-                let activityData = null
-
-                // First try to get data from the first session
-                if (data.activity?.sessions?.[0]) {
-                  const session = data.activity.sessions[0]
-                  activityData = {
-                    timestamp: data.activity.timestamp,
-                    total_elapsed_time: data.activity.total_timer_time || session.total_timer_time || 0,
-                    total_distance: session.total_distance || 0,
-                    total_calories: session.total_calories || 0,
-                    sport: session.sport || data.activity.sport || 'other',
-                    sub_sport: session.sub_sport || data.activity.sub_sport,
-                    avg_heart_rate: session.avg_heart_rate,
-                    max_heart_rate: session.max_heart_rate,
-                    avg_power: session.avg_power,
-                    max_power: session.max_power,
-                    enhanced_avg_speed: session.enhanced_avg_speed || session.avg_speed,
-                    enhanced_max_speed: session.enhanced_max_speed || session.max_speed,
-                    avg_speed: session.avg_speed,
-                    total_ascent: session.total_ascent,
-                    description: data.activity.description || session.description || data.activity.notes || session.notes
-                  }
-                }
-                // Then try the activity field
-                else if (data.activity) {
-                  activityData = {
-                    timestamp: data.activity.timestamp,
-                    total_elapsed_time: data.activity.total_timer_time || 0,
-                    total_distance: data.activity.total_distance || 0,
-                    total_calories: data.activity.total_calories || 0,
-                    sport: data.activity.sport || 'other',
-                    sub_sport: data.activity.sub_sport,
-                    avg_heart_rate: data.activity.avg_heart_rate,
-                    max_heart_rate: data.activity.max_heart_rate,
-                    avg_power: data.activity.avg_power,
-                    max_power: data.activity.max_power,
-                    enhanced_avg_speed: data.activity.enhanced_avg_speed || data.activity.avg_speed,
-                    enhanced_max_speed: data.activity.enhanced_max_speed || data.activity.max_speed,
-                    avg_speed: data.activity.avg_speed,
-                    total_ascent: data.activity.total_ascent,
-                    description: data.activity.description || data.activity.notes
-                  }
-                }
-
-                if (activityData) {
-                  console.log('Found activity data:', activityData)
-                  resolve({ activities: [activityData] } as ParsedActivity)
-                } else {
-                  console.log('No activity data found in any source')
-                  resolve({ activities: [] } as ParsedActivity)
-                }
-              }
-            })
-          } catch (error) {
-            console.error('Error in FIT parser callback:', {
-              file: file.name,
-              error: error instanceof Error ? error.message : 'Unknown error',
-              stack: error instanceof Error ? error.stack : undefined
-            })
-            reject(error)
-          }
-        })
-
-        // Get the activity data
-        const activityData = activity?.activities?.[0]
-        if (!activityData) {
-          console.log('Skipping activity - no activity data:', {
-            file: file.name,
-            hasActivity: !!activity?.activities?.[0],
-            activityData: activity?.activities?.[0]
-          })
-          failedCount++
+        // Skip non-JSON files and directories
+        if (entry.isDirectory || !entry.entryName.endsWith('.json')) {
+          results.skipped++
           continue
         }
 
-        // Create a unique identifier based on timestamp and activity type
-        const uniqueId = `${activityData.timestamp}_${activityData.sport}_${activityData.total_elapsed_time}`
-
-        // Check if this workout has already been imported
-        const collection = await getCollection("workouts")
-        const existingWorkout = await collection.findOne({ 
+        // Parse the JSON content
+        const activityData = await parseJsonFromBuffer(entry.getData())
+        
+        // Transform to our workout format
+        const workout = transformStravaActivity(activityData)
+        
+        // Check if workout already exists
+        const existingWorkout = await workoutsCollection.findOne({
           userId: new ObjectId(userId),
-          importId: uniqueId,
-          importedFrom: 'strava'
+          sourceId: workout.sourceId,
+          source: "strava"
         })
 
         if (existingWorkout) {
-          console.log('Skipping duplicate workout:', {
-            file: file.name,
-            uniqueId,
-            existingWorkoutId: existingWorkout._id
-          })
-          continue
-        }
-
-        console.log('Processing activity:', {
-          file: file.name,
-          uniqueId,
-          timestamp: activityData.timestamp,
-          sport: activityData.sport,
-          duration: activityData.total_elapsed_time,
-          distance: {
-            raw: activityData.total_distance,
-            isNumber: typeof activityData.total_distance === 'number',
-            isZero: activityData.total_distance === 0,
-            isUndefined: activityData.total_distance === undefined,
-            isNull: activityData.total_distance === null
-          },
-          calories: activityData.total_calories,
-          raw_data: {
-            total_distance: activityData.total_distance,
-            enhanced_avg_speed: activityData.enhanced_avg_speed,
-            avg_speed: activityData.avg_speed,
-            total_elapsed_time: activityData.total_elapsed_time
-          }
-        })
-
-        // Map Strava sport types to our workout types
-        const mappedType = mapStravaType(activityData.sport, activityData.sub_sport)
-        
-        // Skip if not in selected workout types (if any are selected)
-        if (selectedWorkoutTypes.length > 0 && !selectedWorkoutTypes.includes(mappedType)) {
-          console.log('Skipping activity - type not selected:', {
-            file: file.name,
-            mappedType,
-            selectedTypes: selectedWorkoutTypes
-          })
-          continue
-        }
-
-        // Calculate average pace in min/km if we have distance and time
-        let avgPace = undefined
-        if (activityData.total_distance && activityData.total_elapsed_time) {
-          // Convert speed from km/h to min/km
-          const speedKmH = (activityData.total_distance / (activityData.total_elapsed_time / 3600))
-          avgPace = speedKmH > 0 ? (60 / speedKmH) : undefined
-        }
-
-        // Convert the activity data to our workout format
-        const stravaLink = extractStravaIdFromFilename(file.name);
-        const workout = {
-          name: generateActivityName(activityData, new Date(activityData.timestamp), mappedType),
-          date: new Date(activityData.timestamp),
-          type: mappedType,
-          duration: Math.round(activityData.total_elapsed_time / 60),
-          intensity: calculateIntensityFromSession(activityData),
-          distance: typeof activityData.total_distance === 'number' ? activityData.total_distance : undefined,
-          calories: activityData.total_calories ?? 0,
-          notes: generateActivityNotes(activityData, new Date(activityData.timestamp), file.name),
-          exercises: [],
-          cardioDetails: (typeof activityData.total_distance === 'number' || typeof activityData.avg_speed === 'number') ? {
-            distance: activityData.total_distance ?? undefined,
-            duration: activityData.total_elapsed_time / 60,
-            pace: avgPace ?? undefined,
-            speed: activityData.enhanced_avg_speed ?? activityData.avg_speed ?? undefined,
-            maxSpeed: activityData.enhanced_max_speed ?? undefined,
-            elevationGain: activityData.total_ascent ?? undefined,
-            heartRate: activityData.avg_heart_rate ? {
-              average: Math.round(activityData.avg_heart_rate),
-              max: Math.round(activityData.max_heart_rate || activityData.avg_heart_rate),
-              zones: activityData.avg_heart_rate && activityData.max_heart_rate ? 
-                calculateHeartRateZones(
-                  activityData.avg_heart_rate, 
-                  activityData.max_heart_rate || Math.max(activityData.avg_heart_rate * 1.15, 185)
-                ) : undefined
-            } : undefined,
-            power: activityData.avg_power ? {
-              average: Math.round(activityData.avg_power),
-              max: Math.round(activityData.max_power || activityData.avg_power)
-            } : undefined,
-            sportDetails: {
-              sport: activityData.sport,
-              subSport: activityData.sub_sport
+          // Update existing workout
+          await workoutsCollection.updateOne(
+            { _id: existingWorkout._id },
+            { 
+              $set: {
+                ...workout,
+                updatedAt: new Date()
+              }
             }
-          } : undefined,
-          importedFrom: 'strava',
-          importId: uniqueId,
-          userId: userId,
-          source: 'strava' as const,
-          stravaLink: stravaLink
-        }
-
-        try {
-          console.log('Attempting to create workout:', {
-            file: file.name,
-            name: workout.name,
-            date: workout.date,
-            type: workout.type,
-            duration: workout.duration,
-            distance: {
-              topLevel: workout.distance,
-              cardioDetails: workout.cardioDetails?.distance,
-              isNumber: typeof workout.distance === 'number',
-              isZero: workout.distance === 0,
-              isUndefined: workout.distance === undefined,
-              isNull: workout.distance === null
-            },
-            cardioDetails: {
-              distance: workout.cardioDetails?.distance,
-              duration: workout.cardioDetails?.duration,
-              pace: workout.cardioDetails?.pace,
-              speed: workout.cardioDetails?.speed
-            },
-            exercises: workout.exercises.length
+          )
+          results.updated++
+        } else {
+          // Insert new workout
+          await workoutsCollection.insertOne({
+            ...workout,
+            userId: new ObjectId(userId),
+            createdAt: new Date(),
+            updatedAt: new Date()
           })
-
-          console.log('Full workout object:', JSON.stringify(workout, null, 2))
-          
-          await createCardioWorkout(workout)
-          importedCount++
-          workouts.push(workout)
-          
-          // Count workout types
-          const type = workout.type || 'other'
-          countedWorkoutTypes[type] = (countedWorkoutTypes[type] || 0) + 1
-          
-          console.log('Successfully imported activity:', file.name)
-        } catch (error) {
-          console.error('Error creating workout:', {
-            file: file.name,
-            error: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : undefined,
-            workout: {
-              name: workout.name,
-              date: workout.date,
-              type: workout.type,
-              duration: workout.duration
-            }
-          })
-          failedCount++
-          continue
+          results.imported++
         }
       } catch (error) {
-        console.error('Error processing activity:', {
-          file: file.name,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined
-        })
-        failedCount++
-        continue
+        console.error(`Error processing file ${entry.entryName}:`, error)
+        results.errors.push(`${entry.entryName}: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
 
@@ -466,58 +180,19 @@ export async function POST(request: NextRequest) {
     revalidatePath("/activity")
     revalidatePath("/dashboard")
 
-    // Import complete, return response with stats
-    console.log(`Import complete. Successfully imported: ${importedCount} Failed: ${failedCount}`)
-    
-    // Calculate statistics about imported workouts
-    const stats = {
-      count: importedCount,
-      types: countedWorkoutTypes,
-      earliestDate: workouts.length > 0 ? workouts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0].date : null,
-      latestDate: workouts.length > 0 ? workouts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date : null,
-      totalDistance: workouts.reduce((sum, workout) => sum + (workout.distance || 0), 0),
-      totalDuration: workouts.reduce((sum, workout) => sum + (workout.duration || 0), 0)
-    }
-    
-    // If this was a chunked upload, clean up the temporary file
-    if (isChunkedUpload && filePath) {
-      try {
-        // Clean up the temporary file
-        const fs = require('fs').promises
-        await fs.unlink(filePath)
-        console.log('Strava import: Cleaned up temporary file:', filePath)
-      } catch (error) {
-        // Just log the error, don't fail the request
-        console.error('Error cleaning up temporary file:', error)
-      }
-    }
-
+    // Return results
     return NextResponse.json({
       success: true,
-      count: importedCount,
-      failed: failedCount,
-      message: `Successfully imported ${importedCount} activities${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
-      stats
+      message: `Processed ${results.processed} files: ${results.imported} imported, ${results.updated} updated, ${results.skipped} skipped`,
+      results
     })
 
   } catch (error) {
-    console.error('Strava import: Fatal error:', error)
-    // Log more details about the error
-    if (error instanceof Error) {
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      })
-    }
-    return NextResponse.json(
-      { 
-        error: "Failed to process Strava archive", 
-        details: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      },
-      { status: 500 }
-    )
+    console.error("Error processing zip file:", error)
+    return NextResponse.json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error processing zip file" 
+    }, { status: 500 })
   }
 }
 
