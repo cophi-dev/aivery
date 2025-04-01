@@ -10,7 +10,8 @@
       "NEXT_DISABLE_SOURCEMAPS": "1", 
       "NEXT_FORCE_SERVER_COMPONENTS": "1",
       "NEXT_DISABLE_STATIC_GENERATION": "true",
-      "NEXT_RUNTIME": "nodejs"
+      "NEXT_RUNTIME": "nodejs",
+      "DEPLOY_TIMESTAMP": "2024-04-01-21-40"
     }
   },
   "headers": [
