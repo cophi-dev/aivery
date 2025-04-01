@@ -205,9 +205,19 @@ export function StravaImport() {
       if (success) {
         // Format activity types for display
         const typeDetails = []
-        const typesRecord = types as Record<string, number>
-        if (typesRecord.run) typeDetails.push(`${typesRecord.run} runs`)
-        if (typesRecord.swim) typeDetails.push(`${typesRecord.swim} swims`)
+        
+        // Properly handle the types array
+        if (types && Array.isArray(types)) {
+          // Count occurrences of each activity type
+          const typeCounts: Record<string, number> = {};
+          types.forEach(type => {
+            if (type === 'running' || type === 'Run') typeCounts.run = (typeCounts.run || 0) + 1;
+            if (type === 'swimming' || type === 'Swim') typeCounts.swim = (typeCounts.swim || 0) + 1;
+          });
+          
+          if (typeCounts.run) typeDetails.push(`${typeCounts.run} runs`);
+          if (typeCounts.swim) typeDetails.push(`${typeCounts.swim} swims`);
+        }
         
         const typeMessage = typeDetails.length > 0 
           ? ` (${typeDetails.join(", ")})`
