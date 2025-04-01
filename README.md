@@ -1,6 +1,6 @@
 ## Aivery - AI-powered personal fitness coach
 
-Latest update: Added detailed progress metrics and dual-axis chart for exercise tracking (April 1, 2024).
+Latest update: Added detailed progress metrics and dual-axis chart for exercise tracking (April 1, 2024, 21:00 UTC).
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
