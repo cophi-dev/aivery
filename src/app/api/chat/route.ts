@@ -21,6 +21,8 @@ import User from "@/lib/db/models/user";
 import { IUser } from "@/lib/db/models/user";
 import { getFreshWorkouts, getFreshFilteredWorkouts } from "./fresh-data";
 import { Document } from "mongoose";
+import { analyzeWorkoutQuery } from "./workout-analysis";
+import { QueryAnalysis } from "./workout-analysis";
 
 // Define QueryAnalysis interface for workout data queries
 interface QueryAnalysis {
@@ -196,161 +198,12 @@ async function generatePersonalizedGreeting(
   userId: string,
 ): Promise<string | null> {
   try {
-    // Get user information first
     const user = await User.findById(userId).select("nickname name").lean() as UserDocument;
-    const userDisplayName = user?.nickname || user?.name;
-
-    // Get current date and time info for context-aware greetings
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const hour = now.getHours();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const isEvening = hour >= 17;
-    const isMorning = hour < 12;
-    const isAfternoon = hour >= 12 && hour < 17;
-
-    // Get fresh workout data using our helper
-    const {
-      recentWorkouts,
-      totalWorkoutCount,
-      thisWeeksWorkouts,
-      hasWorkouts,
-    } = await getFreshWorkouts(userId);
-
-    if (!hasWorkouts) {
-      // No workouts found, send a welcoming first-time message
-      console.log(`[CHAT] No workouts found for user ${userId}`);
-      return userDisplayName 
-        ? `Welcome to your fitness journey, ${userDisplayName}! Ready to log your first workout? Let me know how I can help you get started.`
-        : "Welcome to your fitness journey! Ready to log your first workout? Let me know how I can help you get started.";
-    }
-
-    // Get workout stats for most frequent type
-    const workoutsCollection = await getCollection("workouts");
-    const workoutTypes = await workoutsCollection
-      .aggregate([
-        { $match: { userId: new ObjectId(userId) } },
-        { $group: { _id: "$type", count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-      ])
-      .toArray();
-
-    // Calculate streak and activity patterns
-    let lastWorkoutDate = new Date(recentWorkouts[0].date);
-    const daysSinceLastWorkout = Math.floor(
-      (now.getTime() - lastWorkoutDate.getTime()) / (1000 * 60 * 60 * 24),
-    );
-
-    // Check if there's a workout scheduled for today
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-
-    const todaysWorkouts = await workoutsCollection
-      .find({
-        userId: new ObjectId(userId),
-        date: { $gte: startOfToday, $lte: endOfToday },
-      })
-      .toArray();
-
-    // Add logic to determine if we need to show total workouts
-    const showTotalWorkouts =
-      thisWeeksWorkouts.length === 0 && totalWorkoutCount > 0;
-
-    // Build rich context for the greeting
-    const context = {
-      // User context
-      userDisplayName,
-      
-      // Time context
-      isWeekend,
-      isMorning,
-      isAfternoon,
-      isEvening,
-      dayOfWeek,
-      dayName: [
-        "Sunday",
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-      ][dayOfWeek],
-
-      // Workout context
-      totalWorkouts: totalWorkoutCount,
-      workoutsThisWeek: thisWeeksWorkouts.length,
-      daysSinceLastWorkout,
-      hasWorkoutToday: todaysWorkouts.length > 0,
-      scheduledWorkoutToday:
-        todaysWorkouts.length > 0 ? todaysWorkouts[0].type : null,
-
-      // Most recent workout
-      lastWorkout: {
-        type: recentWorkouts[0].type,
-        date: new Date(recentWorkouts[0].date).toISOString(),
-        distance: recentWorkouts[0].distance,
-        duration: recentWorkouts[0].duration,
-        intensity: recentWorkouts[0].intensity,
-      },
-
-      // Workout patterns
-      preferredActivity: workoutTypes.length > 0 ? workoutTypes[0]._id : null,
-      isConsistent: daysSinceLastWorkout <= 3, // Consider consistent if workout in last 3 days
-      needsMotivation: daysSinceLastWorkout > 5, // Needs motivation if no workout in 5+ days
-
-      // Achievement context (basic)
-      isRecentAchievement:
-        totalWorkoutCount % 10 === 0 || totalWorkoutCount % 25 === 0,
-      recentMilestone:
-        totalWorkoutCount % 25 === 0
-          ? totalWorkoutCount
-          : totalWorkoutCount % 10 === 0
-            ? totalWorkoutCount
-            : null,
-
-      // Weekly status
-      showTotalWorkouts,
-      noWorkoutsThisWeek: thisWeeksWorkouts.length === 0,
-      weeklyStatus:
-        thisWeeksWorkouts.length === 0
-          ? "no workouts yet this week"
-          : `${thisWeeksWorkouts.length} workout${thisWeeksWorkouts.length === 1 ? "" : "s"} this week`,
-    };
-
-    // Safely serialize the context to JSON
-    const safeContext = JSON.stringify(context);
-
-    // Use Anthropic Claude to generate a personalized greeting
-    const response = await client.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 300,
-      temperature: 0.9,
-      system: `Act as a fitness coach creating a personalized greeting.
-
-IMPORTANT: The user's name is "${userDisplayName}". ALWAYS use this exact name when addressing them. NEVER use any other names or generic terms.
-
-REQUIREMENTS:
-1. Keep to 1-2 short sentences
-2. Mention one specific workout data point
-3. Reference time of day/week
-4. Use the user's exact name naturally
-5. Avoid generic greetings
-6. Be motivational but authentic`,
-      messages: [
-        {
-          role: "user",
-          content: safeContext,
-        },
-      ],
-    });
-
-    return getTextFromResponse(response.content) || null;
+    if (!user) return null;
+    return `Hello ${user.nickname || user.name || 'there'}`;
   } catch (error) {
-    console.error("Error generating personalized greeting:", error);
-    return null; // Fall back to default greeting
+    console.error('Error generating greeting:', error);
+    return null;
   }
 }
 
@@ -1100,620 +953,82 @@ function getTextFromResponse(content: any): string | undefined {
 
 export async function POST(request: Request) {
   try {
-    // TEMPORARY DEBUG MODE - Add test user ID bypass
-    // TO BE REMOVED IN PRODUCTION
-    const body = await request.json();
-    const testUserId = body.testUserId;
-    const isDebugMode = body.debug === true && testUserId;
-    let userId;
-    let session;
-    
-    if (isDebugMode) {
-      console.log("[CHAT] DEBUG MODE - Using test user ID:", testUserId);
-      userId = testUserId;
-      // Create a minimal session object for the rest of the code
-      session = { 
-        user: { 
-          id: testUserId,
-          name: "Test User",
-          nickname: "Tester"
-        } 
-      };
-    } else {
-      // Normal authentication flow
-      session = await getServerSession(authOptions);
-      if (!session || !session.user) {
-        return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-      }
-      userId = session.user.id;
-    }
-    
-    const messages = body.messages;
-    const messageContent = messages[messages.length - 1].content;
-
-    // Default system message
-    let systemMessage = `Act as Aivery, a fitness assistant that helps track workouts.
-
-1. Use client's exact name 
-2. Provide concise responses
-3. Reference specific workout data
-4. Guide on workout logging when appropriate
-5. Be supportive but not overly enthusiastic`;
-
-    // Fetch user's AI preferences
-    let aiPreferences = {};
-
-    try {
-      if (session?.user?.id) {
-        await dbConnect();
-        const userId = session.user.id;
-        const user = await User.findById(userId)
-          .select("aiPreferences nickname name")
-          .lean() as UserDocument;
-
-        if (user) {
-          aiPreferences = user.aiPreferences || {};
-
-          // Add user's name information to system message if available
-          const userNickname = user.nickname;
-          const userName = user.name;
-
-          if (userNickname || userName) {
-            systemMessage += `\n\nThe user's name is "${userNickname || userName}". Always address them by this exact name when appropriate. NEVER substitute it with any other name like "Alex" or generic terms if you know their actual name.`;
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching user data for chat:", error);
-      // Continue with session data if database fetch fails
-    }
-
-    // Check for special command - greeting
-    if (body.greeting) {
-      const greeting = await generatePersonalizedGreeting(userId);
-      if (greeting) {
-        return NextResponse.json({ greeting });
-      }
-    }
-
-    // Validate user session
-    if (!session || !session.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
       return NextResponse.json(
-        { error: "You must be logged in to use the chat" },
-        { status: 401 },
+        { error: "Unauthorized" },
+        { status: 401 }
       );
     }
 
-    const userMessages = messages.filter((m: any) => m.role === "user");
-    const latestUserMessage =
-      userMessages[userMessages.length - 1]?.content || "";
+    const { messages } = await request.json();
+    const userMessage = messages[messages.length - 1].content;
 
-    // Check if this is a request for an initial greeting
-    const isGreetingRequest =
-      messages.length === 1 &&
-      messages[0].role === "user" &&
-      messages[0].content === "__GREETING__";
-
-    if (isGreetingRequest && session?.user?.id) {
+    // If it's a workout-related query, use the workout analysis endpoint
+    if (isWorkoutQuery(userMessage)) {
       try {
-        const personalizedGreeting = await generatePersonalizedGreeting(
-          session.user.id,
-        );
-
-        if (personalizedGreeting) {
-          return new Response(personalizedGreeting, {
-            headers: {
-              "Content-Type": "text/plain; charset=utf-8",
-            },
-          });
-        }
-      } catch (error) {
-        console.error("Error in greeting generation:", error);
-        // Continue with normal processing if greeting fails
-      }
-    }
-
-    // Ensure session user is properly serialized for sending to the AI
-    const safeUser = {
-      id:
-        typeof session.user.id === "string"
-          ? session.user.id
-          : String(session.user.id),
-      name: typeof session.user.name === "string" ? session.user.name : null,
-      email: typeof session.user.email === "string" ? session.user.email : null,
-      image: typeof session.user.image === "string" ? session.user.image : null,
-      nickname:
-        typeof session.user.nickname === "string"
-          ? session.user.nickname
-          : null,
-    };
-
-    // Always get the latest user data from the database to ensure we have the current nickname
-    try {
-      await dbConnect();
-      const userDoc = await User.findById(session.user.id)
-        .select("nickname name")
-        .lean() as UserDocument;
-      if (userDoc) {
-        const userName = userDoc.nickname || userDoc.name;
-
-        if (userName) {
-          systemMessage += `\n\nThe user's name is "${userName}". Always address them by this exact name when appropriate. NEVER substitute it with any other name like "Alex" or generic terms if you know their actual name.`;
-        }
-
-        // Rest of existing code for AI preferences
-      }
-    } catch (error) {
-      console.error("Error fetching user data for chat:", error);
-      // Continue with session data if database fetch fails
-    }
-
-    // Log the final user data being used
-    console.log(
-      `[CHAT] Final user data: id=${safeUser.id}, nickname=${safeUser.nickname}, name=${safeUser.name}`,
-    );
-
-    // Create a system prompt with properly escaped user information
-    const userNickname =
-      safeUser.nickname || safeUser.name || "their name hasn't been set yet";
-    const nameResponse = `Your name is ${safeUser.nickname || safeUser.name || "not set in your profile yet"}. How can I help with your fitness goals today?`;
-
-    systemMessage += `\n\nUser Personalization Information:
-    - The user's name/nickname is "${userNickname}".
-    - Always use this name when directly asked about the user's name/nickname.
-    - When the user asks "what's my name" or similar questions, directly answer with their name.
-
-YOUR PERSONALITY & STYLE:
-- Be warm, approachable and use natural language (not robotic or overly formal)
-- Match the user's energy - casual with casual users, more technical with fitness enthusiasts
-- Keep responses concise but helpful - don't ramble
-- Use emojis sparingly but naturally to add personality 💪 🏃‍♀️
-- Address the user directly and conversationally
-- Show genuine enthusiasm for the user's fitness journey
-- When appropriate, share brief personal anecdotes as if you were a real coach
-
-YOUR CAPABILITIES:
-- Provide fitness advice and workout recommendations
-- Answer questions about training techniques and nutrition
-- Motivate users in their fitness journey
-- Suggest improvements to workout routines
-- Explain exercise concepts in easy-to-understand terms
-
-IMPORTANT - DATA HANDLING:
-- If the user asks about their specific workout data or statistics, DO NOT make up specific numbers
-- If a user asks about their workouts, the backend system will analyze their question and provide real data
-- Let the system handle questions about when/how far/how many workouts the user has done
-- For general fitness questions, provide helpful and accurate information
-
-RESPONSE GUIDELINES:
-- For greeting messages like "hi" or "hey", respond casually and use their name when possible
-- Be conversational first, informational second
-- Use natural language patterns with contractions (I'm, you're, that's)
-- Vary your responses - don't be repetitive or formulaic
-- Be encouraging without being cheesy
-
-For example:
-- User: "How was my run?" → Let the system analyze this query for specific data
-- User: "Can you help with my workouts?" → "For sure! What kind of training are you into right now, and what specifically can I help with?"
-- User: "What's my name?" → "${nameResponse}"
-`;
-
-    // Ensure system message is properly formatted (no backticks)
-    if (systemMessage.startsWith("`") || systemMessage.endsWith("`")) {
-      systemMessage = systemMessage.replace(/^`|`$/g, "");
-    }
-
-    // Add direct handling for "what's my name" type questions before calling Anthropic
-    const isNameQuestion =
-      latestUserMessage.toLowerCase().includes("what's my name") ||
-      latestUserMessage.toLowerCase().includes("whats my name") ||
-      latestUserMessage.toLowerCase().includes("what is my name");
-
-    if (isNameQuestion && safeUser.nickname) {
-      return new Response(
-        `Your name is ${safeUser.nickname}. How can I help with your fitness journey today?`,
-        {
+        const response = await fetch(new URL('/api/chat/workout-analysis', request.url), {
+          method: 'POST',
           headers: {
-            "Content-Type": "text/plain; charset=utf-8",
+            'Content-Type': 'application/json',
           },
-        },
-      );
+          body: JSON.stringify({ message: userMessage, userId: session.user.id }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Workout analysis failed: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        return NextResponse.json({ response: data.message });
+      } catch (error) {
+        console.error('Workout analysis error:', error);
+        return NextResponse.json({ 
+          response: "I'm having trouble analyzing your workout data right now. Please try again in a moment." 
+        });
+      }
     }
 
-    // Determine if this question is asking about workout data
-    console.log("[CHAT] Checking if message is a data query:", latestUserMessage);
-    const dataKeywords = [
-      "workout",
-      "run",
-      "exercise",
-      "distance",
-      "pace",
-      "time",
-      "how many",
-      "how much",
-      "how far",
-      "how long",
-      "stats",
-      "summary",
-      "progress",
-      "tracked",
-      "show me",
-      "display",
-      "list",
-      "see my",
-      "take a look",
-      "this week",
-      "last week",
-      "recent",
-      "mile",
-      "kilometers",
-      "training",
-      "activity",
-      "fitness",
-      "cardio",
-      "strength",
-      "gym",
-      "session",
-      "log",
-      "record",
-      "history",
-    ];
+    // For non-workout queries, proceed with regular chat
+    const greeting = await generatePersonalizedGreeting(session.user.id);
+    
+    const response = await client.messages.create({
+      model: "claude-3-opus-20240229",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "system",
+          content: `You are an AI fitness coach. ${greeting ? `The user's name is ${greeting}.` : ''} 
+          Keep responses concise and focused on fitness, health, and wellness topics.
+          If asked about specific workout data or statistics, inform the user you'll need to analyze their workout history first.`
+        },
+        ...messages
+      ],
+    });
 
-    const isLikelyDataQuery = dataKeywords.some((keyword) =>
-      latestUserMessage.toLowerCase().includes(keyword),
+    // Handle the response content safely
+    const responseText = response.content[0]?.type === 'text' 
+      ? response.content[0].text 
+      : "I'm having trouble processing your request right now.";
+
+    return NextResponse.json({ response: responseText });
+  } catch (error) {
+    console.error('Chat API Error:', error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
     );
-
-    console.log("[CHAT] Is data query?", isLikelyDataQuery, "User ID:", session?.user?.id);
-
-    if (isLikelyDataQuery && session?.user?.id) {
-      console.log("[CHAT] Starting data query processing for user:", session.user.id);
-      try {
-        console.log("[CHAT] Processing likely data query:", latestUserMessage);
-
-        // First, analyze the query to understand what the user is asking for
-        const queryAnalysisResponse = await client.messages.create({
-          model: "claude-3-haiku-20240307",
-          max_tokens: 500,
-          temperature: 0,
-          system: `Act as a fitness data analyst. Extract query details into JSON.
-
-OUTPUT:
-{
-  "dataType": "runs|workouts|distance|duration|count|lastRun|longestRun|workoutList",
-  "timeFrame": "week|month|year|2024|2025|all",
-  "filters": {
-    "workoutType": "run|strength|cycling", 
-    "format": "list|single|summary|detailed"
   }
 }
 
-MAPPINGS:
-- "see workouts" → dataType="workoutList"
-- "this week" → timeFrame="week"
-- Return only JSON, no explanations`,
-          messages: [
-            {
-              role: "user",
-              content: latestUserMessage,
-            },
-          ],
-        });
-
-        // Parse the analysis
-        const analysisText =
-          getTextFromResponse(queryAnalysisResponse.content) || "{}";
-        console.log("[CHAT] Analysis text:", analysisText);
-        
-        let queryAnalysis: QueryAnalysis = {
-          dataType: '',
-          timeFrame: '',
-          filters: {
-            workoutType: '',
-            format: '',
-            includeDetails: false,
-            aggregation: '',
-            metric: ''
-          },
-          workoutType: ''
-        };
-        
-        try {
-          const parsed = JSON.parse(analysisText);
-          queryAnalysis = {
-            ...queryAnalysis,
-            ...parsed
-          };
-          
-          // Check if this is a query about last week, month, or year
-          if (latestUserMessage.toLowerCase().includes("last week")) {
-            console.log("[CHAT] Detected 'last week' query, setting timeFrame to last-week");
-            queryAnalysis.timeFrame = "last-week";
-          } else if (latestUserMessage.toLowerCase().includes("last month")) {
-            console.log("[CHAT] Detected 'last month' query, setting timeFrame to last-month");
-            queryAnalysis.timeFrame = "last-month";
-          } else if (latestUserMessage.toLowerCase().includes("last year")) {
-            console.log("[CHAT] Detected 'last year' query, setting timeFrame to last-year");
-            queryAnalysis.timeFrame = "last-year";
-          }
-          
-          // Detect workout type from query if not provided by analysis
-          if (!queryAnalysis.workoutType && !queryAnalysis.filters?.workoutType) {
-            if (latestUserMessage.toLowerCase().includes("run")) {
-              console.log("[CHAT] Detected running query");
-              queryAnalysis.workoutType = "running";
-            } else if (latestUserMessage.toLowerCase().includes("swim")) {
-              console.log("[CHAT] Detected swimming query");
-              queryAnalysis.workoutType = "swimming";
-            } else if (latestUserMessage.toLowerCase().includes("bike") || 
-                     latestUserMessage.toLowerCase().includes("cycle") || 
-                     latestUserMessage.toLowerCase().includes("cycling")) {
-              console.log("[CHAT] Detected cycling query");
-              queryAnalysis.workoutType = "cycling";
-            }
-          }
-          
-          console.log("[CHAT] Final query analysis:", queryAnalysis);
-        } catch (error) {
-          console.error("[CHAT] Error parsing query analysis:", error);
-          console.error("[CHAT] Raw analysis text:", analysisText);
-          // Keep default structure on parse error
-        }
-
-        // Get fresh workout data based on the analysis
-        let workouts = [];
-        let count = 0;
-        
-        // Handle special time cases like "last week"
-        if (queryAnalysis.timeFrame === "last-week" || queryAnalysis.timeFrame === "last-month" || queryAnalysis.timeFrame === "last-year") {
-          const now = new Date();
-          let startDate = new Date();
-          let endDate = new Date();
-          
-          if (queryAnalysis.timeFrame === "last-week") {
-            // First get the start of this week (Monday)
-            const day = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
-            const daysFromMonday = day === 0 ? 6 : day - 1; // Convert to Monday=0, Sunday=6
-            const thisWeekStart = new Date(now);
-            thisWeekStart.setDate(now.getDate() - daysFromMonday);
-            thisWeekStart.setHours(0, 0, 0, 0);
-            
-            // Last week is 7 days before the start of this week
-            startDate = new Date(thisWeekStart);
-            startDate.setDate(thisWeekStart.getDate() - 7);
-            
-            endDate = new Date(thisWeekStart);
-            endDate.setDate(thisWeekStart.getDate() - 1);
-            endDate.setHours(23, 59, 59, 999);
-            
-            console.log("[CHAT] Looking for workouts from last week (Monday-Sunday):", 
-              startDate.toISOString(), "to", endDate.toISOString());
-          } else if (queryAnalysis.timeFrame === "last-month") {
-            // Calculate last month's start and end dates
-            const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
-            const lastMonthYear = lastMonth === 11 ? now.getFullYear() - 1 : now.getFullYear();
-            
-            startDate = new Date(lastMonthYear, lastMonth, 1);
-            endDate = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999);
-          } else if (queryAnalysis.timeFrame === "last-year") {
-            // Calculate last year's start and end dates
-            const lastYear = now.getFullYear() - 1;
-            startDate = new Date(lastYear, 0, 1);
-            endDate = new Date(lastYear, 11, 31, 23, 59, 59, 999);
-          }
-          
-          // Connect to DB and find workouts in the specific date range
-          await dbConnect();
-          const workoutsCollection = await getCollection("workouts");
-          
-          // Create filter for specific time period
-          const filter: any = { 
-            userId: new ObjectId(session.user.id),
-            date: { $gte: startDate, $lte: endDate }
-          };
-          
-          // Add workout type filter if specified
-          const workoutType = queryAnalysis.workoutType;
-          if (workoutType && typeof workoutType === 'string') {
-            const typeRegex = new RegExp(workoutType, "i");
-            filter.type = { $regex: typeRegex };
-          }
-          
-          // Get workouts for the specific time period
-          workouts = await workoutsCollection.find(filter).sort({ date: -1 }).toArray();
-          count = workouts.length;
-          
-          console.log(`[CHAT] Found ${count} workouts in specified time period`);
-        } else {
-          // Use the normal filtered workout function for other time periods
-          const result = await getFreshFilteredWorkouts(
-            session.user.id,
-            queryAnalysis.timeFrame,
-            queryAnalysis.workoutType,
-          );
-          
-          workouts = result.workouts;
-          count = result.count;
-        }
-
-        // If we have workout data, format it into a response
-        if (workouts.length > 0 || count > 0) {
-          // Generate workout type summaries for more consistent data presentation
-          const workoutSummaries = generateWorkoutTypeSummaries(workouts);
-
-          // Format workouts for better readability
-          const formatWorkouts = (workouts: any[]) => {
-            return workouts.map(w => ({
-              id: w._id.toString(),
-              type: w.type,
-              date: new Date(w.date).toLocaleDateString('en-US', {
-                weekday: 'short',
-                month: 'short',
-                day: 'numeric'
-              }),
-              distance: w.distance ? `${parseFloat(w.distance).toFixed(1)} km` : '',
-              duration: w.duration ? formatDuration(w.duration) : '',
-              notes: w.notes || ''
-            }));
-          };
-          
-          // Format duration in hours and minutes
-          const formatDuration = (minutes: number) => {
-            const hours = Math.floor(minutes / 60);
-            const mins = Math.floor(minutes % 60);
-            
-            if (hours > 0) {
-              return `${hours}h ${mins}m`;
-            }
-            return `${mins} min`;
-          };
-          
-          // Add workout summaries for each type
-          const formatWorkoutSummaries = (summaries: any, type: string) => {
-            const typeSummary = summaries?.byType?.[type];
-            if (!typeSummary || !typeSummary.hasWorkouts) return null;
-            
-            return {
-              count: typeSummary.count,
-              totalDistance: typeSummary.hasDistance 
-                ? `${parseFloat(typeSummary.totalDistance).toFixed(1)} km` 
-                : null,
-              totalDuration: formatDuration(typeSummary.totalDuration),
-              dateRange: typeSummary.dateRange?.formatted || null
-            };
-          };
-          
-          const contextMessage = JSON.stringify({
-            userQuery: latestUserMessage,
-            workouts: formatWorkouts(workouts),
-            workoutSummaries,
-            summariesByType: workoutSummaries.byType,
-            formattedSummary: formatWorkoutSummaries(workoutSummaries, queryAnalysis.workoutType || 'running'),
-            dateRange: workoutSummaries.dateRange,
-            count,
-            timeFrame: queryAnalysis.timeFrame || "all",
-            workoutType: queryAnalysis.workoutType,
-          });
-
-          // Generate a natural language response
-          const responseGeneration = await client.messages.create({
-            model: "claude-3-haiku-20240307",
-            max_tokens: 500,
-            temperature: 0.7,
-            system: `Act as a fitness coach answering workout questions based on real user data.
-
-FORMAT GUIDELINES:
-- Use **bold** for important numbers (distance, duration, counts)
-- Use *italics* for workout types
-- Use bullet points for listing multiple workouts
-- Be conversational and encouraging
-
-RESPONSE STRUCTURE:
-1. Direct answer to the question first with specific data values
-2. Include specific details for individual workouts if relevant
-3. Provide context about the time period (clearly specify "last week", "this week", etc.)
-4. End with personalized encouragement
-
-ACCURACY REQUIREMENTS:
-- Always use the exact data units provided (km, minutes, etc.)
-- Only include data from the timeframe that was requested
-- Don't invent workouts or details not in the data
-- For date ranges, use formatted dates from the data`,
-            messages: [
-              {
-                role: "user",
-                content: contextMessage,
-              },
-            ],
-          });
-
-          return new Response(
-            getTextFromResponse(responseGeneration.content) ||
-              "I couldn't find any workout data that matches your request.",
-            {
-              headers: {
-                "Content-Type": "text/plain; charset=utf-8",
-              },
-            },
-          );
-        } else {
-          // No workouts found, create a friendly response
-          console.log(
-            "[CHAT] No matching workouts found, creating specific response",
-          );
-
-          // Create friendly response about no workouts found
-          const timeFrameText = "recently"; // Default to a generic timeframe if no specific analysis available
-
-          const workoutTypeText = "any workouts recently"; // Default to generic workout type
-
-          // Create a more personalized no-workouts response
-          const noWorkoutsResponse = await client.messages.create({
-            model: "claude-3-haiku-20240307",
-            max_tokens: 100,
-            temperature: 0.8,
-            system: `Act as a fitness coach responding to someone with no workouts.
-
-1. One encouraging sentence only
-2. Acknowledge missing workouts 
-3. Include specific action suggestion
-4. Be positive, optional single emoji`,
-            messages: [
-              {
-                role: "user",
-                content: `Create a response about not having ${workoutTypeText}.`,
-              },
-            ],
-          });
-
-          return new Response(
-            getTextFromResponse(noWorkoutsResponse.content) ||
-              `I don't see ${workoutTypeText}. Would you like to log a workout now?`,
-            {
-              headers: {
-                "Content-Type": "text/plain; charset=utf-8",
-              },
-            },
-          );
-        }
-      } catch (error) {
-        console.error("Error processing data query:", error);
-        return new Response(
-          "I'm having trouble processing your workout data request right now. Please try again in a moment.",
-          {
-            headers: { "Content-Type": "text/plain; charset=utf-8" },
-            status: 503,
-          },
-        );
-      }
-    }
-
-    // If we've gotten here, it's not a data query or name question - let's handle it as a regular chat message
-    const response = await client.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 500,
-      temperature: 0.7,
-      system: systemMessage,
-      messages: messages.map((m: any) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    });
-
-    const responseText = getTextFromResponse(response.content);
-
-    return new Response(responseText, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-      },
-    });
-  } catch (error) {
-    console.error("Error processing chat request:", error);
-    return new Response(
-      "I'm having trouble processing your chat request right now. Please try again in a moment.",
-      {
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-        status: 503,
-      },
-    );
-  }
+function isWorkoutQuery(message: string): boolean {
+  const workoutKeywords = [
+    'workout', 'exercise', 'run', 'running', 'swim', 'swimming',
+    'bike', 'cycling', 'strength', 'gym', 'weight', 'training',
+    'distance', 'time', 'duration', 'pace', 'stats', 'progress'
+  ];
+  
+  return workoutKeywords.some(keyword => 
+    message.toLowerCase().includes(keyword)
+  );
 }
