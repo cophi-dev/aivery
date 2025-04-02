@@ -450,7 +450,7 @@ const processAIDataRequest = async (request: AIQueryRequest) => {
 
     // First, use Anthropic Claude to understand what the user is asking for
     const queryAnalysisResponse = await client.messages.create({
-      model: "claude-3-haiku-20240307",
+      model: "claude-3-5-sonnet-20240620",
       max_tokens: 500,
       temperature: 0,
       system: `Act as a fitness data analyst. Extract query details into JSON.
@@ -841,7 +841,7 @@ MAPPINGS:
       });
 
       const responseGeneration = await client.messages.create({
-        model: "claude-3-haiku-20240307",
+        model: "claude-3-5-sonnet-20240620",
         max_tokens: 500,
         temperature: 0.7,
         system: `Act as a fitness coach answering workout questions based on real user data.
@@ -894,7 +894,7 @@ ACCURACY REQUIREMENTS:
 
     // Create a more personalized no-workouts response
     const noWorkoutsResponse = await client.messages.create({
-      model: "claude-3-haiku-20240307",
+      model: "claude-3-5-sonnet-20240620",
       max_tokens: 100,
       temperature: 0.8,
       system: `Act as a fitness coach responding to someone with no workouts.
@@ -992,7 +992,7 @@ export async function POST(request: Request) {
     const greeting = await generatePersonalizedGreeting(session.user.id);
     
     const response = await client.messages.create({
-      model: "claude-3-opus-20240229",
+      model: "claude-3-5-sonnet-20240620",
       max_tokens: 1024,
       messages: [
         {

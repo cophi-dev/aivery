@@ -1,7 +1,7 @@
 import { getWorkoutById, getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { redirect } from "next/navigation"
+import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -80,30 +80,6 @@ interface CardioDetails {
   }
 }
 
-interface Workout {
-  id: string
-  type: string
-  name?: string
-  duration: number
-  distance?: number
-  intensity: string
-  date: Date
-  notes?: string
-  cardioDetails?: CardioDetails
-  stravaLink?: string
-  _id: string
-  exercises?: Array<{
-    _id?: string
-    name: string
-    sets: Array<{
-      weight: number
-      reps: number
-    }>
-  }>
-  averageHeartRate?: number
-  maxHeartRate?: number
-}
-
 // Function to extract Strava links from workout notes
 function extractStravaLinkFromNotes(notes?: string): string | undefined {
   if (!notes) return undefined;
@@ -167,7 +143,7 @@ function StravaLogo() {
 }
 
 // Function to get a hardcoded Strava link based on workout type and date for the demo
-function getFixedStravaLink(workout: Workout): string | undefined {
+function getFixedStravaLink(workout: WorkoutData): string | undefined {
   // Match workout to the correct Strava links shared by the user
   const workoutDate = new Date(workout.date);
   
@@ -263,34 +239,45 @@ function calculateExerciseVolume(exercise: { name: string, sets: Array<{ weight:
 
 export default async function WorkoutPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
-  if (!session?.user) {
-    redirect("/auth/signin")
+  if (!session) {
+    redirect("/signin?callbackUrl=/workout/" + params.id)
   }
 
-  // Log to console for debugging
-  console.log("Loading workout ID:", params.id)
-
-  const workout = await getWorkoutById(params.id) as Workout | null
+  // Fetch workout data using the correct type
+  const workout: WorkoutData | null = await getWorkoutById(params.id)
+  
+  // Handle case where workout is not found
   if (!workout) {
-    redirect("/workouts")
+    notFound(); // Use Next.js notFound helper
   }
 
   // Get the proper Strava link for this workout
-  const stravaLink = getFixedStravaLink(workout);
-  const isValidStrava = isValidStravaLink(stravaLink);
+  const stravaLink = getFixedStravaLink(workout) || workout.stravaLink || null;
+
+  // Calculate total volume if strength workout
+  const totalVolume = workout.type === 'strength' && workout.exercises
+    ? workout.exercises.reduce((sum, ex) => sum + calculateExerciseVolume(ex), 0)
+    : null;
+    
+  // Calculate pace if running workout and distance/duration exist
+  const pace = (workout.type === 'running' && workout.distance && workout.duration)
+    ? workout.duration / workout.distance // Assuming distance is in km for pace calculation
+    : null;
+    
+  // Correctly access nested heart rate properties
+  const averageHeartRate = workout.cardioDetails?.heartRate?.average;
+  const maxHeartRate = workout.cardioDetails?.heartRate?.max;
   
-  // Debug Strava link info
-  console.log("Strava link info:", {
-    fixedLink: stravaLink,
-    isValid: isValidStrava,
-    workoutType: workout.type,
-    workoutDate: workout.date,
-    hasStravaLinkField: !!workout.stravaLink,
-    notes: workout.notes ? workout.notes.substring(0, 100) + '...' : 'No notes'
-  });
+  // Get previous workouts of the same type for the graph
+  const previousWorkouts = await getPreviousWorkoutsByType(
+    workout.userId, 
+    workout.type, 
+    workout.date, 
+    10 // Load up to 10 previous workouts
+  );
 
   // Safely access duration (seconds) and distance (kilometers)
-  const duration = typeof workout.duration === 'number' ? workout.duration : 0;
+  const duration = workout.duration; // Duration is typically always present
   const potentialDistance = workout.distance ?? workout.cardioDetails?.distance; // Assume KILOMETERS (as per database)
   const distanceValueKm: number | null = 
     typeof potentialDistance === 'number' ? potentialDistance : null;
@@ -313,19 +300,8 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
   // ---- DEBUGGING LOGS END ----
 
   // Safely access heart rate data
-  const avgHeartRate = typeof workout.averageHeartRate === 'number' ? Math.round(workout.averageHeartRate) : null;
-  const maxHeartRate = typeof workout.maxHeartRate === 'number' ? Math.round(workout.maxHeartRate) : null;
-  const elevationGain = workout.cardioDetails?.elevationGain
-  const power = workout.cardioDetails?.power?.average
-
-  // Fetch previous workouts of the same type
-  const previousWorkouts = await getPreviousWorkoutsByType(
-    session.user.id, // Assuming user ID is available in session
-    workout.type,
-    new Date(workout.date),
-    // Remove the limit to fetch more history for filtering, or set a higher limit like 50/100
-    // 50 // Example: Fetch last 50 workouts
-  )
+  const elevationGain = workout.cardioDetails?.elevationGain;
+  const power = workout.cardioDetails?.power?.average;
 
   return (
     <div className="container max-w-screen-xl mx-auto px-4 py-6 md:py-8">
@@ -415,7 +391,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
               <div className="flex items-center gap-2">
                 <Dumbbell className="h-4 w-4 md:h-5 md:w-5 text-primary" />
                 <span className="text-lg md:text-2xl font-bold">
-                  {workout.exercises.reduce((total, exercise) => total + calculateExerciseVolume(exercise), 0).toLocaleString()} kg
+                  {totalVolume?.toLocaleString()} kg
                 </span>
                 <Badge variant="outline" className="ml-2 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-400/20">
                   <Trophy className="h-3 w-3 mr-1" /> PR
@@ -470,7 +446,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
         )}
 
         {/* Average Heart Rate Card (only if data exists) */}
-        {avgHeartRate !== null && workout.type === 'running' && (
+        {averageHeartRate !== null && workout.type === 'running' && (
           <Card>
             <CardHeader className="pb-1 md:pb-2">
               <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground flex items-center">
@@ -478,7 +454,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <span className="text-lg md:text-2xl font-bold">{avgHeartRate} <span className="text-sm text-muted-foreground">bpm</span></span>
+              <span className="text-lg md:text-2xl font-bold">{averageHeartRate} <span className="text-sm text-muted-foreground">bpm</span></span>
             </CardContent>
           </Card>
         )}
@@ -626,7 +602,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           <CardContent>
             <p className="text-sm md:text-base text-muted-foreground whitespace-pre-wrap">{workout.notes}</p>
             
-            {isValidStrava && (
+            {isValidStravaLink(stravaLink) && (
               <div className="mt-4">
                 <Button 
                   className="w-full sm:w-auto bg-[#FC4C02] hover:bg-[#d44102] text-white font-semibold py-2 rounded-md transition-colors duration-200"
@@ -645,7 +621,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
         </Card>
       )}
 
-      {!workout.notes && isValidStrava && (
+      {!workout.notes && isValidStravaLink(stravaLink || undefined) && (
         <Card className="mb-6 md:mb-8">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">External Links</CardTitle>
@@ -666,35 +642,20 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
         </Card>
       )}
 
-      {/* Display exercises for strength workouts */}
-      {workout.type === "strength" && workout.exercises && workout.exercises.length > 0 && (
+      {/* Strength Exercises Card - Corrected key */}
+      {workout.type === 'strength' && workout.exercises && workout.exercises.length > 0 && (
         <Card className="mb-6 md:mb-8">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">
-              <div className="flex items-center gap-2">
-                <Dumbbell className="h-5 w-5" />
-                Exercises
-              </div>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Dumbbell className="h-5 w-5" />
+              Exercises
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {workout.exercises.map((exercise, exerciseIndex) => (
-                <div key={exercise._id || exerciseIndex} className="border rounded-md p-4 hover:bg-accent/50 hover:border-primary/20 transition-colors group">
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center">
-                      <Link href={`/exercises?name=${encodeURIComponent(exercise.name)}`} className="font-medium text-base group-hover:text-primary transition-colors flex items-center">
-                        {exercise.name}
-                        <ChevronRight className="h-4 w-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-primary" />
-                      </Link>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-xs whitespace-nowrap text-muted-foreground">
-                        Total Volume: {calculateExerciseVolume(exercise)} kg
-                      </span>
-                    </div>
-                  </div>
-                  
+              {workout.exercises.map((exercise, index) => (
+                <div key={index} className="border-b last:border-b-0 pb-4 last:pb-0"> {/* Use index as key since Exercise doesn't have _id */}
+                  <h3 className="font-semibold text-base mb-2">{exercise.name}</h3>
                   <div className="space-y-2">
                     {exercise.sets.map((set, setIndex) => (
                       <div key={setIndex} className="flex items-center text-sm">

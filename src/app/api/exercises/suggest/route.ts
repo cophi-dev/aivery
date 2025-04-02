@@ -92,7 +92,7 @@ async function inferExerciseDetails(exerciseName: string) {
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
+      model: "claude-3-5-sonnet-20240620",
       max_tokens: 150,
       system: `Act as a fitness expert identifying exercise details.
 
