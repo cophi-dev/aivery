@@ -4,81 +4,103 @@ import { useRef, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LucideSend, LucideUser, LucideLoader, LucideRefreshCw } from "lucide-react"
 import { useSession } from "next-auth/react"
 import Image from "next/image"
 import ReactMarkdown from "react-markdown"
+import { cn } from "@/lib/utils"
+import { UserAvatar } from "@/components/user-avatar"
 
-// Simple chat page with manually managed messages
+// Define Message type clearly
+interface Message {
+  id: string;
+  role: 'user' | 'assistant'; // Use literal types
+  content: string;
+}
+
+// Simplified ChatMessage component
+interface ChatMessageProps {
+  message: Message;
+}
+
+const ChatMessage = ({ message }: ChatMessageProps) => {
+   const isUserMessage = message.role === 'user';
+   const { data: session } = useSession(); // Get session for user avatar
+   const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || 'U';
+
+   // Define loading state appearance directly if content is empty and role is assistant
+   const showLoading = message.role === 'assistant' && message.content === "";
+
+   return (
+     <div className={cn('flex items-end gap-2', {
+        'justify-end': isUserMessage,
+     })}>
+       {/* Avatar */}
+       <div className={cn('flex-shrink-0', { 'order-2': isUserMessage, 'order-1': !isUserMessage })}>
+         {isUserMessage ? (
+           <UserAvatar name={userDisplayName} imageUrl={session?.user?.image} size="sm" />
+         ) : (
+           <Avatar className="h-8 w-8 bg-primary/10 text-primary flex items-center justify-center">
+              <AvatarImage src="/aivery-logo.svg" alt="AI" />
+              <AvatarFallback>AI</AvatarFallback>
+           </Avatar>
+         )}
+       </div>
+       {/* Bubble */}
+       <div className={cn('px-3 py-1.5 rounded-lg max-w-[75%] break-words', {
+         'order-1 bg-primary text-primary-foreground': isUserMessage,
+         'order-2 bg-muted': !isUserMessage,
+       })}>
+         {showLoading ? (
+            <div className="flex items-center space-x-1">
+                <span className="h-1.5 w-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="h-1.5 w-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="h-1.5 w-1.5 bg-current rounded-full animate-bounce"></span>
+            </div>
+         ) : (
+            <ReactMarkdown 
+              className="prose prose-sm dark:prose-invert prose-p:m-0"
+              components={{
+                p: ({node, ...props}) => <span {...props} /> 
+              }}
+             >
+               {message.content}
+             </ReactMarkdown>
+         )}
+       </div>
+     </div>
+   );
+}; 
+
+// Main Chat Page Component
 export default function ChatPage() {
-  const { data: session } = useSession()
-  const scrollAreaRef = useRef<HTMLDivElement>(null)
-  const [input, setInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [chatId] = useState(`chat-${Date.now()}`)
-  
-  // Get user name for personalized welcome
-  const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there"
-  
-  // Initialize message state (we'll replace this with AI greeting after initialization)
-  const [messages, setMessages] = useState([
+  const { data: session } = useSession();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([ // Use Message[] type
     {
-      id: "welcome-message",
-      role: "assistant",
+      id: "initial-loading",
+      role: "assistant", // Correct role type
       content: "Loading your personalized greeting...",
     },
-  ])
+  ]);
 
-  // Fetch personalized greeting on initial load
+  const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there";
+
+  // Fetch initial greeting (simplified)
   useEffect(() => {
-    const fetchGreeting = async () => {
-      if (!session?.user) return; // Don't fetch if not logged in
-      
-      try {
-        setIsLoading(true);
-        // Call the chat API with a special message to request a greeting
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messages: [{ role: "user", content: "__GREETING__" }],
-            chatId
-          }),
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to get greeting');
-        }
-        
-        // Get the response text (personalized greeting)
-        const greeting = await response.text();
-        
-        // Replace the initial message with the personalized greeting
-        setMessages([{
-          id: "welcome-message",
-          role: "assistant",
-          content: greeting || getRandomWelcomeMessage(userDisplayName)
-        }]);
-      } catch (error) {
-        // Fall back to random greeting if the API call fails
-        setMessages([{
-          id: "welcome-message",
-          role: "assistant",
+     // Directly set a random welcome message on load, removing initial API call
+     setMessages([{
+          id: "welcome-message-" + Date.now(),
+          role: "assistant", // Correct role type
           content: getRandomWelcomeMessage(userDisplayName)
         }]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchGreeting();
-  }, [session, chatId, userDisplayName]);
+    // No dependency array needed if it only runs once
+  }, []); // Removed dependencies to run only once
 
-  // Get a random welcome message for variety
   function getRandomWelcomeMessage(name: string): string {
     const welcomeMessages = [
       `Hey ${name}! 👋 I'm your fitness coach. What can I help you with today?`,
@@ -86,310 +108,138 @@ export default function ChatPage() {
       `Welcome ${name}! I'm your AI fitness buddy. How's your training going?`,
       `Hey there ${name}! 💪 What aspect of your fitness journey can I support you with today?`,
       `Hi ${name}! I'm your personal fitness assistant. What's on your workout agenda?`
-    ]
-    return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)]
+    ];
+    return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)];
   }
 
-  // Handle input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInput(e.target.value)
-  }
+    setInput(e.target.value);
+  };
 
-  // Handle message submission
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    
-    if (!input.trim()) return
-    
-    // Add user message to state
-    const userMessage = {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const currentMessageContent = input;
+    setInput(""); 
+
+    const userMessage: Message = {
       id: `user-${Date.now()}`,
-      role: "user",
-      content: input
-    }
-    
-    setMessages(prev => [...prev, userMessage])
-    setInput("")
-    setIsLoading(true)
+      role: "user", // Correct role type
+      content: currentMessageContent
+    };
+
+    // Add user message and a temporary empty assistant message for loading state
+    const loadingAssistantMessage: Message = {
+        id: `ai-loading-${Date.now()}`,
+        role: "assistant", // Correct role type
+        content: "" // Empty content signifies loading in ChatMessage component
+    };
+    const currentMessages = [...messages, userMessage];
+    setMessages([...currentMessages, loadingAssistantMessage]);
+    setIsLoading(true);
     
     try {
-      // Call the chat API
+      const history = currentMessages; // History includes the user message just added
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          chatId: chatId
+          query: currentMessageContent,
+          history: history 
         }),
-      })
-      
+      });
+
       if (!response.ok) {
-        throw new Error('Failed to get response')
+         let errorBody = "Failed to get response from server.";
+         try { errorBody = await response.text(); } catch (_) {}
+         console.error("API Error Response:", errorBody);
+         throw new Error(`API request failed: ${errorBody}`);
       }
       
-      // Check if response body exists
-      if (!response.body) {
-        throw new Error('Response body is null')
-      }
+      const text = await response.text();
+
+      const aiMessage: Message = {
+        id: `ai-${Date.now()}`,
+        role: "assistant", // Correct role type
+        content: text || "Sorry, I couldn't get a proper response."
+      };
       
-      // Create a new element for the AI response
-      const aiMessageId = `ai-${Date.now()}`
-      setMessages(prev => [...prev, {
-        id: aiMessageId,
-        role: "assistant",
-        content: ""
-      }])
-      
-      try {
-        // Get the text response
-        const text = await response.text()
-        
-        // Extract actual content from the formatted response
-        let cleanContent = ""
-        
-        // Parse the response by removing the special formatting if present
-        if (text.includes('0:"')) {
-          const lines = text.split('\n')
-          for (const line of lines) {
-            if (line.trim()) {
-              // Check if it contains actual text content (typically after 0:")
-              const contentMatch = line.match(/0:"([^"]*)"/)
-              if (contentMatch && contentMatch[1]) {
-                cleanContent += contentMatch[1]
-              } else if (!line.includes('f:') && !line.includes('e:') && !line.includes('d:')) {
-                // If no special formatting, just add the raw line
-                cleanContent += line
-              }
-            }
-          }
-        } else {
-          // If no special formatting, use the raw text
-          cleanContent = text
-        }
-        
-        // If we couldn't extract anything sensible, use a fallback
-        if (!cleanContent) {
-          cleanContent = "I'm here to help with your fitness journey. What would you like to know?"
-        }
-        
-        // Update the message with the cleaned content
-        setMessages(prev => prev.map(msg => 
-          msg.id === aiMessageId ? {...msg, content: cleanContent} : msg
-        ))
-      } catch (error) {
-        // Use a fallback message
-        setMessages(prev => prev.map(msg => 
-          msg.id === aiMessageId 
-            ? {...msg, content: "I'm here to help with your fitness journey. What would you like to know?"} 
-            : msg
-        ))
-      }
-      
-      setIsLoading(false)
-    } catch (error) {
-      // Add an error message
-      setMessages(prev => [...prev, {
+      // Replace the loading message with the actual response
+      setMessages(prev => prev.map(msg => 
+         msg.id === loadingAssistantMessage.id ? aiMessage : msg
+      ));
+
+    } catch (error: any) {
+      console.error("Chat Submission Error:", error);
+      const errorMessage: Message = {
         id: `error-${Date.now()}`,
-        role: "assistant",
-        content: "Sorry, I encountered an error. Please try again."
-      }])
-      
-      setIsLoading(false)
+        role: "assistant", // Correct role type
+        content: error.message || "Sorry, I encountered an error. Please try again."
+      };
+      // Replace the loading message with the error message
+       setMessages(prev => prev.map(msg => 
+         msg.id === loadingAssistantMessage.id ? errorMessage : msg
+      ));
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
 
-  // Force reset the chat to initial state
-  const resetChat = () => {
-    // Start with a loading state
-    setMessages([
-      {
-        id: "welcome-message",
-        role: "assistant",
-        content: "Loading your personalized greeting...",
-      },
-    ])
-    
-    // Fetch a new personalized greeting
-    const fetchGreeting = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messages: [{ role: "user", content: "__GREETING__" }],
-            chatId: `chat-${Date.now()}` // Generate a new chat ID for fresh context
-          }),
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to get greeting');
-        }
-        
-        const greeting = await response.text();
-        
-        setMessages([{
-          id: "welcome-message",
-          role: "assistant",
-          content: greeting || getRandomWelcomeMessage(userDisplayName)
-        }]);
-      } catch (error) {
-        setMessages([{
-          id: "welcome-message",
-          role: "assistant",
-          content: getRandomWelcomeMessage(userDisplayName)
-        }]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchGreeting();
-  }
-
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
+      scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [messages])
+  }, [messages]);
 
-  // Main chat UI
+  const resetChat = () => {
+     setInput("");
+     setIsLoading(false);
+     setMessages([{
+        id: "welcome-reset-" + Date.now(),
+        role: "assistant", // Correct role type
+        content: getRandomWelcomeMessage(userDisplayName)
+     }]);
+  };
+
+  // --- Render JSX ---
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col md:flex-row items-start justify-between mb-8">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">AI Fitness Coach</h1>
-          <p className="text-muted-foreground mt-2">Get personalized advice and track your fitness journey</p>
-        </div>
-        <div>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={resetChat}
-            className="mt-4 md:mt-0 flex items-center gap-2"
-          >
-            <LucideRefreshCw className="h-4 w-4" />
-            Reset Chat
-          </Button>
-          {/* Temporary debug button - remove in production */}
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => {
-              // Copy ID to clipboard
-              if (session?.user?.id) {
-                navigator.clipboard.writeText(session.user.id)
-                  .then(() => alert(`User ID copied to clipboard: ${session.user.id}`))
-                  .catch(() => alert(`Your user ID is: ${session.user.id}`));
-              } else {
-                alert("Not logged in or no user ID available");
-              }
-            }}
-            className="mt-4 md:mt-0 ml-2 flex items-center gap-2"
-          >
-            Debug: Copy User ID
-          </Button>
-        </div>
+    <div className="flex flex-col h-[calc(100vh-65px)] container mx-auto px-0 py-4">
+      <div className="flex items-center justify-between px-4 mb-4">
+         <h1 className="text-xl font-semibold">AI Chat</h1>
+         <Button variant="ghost" size="icon" onClick={resetChat} title="Reset Chat">
+             <LucideRefreshCw className="h-4 w-4" />
+         </Button>
       </div>
 
-      <Card className="mb-8">
-        <CardContent className="p-4">
-          <ScrollArea className="h-[500px] pr-4" ref={scrollAreaRef}>
-            <div className="flex flex-col space-y-4 py-4">
+      <Card className="flex-1 flex flex-col overflow-hidden border-0 shadow-none">
+          <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+            <div className="space-y-4">
+              {/* Render messages using the simplified ChatMessage component */}
               {messages.map((message) => (
-                <div
-                  key={message.id} 
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  } gap-3 mb-4`}
-                >
-                  {message.role === "assistant" && (
-                    <Avatar className="h-9 w-9 mt-1">
-                      <AvatarFallback className="bg-blue-600 text-white">AI</AvatarFallback>
-                    </Avatar>
-                  )}
-                  <div
-                    className={`rounded-lg p-4 max-w-[85%] ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
-                  >
-                    {message.role === "assistant" ? (
-                      <div className="prose prose-sm dark:prose-invert">
-                        <ReactMarkdown>
-                          {message.content}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <div className="prose prose-sm prose-invert">
-                        {message.content}
-                      </div>
-                    )}
-                  </div>
-                  {message.role === "user" && (
-                    <Avatar className="h-9 w-9 mt-1">
-                      {session?.user?.image ? (
-                        <Image 
-                          src={session.user.image} 
-                          alt={(session.user as any).nickname || session.user.name || "User"} 
-                          width={36} 
-                          height={36} 
-                          className="rounded-full"
-                        />
-                      ) : (
-                        <AvatarFallback className="bg-secondary text-secondary-foreground">
-                          {(session?.user as any)?.nickname 
-                            ? (session?.user as any).nickname.charAt(0).toUpperCase() 
-                            : session?.user?.name 
-                              ? session?.user?.name.charAt(0).toUpperCase() 
-                              : <LucideUser className="h-4 w-4" />}
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                  )}
-                </div>
+                <ChatMessage key={message.id} message={message} />
               ))}
-              {isLoading && (
-                <div className="flex justify-start gap-3">
-                  <Avatar className="h-9 w-9 mt-1">
-                    <AvatarFallback className="bg-blue-600 text-white">AI</AvatarFallback>
-                  </Avatar>
-                  <div className="rounded-lg p-3 bg-muted">
-                    <div className="flex space-x-1">
-                      <div className="h-2 w-2 rounded-full bg-current animate-bounce" />
-                      <div className="h-2 w-2 rounded-full bg-current animate-bounce [animation-delay:0.2s]" />
-                      <div className="h-2 w-2 rounded-full bg-current animate-bounce [animation-delay:0.4s]" />
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Loading state is handled within ChatMessage now */}
             </div>
           </ScrollArea>
-
-          <form onSubmit={handleSubmit} className="mt-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Ask your AI fitness coach..."
-                value={input}
-                onChange={handleInputChange}
+          
+          <CardContent className="py-4 px-4 border-t">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2">
+              <Input 
+                placeholder="Ask your fitness AI..." 
+                value={input} 
+                onChange={handleInputChange} 
                 disabled={isLoading}
                 className="flex-1"
               />
-              <Button type="submit" disabled={isLoading || !input.trim()}>
-                <LucideSend className="h-4 w-4" />
-                <span className="sr-only">Send</span>
+              <Button type="submit" disabled={isLoading || !input.trim()} size="icon">
+                {isLoading ? <LucideLoader className="h-4 w-4 animate-spin" /> : <LucideSend className="h-4 w-4" />}
               </Button>
-            </div>
-          </form>
-        </CardContent>
+            </form>
+          </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
