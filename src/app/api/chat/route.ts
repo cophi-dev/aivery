@@ -46,6 +46,9 @@ export async function POST(req: Request) {
     userId = session.user.id;
     userName = session.user.name || 'User'; // Get user name for personalization
 
+    // Add this console.log to check if the key is loaded
+    console.log("[CHAT] API Key Loaded:", !!process.env.ANTHROPIC_API_KEY); 
+
     const body = await req.json();
     const currentQuery = body.query; // Assuming the new message is passed as 'query'
     const messageHistory = body.history || []; // Assuming history is passed as 'history'
@@ -62,13 +65,18 @@ export async function POST(req: Request) {
     );
 
     // Combine valid history with the current user query
-    const messagesForApi = [
+    const messagesWithIds = [
         ...validHistory,
-        { role: "user" as const, content: currentQuery }
+        { role: "user" as const, content: currentQuery, id: `temp-user-${Date.now()}` } // Add a temp id for mapping if needed, or handle separately
     ];
 
+    // **Map messages to the format required by Anthropic API (role, content only)**
+    const messagesForAnthropicApi = messagesWithIds.map(({ role, content }) => ({
+      role: role as 'user' | 'assistant', // Ensure role type is correct
+      content
+    }));
+
     // **Define the system prompt here** 
-    // (Combine any necessary instructions, context fetching logic would go here if needed)
     const systemPrompt = `Act as Aivery, a friendly and encouraging AI fitness coach. 
 The user's name is ${userName}.
 Keep responses concise and helpful, focusing on fitness, health, and wellness.
@@ -81,7 +89,7 @@ If asked about specific workout data, mention that functionality is under develo
       max_tokens: 1024,
       temperature: 0.7,
       system: systemPrompt,      // Pass system prompt as top-level parameter
-      messages: messagesForApi,  // Pass filtered user/assistant messages
+      messages: messagesForAnthropicApi,  // Pass the array *without* the 'id' field
     });
 
     const aiResponse = getTextFromResponse(response.content);
