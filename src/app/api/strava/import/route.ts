@@ -35,17 +35,9 @@ interface FitActivity {
 
 const gunzipAsync = promisify(gunzipCb)
 
-// Configure the route for better file handling
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: '100mb',
-  },
-  maxDuration: 300, // 5 minutes
-}
-
 // Use Node.js runtime
 export const runtime = 'nodejs'
+export const maxDuration = 300; // 5 minutes
 
 // Helper function to wait for garbage collection
 const waitForGC = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
