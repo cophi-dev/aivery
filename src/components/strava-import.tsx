@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine } from "lucide-react"
+import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine, X, Loader2, Waves, Footprints, PersonStanding, Zap, Shapes } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -27,40 +27,33 @@ interface ImportStats {
   totalDuration: number;
 }
 
-export function StravaImport() {
-  const [isUploading, setIsUploading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [importStats, setImportStats] = useState<ImportStats | null>(null)
+interface StravaImportProps {
+  onImportComplete?: () => void;
+}
+
+export function StravaImport({ onImportComplete }: StravaImportProps) {
+  const [file, setFile] = useState<File | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [uploadStatus, setUploadStatus] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
-  const [selectedWorkoutTypes, setSelectedWorkoutTypes] = useState<string[]>([
-    "running", "cycling", "swimming", "strength", "walking", "hiking", "flexibility", "hiit", "other"
-  ])
-  const [showTypeSelector, setShowTypeSelector] = useState(false)
+  const [selectedWorkoutTypes, setSelectedWorkoutTypes] = useState<string[]>([])
   const router = useRouter()
   const searchParams = useSearchParams()
   
-  // Strava live connection states
   const [stravaIntegration, setStravaIntegration] = useState<any>(null)
   const [isConnecting, setIsConnecting] = useState(false)
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
 
-  // Strava sync preferences state
   const [syncPreferences, setSyncPreferences] = useState<{ id: string, label: string, enabled: boolean, disabled?: boolean }[]>([])
   const [isLoadingPreferences, setIsLoadingPreferences] = useState(false)
   const [isSavingPreferences, setIsSavingPreferences] = useState(false)
 
-  // Add these state variables to the component
   const [webhookStatus, setWebhookStatus] = useState<any>(null)
   const [isWebhookLoading, setIsWebhookLoading] = useState(false)
   const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [isUsingChunkedUpload, setIsUsingChunkedUpload] = useState(false)
-  const [totalChunks, setTotalChunks] = useState(0)
-  const [currentChunk, setCurrentChunk] = useState(0)
   const [uploadStats, setUploadStats] = useState<ImportStats | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -68,28 +61,42 @@ export function StravaImport() {
   useEffect(() => {
     const loadStravaData = async () => {
       try {
-        setIsLoading(true)
         setIsLoadingPreferences(true)
-        
-        // Load Strava integration status
-        const { success, integration } = await getStravaIntegrationAction()
-        if (success && integration) {
+        console.log('[StravaImport] Checking Strava integration status...');
+        const { success: intSuccess, integration } = await getStravaIntegrationAction()
+        console.log('[StravaImport] Integration status result:', { intSuccess, integration });
+        if (intSuccess && integration) {
           setStravaIntegration(integration)
+        } else {
+          setStravaIntegration(null);
         }
         
-        // Load available activity types
+        console.log('[StravaImport] Fetching supported activity types...');
         const typesResult = await getSupportedActivityTypes()
+        console.log('[StravaImport] Supported types result:', typesResult);
         if (typesResult.success && typesResult.activityTypes) {
-          setSyncPreferences(typesResult.activityTypes)
+           const modifiedTypes = typesResult.activityTypes.map(type => {
+               // Check for strength, weight_training, OR workout ID
+               if (type.id === 'strength' || type.id === 'weight_training' || type.id === 'workout') { 
+                   console.log(`[StravaImport] Forcing type '${type.id}' (${type.label}) to be enabled in preferences list.`);
+                   return { ...type, disabled: false }; // Force enable
+               }
+               return type;
+           });
+           console.log('[StravaImport] Setting modified sync preferences:', modifiedTypes);
+           setSyncPreferences(modifiedTypes); // Set state with modified types
+        } else {
+          console.error('[StravaImport] Failed to load activity types:', typesResult.error);
+           setSyncPreferences([]); // Ensure state is empty on failure
         }
       } catch (error) {
-        console.error("Error loading Strava data:", error)
+        console.error("[StravaImport] Error loading initial Strava data:", error)
+        setStravaIntegration(null);
+        setSyncPreferences([]);
       } finally {
-        setIsLoading(false)
         setIsLoadingPreferences(false)
       }
     }
-    
     loadStravaData()
   }, [])
 
@@ -195,311 +202,156 @@ export function StravaImport() {
     }
   }
 
-  // Handle sync Strava workouts
-  const handleSyncStrava = async () => {
-    setIsSyncing(true)
-    
-    try {
-      const { success, count, types, error } = await syncStravaWorkoutsAction()
-      
-      if (success) {
-        // Format activity types for display
-        const typeDetails = []
-        
-        // Properly handle the types array
-        if (types && Array.isArray(types)) {
-          // Count occurrences of each activity type
-          const typeCounts: Record<string, number> = {};
-          types.forEach(type => {
-            if (type === 'running' || type === 'Run') typeCounts.run = (typeCounts.run || 0) + 1;
-            if (type === 'swimming' || type === 'Swim') typeCounts.swim = (typeCounts.swim || 0) + 1;
-          });
-          
-          if (typeCounts.run) typeDetails.push(`${typeCounts.run} runs`);
-          if (typeCounts.swim) typeDetails.push(`${typeCounts.swim} swims`);
-        }
-        
-        const typeMessage = typeDetails.length > 0 
-          ? ` (${typeDetails.join(", ")})`
-          : ""
-        
+  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    setFile(null); // Reset first
+    setProgress(0);
+    setUploadStatus('');
+    setError(null); // Clear previous errors
+    setUploadStats(null); // Clear previous stats
+
+    if (selected) {
+      // Validate file type
+      if (!selected.name.toLowerCase().endsWith('.zip')) {
         toast({
-          title: "Success",
-          description: `Successfully synced ${count} activities from Strava${typeMessage}`
-        })
-        
-        // Refresh Strava integration
-        const result = await getStravaIntegrationAction()
-        if (result.success && result.integration) {
-          setStravaIntegration(result.integration)
-        }
-      } else {
-        toast({
-          title: "Error",
-          description: error || "Failed to sync Strava workouts",
+          title: "Invalid file type",
+          description: "Please upload a .zip file.",
           variant: "destructive"
-        })
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
       }
-    } catch (error) {
-      console.error("Error syncing Strava workouts:", error)
+
+      // Validate file size (e.g., 100MB)
+      const MAX_FILE_SIZE_MB = 100;
+      const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+      if (selected.size > MAX_FILE_SIZE_BYTES) {
       toast({
-        title: "Error",
-        description: "An unexpected error occurred",
+          title: "File too large",
+          description: `Maximum file size is ${MAX_FILE_SIZE_MB}MB.`,
         variant: "destructive"
-      })
-    } finally {
-      setIsSyncing(false)
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      setFile(selected);
+    } else {
+      // If user cancels file selection
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }
+  }, [toast]);
 
-  const allWorkoutTypes = [
-    { id: "running", label: "Running" },
-    { id: "cycling", label: "Cycling" },
-    { id: "swimming", label: "Swimming" },
-    { id: "strength", label: "Strength" },
-    { id: "walking", label: "Walking" },
-    { id: "hiking", label: "Hiking" },
-    { id: "flexibility", label: "Flexibility" },
-    { id: "hiit", label: "HIIT" },
-    { id: "other", label: "Other" }
-  ]
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // Check if it's a ZIP file
-    if (file.type !== "application/zip" && !file.name.endsWith('.zip')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a ZIP file from your Strava archive",
-        variant: "destructive"
-      })
-      return
+  const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); // Prevent standard form submission
+    if (!file) {
+      toast({ title: "No file selected", description: "Please select a ZIP file to upload.", variant: "destructive" });
+      return;
     }
 
-    console.log('Selected file:', {
-      name: file.name,
-      type: file.type,
-      size: file.size
-    })
+    setIsLoading(true);
+    setProgress(0);
+    setError(null);
+    setUploadStats(null);
+    setUploadStatus('Preparing upload...');
 
-    setSelectedFile(file)
-    setImportStats(null) // Reset import stats when selecting a new file
-    // Show type selector after selecting a file
-    setShowTypeSelector(true)
-  }
-
-  const handleChunkedUpload = async () => {
-    if (!selectedFile) {
-      toast({
-        title: "No file selected",
-        description: "Please select a Strava export ZIP file",
-        variant: "destructive"
-      })
-      return
-    }
-
-    setIsUploading(true)
-    setUploadProgress(0)
-    setImportStats(null)
-    setIsUsingChunkedUpload(true)
-
-    try {
-      // Generate a unique ID for this file upload
-      const fileId = uuidv4()
-      
-      // Get file size info for chunking
-      const fileSize = selectedFile.size
-      const chunkSize = 2 * 1024 * 1024 // 2MB chunks
-      const chunks = Math.ceil(fileSize / chunkSize)
-      setTotalChunks(chunks)
-      
-      console.log(`File size: ${fileSize} bytes, will be split into ${chunks} chunks of ${chunkSize} bytes each`)
-      
-      // Upload each chunk
-      for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
-        setCurrentChunk(chunkIndex + 1)
-        
-        // Prepare chunk
-        const start = chunkIndex * chunkSize
-        const end = Math.min(fileSize, start + chunkSize)
-        const chunk = selectedFile.slice(start, end)
-        
-        // Create form data for chunk
-        const formData = new FormData()
-        formData.append('chunk', chunk)
-        formData.append('chunkIndex', chunkIndex.toString())
-        formData.append('totalChunks', chunks.toString())
-        formData.append('fileId', fileId)
-        formData.append('fileName', selectedFile.name)
-        
-        // Add selected workout types to form data
+    const formData = new FormData();
+    formData.append('file', file);
+    // Append selected workout types if needed by the backend
         if (selectedWorkoutTypes.length > 0) {
-          selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type))
-        }
-        
-        // Upload this chunk
-        const response = await fetch('/api/strava/chunk-upload', {
-          method: 'POST',
-          body: formData
-        })
-        
-        if (!response.ok) {
-          throw new Error(`Chunk upload failed with status: ${response.status}`)
-        }
-        
-        const data = await response.json()
-        
-        // Calculate progress
-        const progressPercent = Math.round(((chunkIndex + 1) / chunks) * 100)
-        setUploadProgress(progressPercent)
-        
-        // If this was the last chunk and upload is complete
-        if (data.complete) {
-          // Now that all chunks are uploaded and combined, process the file
-          const processResponse = await fetch('/api/strava/import', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              filePath: data.filePath,
-              fileName: data.fileName,
-              workoutTypes: selectedWorkoutTypes.length > 0 ? selectedWorkoutTypes : undefined
-            })
-          })
-          
-          if (!processResponse.ok) {
-            throw new Error(`File processing failed with status: ${processResponse.status}`)
-          }
-          
-          const processResult = await processResponse.json()
-          
-          if (processResult.error) {
-            throw new Error(processResult.error)
-          }
-          
-          // Handle successful processing
-          toast({
-            title: "Success",
-            description: `Successfully imported ${processResult.count} activities`
-          })
-          
-          // Set import stats
-          if (processResult.stats) {
-            setImportStats(processResult.stats)
-          }
-          
-          // Reset state
-          resetFileInput()
-        }
-      }
-    } catch (error) {
-      console.error('Chunked upload error:', error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to upload file",
-        variant: "destructive"
-      })
-    } finally {
-      setIsUploading(false)
-      setIsUsingChunkedUpload(false)
-    }
-  }
-
-  const handleUpload = async () => {
-    if (!selectedFile) {
-      toast({
-        title: "No file selected",
-        description: "Please select a Strava export ZIP file",
-        variant: "destructive"
-      })
-      return
+      selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type));
     }
 
-    setIsUploading(true)
-    setImportStats(null)
+    console.log(`=== Starting file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
 
     try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-
-      // Add selected workout types to form data
-      if (selectedWorkoutTypes.length > 0) {
-        selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type))
-      }
+      setUploadStatus('Sending file to server...');
+      console.log('Sending POST request to /api/strava/import');
 
       const response = await fetch('/api/strava/import', {
-        method: 'POST',
+            method: 'POST',
         body: formData,
-      })
+      });
 
-      if (!response.ok) {
-        // Handle specific HTTP error codes
-        if (response.status === 413) {
-          throw new Error("The file is too large. Please try a smaller export file or use the direct Strava connection instead.")
-        }
-        
-        // Try to get error details from response
-        let errorMessage = 'Import failed'
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || 'Import failed with status: ' + response.status
-        } catch (e) {
-          errorMessage = 'Import failed with status: ' + response.status
-        }
-        
-        throw new Error(errorMessage)
-      }
-
-      const data = await response.json()
-
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
-      // Process and set import stats
-      if (data.stats) {
-        setImportStats(data.stats)
+      if (response.ok) {
+        setUploadStatus('Processing file on server...');
       } else {
-        // Create basic stats if detailed stats aren't provided by the API
-        setImportStats({
-          count: data.count || 0,
-          types: data.activityTypes || {},
-          earliestDate: data.earliestDate || '',
-          latestDate: data.latestDate || '',
-          totalDistance: data.totalDistance || 0,
-          totalDuration: data.totalDuration || 0
-        })
+        setUploadStatus('Error during upload...');
+      }
+      
+      setProgress(50);
+
+      console.log('Response received:', { status: response.status, statusText: response.statusText });
+
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        const responseText = await response.text().catch(() => "Could not read error response body.");
+        console.error("Server error or non-JSON response:", { status: response.status, contentType, body: responseText });
+        let errorMsg = `Import failed: Server responded with status ${response.status}.`;
+        if (contentType && !contentType.includes("application/json")) {
+          errorMsg = `Server error: Expected JSON response, but received ${contentType}.`;
+        } else if (response.status >= 400 && response.status < 500 && responseText) {
+          errorMsg = `Import failed: ${responseText}`;
+        }
+        throw new Error(errorMsg);
       }
 
-      toast({
-        title: "Import successful",
-        description: `Successfully imported ${data.count} workouts from your Strava archive`,
-      })
+          const data = await response.json();
+      console.log('API Response data:', data);
 
-      // Reset the file input
-      resetFileInput()
+      if (data.success) {
+        const processed = data.results?.processed ?? 0;
+        const imported = data.results?.imported ?? 0;
+        const errors = data.results?.errors ?? [];
+        const errorCount = errors.length;
+        
+        // Extract summary stats from the results
+        const summaryStats: ImportStats = {
+          count: imported, // Count of successfully imported
+          types: data.results?.activityTypesCount ?? {},
+          earliestDate: data.results?.earliestDate ?? '',
+          latestDate: data.results?.latestDate ?? '',
+          totalDistance: data.results?.totalDistance ?? 0,
+          totalDuration: data.results?.totalDuration ?? 0,
+        };
+        setUploadStats(summaryStats); // Set the state to display the summary card
+
+        let description = `Processed ${processed} files, successfully imported ${imported} workouts.`;
+        if (errorCount > 0) {
+          description += ` ${errorCount} file(s) could not be imported. Check browser console for details.`;
+          console.error('Import errors - Failed files:', errors);
+        }
+
+      toast({
+          title: "Import Complete",
+          description: description,
+          duration: 8000,
+        });
+        
+        setUploadStatus('Import completed successfully.');
+        setProgress(100);
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (onImportComplete) onImportComplete();
+
+      } else {
+        throw new Error(data.error || data.details || 'Import failed: The API reported an issue.');
+      }
     } catch (error) {
-      console.error('Import error:', error)
-      // Log the full error details
-      if (error instanceof Error) {
-        console.log('Error details:', {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        })
-      }
-      toast({
-        title: "Import failed",
-        description: error instanceof Error ? error.message : "There was an error importing your Strava data. Please try again.",
-        variant: "destructive"
-      })
+      console.error('Upload process error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred during the import process.';
+        toast({
+        title: "Import Error",
+        description: errorMessage,
+          variant: "destructive"
+      });
+      setError(errorMessage);
+      setUploadStatus(`Error: ${errorMessage}`);
+      setProgress(0);
     } finally {
-      setIsUploading(false)
+      setIsLoading(false);
     }
-  }
+  }, [file, toast, onImportComplete, selectedWorkoutTypes]);
 
   // Format date for display
   const formatDate = (date: string | Date | undefined | null) => {
@@ -517,13 +369,27 @@ export function StravaImport() {
       case 'running':
         return <Activity className="h-4 w-4" />;
       case 'cycling':
-      case 'biking':
+      case 'ride':
+      case 'bike':
         return <Bike className="h-4 w-4" />;
       case 'strength':
       case 'weight_training':
         return <Dumbbell className="h-4 w-4" />;
+      case 'swimming':
+      case 'swim':
+        return <Waves className="h-4 w-4" />;
+      case 'walking':
+      case 'hike':
+      case 'hiking':
+        return <Footprints className="h-4 w-4" />;
+      case 'flexibility':
+      case 'yoga':
+        return <PersonStanding className="h-4 w-4" />;
+      case 'hiit':
+        return <Zap className="h-4 w-4" />;
+      case 'other':
       default:
-        return null;
+        return <Shapes className="h-4 w-4" />;
     }
   }
 
@@ -542,10 +408,10 @@ export function StravaImport() {
   }
 
   const renderImportSummary = () => {
-    if (!importStats) return null;
+    if (!uploadStats) return null;
 
     // Sort activity types by count in descending order
-    const sortedTypes = Object.entries(importStats.types || {})
+    const sortedTypes = Object.entries(uploadStats.types || {})
       .sort(([, countA], [, countB]) => countB - countA);
 
     return (
@@ -556,16 +422,16 @@ export function StravaImport() {
             Import Successful
           </CardTitle>
           <CardDescription className="text-green-700 dark:text-green-300">
-            {importStats.count} activities were successfully imported from your Strava archive
+            {uploadStats.count} activities were successfully imported from your Strava archive
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {importStats.earliestDate && importStats.latestDate && (
+            {uploadStats.earliestDate && uploadStats.latestDate && (
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-green-700 dark:text-green-500" />
                 <span className="text-green-800 dark:text-green-300">
-                  {formatDate(importStats.earliestDate)} - {formatDate(importStats.latestDate)}
+                  {formatDate(uploadStats.earliestDate)} - {formatDate(uploadStats.latestDate)}
                 </span>
               </div>
             )}
@@ -574,13 +440,13 @@ export function StravaImport() {
               <div className="bg-white/50 dark:bg-white/5 p-3 rounded-lg">
                 <div className="text-sm text-green-700 dark:text-green-500">Total Distance</div>
                 <div className="text-xl font-bold text-green-900 dark:text-green-300">
-                  {formatDistance(importStats.totalDistance)}
+                  {formatDistance(uploadStats.totalDistance)}
                 </div>
               </div>
               <div className="bg-white/50 dark:bg-white/5 p-3 rounded-lg">
                 <div className="text-sm text-green-700 dark:text-green-500">Total Duration</div>
                 <div className="text-xl font-bold text-green-900 dark:text-green-300">
-                  {formatDuration(importStats.totalDuration)}
+                  {formatDuration(uploadStats.totalDuration)}
                 </div>
               </div>
             </div>
@@ -590,16 +456,16 @@ export function StravaImport() {
               <div className="space-y-2">
                 {sortedTypes.map(([type, count]) => (
                   <div key={type} className="flex items-center gap-2">
-                    <div className="w-8 flex justify-center">
-                      {getSportIcon(type)}
+                    <div className="w-8 flex justify-center text-green-700 dark:text-green-500">
+                      {getSportIcon(type) ?? <Shapes className="h-4 w-4" />}
                     </div>
                     <div className="flex-1">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-sm capitalize text-green-800 dark:text-green-300">{type}</span>
                         <span className="text-xs text-green-700 dark:text-green-400">{count}</span>
                       </div>
-                      <Progress value={(count / importStats.count) * 100} className="h-1.5 bg-green-200 dark:bg-green-900">
-                        <div className="bg-green-600 dark:bg-green-500 h-full w-full" />
+                      <Progress value={uploadStats.count > 0 ? (count / uploadStats.count) * 100 : 0} className="h-1.5 bg-green-200 dark:bg-green-900">
+                        <div className="bg-green-600 dark:bg-green-500 h-full" style={{ width: `${uploadStats.count > 0 ? (count / uploadStats.count) * 100 : 0}%` }}/>
                       </Progress>
                     </div>
                   </div>
@@ -680,22 +546,36 @@ export function StravaImport() {
   // Add this useEffect to load webhook status
   useEffect(() => {
     const loadWebhookStatus = async () => {
-      if (stravaIntegration) {
-        try {
+      // Only run if connected
+      if (stravaIntegration?.id) { // Check for integration ID specifically
+        console.log('[StravaImport] Strava connected, checking webhook status...');
           setIsWebhookLoading(true)
+        setWebhookStatus(null); // Reset status before loading
+        try {
           const result = await getStravaWebhookStatusAction()
+          console.log('[StravaImport] Webhook status result:', result);
           if (result.success) {
-            setWebhookStatus(result)
+            setWebhookStatus(result) // Includes { active: boolean, lastUpdated?: string, subscription?: any }
+          } else {
+            console.error('[StravaImport] Failed to get webhook status:', result.error);
+            setWebhookStatus({ active: false }); // Assume inactive on error
           }
         } catch (error) {
-          console.error("Error loading webhook status:", error)
+          console.error("[StravaImport] Error loading webhook status:", error)
+          setWebhookStatus({ active: false }); // Assume inactive on error
         } finally {
+          console.log('[StravaImport] Finished checking webhook status.');
           setIsWebhookLoading(false)
         }
+      } else {
+        console.log('[StravaImport] Strava not connected, skipping webhook status check.');
+        setWebhookStatus(null); // Clear status if disconnected
+        setIsWebhookLoading(false); // Ensure loading is false if not connected
       }
     }
     
     loadWebhookStatus()
+  // Depend on stravaIntegration object itself - will re-run if integration status changes
   }, [stravaIntegration])
 
   // Add these functions to handle webhook subscription
@@ -809,80 +689,136 @@ export function StravaImport() {
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
-    setSelectedFile(null)
-    setImportStats(null)
-  }
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // Check if it's a zip file
-    if (!file.name.endsWith('.zip')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a ZIP file from your Strava export",
-        variant: "destructive"
-      })
-      return
-    }
-
-    setIsUploading(true)
+    setFile(null)
+    setUploadStats(null) // Reset stats if using summary card
+    setUploadStatus('')
+    setProgress(0)
     setError(null)
-    setUploadStats(null)
-
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch('/api/strava/import', {
-        method: 'POST',
-        body: formData
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import workouts')
-      }
-
-      if (data.success) {
-        toast({
-          title: "Import successful",
-          description: data.message
-        })
-        setUploadStats(data.results)
-      } else {
-        throw new Error(data.error || 'Failed to import workouts')
-      }
-    } catch (error) {
-      console.error('Error uploading file:', error)
-      setError(error instanceof Error ? error.message : 'Failed to upload file')
-      toast({
-        title: "Import failed",
-        description: error instanceof Error ? error.message : 'Failed to upload file',
-        variant: "destructive"
-      })
-    } finally {
-      setIsUploading(false)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    }
   }
 
+  // --- Component Return JSX --- 
   return (
-    <div className="space-y-4">
-      <Card>
+    <div className="space-y-8">
+      {/* === STEP 1: Import Existing Archive (ZIP) === */}
+      <Card className="border shadow-sm">
         <CardHeader>
-          <CardTitle>Import Your Workouts</CardTitle>
-          <CardDescription>Choose how you want to import your workout data</CardDescription>
+          <div className="flex items-center space-x-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold">1</span>
+            <div>
+              <CardTitle className="font-semibold text-lg">Import Existing Archive</CardTitle>
+              <CardDescription>Upload your full history from Strava (or other platforms).</CardDescription>
+            </div>
+          </div>
         </CardHeader>
-
         <CardContent className="space-y-4">
-          {/* Strava Connection Section */}
+          {/* Instructions for getting the Strava Archive */}
+          <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/50 p-4 rounded-md border">
+            <h4 className="font-medium">How to get your Strava Archive:</h4>
+            <ol>
+              <li>Go to <a href="https://www.strava.com/account" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Strava Settings</a> &gt; "My Account".</li>
+              <li>Scroll down to "Download or Delete Your Account".</li>
+              <li>Click "Request Your Archive" under Step 1.</li>
+              <li>Strava will email you a link to download a .zip file (this may take a few hours).</li>
+              <li>Download the .zip file and upload it below.</li>
+            </ol>
+          </div>
+          
+          {/* ZIP File Uploader Form */}
+          <form onSubmit={handleUpload} className="space-y-4 pt-2">
+            {!file ? (
+              <label
+                htmlFor="zip-file-input"
+                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-background hover:bg-muted/50 transition-colors dark:hover:bg-muted/20"
+              >
+                <input
+                  type="file"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  onChange={handleFileChange}
+                  ref={fileInputRef}
+                  className="hidden"
+                  id="zip-file-input"
+                  aria-label="Select ZIP file"
+                />
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Click to select the downloaded .zip file
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Max 100MB.
+                  </p>
+                </div>
+              </label>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                  <div className="flex items-center space-x-2 overflow-hidden">
+                    <FileUp className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="text-sm font-medium truncate" title={file.name}>{file.name}</span>
+                    <Badge variant="outline" className="ml-2 shrink-0">
+                      {Math.round(file.size / 1024)} KB
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={resetFileInput}
+                    aria-label="Clear selected file"
+                    className="h-7 w-7"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={isLoading || !file}
+                  className="w-full relative py-2.5"
+                  size="lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <span>Importing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 h-4 mr-2" />
+                      Import Archive File
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {(isLoading || progress > 0) && (
+               <div className="space-y-1 pt-2">
+                 <Progress value={progress} className="w-full h-2" aria-label={`Upload progress: ${progress}%`} />
+                 <p className="text-sm text-muted-foreground text-center h-4">{uploadStatus}</p>
+               </div>
+             )}
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Import Summary Card (Renders after successful ZIP import) */} 
+      {uploadStats && renderImportSummary()}
+
+      {/* === STEP 2: Connect for Automatic Sync === */} 
+      <Card className="border shadow-sm">
+        <CardHeader>
+           <div className="flex items-center space-x-3">
+             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold">2</span>
+             <div>
+               <CardTitle className="font-semibold text-lg">Connect for Automatic Sync</CardTitle>
+               <CardDescription>Connect your Strava account to automatically sync *new* activities.</CardDescription>
+             </div>
+           </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
           <div className="space-y-4">
             {stravaIntegration ? (
+              // --- Connected State --- 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
@@ -891,63 +827,95 @@ export function StravaImport() {
                       Connected
                     </Badge>
                     <span className="text-sm text-muted-foreground">
-                      Athlete: {stravaIntegration.athleteId}
+                      Athlete ID: {stravaIntegration.athleteId}
                     </span>
                   </div>
-                  <Button variant="outline" onClick={() => handleDisconnectStrava()} disabled={isDisconnecting}>
-                    Disconnect
+                  <Button variant="outline" size="sm" onClick={handleDisconnectStrava} disabled={isDisconnecting}>
+                    {isDisconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
                   </Button>
                 </div>
 
-                {/* One-time Import Section */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium">One-time Import</h3>
-                  <p className="text-sm text-muted-foreground">Import your existing Strava activities from the past 30 days.</p>
-                  <Button 
-                    variant="secondary" 
-                    className="w-full"
-                    onClick={handleSyncStrava}
-                    disabled={isSyncing}
-                  >
-                    {isSyncing ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        Syncing...
-                      </>
-                    ) : (
-                      <>
-                        <ArrowDownToLine className="w-4 h-4 mr-2" />
-                        Sync Existing Activities
-                      </>
+                {/* Automatic Syncing Toggle */}
+                <div className="space-y-2 pt-4 border-t">
+                   <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-medium">Automatic Syncing</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Toggle to enable/disable syncing of new activities.
+                      </p>
+                    </div>
+                    <div> 
+                       {isWebhookLoading ? (
+                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                       ) : (
+                         stravaIntegration && (
+                           <Switch
+                             className="peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input opacity-100 visible"
+                             checked={webhookStatus?.subscribed ?? false}
+                             onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
+                             disabled={isSettingUpWebhook}
+                             aria-label="Toggle automatic Strava sync"
+                           />
+                         )
+                       )}
+                     </div>
+                   </div>
+                   {/* Status text */}
+                   {!isWebhookLoading && webhookStatus?.subscribed && (
+                     <p className="text-xs text-muted-foreground">
+                       Auto-sync active. Last update check: {webhookStatus.lastUpdated ? formatDate(webhookStatus.lastUpdated) : "N/A"}
+                     </p>
+                   )}
+                    {!isWebhookLoading && !webhookStatus?.subscribed && !isSettingUpWebhook && (
+                       <p className="text-xs text-muted-foreground">
+                         Auto-sync is currently disabled.
+                       </p>
                     )}
-                  </Button>
                 </div>
 
-                {/* Collapsible Sync Preferences */}
+                {/* Sync Preferences */}
                 <Collapsible open={isPreferencesOpen} onOpenChange={setIsPreferencesOpen}>
                   <CollapsibleTrigger asChild>
-                    <Button variant="ghost" className="w-full flex justify-between">
-                      <span>Sync Preferences</span>
+                     <Button variant="ghost" className="w-full flex justify-between px-1">
+                       <span className="text-base font-medium">Sync Preferences</span>
                       {isPreferencesOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-2 pt-2">
-                    <p className="text-sm text-muted-foreground">Select which activity types to import from Strava.</p>
+                  <CollapsibleContent className="space-y-3 pt-3 pl-2 border-l-2 ml-1">
+                    <p className="text-sm text-muted-foreground">Select which activity types to automatically sync when new activities are detected on Strava.</p>
+                     {isLoadingPreferences ? (
+                       <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Loading preferences...</span>
+                       </div>
+                    ) : (
                     <div className="space-y-2">
-                      {syncPreferences.map((type) => (
-                        <div key={type.id} className="flex items-center space-x-2">
+                        {syncPreferences.map((type) => {
+                           const isDisabled = type.disabled || isSavingPreferences;
+                           return (
+                             <div key={type.id}>
+                               <div className="flex items-center space-x-2">
                           <Checkbox
                             id={type.id}
                             checked={type.enabled}
                             onCheckedChange={() => toggleSyncPreference(type.id)}
-                            disabled={type.disabled || isSavingPreferences}
+                                   disabled={isDisabled}
                           />
                           <label htmlFor={type.id} className="text-sm font-medium">
                             {type.label}
                           </label>
                         </div>
-                      ))}
+                               {(type.id === 'strength' || type.id === 'weight_training' || type.id === 'workout') && (
+                                 <p className="text-xs text-muted-foreground pl-6 pt-1">
+                                   We recommend logging strength workouts manually in Aivery for detailed exercise tracking. However, you can sync basic Strava strength sessions and add exercises later.
+                                 </p>
+                               )}
                     </div>
+                           );
+                         })}
+                      </div>
+                    )}
+                    {!isLoadingPreferences && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -955,38 +923,20 @@ export function StravaImport() {
                       disabled={isSavingPreferences}
                       className="mt-2"
                     >
-                      {isSavingPreferences ? "Saving..." : "Save Preferences"}
+                        {isSavingPreferences ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Preferences"}
                     </Button>
+                    )}
                   </CollapsibleContent>
                 </Collapsible>
 
-                {/* Simplified Automatic Sync Section */}
-                <div className="space-y-2 pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-medium">Automatic Syncing</h3>
-                      <p className="text-sm text-muted-foreground">
-                        New activities from Strava will be automatically synced.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={webhookStatus?.active}
-                      onCheckedChange={webhookStatus?.active ? handleRemoveWebhook : handleSetupWebhook}
-                      disabled={isSettingUpWebhook || isWebhookLoading}
-                    />
-                  </div>
-                  {webhookStatus?.active && (
-                    <p className="text-xs text-muted-foreground">
-                      Last updated: {new Date(webhookStatus.lastUpdated).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
               </div>
             ) : (
+              // --- Disconnected State --- 
               <Button
                 onClick={handleConnectStrava}
                 disabled={isConnecting}
                 className="w-full"
+                size="lg"
               >
                 {isConnecting ? (
                   <>
@@ -996,7 +946,7 @@ export function StravaImport() {
                 ) : (
                   <>
                     <ArrowLeftRight className="w-4 h-4 mr-2" />
-                    Connect with Strava
+                    Connect Strava for Auto-Sync
                   </>
                 )}
               </Button>
@@ -1005,118 +955,6 @@ export function StravaImport() {
         </CardContent>
       </Card>
 
-      {/* ZIP Import Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center space-x-2">
-            <FileUp className="h-5 w-5 text-blue-500" />
-            <div>
-              <CardTitle>Import from ZIP File</CardTitle>
-              <CardDescription>Upload workout data exported from other fitness platforms</CardDescription>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!selectedFile ? (
-            <div className="space-y-4">
-              <input
-                type="file"
-                accept=".zip"
-                onChange={handleFileUpload}
-                ref={fileInputRef}
-                className="hidden"
-                id="zip-file-input"
-              />
-              <label
-                htmlFor="zip-file-input"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Click to select a ZIP file or drag and drop
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Supported: Garmin, Fitbit, and other major fitness platforms
-                  </p>
-                </div>
-              </label>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <FileUp className="h-4 w-4 text-blue-500" />
-                  <span className="text-sm font-medium">{selectedFile.name}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetFileInput}
-                >
-                  Change File
-                </Button>
-              </div>
-
-              {showTypeSelector && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Select Workout Types to Import</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {allWorkoutTypes.map((type) => (
-                      <div key={type.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`type-${type.id}`}
-                          checked={selectedWorkoutTypes.includes(type.id)}
-                          onCheckedChange={(checked) => {
-                            setSelectedWorkoutTypes(prev =>
-                              checked
-                                ? [...prev, type.id]
-                                : prev.filter(t => t !== type.id)
-                            );
-                          }}
-                        />
-                        <label
-                          htmlFor={`type-${type.id}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                          {type.label}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <Button
-                onClick={selectedFile && selectedFile.size > 5 * 1024 * 1024 ? handleChunkedUpload : handleUpload}
-                disabled={isUploading || !selectedFile}
-                className="w-full"
-              >
-                {isUploading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    {isUsingChunkedUpload 
-                      ? `Uploading chunks (${currentChunk}/${totalChunks}) - ${uploadProgress}%` 
-                      : "Uploading..."}
-                  </>
-                ) : (
-                  <>
-                    <FileUp className="h-4 w-4 mr-2" />
-                    Upload Strava Archive
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-
-          {isUploading && isUsingChunkedUpload && (
-            <Progress value={uploadProgress} className="h-2 mt-2" />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Import Summary Card */}
-      {importStats && renderImportSummary()}
-    </div>
-  )
+  );
 } 

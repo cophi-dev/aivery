@@ -5,37 +5,23 @@ import {
   createCardioWorkout,
 } from "@/lib/workout-actions"
 import { revalidatePath } from "next/cache"
-import JSZip from "jszip"
-import { gunzip } from 'zlib'
+import AdmZip from 'adm-zip'
+import { gunzip as gunzipCb } from 'zlib'
 import { promisify } from 'util'
-import dbConnect from "@/lib/db/mongoose"
-import { getCollection } from "@/lib/db/mongoose"
-import { ObjectId } from "mongodb"
 import { transformStravaActivity } from "@/lib/services/stravaService"
-import AdmZip from "adm-zip"
 import { Readable } from "stream"
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
 
-const gunzipAsync = promisify(gunzip)
-
-// Use Node.js runtime instead of Edge
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
-export const maxDuration = 60 // 60 seconds maximum for Hobby plan
-export const preferredRegion = 'auto'
-
-// Configure the route to handle large files
-export const fetchCache = 'force-no-store'
-
-// Import the FitParser class
-const { default: FitParser } = require('fit-file-parser')
-
+// Define FitActivity interface
 interface FitActivity {
   timestamp: string | number;
   total_elapsed_time: number;
   total_distance: number;
   total_calories: number;
   sport: string;
-  sub_sport?: string;  // Make sub_sport optional
+  sub_sport?: string;
   avg_heart_rate?: number;
   max_heart_rate?: number;
   avg_power?: number;
@@ -44,162 +30,255 @@ interface FitActivity {
   enhanced_max_speed?: number;
   avg_speed?: number;
   total_ascent?: number;
-  description?: string; // Description or notes from Strava
+  description?: string;
 }
 
-interface FitData {
-  protocolVersion: number;
-  profileVersion: number;
-  activity: FitActivity;
+const gunzipAsync = promisify(gunzipCb)
+
+// Configure the route for better file handling
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: '100mb',
+  },
+  maxDuration: 300, // 5 minutes
 }
 
-interface ParsedActivity {
-  activities: FitActivity[];
-}
+// Use Node.js runtime
+export const runtime = 'nodejs'
 
-// Helper function to parse JSON files from the zip
-async function parseJsonFromBuffer(buffer: Buffer): Promise<any> {
-  try {
-    const content = buffer.toString('utf-8');
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Error parsing JSON:", error);
-    throw new Error("Invalid JSON file");
-  }
+// Helper function to wait for garbage collection
+const waitForGC = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper function to clean up temporary files
+async function cleanupTempFiles(tempDir: string | null) {
+  if (tempDir) {
+    try {
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+      console.log('Cleaned up temporary directory:', tempDir);
+        } catch (error) {
+      console.error('Error cleaning up temporary files:', error);
+        }
+      }
 }
 
 export async function POST(request: NextRequest) {
+  let tempDir: string | null = null;
+  
   try {
-    // Check content length to ensure it's not too large (100MB limit)
-    const contentLength = request.headers.get('content-length')
-    if (contentLength && parseInt(contentLength) > 100 * 1024 * 1024) {
-      return NextResponse.json({ error: "File too large, maximum size is 100MB" }, { status: 413 })
-    }
-    
-    // Initialize database connection
-    await dbConnect()
-    console.log('Database connected successfully')
+    // Log request details
+    console.log('=== Starting Strava import process ===');
+    console.log('Request method:', request.method);
+    console.log('Request URL:', request.url);
+    console.log('Content-Type:', request.headers.get('content-type'));
+    console.log('Content-Length:', request.headers.get('content-length'));
 
-    // Check authentication
-    const session = await getServerSession(authOptions)
+    // Check authentication first
+    const session = await getServerSession(authOptions);
     if (!session?.user) {
-      console.error('Strava import: No authenticated session')
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      console.error('No authenticated session');
+      return NextResponse.json({ 
+        success: false, 
+        error: "Unauthorized" 
+      }, { 
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
+    console.log('User authenticated:', session.user.id);
 
-    // Store user ID for later use
-    const userId = session.user.id
-    console.log('Processing import for user:', userId)
-
-    // Get the form data
-    const formData = await request.formData()
-    const file = formData.get('file') as File
+    // Get the raw request body
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
     
     if (!file) {
-      console.error('Strava import: No file provided in form data')
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+      console.error('No file provided');
+      return NextResponse.json({ 
+        success: false,
+        error: "No file provided" 
+      }, { 
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    // Check file type
+    // Validate file
     if (!file.name.endsWith('.zip')) {
-      console.error('Strava import: Please upload a zip file')
-      return NextResponse.json({ error: "Please upload a zip file" }, { status: 400 })
+      console.error('Invalid file type:', file.type);
+      return NextResponse.json({ 
+        success: false,
+        error: "Please upload a ZIP file" 
+      }, { 
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    // Convert File to Buffer
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    console.log('Processing file:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    });
+
+    // Create temporary directory with unique name
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(7);
+    tempDir = path.join(os.tmpdir(), `strava-import-${timestamp}-${randomString}`);
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    console.log('Created temporary directory:', tempDir);
+
+    // Get file content
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    console.log('File buffer size:', buffer.length);
+
+    // Create ZIP instance
+    console.log('Creating ZIP instance...');
+    const zip = new AdmZip(buffer);
     
-    // Create zip instance
-    const zip = new AdmZip(buffer)
-    const zipEntries = zip.getEntries()
+    // Get entries
+    const entries = zip.getEntries();
+    console.log(`Found ${entries.length} entries in ZIP`);
+      
+      // Track results
+      const results = {
+        processed: 0,
+        imported: 0,
+      errors: [] as string[],
+      // Add fields for aggregate stats
+      activityTypesCount: {} as Record<string, number>,
+      earliestTimestamp: Infinity,
+      latestTimestamp: -Infinity,
+      totalDistance: 0,
+      totalDuration: 0 // Assuming duration is in minutes or a consistent unit
+    };
 
-    // Get collections
-    const workoutsCollection = await getCollection("workouts")
-    
-    const results = {
-      processed: 0,
-      imported: 0,
-      updated: 0,
-      skipped: 0,
-      errors: [] as string[]
-    }
+    // Process each entry
+    for (const entry of entries) {
+      // Log every entry being considered
+      console.log(`Checking entry: ${entry.entryName}, isDirectory: ${entry.isDirectory}`);
+      const isActivityPath = entry.entryName.includes('activities/');
+      console.log(`  -> Checking path includes 'activities/': ${isActivityPath}`);
 
-    // Process each file in the zip
-    for (const entry of zipEntries) {
-      try {
-        results.processed++
-
-        // Skip non-JSON files and directories
-        if (entry.isDirectory || !entry.entryName.endsWith('.json')) {
-          results.skipped++
-          continue
-        }
-
-        // Parse the JSON content
-        const activityData = await parseJsonFromBuffer(entry.getData())
+      if (!entry.isDirectory && isActivityPath) {
+        results.processed++; // Increment processed count here, even if parsing fails later
+        console.log(`Processing: ${entry.entryName}`);
         
-        // Transform to our workout format
-        const workout = transformStravaActivity(activityData)
-        
-        // Check if workout already exists
-        const existingWorkout = await workoutsCollection.findOne({
-          userId: new ObjectId(userId),
-          sourceId: workout.sourceId,
-          source: "strava"
-        })
+        try {
+          let workout = null;
+          let workoutTimestamp: number | null = null; // Use number for comparison
+          let workoutDistance = 0;
+          let workoutDuration = 0; // Store duration
+          let workoutActivityType = 'unknown';
+          
+          if (entry.entryName.endsWith('.fit.gz')) {
+            const content = entry.getData();
+            const unzippedContent = await gunzipAsync(content);
+            workout = await processFitFile(unzippedContent, entry.entryName);
+          } else if (entry.entryName.endsWith('.gpx')) {
+            const content = entry.getData();
+            workout = await processGpxFile(Buffer.from(content), entry.entryName);
+          } else if (entry.entryName.endsWith('.fit')) {
+            const content = entry.getData();
+            workout = await processFitFile(content, entry.entryName);
+          }
 
-        if (existingWorkout) {
-          // Update existing workout
-          await workoutsCollection.updateOne(
-            { _id: existingWorkout._id },
-            { 
-              $set: {
-                ...workout,
-                updatedAt: new Date()
-              }
+          if (workout) {
+            const transformedWorkout = transformStravaActivity(workout);
+            
+            // Prepare data for saving, store duration in SECONDS
+            const workoutToSave = {
+              ...transformedWorkout,
+              duration: transformedWorkout.duration || 0, // Store duration directly in seconds
+              userId: session.user.id,
+              source: "strava",
+              sourceId: extractStravaIdFromFilename(entry.entryName)
+            };
+            
+            // Aggregate stats using the duration in seconds from workoutToSave
+            workoutActivityType = workoutToSave.type || 'unknown'; 
+            workoutTimestamp = new Date(workoutToSave.date).getTime();
+            workoutDuration = workoutToSave.duration; // Use seconds
+            workoutDistance = workoutToSave.distance || 0;
+
+            results.activityTypesCount[workoutActivityType] = (results.activityTypesCount[workoutActivityType] || 0) + 1;
+            if (!isNaN(workoutTimestamp)) {
+                 results.earliestTimestamp = Math.min(results.earliestTimestamp, workoutTimestamp);
+                 results.latestTimestamp = Math.max(results.latestTimestamp, workoutTimestamp);
             }
-          )
-          results.updated++
-        } else {
-          // Insert new workout
-          await workoutsCollection.insertOne({
-            ...workout,
-            userId: new ObjectId(userId),
-            createdAt: new Date(),
-            updatedAt: new Date()
-          })
-          results.imported++
+            results.totalDistance += workoutDistance;
+            // Use the duration (already converted to seconds) from workoutToSave for aggregation
+            results.totalDuration += workoutDuration; 
+
+            // Save the workout with duration in seconds
+            await createCardioWorkout(workoutToSave);
+            results.imported++;
+          } else {
+            // Still counts as processed, but not imported
+            console.log(`No workout data extracted from ${entry.entryName}, skipping import.`);
+          }
+          
+          // Free up memory - consider if needed, maybe less frequently
+          // await waitForGC(50);
+          
+        } catch (error) {
+          console.error(`Error processing ${entry.entryName}:`, error);
+          results.errors.push(entry.entryName); // Log the filename that failed
+          // This file was processed but resulted in an error, don't increment imported
         }
-      } catch (error) {
-        console.error(`Error processing file ${entry.entryName}:`, error)
-        results.errors.push(`${entry.entryName}: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
 
-    // Revalidate relevant paths
-    revalidatePath("/calendar")
-    revalidatePath("/activity")
-    revalidatePath("/dashboard")
+    // Clean up temporary directory
+    await cleanupTempFiles(tempDir);
 
-    // Return results
-    return NextResponse.json({
-      success: true,
-      message: `Processed ${results.processed} files: ${results.imported} imported, ${results.updated} updated, ${results.skipped} skipped`,
-      results
-    })
+    // Revalidate paths after processing all files
+    revalidatePath("/calendar");
+    revalidatePath("/activity");
+    revalidatePath("/dashboard");
 
-  } catch (error) {
-    console.error("Error processing zip file:", error)
+    // Convert timestamps back to ISO strings or keep as numbers?
+    // Let's convert back to ISO strings for consistency, handle cases where no dates were found
+    const finalResults = {
+        ...results,
+        earliestDate: results.earliestTimestamp === Infinity ? null : new Date(results.earliestTimestamp).toISOString(),
+        latestDate: results.latestTimestamp === -Infinity ? null : new Date(results.latestTimestamp).toISOString(),
+    };
+    // Remove intermediate timestamp numbers
+    delete (finalResults as any).earliestTimestamp;
+    delete (finalResults as any).latestTimestamp;
+
+    console.log('Final import results:', finalResults);
+
+    // Return results including aggregate stats
+      return NextResponse.json({
+        success: true,
+      message: `Processed ${finalResults.processed} files, imported ${finalResults.imported} workouts`,
+      results: finalResults
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+      });
+      
+    } catch (error) {
+    console.error('Error in Strava import:', error);
+    
+    // Clean up on error
+    await cleanupTempFiles(tempDir);
+    
+    // Return error response
     return NextResponse.json({ 
       success: false, 
-      error: error instanceof Error ? error.message : "Unknown error processing zip file" 
-    }, { status: 500 })
+      error: error instanceof Error ? error.message : "An error occurred during import",
+      details: error instanceof Error ? error.stack : undefined
+    }, { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 
 // Map Strava sport types to our workout types
-function mapStravaType(sport: string, subSport?: string): string {
+export function mapStravaType(sport: string, subSport?: string): string {
   if (!sport) return 'other'
   
   const sportLower = sport.toLowerCase()
@@ -249,6 +328,33 @@ function mapStravaType(sport: string, subSport?: string): string {
       }
       return 'other'
   }
+}
+
+// Helper function to calculate heart rate zones
+export function calculateIntensity(activity: any): "Low" | "Medium" | "High" {
+  // Calculate intensity based on heartrate zones if available
+  if (activity.has_heartrate || activity.avg_heart_rate) {
+    const maxHr = activity.max_heartrate || activity.max_heart_rate || 0;
+    const avgHr = activity.average_heartrate || activity.avg_heart_rate || 0;
+    
+    if (avgHr > maxHr * 0.85) return "High";
+    if (avgHr > maxHr * 0.7) return "Medium";
+    return "Low";
+  }
+  
+  // Fallback to perceived exertion based on relative speed
+  if ((activity.average_speed && activity.max_speed) || 
+      (activity.avg_speed && activity.enhanced_max_speed)) {
+    const avgSpeed = activity.average_speed || activity.avg_speed || 0;
+    const maxSpeed = activity.max_speed || activity.enhanced_max_speed || 0;
+    const relativeEffort = avgSpeed / maxSpeed;
+    
+    if (relativeEffort > 0.8) return "High";
+    if (relativeEffort > 0.6) return "Medium";
+    return "Low";
+  }
+  
+  return "Medium"; // Default to medium if no data available
 }
 
 // Helper function to calculate heart rate zones
@@ -380,37 +486,6 @@ function generateActivityName(activityData: any, startTime: Date, mappedType: st
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-// Function to extract Strava ID from filename
-function extractStravaIdFromFilename(filename: string): string | undefined {
-  // Strava filenames follow the pattern: "activities/123456789.fit.gz"
-  // Extract the numeric ID
-  let activityId: string | undefined;
-  
-  // Match the standard pattern in filenames
-  const match = filename.match(/activities\/(\d+)\.fit\.gz/);
-  if (match && match[1]) {
-    activityId = match[1];
-  }
-  
-  // If no match in filename, try to look for a number that might be an activity ID
-  if (!activityId) {
-    const numericMatch = filename.match(/(\d{8,})/); // Find numbers that are 8+ digits (typical for Strava IDs)
-    if (numericMatch && numericMatch[1]) {
-      activityId = numericMatch[1];
-    }
-  }
-  
-  if (activityId) {
-    // Verify that the ID is a reasonable length for a Strava ID (typically 9-10 digits)
-    // Modern Strava IDs are around 9+ digits
-    if (activityId.length >= 8) {
-      return `https://www.strava.com/activities/${activityId}`;
-    }
-  }
-  
-  return undefined;
-}
-
 // Function to generate comprehensive notes for AI queries
 function generateActivityNotes(activityData: any, startTime: Date, fileName: string): string {
   // Extract Strava link
@@ -446,29 +521,6 @@ function calculateIntensityFromSession(session: any): "Low" | "Medium" | "High" 
   // Fallback to speed-based intensity
   if (session.enhanced_avg_speed && session.enhanced_max_speed) {
     const relativeEffort = session.enhanced_avg_speed / session.enhanced_max_speed
-    
-    if (relativeEffort > 0.8) return "High"
-    if (relativeEffort > 0.6) return "Medium"
-    return "Low"
-  }
-  
-  return "Medium" // Default to medium if no data available
-}
-
-function calculateIntensity(activity: any): "Low" | "Medium" | "High" {
-  // Calculate intensity based on heartrate zones if available
-  if (activity.has_heartrate) {
-    const maxHr = activity.max_heartrate
-    const avgHr = activity.average_heartrate
-    
-    if (avgHr > maxHr * 0.85) return "High"
-    if (avgHr > maxHr * 0.7) return "Medium"
-    return "Low"
-  }
-  
-  // Fallback to perceived exertion based on relative speed
-  if (activity.average_speed && activity.max_speed) {
-    const relativeEffort = activity.average_speed / activity.max_speed
     
     if (relativeEffort > 0.8) return "High"
     if (relativeEffort > 0.6) return "Medium"
@@ -547,4 +599,258 @@ function extractActivityFromRecords(data: any): FitActivity | null {
     total_ascent: totalAscent,
     description: description
   }
+}
+
+// Add these helper functions for processing different file types
+async function processFitFile(content: Buffer, fileName: string): Promise<any> {
+  try {
+    console.log(`Processing FIT file: ${fileName}, size: ${content.length} bytes`);
+    
+    // Use require and inspect the module
+    const fitFileParserModule = require('fit-file-parser');
+    console.log('Required fit-file-parser module:', typeof fitFileParserModule, Object.keys(fitFileParserModule));
+
+    // Attempt to access FitParser constructor, check if it exists
+    const FitParserConstructor = fitFileParserModule.FitParser || fitFileParserModule.default || fitFileParserModule;
+    if (typeof FitParserConstructor !== 'function') {
+      console.error('FitParser constructor is not a function. Type:', typeof FitParserConstructor);
+      throw new Error('FitParser constructor not found or not a function');
+    }
+    console.log('Using FitParser constructor of type:', typeof FitParserConstructor);
+
+    const fitParser = new FitParserConstructor({ // Instantiate using the potentially found constructor
+      force: true,
+      speedUnit: 'km/h',
+      lengthUnit: 'km',
+      temperatureUnit: 'celsius',
+      elapsedRecordField: true,
+      mode: 'list'
+    });
+
+    return new Promise((resolve, reject) => {
+      console.log('Starting FIT parse...');
+      fitParser.parse(content, (error: any, data: any) => {
+        // Immediately clear the content buffer to free memory
+        // @ts-ignore - intentionally clearing buffer
+        content = null;
+        
+        if (error) {
+          console.error(`FIT parse error for ${fileName}:`, error);
+          reject(error);
+          return;
+        }
+
+          try {
+          console.log('FIT parse successful, processing data...');
+          
+            // Extract ID from filename
+            const idMatch = fileName.match(/\/(\d+)\.fit(?:\.gz)?$/);
+            const id = idMatch ? idMatch[1] : `fit_${Date.now()}`;
+          console.log('Extracted ID:', id);
+            
+            // Extract activity data but with minimal data usage
+            const records = data.records || [];
+            const sessions = data.sessions || [];
+          
+          console.log(`Found ${records.length} records and ${sessions.length} sessions`);
+            
+            if (records.length === 0) {
+              console.warn(`No record data in ${fileName}`);
+              resolve(null);
+              return;
+            }
+            
+            // Get the first and last record to calculate duration
+            const firstRecord = records[0];
+            const lastRecord = records[records.length - 1];
+            
+            // Calculate total elapsed time from first and last record timestamps
+            const startTime = new Date(firstRecord.timestamp);
+            const endTime = new Date(lastRecord.timestamp);
+            const totalElapsedTime = (endTime.getTime() - startTime.getTime()) / 1000; // Convert to seconds
+          
+          console.log('Time data:', {
+            start: startTime,
+            end: endTime,
+            elapsed: totalElapsedTime
+          });
+            
+            // Calculate distance, heart rate, etc. - use session if available
+            let totalDistance = 0;
+            let sport = 'other';
+            let totalElevationGain = 0;
+            let avgHeartRate: number | undefined = undefined;
+            let maxHeartRate: number | undefined = undefined;
+            let avgSpeed = 0;
+            
+            if (sessions.length > 0) {
+              const session = sessions[0];
+              totalDistance = (session.total_distance || 0); // Assume meters
+              sport = session.sport || 'other';
+              totalElevationGain = session.total_ascent || 0;
+              avgHeartRate = session.avg_heart_rate;
+              maxHeartRate = session.max_heart_rate;
+              avgSpeed = session.avg_speed || session.enhanced_avg_speed || 0; // Use avg_speed first, m/s
+              console.log('Using session data:', { totalDistance, sport, totalElevationGain, avgHeartRate, maxHeartRate, avgSpeed });
+            } else {
+              // Calculate from records if no session data
+              totalDistance = records.reduce((sum: number, record: any) => 
+                sum + (record.distance || 0), 0); // Assume meters
+              sport = firstRecord.sport || 'other';
+              // Calculate elevation gain from records (if altitude exists)
+              const altitudes = records.map((r: any) => r.altitude).filter((a: any) => a !== undefined && a !== null);
+              if (altitudes.length > 1) {
+                totalElevationGain = altitudes.reduce((gain: number, current: number, i: number, arr: number[]) => {
+                  if (i > 0 && current > arr[i - 1]) {
+                    return gain + (current - arr[i - 1]);
+                  }
+                  return gain;
+                }, 0);
+              }
+              // Calculate HR from records
+              const heartRates = records.map((r: any) => r.heart_rate).filter((hr: any) => hr !== undefined && hr !== null);
+              if (heartRates.length > 0) {
+                avgHeartRate = heartRates.reduce((a: number, b: number) => a + b, 0) / heartRates.length;
+                maxHeartRate = Math.max(...heartRates);
+              }
+              // Calculate avg speed from records (distance/time)
+              avgSpeed = totalElapsedTime > 0 ? (totalDistance / totalElapsedTime) : 0; // m/s
+              console.log('Calculated from records:', { totalDistance, sport, totalElevationGain, avgHeartRate, maxHeartRate, avgSpeed });
+            }
+            
+            // Create the activity object
+            const transformedActivity = {
+              id: id,
+              name: `${sport.charAt(0).toUpperCase() + sport.slice(1)} on ${startTime.toLocaleDateString()}`,
+              type: mapStravaType(sport),
+              start_date: startTime.toISOString(),
+              elapsed_time: totalElapsedTime, // seconds
+              distance: totalDistance, // meters
+              total_elevation_gain: totalElevationGain, // meters
+              has_heartrate: !!avgHeartRate, // boolean
+              average_heartrate: avgHeartRate, // bpm
+              max_heartrate: maxHeartRate,     // bpm
+              average_speed: avgSpeed,         // m/s
+            };
+            
+          console.log('Created transformed activity:', transformedActivity);
+            
+            // Clear data to free memory
+            data = null;
+            resolve(transformedActivity);
+          } catch (processError) {
+            console.error(`Error processing FIT data from ${fileName}:`, processError);
+          reject(processError);
+        }
+      });
+    });
+  } catch (error) {
+    console.error(`Error processing FIT file ${fileName}:`, error);
+    throw error;
+  }
+}
+
+async function processGpxFile(content: Buffer, fileName: string): Promise<any> {
+  try {
+    console.log(`Processing GPX file: ${fileName}, size: ${content.length} bytes`);
+    
+    // Create a new GPX parser
+    const gpx = await parseGPX(content.toString('utf-8'));
+    
+    // Extract basic information from the GPX
+    if (gpx.tracks.length > 0) {
+      const track = gpx.tracks[0];
+      
+      // Calculate start time, end time, distance, and elevation
+      let startTime = new Date();
+      let endTime = new Date();
+      let totalDistance = 0;
+      let totalElevationGain = 0;
+      let avgHeartRate: number | undefined = undefined;
+      let maxHeartRate: number | undefined = undefined;
+      let sport = 'other';
+      
+      if (track.points.length > 0) {
+        startTime = new Date(track.points[0].time);
+        endTime = new Date(track.points[track.points.length - 1].time);
+        totalDistance = track.distance.total; // Meters
+        totalElevationGain = track.elevation.pos; // Positive elevation gain in meters
+        
+        // Attempt to extract HR data from extensions (common Garmin format)
+        const heartRates = track.points
+            .map((p: any) => p.extensions?.TrackPointExtension?.hr || p.extensions?.heart_rate) // Check common extension paths
+            .filter((hr: any) => hr !== undefined && hr !== null && !isNaN(hr));
+            
+        if (heartRates.length > 0) {
+          avgHeartRate = heartRates.reduce((a: number, b: number) => a + b, 0) / heartRates.length;
+          maxHeartRate = Math.max(...heartRates);
+        }
+        
+        // Try to determine sport type from filename
+        if (fileName.toLowerCase().includes('run')) {
+          sport = 'running';
+        } else if (fileName.toLowerCase().includes('ride') || fileName.toLowerCase().includes('cycling')) {
+          sport = 'cycling';
+        } else if (fileName.toLowerCase().includes('walk')) {
+          sport = 'walking';
+        } else if (fileName.toLowerCase().includes('hike')) {
+          sport = 'hiking';
+        }
+      }
+      
+      // Calculate duration in seconds
+      const totalElapsedTime = (endTime.getTime() - startTime.getTime()) / 1000;
+      
+      // Calculate average speed in m/s
+      const avgSpeed = totalElapsedTime > 0 ? (totalDistance / totalElapsedTime) : 0;
+      
+      // Extract ID from filename
+      const idMatch = fileName.match(/\/(\d+)\.gpx$/);
+      const id = idMatch ? idMatch[1] : `gpx_${Date.now()}`;
+      
+      // Convert GPX data to Strava-like format
+      const transformedActivity = {
+        id: id,
+        name: `${sport.charAt(0).toUpperCase() + sport.slice(1)} on ${startTime.toLocaleDateString()}`,
+        type: sport,
+        start_date: startTime.toISOString(),
+        elapsed_time: totalElapsedTime, // seconds
+        distance: totalDistance, // meters
+        total_elevation_gain: totalElevationGain, // meters
+        has_heartrate: !!avgHeartRate, // boolean
+        average_heartrate: avgHeartRate, // bpm
+        max_heartrate: maxHeartRate,     // bpm
+        average_speed: avgSpeed,         // m/s
+      };
+      
+      // Clear GPX data to free memory
+      gpx.tracks = [];
+      
+      console.log(`Successfully processed GPX data from ${fileName}`);
+      return transformedActivity;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Error processing GPX file ${fileName}:`, error);
+    return null;
+  }
+}
+
+// Function to extract Strava ID from filename
+function extractStravaIdFromFilename(filename: string): string | undefined {
+  const pathMatch = filename.match(/activities\/(\d+)\.(?:fit\.gz|gpx|fit)/);
+  if (pathMatch && pathMatch[1]) {
+    return `https://www.strava.com/activities/${pathMatch[1]}`;
+  }
+  return undefined;
+}
+
+// Helper function to parse GPX files
+async function parseGPX(gpxString: string) {
+  // Dynamically import gpxparser only when needed
+  const { default: gpxParser } = await import('gpxparser');
+  const parser = new gpxParser();
+  parser.parse(gpxString);
+  return parser;
 } 

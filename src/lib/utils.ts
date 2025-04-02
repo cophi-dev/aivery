@@ -27,3 +27,55 @@ export function getTextFromResponse(content: any): string | undefined {
   
   return undefined;
 }
+
+/**
+ * Formats a duration given in seconds into a string like "Xh Ym Zs".
+ * Omits hours or minutes if they are zero.
+ * Rounds seconds to the nearest whole number.
+ */
+export function formatDuration(totalSeconds: number | undefined | null): string {
+  if (totalSeconds === undefined || totalSeconds === null || totalSeconds < 0 || !isFinite(totalSeconds)) {
+    return "0s";
+  }
+
+  const secondsInt = Math.round(totalSeconds);
+  const hours = Math.floor(secondsInt / 3600);
+  const minutes = Math.floor((secondsInt % 3600) / 60);
+  const seconds = secondsInt % 60;
+
+  let formatted = "";
+  if (hours > 0) {
+    formatted += `${hours}h `;
+  }
+  if (minutes > 0) {
+    formatted += `${minutes}m `;
+  }
+  if (seconds > 0 || formatted === "") { // Always show seconds if hours/minutes are 0, or if seconds > 0
+    formatted += `${seconds}s`;
+  }
+
+  return formatted.trim(); // Remove trailing space if seconds is 0
+}
+
+// Format distance with units (assuming km)
+export function formatDistance(distance: number): string {
+  if (isNaN(distance) || distance < 0) {
+    return "0.00 km";
+  }
+  return `${distance.toFixed(2)} km`;
+}
+
+// Format date nicely
+export function formatDate(date: string | Date | undefined | null): string {
+  if (!date) return "N/A";
+  try {
+    return new Date(date).toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return "Invalid Date";
+  }
+}

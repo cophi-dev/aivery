@@ -1,4 +1,4 @@
-import { getWorkoutById } from "@/lib/db/repositories/workoutRepository"
+import { getWorkoutById, getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "next/navigation"
@@ -21,12 +21,51 @@ import {
   ChevronRight,
   Trash,
   Copy,
-  Trophy
+  Trophy,
+  Clock
 } from "lucide-react"
 import { format } from "date-fns"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
 import { DeleteWorkoutButton } from "@/components/delete-workout-button"
 import Image from "next/image"
+import { formatDate, formatDuration, formatDistance } from "@/lib/utils"
+import dynamic from 'next/dynamic'
+import type { ComponentType } from 'react'
+import { WorkoutData } from '@/types/db' // Import WorkoutData type
+
+// Define the expected props type for the dynamic component - Align with actual component props
+interface WorkoutProgressGraphProps {
+  currentWorkout: WorkoutData;
+  historyData: WorkoutData[];
+}
+
+// Dynamically import the progress graph component - Simplified typing
+const WorkoutProgressGraph = dynamic<WorkoutProgressGraphProps>(
+  () => import('@/components/workout-progress-graph'),
+  { ssr: false, loading: () => <p>Loading graph...</p> } // Added a loading state
+)
+
+// Local helper function to format pace (min:ss min/km)
+const formatPace = (pace: number | null): string => {
+  if (pace === null || pace <= 0 || !isFinite(pace)) {
+    return "N/A";
+  }
+  const totalSeconds = pace * 60;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')} min/km`;
+};
+
+// Local helper function to determine pace zone
+const getPaceZone = (pace: number | null): { zone: string; color: string } => {
+  if (pace === null || pace <= 0 || !isFinite(pace)) {
+    return { zone: "Unknown", color: "" };
+  }
+  if (pace < 4.5) return { zone: "Fast Zone", color: "text-red-500 border-red-500/50" }; // Faster than ~7:15 min/mile
+  if (pace < 5.5) return { zone: "Moderate Zone", color: "text-yellow-500 border-yellow-500/50" }; // ~7:15 - 8:50 min/mile
+  if (pace < 6.5) return { zone: "Easy Zone", color: "text-green-500 border-green-500/50" }; // ~8:50 - 10:30 min/mile
+  return { zone: "Recovery Zone", color: "text-blue-500 border-blue-500/50" }; // Slower than 10:30 min/mile
+};
 
 interface CardioDetails {
   distance?: number
@@ -61,6 +100,8 @@ interface Workout {
       reps: number
     }>
   }>
+  averageHeartRate?: number
+  maxHeartRate?: number
 }
 
 // Function to extract Strava links from workout notes
@@ -248,12 +289,43 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
     notes: workout.notes ? workout.notes.substring(0, 100) + '...' : 'No notes'
   });
 
-  const distance = workout.distance || workout.cardioDetails?.distance
-  const pace = distance ? (workout.duration / distance).toFixed(2) : undefined
-  const avgHeartRate = workout.cardioDetails?.heartRate?.average
-  const maxHeartRate = workout.cardioDetails?.heartRate?.max
+  // Safely access duration (seconds) and distance (kilometers)
+  const duration = typeof workout.duration === 'number' ? workout.duration : 0;
+  const potentialDistance = workout.distance ?? workout.cardioDetails?.distance; // Assume KILOMETERS (as per database)
+  const distanceValueKm: number | null = 
+    typeof potentialDistance === 'number' ? potentialDistance : null;
+
+  // ---- DEBUGGING LOGS START ----
+  console.log('[WorkoutPage] Debug Data:', {
+    duration_sec: duration,
+    distance_km: distanceValueKm, // Updated log field name
+  });
+  // ---- DEBUGGING LOGS END ----
+
+  // Calculate pace in minutes per kilometer
+  const paceValueMinPerKm: number | null = 
+    distanceValueKm !== null && distanceValueKm > 0 && duration > 0 
+      ? (duration / distanceValueKm) / 60 // (sec / km) / (60 sec / min)
+      : null;
+
+  // ---- DEBUGGING LOGS START ----
+  console.log('[WorkoutPage] Calculated Pace (min/km):', paceValueMinPerKm);
+  // ---- DEBUGGING LOGS END ----
+
+  // Safely access heart rate data
+  const avgHeartRate = typeof workout.averageHeartRate === 'number' ? Math.round(workout.averageHeartRate) : null;
+  const maxHeartRate = typeof workout.maxHeartRate === 'number' ? Math.round(workout.maxHeartRate) : null;
   const elevationGain = workout.cardioDetails?.elevationGain
   const power = workout.cardioDetails?.power?.average
+
+  // Fetch previous workouts of the same type
+  const previousWorkouts = await getPreviousWorkoutsByType(
+    session.user.id, // Assuming user ID is available in session
+    workout.type,
+    new Date(workout.date),
+    // Remove the limit to fetch more history for filtering, or set a higher limit like 50/100
+    // 50 // Example: Fetch last 50 workouts
+  )
 
   return (
     <div className="container max-w-screen-xl mx-auto px-4 py-6 md:py-8">
@@ -267,48 +339,45 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           </Button>
           
           <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2">
               <Activity className="h-5 w-5" />
               <h1 className="text-xl md:text-2xl font-bold">{workout.name || workout.type}</h1>
               <Badge variant={workout.intensity === 'High' ? 'destructive' : 'secondary'}>
                 {workout.intensity}
               </Badge>
+              
+              <div className="flex items-center gap-x-1 ml-auto">
+                <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                  <Link href={`/workout/edit/${workout._id}`} title="Edit Workout">
+                    <Pencil className="h-4 w-4" />
+                    <span className="sr-only">Edit Workout</span>
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                  <Link href={`/workout/new?duplicate=${workout._id}`} title="Duplicate Workout">
+                    <Copy className="h-4 w-4" />
+                    <span className="sr-only">Duplicate Workout</span>
+                  </Link>
+                </Button>
+                <DeleteWorkoutButton workoutId={workout._id} asIcon={true} />
+              </div>
             </div>
             <p className="text-muted-foreground text-sm mt-1">
-              {format(new Date(workout.date), 'EEEE, MMMM d, yyyy')}
+              {formatDate(workout.date)}
             </p>
           </div>
-        </div>
-        
-        <div className="w-full flex flex-col sm:flex-row gap-2">
-          <Button asChild className="w-full sm:w-auto">
-            <Link href={`/workout/edit/${workout._id}`}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Edit Workout
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="w-full sm:w-auto">
-            <Link href={`/workout/new?duplicate=${workout._id}`}>
-              <Copy className="h-4 w-4 mr-2" />
-              Duplicate Workout
-            </Link>
-          </Button>
-          <DeleteWorkoutButton workoutId={workout._id} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 mb-6 md:mb-8">
         <Card>
           <CardHeader className="pb-1 md:pb-2">
-            <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
-              Duration
+            <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground flex items-center">
+               <Clock className="h-4 w-4 mr-1" /> Duration
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-2">
-              <Timer className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-              <span className="text-lg md:text-2xl font-bold">{workout.duration} min</span>
-            </div>
+            <span className="text-lg md:text-2xl font-bold">{formatDuration(workout.duration)}</span> 
           </CardContent>
         </Card>
 
@@ -324,10 +393,10 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
               <Zap className="h-4 w-4 md:h-5 md:w-5 text-primary" />
               <span className="text-lg md:text-2xl font-bold">
                 {workout.type === 'strength' 
-                  ? Math.round(workout.duration * 7) // ~7 kcal per minute for strength
+                  ? Math.round((duration / 60) * 7) // Convert duration (sec) to min, then apply kcal/min
                   : workout.type === 'running'
-                    ? Math.round(workout.duration * 10) // ~10 kcal per minute for running
-                    : Math.round(workout.duration * 8) // ~8 kcal per minute for other activities
+                    ? Math.round((duration / 60) * 10) // Convert duration (sec) to min, then apply kcal/min
+                    : Math.round((duration / 60) * 8) // Convert duration (sec) to min, then apply kcal/min
                 } kcal
               </span>
             </div>
@@ -356,55 +425,74 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           </Card>
         )}
 
-        {distance && (
+        {/* Distance Card (Value is already in KM) */}
+        {distanceValueKm !== null && (
           <Card>
             <CardHeader className="pb-1 md:pb-2">
-              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
-                Distance
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground flex items-center">
+                 <Ruler className="h-4 w-4 mr-1" /> Distance
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-2">
-                <Ruler className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                <span className="text-lg md:text-2xl font-bold">{distance.toFixed(2)} km</span>
+              {/* Value is already KM, no conversion needed */}
+              <span className="text-lg md:text-2xl font-bold">
+                {formatDistance(distanceValueKm)} 
+              </span>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Average Pace Card (use paceValueMinPerKm) */}
+        {paceValueMinPerKm !== null && (
+          <Card>
+            <CardHeader className="pb-1 md:pb-2">
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground flex items-center">
+                <Activity className="h-4 w-4 mr-1" /> Average Pace 
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <span className="text-lg md:text-2xl font-bold">
+                 {formatPace(paceValueMinPerKm)} 
+              </span>
+              {/* Pace Zone Badge */}
+              <div className="mt-1 md:mt-2">
+                {(() => {
+                  const { zone, color } = getPaceZone(paceValueMinPerKm); // Use pace in min/km
+                  return (
+                    <Badge variant="outline" className={color}>
+                      {zone}
+                    </Badge>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>
         )}
 
-        {pace && (
+        {/* Average Heart Rate Card (only if data exists) */}
+        {avgHeartRate !== null && workout.type === 'running' && (
           <Card>
             <CardHeader className="pb-1 md:pb-2">
-              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
-                Average Pace
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground flex items-center">
+                 <Heart className="h-4 w-4 mr-1 text-red-500" /> Avg HR
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                <span className="text-lg md:text-2xl font-bold">{pace} min/km</span>
-              </div>
+              <span className="text-lg md:text-2xl font-bold">{avgHeartRate} <span className="text-sm text-muted-foreground">bpm</span></span>
             </CardContent>
           </Card>
         )}
 
-        {avgHeartRate && (
+        {/* Max Heart Rate Card (only if data exists) */}
+        {maxHeartRate !== null && workout.type === 'running' && (
           <Card>
             <CardHeader className="pb-1 md:pb-2">
-              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
-                Heart Rate
+              <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground flex items-center">
+                 <Heart className="h-4 w-4 mr-1 text-red-500" /> Max HR
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-2">
-                <Heart className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                <span className="text-lg md:text-2xl font-bold">{avgHeartRate} bpm</span>
-                {maxHeartRate && (
-                  <span className="text-xs md:text-sm text-muted-foreground ml-2">
-                    max {maxHeartRate}
-                  </span>
-                )}
-              </div>
+              <span className="text-lg md:text-2xl font-bold">{maxHeartRate} <span className="text-sm text-muted-foreground">bpm</span></span>
             </CardContent>
           </Card>
         )}
@@ -475,12 +563,13 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           </Card>
         )}
 
-        {/* Work-to-rest ratio for running workouts */}
-        {workout.type === 'running' && distance && (
+        {/* Work-to-rest ratio for running workouts - This logic might need review if it relies on pace in m/s? */}
+        {/* Let's assume paceValue is min/km for now, adjust if needed */}
+        {workout.type === 'running' && distanceValueKm && paceValueMinPerKm && (
           <Card>
             <CardHeader className="pb-1 md:pb-2">
               <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">
-                Work/Rest Ratio
+                Work/Rest Ratio (Placeholder)
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -488,15 +577,10 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
                 <Activity className="h-4 w-4 md:h-5 md:w-5 text-primary" />
                 <span className="text-lg md:text-2xl font-bold">
                   {(() => {
-                    // Calculate pace in min/km
-                    const paceValue = workout.duration / distance;
-                    
-                    // For running, a good way to evaluate intensity is pace-to-recovery ratio
-                    // We'll use a simple formula where pace < 5 min/km is high intensity (ratio 1:3)
-                    // pace 5-7 min/km is medium (ratio 1:2), and pace > 7 min/km is low (ratio 1:1)
-                    if (paceValue < 5) return "1:3";
-                    if (paceValue < 7) return "1:2";
-                    return "1:1";
+                    // Using pace in min/km
+                    if (paceValueMinPerKm < 5) return "1:3"; // High Intensity
+                    if (paceValueMinPerKm < 7) return "1:2"; // Medium Intensity
+                    return "1:1"; // Low Intensity
                   })()}
                 </span>
                 <span className="text-xs text-muted-foreground ml-1">recovery ratio</span>
@@ -628,6 +712,28 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
                   </div>
                 </div>
               ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Progress Graph Card - Conditional rendering fixed */}
+      {previousWorkouts.length > 0 && (
+        <Card className="mb-6 md:mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <BarChart className="h-5 w-5" />
+              Progress
+              {/* Title will be dynamic based on selected metric in the client component */}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Restore the wrapping div with height for the chart */}
+            <div className="h-[250px]">
+              <WorkoutProgressGraph 
+                currentWorkout={workout} 
+                historyData={previousWorkouts}
+              />
             </div>
           </CardContent>
         </Card>

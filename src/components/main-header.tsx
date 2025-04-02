@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useSession } from "next-auth/react"
-import { Dumbbell, Calendar, MessageSquare, History, BarChart2, List } from "lucide-react"
+import { Calendar, MessageSquare, History, BarChart2, List } from "lucide-react"
 import { UserNavigation } from "./user-navigation"
-import { useState } from "react"
+import Image from "next/image"
 
 export function MainHeader() {
   const pathname = usePathname()
@@ -54,12 +54,14 @@ export function MainHeader() {
   // Prevent render errors during loading state
   if (isLoading) {
     return (
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center">
-              <Dumbbell className="h-6 w-6 mr-2 text-primary" />
-              <span className="font-bold text-xl">Aivery</span>
+              <div className="w-8 h-8 relative">
+                <div className="w-8 h-8 rounded-full bg-primary/10 animate-pulse" />
+              </div>
+              <span className="font-bold text-xl ml-2">Aivery</span>
             </Link>
           </div>
           <div className="flex items-center gap-3">
@@ -71,12 +73,20 @@ export function MainHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center">
-            <Dumbbell className="h-6 w-6 mr-2 text-primary" />
-            <span className="font-bold text-xl">Aivery</span>
+            <div className="w-8 h-8 relative">
+              <Image
+                src="/aivery-logo.svg"
+                alt="Aivery"
+                width={32}
+                height={32}
+                priority
+              />
+            </div>
+            <span className="font-bold text-xl ml-2">Aivery</span>
           </Link>
           
           {/* Desktop navigation - only show when user is logged in */}
@@ -100,8 +110,6 @@ export function MainHeader() {
         </div>
         
         <div className="flex items-center gap-3">
-          {/* Removed burger menu - navigation links now in avatar dropdown on mobile */}
-
           {isAuthenticated ? (
             <UserNavigation />
           ) : (

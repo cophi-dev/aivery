@@ -15,7 +15,7 @@ const nextConfig = {
   
   experimental: {
     serverActions: {
-      bodySizeLimit: '50mb',
+      bodySizeLimit: '100mb',
       allowedOrigins: ['*'],
     },
     largePageDataBytes: 128 * 1000, // 128KB
@@ -23,12 +23,20 @@ const nextConfig = {
     disableOptimizedLoading: true,
   },
   
+  // API configuration
+  api: {
+    bodyParser: {
+      sizeLimit: '100mb',
+    },
+    responseLimit: '100mb',
+  },
+  
   // Cache busting for builds
   generateBuildId: () => {
     return `build-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
   },
 
-  // Configure headers for cache control 
+  // Configure headers for cache control and CORS
   async headers() {
     return [
       {
@@ -39,7 +47,10 @@ const nextConfig = {
           { key: 'Expires', value: '-1' },
           { key: 'Surrogate-Control', value: 'no-store' },
           { key: 'X-Accel-Expires', value: '0' },
-          { key: 'Vary', value: '*' }
+          { key: 'Vary', value: '*' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' }
         ]
       },
       {

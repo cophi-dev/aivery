@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, ErrorInfo } from "react"
+import React, { useState, useEffect, ErrorInfo, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { format, parseISO, isAfter, isBefore, isEqual } from "date-fns"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
   Activity, 
   Clock, 
@@ -20,10 +21,15 @@ import {
   Search,
   AlertCircle,
   ChevronRight,
-  Info
+  Info,
+  TrendingUp,
+  Trophy,
+  History
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
+import { formatDistance, formatDuration, formatDate as formatDateUtil } from "@/lib/utils"
+import { fetchPrDataAction } from "@/app/actions/workoutActions"
 
 // Define types for sorting
 type SortField = "date" | "name" | "type" | "intensity" | "duration" | "volume";
@@ -40,6 +46,15 @@ interface WorkoutStats {
 
 interface WorkoutListViewProps {
   initialWorkouts: WorkoutData[]
+}
+
+// Define types for PR data
+interface ExercisePrData {
+  benchPress?: { value: number; unit: string; date: Date } | null;
+  pullups?: { value: number; unit: string; date: Date } | null;
+}
+interface PacePrData {
+  fastest5k?: { pace: number; date: Date } | null;
 }
 
 // Simple error boundary class component
@@ -87,6 +102,44 @@ class WorkoutListErrorBoundary extends React.Component<
   }
 }
 
+// Helper to get color based on workout type
+const getWorkoutTypeStyle = (type: string): { icon: React.ReactNode; colorClasses: string } => {
+  const lowerType = type?.toLowerCase() || 'other';
+  switch (lowerType) {
+    case 'running':
+    case 'run':
+      return { icon: <Ruler className="h-3 w-3" />, colorClasses: "border-orange-400/50 bg-orange-500/10 text-orange-600 dark:text-orange-400" };
+    case 'cycling':
+    case 'bike':
+    case 'ride':
+       return { icon: <Activity className="h-3 w-3" />, colorClasses: "border-blue-400/50 bg-blue-500/10 text-blue-600 dark:text-blue-400" };
+    case 'swimming':
+    case 'swim':
+       return { icon: <Activity className="h-3 w-3" />, colorClasses: "border-cyan-400/50 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" };
+    case 'strength':
+    case 'workout':
+      return { icon: <Dumbbell className="h-3 w-3" />, colorClasses: "border-green-400/50 bg-green-500/10 text-green-600 dark:text-green-400" };
+    case 'hiit':
+       return { icon: <Activity className="h-3 w-3" />, colorClasses: "border-red-400/50 bg-red-500/10 text-red-600 dark:text-red-400" };
+    case 'flexibility':
+    case 'stretch':
+    case 'yoga':
+       return { icon: <Activity className="h-3 w-3" />, colorClasses: "border-purple-400/50 bg-purple-500/10 text-purple-600 dark:text-purple-400" };
+    default:
+      return { icon: <Activity className="h-3 w-3" />, colorClasses: "border-gray-400/50 bg-gray-500/10 text-gray-600 dark:text-gray-400" };
+  }
+}
+
+// Local Pace Formatter for PR display
+const formatPaceDisplay = (pace: number | undefined | null): string => {
+  if (pace === undefined || pace === null || isNaN(pace) || pace <= 0) {
+    return "N/A";
+  }
+  const minutes = Math.floor(pace);
+  const seconds = Math.round((pace - minutes) * 60);
+  return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+};
+
 export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProps) {
   // Initialize all state hooks at the top level
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
@@ -105,222 +158,173 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   
-  // Initialize data safely
-  useEffect(() => {
-    try {
-      // Make sure we have valid workouts data
-      const validWorkouts = Array.isArray(initialWorkouts) ? initialWorkouts : [];
-      
-      // Sanitize the workout data by removing problematic fields or converting as needed
-      const sanitizedWorkouts = validWorkouts.map(workout => {
-        try {
-          // Create a clean copy to work with
-          const cleanWorkout = { ...workout };
-          
-          // Clean the _id field
-          if (cleanWorkout._id && typeof cleanWorkout._id === 'object') {
-            cleanWorkout._id = String(cleanWorkout._id);
-          }
-          
-          // Clean userId field
-          if (cleanWorkout.userId && typeof cleanWorkout.userId === 'object') {
-            cleanWorkout.userId = String(cleanWorkout.userId);
-          }
-          
-          // Ensure date is properly formatted
-          if (cleanWorkout.date && !(cleanWorkout.date instanceof Date)) {
-            try {
-              cleanWorkout.date = new Date(cleanWorkout.date);
-            } catch (e) {
-              cleanWorkout.date = new Date();
-            }
-          }
-          
-          // Clean cardioDetails - this is where buffer objects are often found
-          if (cleanWorkout.cardioDetails && typeof cleanWorkout.cardioDetails === 'object') {
-            try {
-              // Detect and remove _id fields with buffer objects
-              const cardioDetails = { ...cleanWorkout.cardioDetails };
-              
-              // Remove _id from cardioDetails - use type assertion
-              const cardioDetailsAny = cardioDetails as any;
-              if (cardioDetailsAny._id) {
-                delete cardioDetailsAny._id;
-              }
-              
-              // Clean the heart rate data
-              if (cardioDetails.heartRate && typeof cardioDetails.heartRate === 'object') {
-                const heartRate = { ...cardioDetails.heartRate };
-                
-                // Remove _id from heart rate - use type assertion
-                const heartRateAny = heartRate as any;
-                if (heartRateAny._id) {
-                  delete heartRateAny._id;
-                }
-                
-                // Clean heart rate zones
-                if (heartRate.zones && typeof heartRate.zones === 'object') {
-                  const zones = { ...heartRate.zones };
-                  // Use type assertion to handle _id field
-                  const zonesAny = zones as any;
-                  if (zonesAny._id) {
-                    delete zonesAny._id;
-                  }
-                  heartRate.zones = zones;
-                }
-                
-                cardioDetails.heartRate = heartRate;
-              }
-              
-              // Clean the laps data
-              if (Array.isArray(cardioDetails.laps)) {
-                cardioDetails.laps = cardioDetails.laps.map((lap: any) => {
-                  if (lap && typeof lap === 'object') {
-                    const cleanLap = { ...lap };
-                    delete cleanLap._id;
-                    return cleanLap;
-                  }
-                  return lap;
-                });
-              }
-              
-              cleanWorkout.cardioDetails = cardioDetails;
-            } catch (e) {
-              console.error("Error cleaning cardioDetails:", e);
-              // If there was an error, remove the entire cardioDetails object
-              cleanWorkout.cardioDetails = { 
-                distance: cleanWorkout.cardioDetails.distance,
-                duration: cleanWorkout.cardioDetails.duration
-              };
-            }
-          }
-          
-          // Return the clean workout
-          return cleanWorkout as WorkoutData;
-        } catch (err) {
-          console.error("Error sanitizing workout:", err);
-          // Return a minimal workout object if there's an error
-          return {
-            _id: workout._id?.toString() || String(Date.now()),
-            name: workout.name || "Workout",
-            type: workout.type || "unknown",
-            date: new Date(),
-            duration: workout.duration || 0,
-            intensity: workout.intensity || "Unknown",
-            userId: workout.userId?.toString() || "",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          } as WorkoutData;
-        }
-      });
-      
-      setWorkouts(sanitizedWorkouts);
-      setFilteredWorkouts(sanitizedWorkouts);
-    } catch (err) {
-      console.error("Error initializing workout data:", err);
-      setError("Failed to load workout data. Please try refreshing the page.");
-      // Don't return early - still need to let the component render
-    }
-  }, [initialWorkouts]);
+  // PR state
+  const [exercisePRs, setExercisePRs] = useState<any>({}); // Using 'any' temporarily, will be typed by action response
+  const [pacePRs, setPacePRs] = useState<any>({}); // Using 'any' temporarily
+  const [loadingPRs, setLoadingPRs] = useState(true);
   
-  // Get unique workout types for filter options safely
-  const workoutTypes = Array.from(new Set(workouts.filter(w => w?.type).map(w => w.type)))
+  // Get unique workout types
+  const workoutTypes = useMemo(() => 
+      Array.from(new Set(initialWorkouts.map(w => w.type).filter(Boolean)))
+      .sort(), 
+  [initialWorkouts]);
   
   // Parse date strings to Date objects
   const startDate = startDateString ? new Date(startDateString) : undefined
   const endDate = endDateString ? new Date(endDateString) : undefined
   
-  // Apply filters
-  useEffect(() => {
+  // Get workout distance safely
+  const getWorkoutDistance = useCallback((workout: WorkoutData): number => {
     try {
-      let result = [...workouts]
-      
-      // Filter by type
-      if (typeFilter !== "all") {
-        result = result.filter(workout => workout.type === typeFilter)
+      if (typeof workout.distance === 'number') {
+        return workout.distance;
       }
-      
-      // Filter by intensity
-      if (intensityFilter !== "all") {
-        result = result.filter(workout => workout.intensity === intensityFilter)
+      if (workout.cardioDetails?.distance !== undefined) {
+        return workout.cardioDetails.distance;
       }
-      
-      // Filter by date range
-      if (startDate) {
-        result = result.filter(workout => {
-          try {
-            const workoutDate = new Date(workout.date)
-            return isAfter(workoutDate, startDate) || isEqual(workoutDate, startDate)
-          } catch (e) {
-            return true; // Include if date parsing fails
-          }
-        })
-      }
-      
-      if (endDate) {
-        result = result.filter(workout => {
-          try {
-            const workoutDate = new Date(workout.date)
-            return isBefore(workoutDate, endDate) || isEqual(workoutDate, endDate)
-          } catch (e) {
-            return true; // Include if date parsing fails
-          }
-        })
-      }
-      
-      // Filter by search query
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        result = result.filter(workout => 
-          (workout.name && workout.name.toLowerCase().includes(query)) ||
-          (workout.type && workout.type.toLowerCase().includes(query)) ||
-          (workout.notes && workout.notes.toLowerCase().includes(query))
-        )
-      }
-      
-      // Apply sorting
-      result.sort((a, b) => {
-        try {
-          if (sortField === "date") {
-            return sortDirection === "asc" 
-              ? new Date(a.date).getTime() - new Date(b.date).getTime()
-              : new Date(b.date).getTime() - new Date(a.date).getTime()
-          }
-          
-          if (sortField === "duration") {
-            return sortDirection === "asc" 
-              ? (a.duration || 0) - (b.duration || 0)
-              : (b.duration || 0) - (a.duration || 0)
-          }
-          
-          if (sortField === "volume") {
-            const volA = getWorkoutVolume(a).value;
-            const volB = getWorkoutVolume(b).value;
-            return sortDirection === "asc" 
-              ? volA - volB
-              : volB - volA;
-          }
-          
-          // String-based sorting (name, type, intensity)
-          const aValue = String(a[sortField] || "").toLowerCase()
-          const bValue = String(b[sortField] || "").toLowerCase()
-          
-          return sortDirection === "asc"
-            ? aValue.localeCompare(bValue)
-            : bValue.localeCompare(aValue)
-        } catch (e) {
-          return 0; // Return 0 if comparison fails
-        }
-      })
-      
-      setFilteredWorkouts(result)
-    } catch (err) {
-      console.error("Error filtering workouts:", err);
-      // Don't return early or set filtered workouts to empty here
-      // This could cause hook order issues if we conditionally return early
-      setError("Failed to filter workout data. Please try refreshing the page.");
+    } catch (e) {
+      console.error("Error getting workout distance:", e);
     }
-  }, [workouts, typeFilter, intensityFilter, startDate, endDate, searchQuery, sortField, sortDirection]);
+    return 0;
+  }, []);
+
+  // Get workout volume based on type
+  const getWorkoutVolume = useCallback((workout: WorkoutData): { value: number, unit: string } => {
+    try {
+      const typeLower = workout.type?.toLowerCase();
+      if (typeLower === "running" || typeLower === "run" || typeLower === "cycling" || typeLower === "swim") {
+        // For cardio, return distance in km
+        return { 
+          value: getWorkoutDistance(workout),
+          unit: "km" 
+        };
+      } else if (typeLower === "strength") {
+        // For strength, return total volume (weight * reps across all exercises)
+        // Prioritize explicitly stored volume if available
+        if (typeof workout.volume === 'number' && workout.volume > 0) {
+          return { value: workout.volume, unit: "kg" };
+        }
+        
+        // Calculate volume if not stored directly or is 0
+        let totalVolume = 0;
+        if (workout.exercises && Array.isArray(workout.exercises)) {
+          workout.exercises.forEach(exercise => {
+            if (exercise && Array.isArray(exercise.sets)) {
+               exercise.sets.forEach(set => {
+                 // Ensure weight and reps are numbers before multiplying
+                 const weight = typeof set.weight === 'number' ? set.weight : 0;
+                 const reps = typeof set.reps === 'number' ? set.reps : 0;
+                 totalVolume += weight * reps;
+               });
+            }
+          });
+        }
+        return { value: totalVolume, unit: "kg" };
+      }
+    } catch (e) {
+      console.error("Error getting workout volume:", e);
+    }
+    // Default for unknown types or errors
+    return { value: 0, unit: "units" }; 
+  }, [getWorkoutDistance]);
+
+  // Define applyFiltersAndSort using useCallback
+  const applyFiltersAndSort = useCallback(() => {
+    console.log("Applying filters and sort...");
+    let processedWorkouts = [...workouts];
+
+    // Apply Type Filter
+    if (typeFilter !== "all") {
+      processedWorkouts = processedWorkouts.filter(w => w.type === typeFilter);
+    }
+
+    // Apply Search Query Filter
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      processedWorkouts = processedWorkouts.filter(w =>
+        (w.name && w.name.toLowerCase().includes(lowerQuery)) ||
+        (w.notes && w.notes.toLowerCase().includes(lowerQuery))
+      );
+    }
+
+    // Apply Sorting
+    processedWorkouts.sort((a, b) => {
+      let valA: any, valB: any;
+
+      if (sortField === 'date') {
+         try {
+           valA = new Date(a.date).getTime();
+           valB = new Date(b.date).getTime();
+           if (isNaN(valA)) valA = 0; // Handle invalid dates
+           if (isNaN(valB)) valB = 0;
+         } catch {
+           valA = 0; valB = 0;
+         }
+      } else if (sortField === 'volume') {
+        valA = getWorkoutVolume(a).value;
+        valB = getWorkoutVolume(b).value;
+      } else {
+        // Handle other sortable fields (e.g., duration, name)
+        valA = a[sortField as keyof WorkoutData];
+        valB = b[sortField as keyof WorkoutData];
+      }
+
+      // Comparison logic
+      if (valA === undefined || valA === null) return sortDirection === 'asc' ? -1 : 1;
+      if (valB === undefined || valB === null) return sortDirection === 'asc' ? 1 : -1;
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      } else {
+        // Numeric comparison (handles dates converted to numbers, volume, duration)
+        return sortDirection === 'asc' ? (valA < valB ? -1 : 1) : (valB < valA ? -1 : 1);
+      }
+    });
+
+    console.log("Filtered/Sorted workouts:", processedWorkouts.length);
+    setFilteredWorkouts(processedWorkouts);
+  }, [workouts, typeFilter, searchQuery, sortField, sortDirection, getWorkoutVolume]);
+  
+  // Initialize workouts state and fetch PRs using Server Action
+  useEffect(() => {
+    console.log("Initial effect: Setting workouts from initialWorkouts");
+    setWorkouts(initialWorkouts || []); 
+
+    // Fetch PR data using the Server Action
+    const fetchPRs = async () => {
+      console.log("Fetching PRs via server action..."); 
+      setLoadingPRs(true);
+      setError(null); // Clear previous errors
+      try {
+        const result = await fetchPrDataAction();
+
+        if (result.success && result.exercisePRs && result.pacePRs) {
+          console.log("Server Action Success: Received PRs", result);
+          setExercisePRs(result.exercisePRs);
+          setPacePRs(result.pacePRs);
+        } else {
+          console.error("Server Action Error:", result.error);
+          setError(result.error || "Could not load Personal Records.");
+        }
+      } catch (err) {
+        // Catch potential network errors or unexpected issues calling the action
+        console.error("Error calling fetchPrDataAction:", err);
+        setError("An unexpected error occurred while loading PRs.");
+      } finally {
+        setLoadingPRs(false);
+      }
+    };
+
+    fetchPRs();
+    // Initial workouts loaded, PR fetch initiated
+  }, [initialWorkouts]); // Only re-run when initialWorkouts change
+  
+  // Apply filters and sorting whenever dependencies change
+  useEffect(() => {
+     console.log("Filter/Sort Effect Triggered"); // Debug log
+     // This effect now correctly depends on the memoized callback
+     applyFiltersAndSort();
+  }, [applyFiltersAndSort]); // Dependency array ONLY includes the stable callback
   
   // Handle sorting
   const handleSort = (field: SortField) => {
@@ -352,106 +356,11 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     searchQuery !== ""
 
   // Format date in a readable way
-  const formatDate = (date: Date) => {
-    try {
-      return format(new Date(date), "EEE, MMM d")
-    } catch (e) {
-      return "Unknown date"
-    }
+  const formatDate = (date: Date | string | undefined | null): string => {
+    if (!date) return "N/A";
+    try { return formatDateUtil(new Date(date)); } catch (e) { return "Unknown date"; }
   }
   
-  // Get badge color based on intensity
-  const getIntensityColor = (intensity: string | undefined) => {
-    switch (intensity) {
-      case "High":
-        return "bg-red-500/10 text-red-500 hover:bg-red-500/20"
-      case "Medium":
-        return "bg-orange-500/10 text-orange-500 hover:bg-orange-500/20"
-      case "Low":
-        return "bg-green-500/10 text-green-500 hover:bg-green-500/20"
-      default:
-        return "bg-gray-500/10 text-gray-500 hover:bg-gray-500/20"
-    }
-  }
-  
-  // Get icon based on workout type
-  const getTypeIcon = (type: string) => {
-    switch (type.toLowerCase()) {
-      case "running":
-        return <svg className="h-4 w-4" viewBox="0 0 512 512" fill="currentColor">
-          <g>
-            <path d="M370.14 457.06v-7a39.86 39.86 0 0 0-24.48-36.73L331 364.87l12.82-38.68c4.48 5.9 12 11.35 23.92 14.52l3.07-11.6c-16.64-4.41-20.19-13.2-20.8-18.25h.52a24.75 24.75 0 0 0 8.49-48l18.27-36.26 103.65-117.21-9-8-104.68 118.44-16.06 31.87a35.21 35.21 0 0 0-34.31-10.26l-5.82 1.46a23.72 23.72 0 0 1-15.48-44.65 8.48 8.48 0 0 0 4.81-9.31l11.43-7.69 90.24-132.12-9.91-6.76-88.93 130.21-8.23 5.53a16.09 16.09 0 0 0-18.17-3.93L183.69 214A23.87 23.87 0 0 0 171 244.61l64.72 161.53 53.43 51.49H94.55v12h316.66v-12h-41.1c.01-.19.03-.38.03-.57zm-17.21-158.41 7-21.14a12.76 12.76 0 0 1-7 21.14z" />
-            <path d="M327.92 414.88a33.8 33.8 0 0 1 33.8 33.8v7a6.57 6.57 0 0 1-6.57 6.57h-39.71a34.32 34.32 0 0 1-23.82-9.61l-53.24-51.3L174.14 241a17.73 17.73 0 0 1 9.49-22.9l93.13-39.78a10.09 10.09 0 0 1 13.24 5.39l1.93 4.58a2.42 2.42 0 0 1-1.24 3.15 29.72 29.72 0 0 0-15.42 38.14a29.71 29.71 0 0 0 34.81 17.8l5.83-1.46a29.09 29.09 0 0 1 34.74 19.22l2.07 6.36-30.46 91.95 16.58 54.76" />
-          </g>
-        </svg>
-      case "cycling":
-        return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <circle cx="12" cy="12" r="3"></circle>
-        </svg>
-      case "swimming":
-        return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 12h20"></path>
-          <path d="M4 8c1.333-1.333 2.667-2 4-2 1.333 0 2.667.667 4 2 1.333 1.333 2.667 2 4 2 1.333 0 2.667-.667 4-2"></path>
-          <path d="M4 16c1.333-1.333 2.667-2 4-2 1.333 0 2.667.667 4 2 1.333 1.333 2.667 2 4 2 1.333 0 2.667-.667 4-2"></path>
-        </svg>
-      case "strength":
-        return <Dumbbell className="h-4 w-4" />
-      default:
-        return <Activity className="h-4 w-4" />
-    }
-  }
-  
-  // Get workout distance safely
-  const getWorkoutDistance = (workout: WorkoutData): number => {
-    try {
-      if (typeof workout.distance === 'number') {
-        return workout.distance;
-      }
-      if (workout.cardioDetails?.distance !== undefined) {
-        return workout.cardioDetails.distance;
-      }
-    } catch (e) {
-      console.error("Error getting workout distance:", e);
-    }
-    return 0;
-  }
-
-  // Get workout volume based on type
-  const getWorkoutVolume = (workout: WorkoutData): { value: number, unit: string } => {
-    try {
-      if (workout.type.toLowerCase() === "running" || workout.type.toLowerCase() === "run") {
-        // For runs, return distance in km
-        return { 
-          value: getWorkoutDistance(workout), 
-          unit: "km" 
-        };
-      } else if (workout.type.toLowerCase() === "strength") {
-        // For strength, return total volume (weight * reps across all exercises)
-        if (workout.volume !== undefined) {
-          return { value: workout.volume, unit: "kg" };
-        }
-        
-        // Calculate volume if not stored directly
-        let totalVolume = 0;
-        if (workout.exercises && workout.exercises.length > 0) {
-          workout.exercises.forEach(exercise => {
-            exercise.sets.forEach(set => {
-              totalVolume += set.weight * set.reps;
-            });
-          });
-        }
-        return { value: totalVolume, unit: "kg" };
-      }
-      
-      // Default return for other workout types
-      return { value: 0, unit: "" };
-    } catch (e) {
-      console.error("Error calculating workout volume:", e);
-      return { value: 0, unit: "" };
-    }
-  };
-
   // Format workout details for hover
   const formatWorkoutDetails = (workout: WorkoutData): string => {
     let details = [];
@@ -513,7 +422,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   );
   
   // Calculate workout stats
-  const workoutStats = React.useMemo(() => {
+  const workoutStats = useMemo(() => {
     // Ensure we always return a valid stats object
     const emptyStats: WorkoutStats = {
       totalWorkouts: 0,
@@ -529,7 +438,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     }
 
     try {
-      // Calculate total workout time
+      // Calculate total workout time in minutes
       const totalMinutes = workouts.reduce((sum, w) => sum + (w.duration || 0), 0);
       
       // Calculate total distance for cardio workouts
@@ -562,7 +471,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
       
       return {
         totalWorkouts: workouts.length,
-        totalMinutes,
+        totalMinutes: parseFloat(totalMinutes.toFixed(2)),
         totalDistance,
         totalVolume,
         favoriteType: favoriteType.charAt(0).toUpperCase() + favoriteType.slice(1)
@@ -580,44 +489,73 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         {error && errorContent}
         
         {/* Workout Stats - Enhanced for better visibility */}
-        <div className="grid grid-cols-4 gap-2 mb-4 w-full">
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col h-16 border border-muted/40">
-            <span className="text-[10px] text-muted-foreground">Total Workouts</span>
-            <div className="flex-1 flex items-end">
-              <span className="text-lg font-semibold">{workoutStats.totalWorkouts}</span>
-            </div>
-          </div>
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col h-16 border border-muted/40">
-            <span className="text-[10px] text-muted-foreground">Total Time</span>
-            <div className="flex-1 flex items-end">
-              <span className="text-lg font-semibold">{workoutStats.totalMinutes}<span className="text-[8px] ml-0.5">min</span></span>
-            </div>
-          </div>
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col h-16 border border-muted/40">
-            <span className="text-[10px] text-muted-foreground">Total Distance</span>
-            <div className="flex-1 flex items-end">
-              <span className="text-lg font-semibold">{workoutStats.totalDistance.toFixed(1)}<span className="text-[8px] ml-0.5">km</span></span>
-            </div>
-          </div>
-          <div className="bg-muted/30 rounded-lg p-2 flex flex-col h-16 border border-muted/40">
-            <span className="text-[10px] text-muted-foreground">Favorite Type</span>
-            <div className="flex-1 flex items-end">
-              <span className="text-lg font-semibold">{workoutStats.favoriteType}</span>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {/* Total Workouts */} 
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Workouts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{workoutStats.totalWorkouts}</div>
+            </CardContent>
+          </Card>
+          {/* Total Time */} 
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatDuration(workoutStats.totalMinutes)}</div>
+            </CardContent>
+          </Card>
+          {/* Total Distance (Running/Cycling) */} 
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Distance</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatDistance(workoutStats.totalDistance)}</div>
+              <p className="text-xs text-muted-foreground">(Running/Cycling)</p>
+            </CardContent>
+          </Card>
+          {/* Favorite Type */} 
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Favorite Type</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{workoutStats.favoriteType}</div>
+            </CardContent>
+          </Card>
+          {/* Fastest 5k */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Fastest 5k Pace</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pacePRs.fastest5k ? (
+                <>
+                  {/* Use the local formatPaceDisplay function */}
+                  <div className="text-2xl font-bold">{formatPaceDisplay(pacePRs.fastest5k.pace)}<span className="text-lg"> /km</span></div>
+                  <p className="text-xs text-muted-foreground">on {formatDate(pacePRs.fastest5k.date)}</p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No data</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
         
         {/* Results info and compact filters */}
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs text-muted-foreground">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4">
+          <span className="text-sm text-muted-foreground">
             Showing {filteredWorkouts.length} of {workouts.length} workouts
-            {filtersActive && " (filtered)"}
           </span>
           
-          <div className="flex gap-1 items-center">
+          <div className="flex gap-2 items-center">
             {/* Type Quick Filter */}
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger id="type-filter-compact" className="h-7 text-xs w-[100px]">
+              <SelectTrigger className="h-9 w-[130px]">
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
@@ -631,12 +569,11 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             </Select>
             
             {/* Search */}
-            <div className="relative w-[120px]">
-              <Search className="absolute left-2 top-1.5 h-3 w-3 text-muted-foreground" />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                id="search-query-compact"
-                placeholder="Search..."
-                className="pl-7 h-7 text-xs"
+                placeholder="Search name/notes..."
+                className="pl-9 h-9 w-[150px] sm:w-[200px]"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -644,89 +581,72 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             
             {/* Reset filters */}
             {filtersActive && (
-              <Button 
-                variant="ghost" 
-                onClick={resetFilters}
-                className="h-7 w-7 p-0"
-                title="Clear filters"
-              >
-                <X className="h-3 w-3" />
+              <Button variant="ghost" onClick={resetFilters} size="icon" className="h-9 w-9">
+                <X className="h-4 w-4" />
               </Button>
             )}
           </div>
         </div>
         
         {/* Workouts Table */}
-        <div className="rounded-md border overflow-hidden">
-          {/* Table header */}
-          <div className="bg-muted">
-            <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs font-medium text-muted-foreground">
-              <div 
-                className="col-span-6 flex items-center cursor-pointer"
-                onClick={() => handleSort("date")}
-              >
-                Date
-                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "date" ? "opacity-100" : "opacity-50"}`} />
-              </div>
-              <div 
-                className="col-span-3 flex items-center cursor-pointer"
-                onClick={() => handleSort("type")}
-              >
-                Type
-                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "type" ? "opacity-100" : "opacity-50"}`} />
-              </div>
-              <div 
-                className="col-span-3 flex items-center cursor-pointer"
-                onClick={() => handleSort("volume")}
-              >
-                Volume
-                <ArrowUpDown className={`ml-1 h-3 w-3 ${sortField === "volume" ? "opacity-100" : "opacity-50"}`} />
-              </div>
-            </div>
-          </div>
-          
-          {/* Table rows */}
-          <div className="divide-y">
-            {filteredWorkouts.length > 0 ? (
-              filteredWorkouts.map((workout) => {
-                const volume = getWorkoutVolume(workout);
-                return (
-                <Link 
-                  href={`/workout/${workout._id}`}
-                  key={typeof workout._id === 'string' ? workout._id : String(workout._id)} 
-                  className="grid grid-cols-12 gap-2 py-3 px-4 items-center hover:bg-muted/50 transition-colors duration-150 cursor-pointer block"
-                >
-                  <div className="col-span-6">
-                    <div className="font-medium text-sm">{formatDate(new Date(workout.date))}</div>
-                  </div>
-                  <div className="col-span-3">
-                    <Badge variant="outline" className="flex items-center gap-1 w-fit py-0.5 h-6">
-                      {getTypeIcon(workout.type)}
-                      <span className="hidden sm:inline-block text-xs">
-                        {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
-                      </span>
-                    </Badge>
-                  </div>
-                  <div className="col-span-3 text-right">
-                    {volume.value > 0 && (
-                      <div className="text-xs whitespace-nowrap">
-                        {volume.value.toFixed(1)} {volume.unit}
+        <div className="grid grid-cols-1 gap-4">
+          {filteredWorkouts.length > 0 ? (
+            filteredWorkouts.map((workout) => {
+              const typeStyle = getWorkoutTypeStyle(workout.type);
+              const volume = getWorkoutVolume(workout);
+              return (
+                <Link href={`/workout/${workout._id}`} key={workout._id} className="block group">
+                  <Card className="hover:border-primary/40 transition-colors duration-150 border-border/50">
+                    <CardContent className="p-4 flex justify-between items-center">
+                      {/* Left Side: Date & Type */} 
+                      <div className="flex items-center gap-3">
+                         <Badge variant="outline" className={`flex items-center gap-1.5 px-2 py-1 text-xs h-7 ${typeStyle.colorClasses}`}>
+                           {typeStyle.icon}
+                           <span className="font-medium">
+                             {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
+                           </span>
+                         </Badge>
+                         <div>
+                           <div className="font-medium text-sm group-hover:text-primary transition-colors">
+                             {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
+                           </div>
+                           <div className="text-xs text-muted-foreground">
+                             {formatDate(new Date(workout.date))}
+                           </div>
+                         </div>
                       </div>
-                    )}
-                  </div>
+                      
+                      {/* Right Side: Metrics & Arrow */}
+                      <div className="flex items-center gap-4">
+                         <div className="flex flex-col items-end text-xs">
+                           <div className="flex items-center gap-1">
+                             <Clock className="h-3 w-3 text-muted-foreground" /> 
+                             {formatDuration(workout.duration)}
+                           </div>
+                           {volume.value > 0 && (
+                             <div className="flex items-center gap-1 mt-0.5">
+                               {volume.unit === 'km' ? <Ruler className="h-3 w-3 text-muted-foreground"/> : <Dumbbell className="h-3 w-3 text-muted-foreground" />}
+                               {volume.value.toFixed(volume.unit === 'km' ? 1 : 0)} {volume.unit}
+                             </div>
+                           )}
+                         </div>
+                         <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </CardContent>
+                  </Card>
                 </Link>
-              )})
-            ) : (
-              <div className="py-6 text-center">
-                <p className="text-muted-foreground text-xs">No workouts found matching your criteria.</p>
-                {filtersActive && (
-                  <Button variant="link" onClick={resetFilters} className="mt-1 text-xs h-6">
-                    Clear filters
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-10">
+              <p className="text-muted-foreground">No workouts found matching your criteria.</p>
+              {filtersActive && (
+                <Button variant="link" onClick={resetFilters} className="mt-2">
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </WorkoutListErrorBoundary>

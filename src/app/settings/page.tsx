@@ -1190,8 +1190,9 @@ export default function SettingsPage() {
               successMessage = `No workouts found matching the selected types: ${workoutTypesList}.`;
             }
           } else {
+            // Use the string returned from the API
             successMessage = `Successfully deleted ${result.deletedCount} ${result.deletedCount === 1 ? 'workout' : 'workouts'} ` +
-              `of type${types.length > 1 ? 's' : ''}: ${workoutTypesList}.`;
+              `of types: ${result.deletedTypesString}.`; // Use result.deletedTypesString
           }
           
           setDeleteWorkoutsSuccess(successMessage);
@@ -2000,6 +2001,7 @@ export default function SettingsPage() {
                       type="submit"
                       variant="destructive"
                       disabled={isDeletingWorkouts}
+                      className="border border-destructive-foreground/50 p-2" // Add border and padding
                     >
                       {isDeletingWorkouts ? "Deleting..." : "Delete Selected Workout Types"}
                     </Button>

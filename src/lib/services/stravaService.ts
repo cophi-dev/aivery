@@ -2,6 +2,7 @@ import { getCollection } from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { mockIntegrations } from "../db/mock-data"
 import { exchangeCodeForToken, refreshToken } from "../strava/config"
+import { mapStravaType, calculateIntensity } from '@/app/api/strava/import/route'
 
 const DB_NAME = "aivery"
 const INTEGRATIONS_COLLECTION = "integrations"
@@ -171,38 +172,39 @@ async function getValidAccessToken(userId: string) {
 
 // Function to transform Strava activity to our workout format
 export function transformStravaActivity(activity: any) {
-  // Common fields for all activities
-  const workout: any = {
-    sourceId: activity.id.toString(),
-    name: activity.name,
-    date: new Date(activity.start_date),
-    duration: Math.round(activity.elapsed_time / 60), // Convert seconds to minutes
-    distance: activity.distance / 1000, // Convert meters to kilometers
-    type: activity.type.toLowerCase(),
-    notes: `Imported from Strava: ${activity.name}`,
-    source: "strava",
-    stravaLink: `https://www.strava.com/activities/${activity.id}`,
-    cardioDetails: {
-      distance: activity.distance / 1000, // km
-      duration: Math.round(activity.elapsed_time / 60), // minutes
-      pace: activity.average_speed ? (60 / (activity.average_speed * 3.6)).toFixed(2) : undefined, // min/km
-      speed: activity.average_speed ? (activity.average_speed * 3.6).toFixed(2) : undefined, // km/h
-      maxSpeed: activity.max_speed ? (activity.max_speed * 3.6).toFixed(2) : undefined, // km/h
-      elevationGain: activity.total_elevation_gain,
-      heartRate: activity.has_heartrate ? {
-        average: activity.average_heartrate,
-        max: activity.max_heartrate
-      } : undefined
-    }
-  };
-
-  // Add activity-specific fields
-  if (activity.type.toLowerCase() === 'swim') {
-    workout.cardioDetails.poolLength = activity.pool_length;
-    workout.cardioDetails.strokeType = activity.stroke_type;
+  console.log('Starting Strava activity transformation:', activity);
+  
+  if (!activity) {
+    console.error('No activity data provided to transform');
+    throw new Error('No activity data provided to transform');
   }
 
-  return workout;
+  try {
+    const transformed = {
+      name: activity.name || `${activity.type} Activity`,
+      date: new Date(activity.start_date || activity.timestamp),
+      duration: activity.elapsed_time || activity.total_elapsed_time || 0,
+      distance: activity.distance || activity.total_distance || 0,
+      type: activity.type || mapStravaType(activity.sport, activity.sub_sport),
+      notes: activity.description || '',
+      intensity: calculateIntensity(activity),
+      source: 'strava',
+      sourceId: activity.id,
+      elevationGain: activity.total_elevation_gain || activity.total_ascent || 0,
+      averageHeartRate: activity.average_heartrate || activity.avg_heart_rate || 0,
+      maxHeartRate: activity.max_heartrate || activity.max_heart_rate || 0,
+      averagePower: activity.average_watts || activity.avg_power || 0,
+      maxPower: activity.max_watts || activity.max_power || 0,
+      averageSpeed: activity.average_speed || activity.avg_speed || 0,
+      maxSpeed: activity.max_speed || activity.enhanced_max_speed || 0,
+    };
+
+    console.log('Transformed activity:', transformed);
+    return transformed;
+  } catch (error) {
+    console.error('Error transforming Strava activity:', error);
+    throw error;
+  }
 }
 
 // New function to get user's Strava sync preferences

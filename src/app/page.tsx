@@ -1,90 +1,53 @@
 'use client';
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { redirect, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen } from "lucide-react";
+import { 
+  Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen, 
+  Bike, Waves, HeartPulse
+} from "lucide-react";
 import type { WorkoutData } from "@/types/db";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, isWithinInterval, subWeeks, parseISO } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { motion } from "framer-motion";
 import { fetchWithAuth, getUserData, getQuote } from "@/lib/client-utils";
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-// Header component that will be visible immediately
-function AppHeader({ user, quote, isLoading, onRefreshQuote }: { 
-  user: any | null, 
-  quote: string, 
-  isLoading?: boolean,
-  onRefreshQuote?: () => void
-}) {
-  // Use nickname if available, otherwise fall back to name or default
-  const displayName = user?.nickname || user?.name || "Guest";
-  
-  // Add a timestamp to ensure the quote always looks fresh 
-  // (even if it's the same content, browsers often cache and gray out unchanged content)
-  const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
-  
-  // Update the timestamp every minute to keep the quote looking fresh
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimestamp(new Date().toLocaleTimeString());
-    }, 60 * 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
-  
-  if (isLoading) {
-    // Show a placeholder header while loading
-    return (
-      <section className="mb-8 p-6 bg-card rounded-xl">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-primary/20 animate-pulse" />
-          <div className="flex-1">
-            <div className="h-7 w-40 bg-primary/20 rounded animate-pulse mb-2"></div>
-            <div className="h-5 w-64 bg-primary/10 rounded animate-pulse"></div>
-          </div>
-        </div>
-      </section>
-    );
+// --- Helper Functions ---
+
+// Get an icon based on workout type
+const getWorkoutTypeIcon = (type: string | undefined) => {
+  const typeLower = type?.toLowerCase() || '';
+  if (typeLower.includes('run')) return <Activity className="h-4 w-4" />;
+  if (typeLower.includes('strength') || typeLower.includes('weight')) return <Dumbbell className="h-4 w-4" />;
+  if (typeLower.includes('cycle') || typeLower.includes('bike')) return <Bike className="h-4 w-4" />;
+  if (typeLower.includes('swim')) return <Waves className="h-4 w-4" />;
+  if (typeLower.includes('hiit') || typeLower.includes('cardio')) return <HeartPulse className="h-4 w-4" />;
+  return <Activity className="h-4 w-4" />; // Default icon
+};
+
+// Format duration assuming input is in MINUTES
+const formatDurationFromMinutes = (minutes: number | undefined | null): string => {
+  if (minutes === undefined || minutes === null || minutes <= 0) return "0 min";
+  const totalMinutes = Math.round(minutes);
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
   }
-  
-  return (
-    <section className="mb-8 p-6 bg-card rounded-xl">
-      <div className="flex items-center gap-4">
-        <UserAvatar 
-          name={typeof displayName === 'string' ? displayName : ''} 
-          imageUrl={typeof user?.image === 'string' ? user.image : null}
-          size="lg"
-        />
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold">Hey {displayName}!</h2>
-          <div className="flex items-center gap-2">
-            <p className="text-muted-foreground italic">
-              {quote}
-              {/* Invisible timestamp to prevent quote from being grayed out by browser */}
-              <span className="invisible h-0 w-0 overflow-hidden">{timestamp}</span>
-            </p>
-            {onRefreshQuote && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6 rounded-full hover:bg-muted/50"
-                onClick={onRefreshQuote}
-                title="Refresh quote"
-              >
-                <RefreshCcw className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  return `${hours}h ${mins > 0 ? `${mins}m` : ''}`.trim(); // Trim trailing space if mins is 0
+};
+
+// Format distance (assuming km)
+const formatDistance = (distance: number | undefined | null): string | null => {
+  if (distance === undefined || distance === null || distance <= 0) return null;
+  return `${distance.toFixed(1)} km`;
+};
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -92,26 +55,22 @@ export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutData[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
-  const [headerLoading, setHeaderLoading] = useState(false);
 
-  // Fetch a quote when the component mounts
   useEffect(() => {
-    // Track if component is mounted
     let isMounted = true;
     
     async function fetchQuoteData(forceFresh = false) {
       try {
         console.log(`[PAGE] Fetching fresh quote at ${new Date().toISOString()}`);
-        // Use the new utility function - ALWAYS force fresh
         const quoteText = await getQuote(
           location?.lat, 
           location?.lon, 
-          true // Always force fresh quotes
+          true
         );
         
         if (isMounted) {
@@ -123,10 +82,8 @@ export default function HomePage() {
       }
     }
     
-    // Always fetch a fresh quote on mount/page load
     fetchQuoteData(true);
 
-    // Handle window visibility changes (tab focus)
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') {
         console.log('[PAGE] Tab visible again, refreshing quote');
@@ -134,27 +91,22 @@ export default function HomePage() {
       }
     }
     
-    // Use the Page Visibility API for tab focus
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Refresh quote more frequently - every 2 minutes
     const quoteInterval = setInterval(() => {
       console.log('[PAGE] Quote refresh interval triggered');
       fetchQuoteData(true);
     }, 2 * 60 * 1000);
     
-    // Also add a manual refresh on mouse movement occasionally
     let lastRefresh = Date.now();
     const handleMouseMove = () => {
       const now = Date.now();
-      // Only refresh at most once every 30 seconds on mouse movement
       if (now - lastRefresh > 30 * 1000) {
         lastRefresh = now;
         fetchQuoteData(true);
       }
     };
     
-    // Add the mouse movement listener
     document.addEventListener('mousemove', handleMouseMove);
     
     return () => {
@@ -165,23 +117,7 @@ export default function HomePage() {
     };
   }, [location]);
 
-  // Check user authentication status and fetch user data
-  useEffect(() => {
-    if (status === "loading") {
-      return; // Still checking auth status
-    }
-    
-    // If user is not logged in, the public landing page will be shown
-    if (status !== "authenticated") {
-      return;
-    }
-    
-    // User is authenticated, fetch their data
-    fetchUserData();
-  }, [status, retryCount]);
-
-  // Function to fetch complete user data
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
       if (!session?.user?.id) {
         return;
@@ -190,13 +126,11 @@ export default function HomePage() {
       setLoading(true);
       setError(null);
       
-      // Use new utility function for user data
       try {
         const userData = await getUserData();
         if (userData?.user) {
           setUser(userData.user);
           
-          // Fetch user's workouts
           if (userData.user._id) {
             const workoutsResponse = await fetchWithAuth(`/api/workouts/${userData.user._id}`);
             if (!workoutsResponse.ok) {
@@ -205,13 +139,11 @@ export default function HomePage() {
             const workoutsData = await workoutsResponse.json();
             
             if (!workoutsData.workouts) {
-              // If no workouts array, create an empty one
               setWorkouts([]);
               setRecentWorkouts([]);
             } else {
               setWorkouts(workoutsData.workouts);
               
-              // Sort workouts by date (newest first) and take the 5 most recent
               const sortedWorkouts = [...workoutsData.workouts].sort(
                 (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
               ).slice(0, 5);
@@ -230,21 +162,29 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session]);
 
-  // Retry mechanism
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.id) {
+      fetchUserData();
+    } else if (status === "loading") {
+      setLoading(true);
+    } else {
+      setLoading(false);
+    }
+  }, [status, session, retryCount, fetchUserData]);
+
   const handleRetry = () => {
     setRetryCount(prev => prev + 1);
   };
 
-  // Function to force refresh the quote
   const refreshQuote = useCallback(async () => {
     try {
       console.log('[PAGE] Manual quote refresh requested');
       const newQuote = await getQuote(
         location?.lat,
         location?.lon,
-        true // Always force fresh
+        true
       );
       setQuote(newQuote);
       console.log(`[PAGE] Quote manually refreshed: ${newQuote.substring(0, 20)}...`);
@@ -253,24 +193,59 @@ export default function HomePage() {
     }
   }, [location]);
 
-  // Simple loading state for when authentication is being checked
-  if (status === "loading") {
+  const weeklyWorkoutData = useMemo(() => {
+    if (!workouts || workouts.length === 0) return [];
+
+    const numberOfWeeks = 4;
+    const today = new Date();
+    const weeklyData: { name: string; workouts: number }[] = [];
+
+    for (let i = 0; i < numberOfWeeks; i++) {
+      const weekEndDate = endOfWeek(subWeeks(today, i), { weekStartsOn: 1 });
+      const weekStartDate = startOfWeek(subWeeks(today, i), { weekStartsOn: 1 });
+
+      const workoutsInWeek = workouts.filter(w => {
+        try {
+           const workoutDate = w.date instanceof Date ? w.date : parseISO(w.date as any);
+           return isWithinInterval(workoutDate, { start: weekStartDate, end: weekEndDate });
+        } catch (e) {
+          console.warn("Error parsing workout date for chart:", w.date, e);
+          return false;
+        }
+      });
+
+      weeklyData.push({
+        name: `Wk ${format(weekStartDate, 'MMM d')}`,
+        workouts: workoutsInWeek.length,
+      });
+    }
+
+    return weeklyData.reverse();
+  }, [workouts]);
+
+  if (loading) {
     return (
-      <div className="container mx-auto px-4 py-6">
-        <AppHeader 
-          user={null} 
-          quote={quote} 
-          isLoading={true}
-        />
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
       </div>
     );
   }
 
-  // For completely unauthenticated users or error states
-  if (status !== "authenticated" || error) {
+  if (error) {
     return (
       <div className="container mx-auto px-4 py-8">
-        {/* Show error if there is one */}
+        <div className="mb-8 bg-destructive/10 text-destructive p-6 rounded-lg">
+          <h2 className="text-xl font-bold mb-2">Error Loading Dashboard</h2>
+          <p className="mb-4">{error}</p>
+          <Button onClick={handleRetry} variant="outline">Try Again</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (status !== "authenticated") {
+    return (
+      <div className="container mx-auto px-4 py-8">
         {error && (
           <div className="mb-8 bg-destructive/10 text-destructive p-6 rounded-lg">
             <h2 className="text-xl font-bold mb-2">Error Loading Dashboard</h2>
@@ -284,289 +259,261 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Show landing page for unauthenticated users */}
-        {status !== "authenticated" && (
-          <>
-            <div className="flex flex-col items-center text-center mb-12">
-              <h1 className="text-4xl font-bold tracking-tight mb-4">Welcome to Aivery</h1>
-              <p className="text-muted-foreground max-w-2xl mb-8">
-                Your AI-powered fitness companion to track, plan and analyze your fitness journey
-              </p>
-              <div className="flex gap-4 flex-wrap justify-center">
-                <Button size="lg" asChild>
-                  <Link href="/login">
-                    <MessageSquare className="mr-2 h-5 w-5" />
-                    Login
-                  </Link>
-                </Button>
-                <Button variant="outline" size="lg" asChild>
-                  <Link href="/register">
-                    <Calendar className="mr-2 h-5 w-5" />
-                    Register
-                  </Link>
-                </Button>
+        <div className="flex flex-col items-center text-center mb-12">
+          <h1 className="text-4xl font-bold tracking-tight mb-4">Welcome to Aivery</h1>
+          <p className="text-muted-foreground max-w-2xl mb-8">
+            Your AI-powered fitness companion to track, plan and analyze your fitness journey
+          </p>
+          <div className="flex gap-4 flex-wrap justify-center">
+            <Button size="lg" asChild>
+              <Link href="/login">
+                <MessageSquare className="mr-2 h-5 w-5" />
+                Login
+              </Link>
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <Link href="/register">
+                <Calendar className="mr-2 h-5 w-5" />
+                Register
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Weekly Workouts</CardTitle>
+              <CardDescription>Your workout consistency</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">4/5</div>
+              <p className="text-muted-foreground">Goal: 5 workouts per week</p>
+              <div className="w-full bg-secondary h-2 rounded-full mt-4">
+                <div className="bg-primary h-2 rounded-full w-4/5"></div>
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Weekly Workouts</CardTitle>
-                  <CardDescription>Your workout consistency</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">4/5</div>
-                  <p className="text-muted-foreground">Goal: 5 workouts per week</p>
-                  <div className="w-full bg-secondary h-2 rounded-full mt-4">
-                    <div className="bg-primary h-2 rounded-full w-4/5"></div>
-                  </div>
-                </CardContent>
-              </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Total Volume</CardTitle>
+              <CardDescription>Weight lifted this week</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">12,450 kg</div>
+              <p className="text-muted-foreground">+8% from last week</p>
+            </CardContent>
+          </Card>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Total Volume</CardTitle>
-                  <CardDescription>Weight lifted this week</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">12,450 kg</div>
-                  <p className="text-muted-foreground">+8% from last week</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Personal Records</CardTitle>
-                  <CardDescription>New PRs this month</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">3</div>
-                  <p className="text-muted-foreground">Bench Press, Squat, Deadlift</p>
-                </CardContent>
-              </Card>
-            </div>
-          </>
-        )}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Personal Records</CardTitle>
+              <CardDescription>New PRs this month</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">3</div>
+              <p className="text-muted-foreground">Bench Press, Squat, Deadlift</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
 
-  // Dashboard for authenticated users with data
-  // Get some user-specific data
   const workoutCount = workouts.length;
   const hasWorkouts = workoutCount > 0;
-  const hasPlans = user?.plans?.length > 0;
-  const planCount = hasPlans ? user.plans.length : 0;
-  
+  const displayName = user?.nickname || user?.name || "User";
+
   return (
-    <div className="container mx-auto px-4 py-6">
-      <AppHeader 
-        user={user} 
-        quote={quote} 
-        onRefreshQuote={refreshQuote}
-      />
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-6">
-        {/* First row - Key statistics and quick access */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <Dumbbell className="mr-2 h-5 w-5" />
-              Workouts
-            </CardTitle>
-            <CardDescription>View and track your workouts</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{workoutCount}</div>
-            <p className="text-muted-foreground">Total workouts logged</p>
-          </CardContent>
-          <CardFooter>
-            <Link href="/workouts" className="w-full">
-              <Button className="w-full">
-                {workoutCount > 0 ? "View Workouts" : "Start First Workout"}
+    <div className="container mx-auto px-4 py-8 space-y-8 md:space-y-10">
+      <section className="p-6 bg-card rounded-xl shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <UserAvatar 
+            name={displayName} 
+            imageUrl={user?.image || null}
+            size="lg"
+          />
+          <div className="flex-1">
+            <h1 className="text-2xl md:text-3xl font-bold">Hey {displayName}!</h1>
+            <p className="text-muted-foreground text-sm md:text-base mb-2">
+              Your AI-powered fitness companion to track, plan and analyze your fitness journey.
+            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-muted-foreground italic text-xs md:text-sm">
+                {quote}
+              </p>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 rounded-full hover:bg-muted/50 flex-shrink-0"
+                onClick={refreshQuote}
+                title="Refresh quote"
+              >
+                <RefreshCcw className="h-3 w-3" />
               </Button>
-            </Link>
-          </CardFooter>
-        </Card>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <Calendar className="mr-2 h-5 w-5" />
-              Training Plans
-            </CardTitle>
-            <CardDescription>Manage your training plans</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{planCount}</div>
-            <p className="text-muted-foreground">Active training plans</p>
-          </CardContent>
-          <CardFooter>
-            <Link href="/plan" className="w-full">
-              <Button className="w-full" variant="outline">
-                {planCount > 0 ? "View Plans" : "Create a Plan"}
-              </Button>
-            </Link>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <MessageSquare className="mr-2 h-5 w-5" />
-              AI Coach
-            </CardTitle>
-            <CardDescription>Get personalized guidance</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Ask questions, get workout suggestions, and more</p>
-          </CardContent>
-          <CardFooter>
-            <Link href="/chat" className="w-full">
-              <Button className="w-full" variant="outline">Talk to AI Coach</Button>
-            </Link>
-          </CardFooter>
-        </Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+        <Button asChild size="lg" className="w-full">
+          <Link href="/chat">
+            <MessageSquare className="mr-2 h-5 w-5" /> Chat with AI Coach
+          </Link>
+        </Button>
+        <Button asChild variant="secondary" size="lg" className="w-full">
+          <Link href="/workout/new">
+            <Dumbbell className="mr-2 h-5 w-5" /> Log Workout
+          </Link>
+        </Button>
       </div>
 
-      {/* Rest of dashboard content */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-6">
-        {/* Quick Actions */}
-        <Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="lg:col-span-1">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <Zap className="mr-2 h-5 w-5" />
-              Quick Actions
+            <CardTitle className="text-lg flex items-center">
+              <Dumbbell className="mr-2 h-4 w-4" /> Workouts
             </CardTitle>
-            <CardDescription>Common tasks</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-2">
-              <Link href="/activity/new">
-                <Button variant="secondary" className="w-full" size="sm">
-                  Log Workout
-                </Button>
-              </Link>
-              <Link href="/chat?q=suggest+workout">
-                <Button variant="secondary" className="w-full" size="sm">
-                  Get Suggestion
-                </Button>
-              </Link>
-              <Link href="/plan/new">
-                <Button variant="secondary" className="w-full" size="sm">
-                  Create Plan
-                </Button>
-              </Link>
-              <Link href="/exercises">
-                <Button variant="secondary" className="w-full" size="sm">
-                  Exercises
-                </Button>
-              </Link>
-              <Link href="/settings">
-                <Button variant="secondary" className="w-full" size="sm">
-                  Settings
-                </Button>
-              </Link>
-              <Link href="/my-story">
-                <Button variant="secondary" className="w-full" size="sm">
-                  My Story
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* My Story Feature */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <BookOpen className="mr-2 h-5 w-5" />
-              My Fitness Story
-            </CardTitle>
-            <CardDescription>AI-generated article about your journey</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-3">
-              Let Aivery create a personalized story about your fitness journey, progress, and achievements.
-            </p>
+            <div className="text-4xl font-bold">{workoutCount}</div>
+            <p className="text-sm text-muted-foreground">Total logged</p>
           </CardContent>
           <CardFooter>
-            <Link href="/my-story" className="w-full">
-              <Button className="w-full" variant="outline">
-                Read My Story
-              </Button>
-            </Link>
+            <Button asChild className="w-full">
+              <Link href="/workouts">
+                {workoutCount > 0 ? "View Workouts" : "Log First Workout"}
+              </Link>
+            </Button>
           </CardFooter>
         </Card>
 
-        {/* Recent Activity */}
-        <Card className="md:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <Activity className="mr-2 h-5 w-5" />
-              Recent Activity
+        <Card className="md:col-span-2 lg:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center">
+              <Activity className="mr-2 h-4 w-4" /> Recent Activity
             </CardTitle>
-            <CardDescription>Your latest workouts</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-64 overflow-y-auto pr-1 space-y-3">
             {hasWorkouts ? (
-              <div className="space-y-3">
-                {recentWorkouts.map((workout) => (
-                  <div key={workout._id} className="flex items-center justify-between border-b pb-2 last:border-0">
-                    <div>
-                      <h3 className="font-medium">{workout.name || `${workout.type} workout`}</h3>
-                      <p className="text-sm text-muted-foreground">{format(new Date(workout.date), 'MMM d, yyyy')}</p>
+              <>
+                {recentWorkouts.map((workout) => {
+                  const icon = getWorkoutTypeIcon(workout.type);
+                  const date = format(new Date(workout.date), 'MMM d');
+                  const typeLower = workout.type?.toLowerCase() || '';
+                  let metric: string | null = null;
+                  
+                  // Prioritize distance for cardio types
+                  if (typeLower.includes('run') || typeLower.includes('cycle') || typeLower.includes('swim')) {
+                     metric = formatDistance(workout.distance);
+                  }
+                  // Fallback to formatted duration (from MINUTES)
+                  if (!metric) {
+                     metric = formatDurationFromMinutes(workout.duration);
+                  }
+
+                  return (
+                    <div key={workout._id} className="flex items-center justify-between gap-3 border-b border-border/50 pb-2 last:border-0 last:pb-0">
+                      <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
+                        {icon}
+                        <span className="text-xs font-normal w-14 text-right tabular-nums">{date}</span>
+                      </div>
+                      <div className="flex-1 min-w-0 text-right">
+                        {metric && (
+                          <Badge variant="secondary" className="h-5 px-1.5 text-xs font-normal">
+                            {metric}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{workout.duration} min</Badge>
-                      <Link href={`/workout/${workout._id}`}>
-                        <Button variant="ghost" size="sm">View</Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  );
+                })}
+              </>
             ) : (
-              <p className="text-muted-foreground">No workouts logged yet</p>
+              <p className="text-muted-foreground text-sm py-4 text-center">No workouts logged yet.</p>
             )}
           </CardContent>
           {hasWorkouts && (
-            <CardFooter>
-              <Link href="/workouts" className="w-full">
-                <Button className="w-full" variant="outline">
-                  View All Activity
-                </Button>
-              </Link>
+            <CardFooter className="pt-3">
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/workouts">View All Activity</Link>
+              </Button>
             </CardFooter>
           )}
         </Card>
-      </div>
 
-      {/* Progress Analytics */}
-      <div className="grid gap-6 md:grid-cols-1">
-        <Card>
+        <Card className="lg:col-span-1">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xl flex items-center">
-              <BarChart className="mr-2 h-5 w-5" />
-              Progress
+            <CardTitle className="text-lg flex items-center">
+              <MessageSquare className="mr-2 h-4 w-4" /> AI Coach
             </CardTitle>
-            <CardDescription>Track your fitness progress</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[200px] flex items-center justify-center">
-              {hasWorkouts ? (
-                <div className="w-full text-center">
-                  <p className="text-muted-foreground">Progress tracking visualizations coming soon</p>
-                </div>
-              ) : (
-                <div className="w-full text-center">
-                  <p className="text-muted-foreground">Log workouts to see your progress</p>
-                  <Link href="/activity/new" className="mt-4 inline-block">
-                    <Button>Log Your First Workout</Button>
-                  </Link>
-                </div>
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground">Ask questions, get suggestions, and more.</p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="/chat">Chat Now</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="lg:col-span-1">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center">
+              <BookOpen className="mr-2 h-4 w-4" /> My Story
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Let Aivery create a personalized story.</p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="/my-story">Read My Story</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+        
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center">
+              <BarChart className="mr-2 h-4 w-4" /> Weekly Progress
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="h-[150px] pl-0 pr-2 pb-0">
+            {hasWorkouts && weeklyWorkoutData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsBarChart 
+                  data={weeklyWorkoutData}
+                  margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
+                  <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} interval={0} dy={5}/>
+                  <YAxis fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} width={25}/>
+                  <Tooltip 
+                     cursor={{ fill: 'hsl(var(--muted))' }} 
+                     contentStyle={{ 
+                       backgroundColor: 'hsl(var(--background))', 
+                       borderColor: 'hsl(var(--border))', 
+                       borderRadius: 'var(--radius)',
+                       fontSize: '12px',
+                       padding: '4px 8px' 
+                     }}
+                     labelStyle={{ marginBottom: '2px' }}
+                  />
+                  <Bar dataKey="workouts" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </RechartsBarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center flex flex-col items-center justify-center h-full">
+                <p className="text-sm text-muted-foreground mb-2">Log workouts to see progress</p>
+                <Button asChild size="sm">
+                    <Link href="/activity/new">Log Workout</Link>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

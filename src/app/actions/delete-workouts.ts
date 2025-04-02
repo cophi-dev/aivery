@@ -57,7 +57,9 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
     console.log('[SERVER ACTION] deleteWorkoutsByTypes: Found user with ID:', user._id);
     
     // Map workout types to handle both formats (Run -> running, Swim -> swimming, etc.)
+    // More comprehensive mapping
     const typeMapping: Record<string, string> = {
+      // Standard types (lowercase)
       'strength': 'strength',
       'running': 'running',
       'swimming': 'swimming',
@@ -65,56 +67,64 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
       'hiit': 'hiit',
       'flexibility': 'flexibility',
       'other': 'other',
+      'walking': 'walking',
+      'hiking': 'hiking',
       
-      // Handle capitalized display names from UI
-      'Strength': 'strength',
-      'Running': 'running',
-      'Swimming': 'swimming',
-      'Cycling': 'cycling',
-      'Hiit': 'hiit',
-      'HIIT': 'hiit',
-      'Flexibility': 'flexibility',
-      'Other': 'other',
-      
-      // Handle short forms from Strava
-      'Run': 'running',
-      'Swim': 'swimming',
-      'Ride': 'cycling',
-      'Workout': 'strength'
+      // Common variations (case-insensitive handled by .toLowerCase() later)
+      'run': 'running',
+      'swim': 'swimming',
+      'ride': 'cycling',
+      'bike': 'cycling',
+      'workout': 'strength', // Map general 'Workout' to 'Strength'
+      'strength_training': 'strength',
+      'weight_training': 'strength',
+      'functional_strength': 'strength',
+      'stretch': 'flexibility',
+      'yoga': 'flexibility',
+      'trail_running': 'running',
+      'treadmill_running': 'running',
+      'virtual_ride': 'cycling',
+      'indoor_cycling': 'cycling',
+      'pool_swimming': 'swimming',
+      'open_water_swimming': 'swimming',
+      'walk': 'walking',
+      'hike': 'hiking',
+      'circuit_training': 'hiit',
+      'crossfit': 'hiit',
     };
     
-    // Map each workout type to its standardized form
-    const normalizedWorkoutTypes = workoutTypes.map(type => {
-      const mappedType = typeMapping[type] || type.toLowerCase();
-      return mappedType;
-    });
+    // Apply mapping to the input types for the query
+    const normalizedQueryTypes = workoutTypes.map(type => 
+      typeMapping[type.toLowerCase()] || type.toLowerCase()
+    );
+    const uniqueQueryTypes = Array.from(new Set(normalizedQueryTypes));
     
-    console.log('[SERVER ACTION] deleteWorkoutsByTypes: Original workout types:', workoutTypes);
-    console.log('[SERVER ACTION] deleteWorkoutsByTypes: Normalized workout types:', normalizedWorkoutTypes);
+    console.log('[SERVER ACTION] deleteWorkoutsByTypes: Original input types:', workoutTypes);
+    console.log('[SERVER ACTION] deleteWorkoutsByTypes: Normalized query types:', uniqueQueryTypes);
     
-    // Get workout IDs to delete
+    // Find workouts matching the normalized types
     const workoutsToDelete = await WorkoutModel.find({
       userId: user._id,
-      $or: [
-        { type: { $in: normalizedWorkoutTypes } },
-        { type: { $in: workoutTypes } }
-      ]
-    }).select('_id type').lean();
-    
-    // Log found workout types for debugging
-    const foundTypes = workoutsToDelete.map(w => w.type);
-    const uniqueFoundTypes = foundTypes.filter((v, i, a) => a.indexOf(v) === i);
-    console.log('[SERVER ACTION] deleteWorkoutsByTypes: Found workout types:', uniqueFoundTypes);
+      type: { $in: uniqueQueryTypes } 
+    }).select('_id type').lean(); // Fetch only necessary fields
     
     const workoutIdsToDelete = workoutsToDelete.map(workout => workout._id);
     console.log('[SERVER ACTION] deleteWorkoutsByTypes: Found', workoutIdsToDelete.length, 'workouts to delete');
-    
+
+    // --- Get unique, NORMALIZED types FROM THE FOUND WORKOUTS for the success message --- 
+    const actualDeletedTypes = workoutsToDelete.map(w => w.type || 'other'); // Get types actually found
+    const deletedTypesNormalized = actualDeletedTypes.map(type => 
+      typeMapping[type.toLowerCase()] || type.toLowerCase() // Normalize the found types
+    );
+    const uniqueDeletedTypes = Array.from(new Set(deletedTypesNormalized));
+    // Capitalize first letter for display
+    const uniqueTypesString = uniqueDeletedTypes.map(type => 
+        type.charAt(0).toUpperCase() + type.slice(1)
+      ).join(', ');
+    // --- End unique types calculation --- 
+
     if (workoutIdsToDelete.length === 0) {
-      return {
-        success: true,
-        deletedCount: 0,
-        workoutTypes
-      };
+      return { success: true, deletedCount: 0, message: 'No workouts found matching the selected criteria' };
     }
     
     // Remove workout references from user document
@@ -124,23 +134,21 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
     );
     console.log('[SERVER ACTION] deleteWorkoutsByTypes: Removed workout references from user');
     
-    // Delete the workouts
+    // Delete the workouts using the found IDs for accuracy
     const deleteResult = await WorkoutModel.deleteMany({
-      userId: user._id,
-      $or: [
-        { type: { $in: normalizedWorkoutTypes } },
-        { type: { $in: workoutTypes } }
-      ]
+      _id: { $in: workoutIdsToDelete }
     });
     console.log('[SERVER ACTION] deleteWorkoutsByTypes: Deleted', deleteResult.deletedCount, 'workouts');
     
-    // Revalidate the path to refresh the UI
     revalidatePath('/settings');
     
+    // Use the unique, normalized types string in the message
+    const successMessage = `Successfully deleted ${deleteResult.deletedCount} workouts of types: ${uniqueTypesString}.`;
+
     return {
       success: true,
       deletedCount: deleteResult.deletedCount,
-      workoutTypes
+      message: successMessage
     };
   } catch (error) {
     console.error('[SERVER ACTION] deleteWorkoutsByTypes: Error:', error);

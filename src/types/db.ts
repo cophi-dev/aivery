@@ -78,6 +78,8 @@ export interface WorkoutData {
     paceChange?: number;
     paceChangePercent?: number;
   };
+  pace?: number;
+  calculatedVolume?: number;
 }
 
 export interface UserData {

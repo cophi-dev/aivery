@@ -154,6 +154,34 @@ export async function POST(request: NextRequest) {
     
     // Get the workout IDs to be deleted
     const workoutIdsToDelete = workoutsToDelete.map(workout => workout._id);
+
+    // --- Start: Calculate unique, normalized types for the success message ---
+    const actualDeletedTypes = workoutsToDelete.map(w => w.type || 'other'); // Get types actually found
+
+    // Reuse the mapping logic, but simplify for normalization
+    const simpleTypeMapping: Record<string, string> = {
+      'run': 'running', 'swim': 'swimming', 'ride': 'cycling', 'bike': 'cycling',
+      'workout': 'strength', 'strength_training': 'strength', 'weight_training': 'strength',
+      'functional_strength': 'strength', 'stretch': 'flexibility', 'yoga': 'flexibility',
+      'trail_running': 'running', 'treadmill_running': 'running', 'virtual_ride': 'cycling',
+      'indoor_cycling': 'cycling', 'pool_swimming': 'swimming', 'open_water_swimming': 'swimming',
+      'walk': 'walking', 'hike': 'hiking', 'circuit_training': 'hiit', 'crossfit': 'hiit',
+      // Ensure base types map to themselves if not covered above
+      'strength': 'strength', 'running': 'running', 'swimming': 'swimming', 
+      'cycling': 'cycling', 'hiit': 'hiit', 'flexibility': 'flexibility', 
+      'other': 'other', 'walking': 'walking', 'hiking': 'hiking'
+    };
+
+    const deletedTypesNormalized = actualDeletedTypes.map(type => 
+      simpleTypeMapping[type.toLowerCase()] || type.toLowerCase() // Normalize the found types
+    );
+    const uniqueDeletedTypes = Array.from(new Set(deletedTypesNormalized));
+    
+    // Capitalize first letter for display
+    const uniqueDeletedTypesString = uniqueDeletedTypes.map(type => 
+        type.charAt(0).toUpperCase() + type.slice(1)
+      ).join(', ');
+    // --- End: Calculate unique, normalized types ---
     
     if (workoutIdsToDelete.length === 0) {
       console.log(`[delete-workouts] No workouts found for deletion`);
@@ -187,7 +215,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       deletedCount: deleteResult.deletedCount,
-      workoutTypes
+      // Return the string of unique, normalized, capitalized types
+      deletedTypesString: uniqueDeletedTypesString 
     });
   } catch (error) {
     console.error('Error deleting workouts:', error);

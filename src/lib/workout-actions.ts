@@ -295,10 +295,15 @@ export async function calculateTotalWeightLifted(workout: any): Promise<number> 
 // Create a new cardio workout
 export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Promise<WorkoutData> {
   try {
-    const user = await getCurrentUser()
+    console.log('Starting cardio workout creation...');
+    console.log('Input workout data:', JSON.stringify(workoutData, null, 2));
+
+    const user = await getCurrentUser();
     if (!user) {
-      throw new Error("User not authenticated")
+      console.error('No authenticated user found');
+      throw new Error("User not authenticated");
     }
+    console.log('User authenticated:', user.id);
 
     // Extract Strava link from notes if it exists but stravaLink is not set
     let stravaLink = workoutData.stravaLink;
@@ -307,6 +312,7 @@ export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Pr
       const match = workoutData.notes.match(stravaLinkRegex);
       if (match && match[0]) {
         stravaLink = match[0];
+        console.log('Extracted Strava link:', stravaLink);
       }
     }
 
@@ -327,30 +333,53 @@ export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Pr
       stravaLink: stravaLink,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    }
+    };
 
-    const newWorkout = await createWorkoutDb(formattedWorkoutData)
+    console.log('Formatted workout data:', JSON.stringify(formattedWorkoutData, null, 2));
+
+    // Connect to database
+    console.log('Connecting to database...');
+    const dbConnect = (await import("@/lib/db/mongoose")).default;
+    await dbConnect();
+    console.log('Database connected');
+
+    // Create the workout
+    console.log('Creating workout in database...');
+    const WorkoutModel = (await import("@/lib/db/models/workout")).default;
+    const workout = new WorkoutModel(formattedWorkoutData);
+    console.log('Workout model created');
+
+    // Save the workout
+    console.log('Saving workout...');
+    const savedWorkout = await workout.save();
+    console.log('Workout saved successfully:', savedWorkout._id.toString());
     
     // Update the user's workouts array
-    const dbConnect = (await import("@/lib/db/mongoose")).default;
+    console.log('Updating user workouts array...');
     const UserModel = (await import("@/lib/db/models/user")).default;
-    
-    await dbConnect();
     await UserModel.findByIdAndUpdate(
       user.id,
-      { $push: { workouts: newWorkout._id } }
+      { $push: { workouts: savedWorkout._id } }
     );
+    console.log('User workouts array updated');
 
-    revalidatePath("/calendar")
-    revalidatePath("/workout")
-    revalidatePath("/workouts")
-    revalidatePath("/dashboard")
-    revalidatePath("/activity")
+    // Revalidate paths
+    console.log('Revalidating paths...');
+    revalidatePath("/calendar");
+    revalidatePath("/workout");
+    revalidatePath("/workouts");
+    revalidatePath("/dashboard");
+    revalidatePath("/activity");
+    console.log('Paths revalidated');
 
-    return newWorkout
+    return savedWorkout.toObject();
   } catch (error) {
-    console.error("Error creating cardio workout:", error)
-    throw new Error("Failed to create cardio workout")
+    console.error("Error creating cardio workout:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", error.message);
+      console.error("Error stack:", error.stack);
+    }
+    throw new Error("Failed to create cardio workout");
   }
 }
 
