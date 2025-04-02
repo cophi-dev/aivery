@@ -4,6 +4,19 @@ import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import User from "@/lib/db/models/user"; // Assuming User model is needed for personalization
 import dbConnect from "@/lib/db/mongodb"; // If needed for user lookup
+import { getWorkoutDistanceForDateRange } from "@/lib/db/repositories/workoutRepository"; // Re-import repository function
+import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  subWeeks,
+  subMonths,
+  subYears,
+  parse,
+} from "date-fns"; // Import date-fns functions
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
@@ -31,11 +44,76 @@ function getTextFromResponse(content: any): string | undefined {
   return undefined;
 }
 
+// Helper function to parse timeframe strings
+function getDateRangeFromTimeframe(
+  timeframe: string
+): { start: Date; end: Date } | null {
+  const now = new Date();
+  timeframe = timeframe.toLowerCase().trim();
+  const currentYear = now.getFullYear();
+
+  if (timeframe.includes("this week")) {
+    return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
+  }
+  if (timeframe.includes("last week")) {
+    const lastWeekStart = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+    return { start: lastWeekStart, end: endOfWeek(lastWeekStart, { weekStartsOn: 1 }) };
+  }
+  if (timeframe.includes("this month")) {
+    return { start: startOfMonth(now), end: endOfMonth(now) };
+  }
+   if (timeframe.includes("last month")) {
+    const lastMonthStart = startOfMonth(subMonths(now, 1));
+    return { start: lastMonthStart, end: endOfMonth(lastMonthStart) };
+  }
+  // Specific months (e.g., "march", "march 2024")
+  const monthMatch = timeframe.match(
+    /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:[a-z]*)?(?: (\d{4}))?/
+  );
+  if (monthMatch) {
+    const monthIndex = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec",
+    ].findIndex((m) => monthMatch[1].startsWith(m));
+    if (monthIndex !== -1) {
+      const year = monthMatch[2] ? parseInt(monthMatch[2], 10) : currentYear;
+      const monthStart = new Date(year, monthIndex, 1);
+      return { start: monthStart, end: endOfMonth(monthStart) };
+    }
+  }
+  if (timeframe.includes("this year")) {
+    return { start: startOfYear(now), end: endOfYear(now) };
+  }
+   if (timeframe.includes("last year")) {
+    const lastYearStart = startOfYear(subYears(now, 1));
+    return { start: lastYearStart, end: endOfYear(lastYearStart) };
+  }
+  // Specific year (e.g., "2024", "in 2023")
+  const yearMatch = timeframe.match(/(\d{4})/);
+  if (yearMatch) {
+    const year = parseInt(yearMatch[1], 10);
+    const yearStart = new Date(year, 0, 1);
+    return { start: yearStart, end: endOfYear(yearStart) };
+  }
+
+  return null; // Cannot determine date range
+}
+
+// Helper function to extract workout type
+function getWorkoutTypeFromQuery(query: string): string | null {
+    query = query.toLowerCase();
+    if (query.includes('run') || query.includes('running')) return 'running';
+    if (query.includes('cycle') || query.includes('cycling') || query.includes('bike')) return 'cycling';
+    if (query.includes('swim') || query.includes('swimming')) return 'swimming';
+    // Add other types if needed
+    return null;
+}
+
+
 // --- Main POST handler ---
 export async function POST(req: Request) {
   let session;
   let userId: string | undefined;
-  let userName: string | undefined = 'User';
+  let userName: string | undefined = "User";
+  let dataContext = "No specific data provided for this query."; // Default context
 
   try {
     session = await getServerSession(authOptions);
@@ -44,52 +122,111 @@ export async function POST(req: Request) {
       return new Response("Authentication required", { status: 401 });
     }
     userId = session.user.id;
-    userName = session.user.name || 'User'; // Get user name for personalization
+    userName = session.user.name || "User";
 
-    // Add this console.log to check if the key is loaded
-    console.log("[CHAT] API Key Loaded:", !!process.env.ANTHROPIC_API_KEY); 
+    console.log("[CHAT] API Key Loaded:", !!process.env.ANTHROPIC_API_KEY);
 
     const body = await req.json();
-    const currentQuery = body.query; // Assuming the new message is passed as 'query'
-    const messageHistory = body.history || []; // Assuming history is passed as 'history'
+    const currentQuery = body.query;
+    const messageHistory = body.history || [];
 
     if (!currentQuery) {
       return new Response("Query is required", { status: 400 });
     }
 
-    console.log(`[CHAT] Received query from user ${userId} (${userName}):`, currentQuery);
-
-    // **Filter the history to exclude any system messages**
-    const validHistory = messageHistory.filter(
-      (msg: { role: string }) => msg.role === 'user' || msg.role === 'assistant'
+    console.log(
+      `[CHAT] Received query from user ${userId} (${userName}):`,
+      currentQuery
     );
 
-    // Combine valid history with the current user query
+    // --- Attempt to fetch data based on query ---
+    const queryLower = currentQuery.toLowerCase();
+    // Simple check for distance-related queries
+    if (queryLower.includes("distance") || (queryLower.includes("how far") && (queryLower.includes("run") || queryLower.includes("cycle") || queryLower.includes("swim") )) ) {
+      console.log("[CHAT] Detected potential distance query.");
+      const workoutType = getWorkoutTypeFromQuery(queryLower);
+      const timeframeMatch = queryLower.match(/(?:in|last|this|during|for)\s+([a-zA-Z0-9\s]+)/); // Basic timeframe extraction
+      const timeframe = timeframeMatch ? timeframeMatch[1].trim() : "this month"; // Default to this month if not found
+
+      console.log(`[CHAT] Extracted type: ${workoutType}, timeframe: ${timeframe}`);
+
+      if (workoutType) {
+        const dateRange = getDateRangeFromTimeframe(timeframe);
+        if (dateRange) {
+          console.log(`[CHAT] Fetching ${workoutType} distance for range:`, dateRange);
+          try {
+            await dbConnect(); // Ensure DB connection
+            // Call the repository function - it returns a number or throws an error
+            const totalDistance: number = await getWorkoutDistanceForDateRange(
+              userId,
+              workoutType,
+              dateRange.start,
+              dateRange.end
+            );
+            console.log("[CHAT] Total distance fetched:", totalDistance);
+            
+            // Check if totalDistance is a valid number and greater than 0
+            if (typeof totalDistance === 'number' && totalDistance > 0) {
+               // Note: We don't get the count from this specific function
+               dataContext = `Data for ${userName}: Total ${workoutType} distance for timeframe '${timeframe}' was ${totalDistance.toFixed(1)} km. Use this data to answer.`;
+            } else {
+               // Handle case where distance is 0 (or potentially NaN/undefined, though caught by check)
+               dataContext = `Data for ${userName}: No ${workoutType} workouts with distance were found for timeframe '${timeframe}'. Inform the user.`;
+            }
+          } catch (dbError) {
+             console.error("[CHAT] Database error fetching distance:", dbError);
+             dataContext = `Error fetching workout data for ${timeframe}. Inform the user an error occurred.`;
+          }
+        } else {
+            console.log("[CHAT] Could not determine date range from timeframe:", timeframe);
+            dataContext = `Could not determine the date range for timeframe '${timeframe}'. Ask the user to clarify the period.`;
+        }
+      } else {
+         console.log("[CHAT] Could not determine workout type for distance query.");
+         // Keep default dataContext
+      }
+    } else {
+        console.log("[CHAT] Query not identified as a distance query. Skipping data fetch.");
+    }
+    // --- End Data Fetching Logic ---
+
+
+    const validHistory = messageHistory.filter(
+      (msg: { role: string }) => msg.role === "user" || msg.role === "assistant"
+    );
+
     const messagesWithIds = [
-        ...validHistory,
-        { role: "user" as const, content: currentQuery, id: `temp-user-${Date.now()}` } // Add a temp id for mapping if needed, or handle separately
+      ...validHistory,
+      { role: "user" as const, content: currentQuery, id: `temp-user-${Date.now()}` },
     ];
 
-    // **Map messages to the format required by Anthropic API (role, content only)**
     const messagesForAnthropicApi = messagesWithIds.map(({ role, content }) => ({
-      role: role as 'user' | 'assistant', // Ensure role type is correct
-      content
+      role: role as "user" | "assistant",
+      content,
     }));
 
-    // **Define the system prompt here** 
-    const systemPrompt = `Act as Aivery, a friendly and encouraging AI fitness coach. 
+    // System prompt now includes the fetched data context
+    const systemPrompt = `Act as Aivery, a friendly and encouraging AI fitness coach.
 The user's name is ${userName}.
 Keep responses concise and helpful, focusing on fitness, health, and wellness.
-If asked about specific workout data, mention that functionality is under development or fetch/format data here if implemented.`;
 
-    console.log("[CHAT] Calling Anthropic API...");
-    // **Call Anthropic API with correct parameters**
+CONTEXT: ${dataContext}
+
+RESPONSE GUIDELINES:
+- If CONTEXT provides specific data (like distance or count), **use that data directly** in your answer. Do not say you don't have access if data is present in the CONTEXT.
+- If CONTEXT indicates no data was found or an error occurred, inform the user accordingly.
+- If CONTEXT indicates the timeframe was unclear, ask the user to clarify.
+- If CONTEXT is the default 'No specific data provided...', answer generally.
+- Use markdown formatting (bold, italics, lists).`;
+
+    console.log("[CHAT] Calling Anthropic API with system prompt:", systemPrompt); // Log the prompt
+
     const response = await client.messages.create({
       model: "claude-3-5-sonnet-20240620",
       max_tokens: 1024,
       temperature: 0.7,
-      system: systemPrompt,      // Pass system prompt as top-level parameter
-      messages: messagesForAnthropicApi,  // Pass the array *without* the 'id' field
+      system: systemPrompt,
+      messages: messagesForAnthropicApi,
     });
 
     const aiResponse = getTextFromResponse(response.content);
@@ -98,36 +235,40 @@ If asked about specific workout data, mention that functionality is under develo
     return new Response(aiResponse || "Sorry, I couldn't generate a response.", {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
-
   } catch (error: any) {
-    console.error("Chat API Error:", error); // Log the full error server-side
-    
+    console.error("Chat API Error:", error);
+
     let userErrorMessage = "Sorry, I encountered an error. Please try again.";
     let statusCode = 500;
 
-    // Check for specific Anthropic errors if possible (structure might vary)
-    if (error.status === 400 && error?.error?.type === 'invalid_request_error') {
-       userErrorMessage = `There was an issue with the request format: ${error.error.message}`;
-       statusCode = 400;
+    if (error.status === 400 && error?.error?.type === "invalid_request_error") {
+      userErrorMessage = `There was an issue with the request format: ${error.error.message}`;
+      statusCode = 400;
     } else if (error.status === 401 || error.status === 403) {
-        userErrorMessage = "There seems to be an authentication issue with the AI service.";
-        statusCode = error.status;
+      userErrorMessage =
+        "There seems to be an authentication issue with the AI service.";
+      statusCode = error.status;
     } else if (error.status === 429) {
-        userErrorMessage = "The AI service is experiencing high traffic. Please try again shortly.";
-        statusCode = 429;
+      userErrorMessage =
+        "The AI service is experiencing high traffic. Please try again shortly.";
+      statusCode = 429;
     }
-    // Avoid exposing potentially sensitive details from generic errors
-    if (userErrorMessage.includes('API key') || userErrorMessage.includes('Anthropic')) {
-         userErrorMessage = "An unexpected error occurred while communicating with the AI service.";
+    if (
+      userErrorMessage.includes("API key") ||
+      userErrorMessage.includes("Anthropic")
+    ) {
+      userErrorMessage =
+        "An unexpected error occurred while communicating with the AI service.";
     }
 
     return new Response(userErrorMessage, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
-      status: statusCode, 
+      status: statusCode,
     });
   }
 }
 
-// Removed complex helper functions like processAIDataRequest, fetchDataBasedOnAnalysis etc. 
+// Removed complex helper functions like processAIDataRequest, fetchDataBasedOnAnalysis etc.
 // Removed workoutRepository imports as data fetching logic is simplified/removed for now
 // Removed workout-analysis imports
+// Note: Ensure getWorkoutDistanceForDateRange and dbConnect are correctly imported and work
