@@ -37,7 +37,7 @@ const gunzipAsync = promisify(gunzipCb)
 
 // Use Node.js runtime
 export const runtime = 'nodejs'
-export const maxDuration = 300; // 5 minutes
+export const maxDuration = 60; // Reduced from 300 to 60 seconds for Vercel Hobby plan limit
 
 // Helper function to wait for garbage collection
 const waitForGC = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
