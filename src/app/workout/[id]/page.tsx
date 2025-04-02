@@ -602,7 +602,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
           <CardContent>
             <p className="text-sm md:text-base text-muted-foreground whitespace-pre-wrap">{workout.notes}</p>
             
-            {isValidStravaLink(stravaLink) && (
+            {isValidStravaLink(stravaLink || undefined) && (
               <div className="mt-4">
                 <Button 
                   className="w-full sm:w-auto bg-[#FC4C02] hover:bg-[#d44102] text-white font-semibold py-2 rounded-md transition-colors duration-200"
