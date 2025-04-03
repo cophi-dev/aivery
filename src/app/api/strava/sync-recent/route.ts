@@ -9,42 +9,62 @@ import { WorkoutData } from '@/types/db'; // Assuming this type exists for worko
 
 // Helper function to transform Strava activity to WorkoutData format
 function transformStravaActivity(activity: any, userId: string): Partial<WorkoutData> {
+  console.log('Transforming Strava activity:', {
+    id: activity.id,
+    type: activity.type,
+    name: activity.name,
+    raw_distance: activity.distance, // Log raw distance
+    distance_type: typeof activity.distance // Check the data type
+  });
+  
   // Add validation for distance data
   let distanceInKm = 0;
-  if (typeof activity.distance === 'number') {
-    // Convert distance from meters to kilometers
-    distanceInKm = activity.distance / 1000;
-    
-    // Sanity check - if value is unreasonably large, log and cap it
-    if (distanceInKm > 1000) {
-      console.warn(`Unreasonably large distance detected in Strava activity ${activity.id}: ${distanceInKm}km. This is likely an error.`);
-      
-      // For very extreme values, assume it's a data error and set to 0
-      if (distanceInKm > 10000) {
-        console.error(`Invalid distance value detected: ${distanceInKm}km. Setting to 0.`);
-        distanceInKm = 0;
+  try {
+    if (typeof activity.distance === 'number') {
+      // Convert distance from meters to kilometers (Strava provides distance in meters)
+      distanceInKm = parseFloat((activity.distance / 1000).toFixed(2));
+      console.log(`Converted distance: ${activity.distance}m → ${distanceInKm}km`);
+    } else if (typeof activity.distance === 'string') {
+      // Handle case where the distance might be a string
+      const parsedDistance = parseFloat(activity.distance);
+      if (!isNaN(parsedDistance)) {
+        distanceInKm = parseFloat((parsedDistance / 1000).toFixed(2));
+        console.log(`Parsed string distance: ${activity.distance} → ${distanceInKm}km`);
+      } else {
+        console.error(`Invalid distance format: ${activity.distance}`);
       }
+    } else {
+      console.error(`Missing or invalid distance for activity ${activity.id}`);
     }
+  } catch (error) {
+    console.error(`Error processing distance for activity ${activity.id}:`, error);
+  }
+  
+  // Validate the converted distance (sanity check)
+  if (distanceInKm > 1000) {
+    console.error(`Unusually large distance detected: ${distanceInKm}km. Setting to 0.`);
+    distanceInKm = 0;
   }
   
   // Calculate pace in minutes per kilometer (if speed is available and valid)
   let paceMinPerKm = undefined;
   if (activity.average_speed && activity.average_speed > 0 && activity.average_speed < 100) {
     // Convert m/s to min/km: 1000/(m/s) = seconds per km, then /60 for minutes per km
-    paceMinPerKm = (1000 / activity.average_speed) / 60;
+    paceMinPerKm = parseFloat(((1000 / activity.average_speed) / 60).toFixed(2));
+    console.log(`Calculated pace: ${paceMinPerKm} min/km from speed ${activity.average_speed} m/s`);
   }
 
-  return {
+  const transformedData = {
     userId: userId,
     name: activity.name || `${activity.type} Activity`,
     type: mapActivityType(activity.type) || 'other', // Use helper function to map Strava types to our types
     date: new Date(activity.start_date),
-    duration: activity.moving_time || 0, // seconds
+    duration: activity.moving_time || activity.elapsed_time || 0, // seconds
     distance: distanceInKm, // Store distance in KM
-    intensity: activity.average_heartrate ? 'Cardio' : undefined,
+    intensity: activity.average_heartrate ? 'Medium' : 'Low',
     cardioDetails: {
       distance: distanceInKm, // Use KM here too for consistency if needed by frontend
-      duration: activity.moving_time || 0,
+      duration: activity.moving_time || activity.elapsed_time || 0,
       pace: paceMinPerKm, // Store correct pace in min/km
       speed: activity.average_speed, // m/s
       maxSpeed: activity.max_speed,
@@ -59,6 +79,17 @@ function transformStravaActivity(activity: any, userId: string): Partial<Workout
     sourceId: activity.id.toString(),
     importedFrom: 'strava-sync',
   };
+  
+  console.log('Transformed workout data:', {
+    id: transformedData.sourceId,
+    name: transformedData.name,
+    type: transformedData.type,
+    distance: transformedData.distance,
+    duration: transformedData.duration,
+    pace: transformedData.cardioDetails?.pace
+  });
+  
+  return transformedData;
 }
 
 // Helper function to map Strava activity types to our system's workout types

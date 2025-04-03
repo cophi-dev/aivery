@@ -27,41 +27,40 @@ export function DeleteWorkoutButton({ workoutId, asIcon = false }: DeleteWorkout
   const { toast } = useToast()
   const router = useRouter()
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
 
   const handleDelete = async () => {
-    const confirmed = window.confirm('Are you sure you want to delete this workout? This action cannot be undone.')
-    if (confirmed) {
-      setIsDeleting(true)
-      try {
-        await deleteWorkout(workoutId)
-        toast({
-          title: "Workout deleted",
-          description: "Workout has been successfully deleted",
-        })
-        router.push("/workouts")
-      } catch (error) {
-        console.error("Failed to delete workout:", error)
-        toast({
-          title: "Failed to delete workout",
-          description: "An error occurred while trying to delete the workout",
-          variant: "destructive",
-        })
-      } finally {
-        setIsDeleting(false)
-      }
+    setIsDeleting(true)
+    try {
+      await deleteWorkout(workoutId)
+      toast({
+        title: "Workout deleted",
+        description: "Workout has been successfully deleted",
+      })
+      router.push("/workouts")
+    } catch (error) {
+      console.error("Failed to delete workout:", error)
+      toast({
+        title: "Failed to delete workout",
+        description: "An error occurred while trying to delete the workout",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setIsOpen(false)
     }
   }
 
   if (asIcon) {
     return (
-      <AlertDialog>
+      <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
         <AlertDialogTrigger asChild>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" title="Delete Workout" disabled={isDeleting}>
             <Trash className="h-4 w-4" />
             <span className="sr-only">Delete Workout</span>
           </Button>
         </AlertDialogTrigger>
-        <AlertDialogContent>
+        <AlertDialogContent className="sm:max-w-[425px]">
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -85,14 +84,14 @@ export function DeleteWorkoutButton({ workoutId, asIcon = false }: DeleteWorkout
   }
 
   return (
-    <AlertDialog>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
       <AlertDialogTrigger asChild>
         <Button variant="destructive" size="sm" disabled={isDeleting}>
           <Trash className="h-4 w-4 mr-2" />
           {isDeleting ? "Deleting..." : "Delete Workout"}
         </Button>
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent className="sm:max-w-[425px]">
         <AlertDialogHeader>
           <AlertDialogTitle>Are you sure?</AlertDialogTitle>
           <AlertDialogDescription>

@@ -89,7 +89,7 @@ export async function getRecentStravaActivities(accessToken: string): Promise<an
   const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
   const activitiesUrl = `${STRAVA_API_BASE_URL}/athlete/activities?after=${thirtyDaysAgo}&per_page=100`;
 
-  console.log('Fetching Strava activities...');
+  console.log('Fetching Strava activities from URL:', activitiesUrl);
 
   try {
     const response = await fetch(activitiesUrl, {
@@ -99,13 +99,33 @@ export async function getRecentStravaActivities(accessToken: string): Promise<an
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Failed to fetch Strava activities:', response.status, errorData);
-      throw new Error(`Strava API Error: ${errorData.message || 'Failed to fetch activities'}`);
+      const errorText = await response.text();
+      console.error('Failed to fetch Strava activities:', response.status, errorText);
+      throw new Error(`Strava API Error: ${errorText || 'Failed to fetch activities'}`);
     }
 
     const activities = await response.json();
     console.log(`Fetched ${activities.length} Strava activities.`);
+    
+    // Log sample data for inspection, but only the first activity to avoid log overflow
+    if (activities.length > 0) {
+      const sampleActivity = activities[0];
+      console.log('Sample Strava activity data:', {
+        id: sampleActivity.id,
+        name: sampleActivity.name,
+        type: sampleActivity.type,
+        distance: sampleActivity.distance, // Raw distance in meters
+        distance_km: sampleActivity.distance / 1000, // Converted to km for comparison
+        duration: sampleActivity.elapsed_time || sampleActivity.moving_time,
+        start_date: sampleActivity.start_date,
+        // Add other fields that might be relevant
+        average_speed: sampleActivity.average_speed,
+        max_speed: sampleActivity.max_speed,
+        average_heartrate: sampleActivity.average_heartrate,
+        max_heartrate: sampleActivity.max_heartrate,
+      });
+    }
+    
     return activities;
 
   } catch (error) {
