@@ -1381,14 +1381,26 @@ export default function SettingsPage() {
     setSyncStravaError(null);
 
     try {
-      // First verify Strava connection
-      const stravaCheck = await fetchWithAuth('/api/strava-status');
-      const stravaStatus = await stravaCheck.json();
-      
-      if (!stravaCheck.ok || !stravaStatus.connected) {
-        throw new Error('Your Strava account is not properly connected. Please disconnect and reconnect in the Integrations tab.');
+      // First verify Strava connection - but don't block on it
+      try {
+        const stravaCheck = await fetchWithAuth('/api/strava-status');
+        const stravaStatus = await stravaCheck.json();
+        
+        if (!stravaCheck.ok || (!stravaStatus.connected && !stravaStatus.forcedValid)) {
+          // Still proceed if validation fails, just show a warning
+          console.warn('Strava connection validation failed, but proceeding anyway');
+          toast({ 
+            title: "Warning", 
+            description: "Your Strava connection validation failed, but we'll try syncing anyway",
+            variant: "default"
+          });
+        }
+      } catch (validationError) {
+        console.error("Error validating Strava connection:", validationError);
+        // Continue anyway - don't block
       }
       
+      // Attempt the sync regardless of validation result
       const response = await fetchWithAuth('/api/strava/sync-recent', {
         method: 'POST',
       });

@@ -68,18 +68,22 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         if (intSuccess && integration) {
           setStravaIntegration(integration)
           
-          // Verify actual API connectivity
+          // Verify actual API connectivity - but don't force a test by default to avoid unnecessary API calls
           try {
+            // Use the non-test endpoint by default
             const response = await fetch('/api/strava-status');
             const stravaStatus = await response.json();
             
             if (!stravaStatus.connected && stravaStatus.account?.exists) {
-              // We have an account record but the connection is invalid
-              console.log('[StravaImport] Strava connection invalid, showing reconnect UI');
-              setError('Your Strava connection appears to be invalid. Please reconnect your account.');
+              // We have an account record but the connection is invalid - only show error if not forced valid
+              if (!stravaStatus.forcedValid) {
+                console.log('[StravaImport] Strava connection invalid, showing reconnect UI');
+                setError('Your Strava connection appears to be invalid. You can try reconnecting or trust the connection anyway to override validation.');
+              }
             }
           } catch (statusError) {
             console.error('[StravaImport] Error checking Strava status:', statusError);
+            // Don't set error state here - be lenient
           }
         } else {
           setStravaIntegration(null);
@@ -869,19 +873,62 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     </AlertTitle>
                     <AlertDescription className="mt-1">
                       <p className="mb-2">{error}</p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => {
-                          setError(null);
-                          handleDisconnectStrava().then(() => {
-                            setTimeout(() => handleConnectStrava(), 1000);
-                          });
-                        }}
-                        className="bg-white dark:bg-gray-800"
-                      >
-                        Reconnect Strava
-                      </Button>
+                      <div className="flex space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => {
+                            setError(null);
+                            handleDisconnectStrava().then(() => {
+                              setTimeout(() => handleConnectStrava(), 1000);
+                            });
+                          }}
+                          className="bg-white dark:bg-gray-800"
+                        >
+                          Reconnect Strava
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              const response = await fetch('/api/strava/force-valid', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json'
+                                }
+                              });
+                              
+                              if (response.ok) {
+                                setError(null);
+                                toast({
+                                  title: "Connection trusted",
+                                  description: "Your Strava connection will now be considered valid.",
+                                });
+                                // Force a reload of the component/page
+                                window.location.reload();
+                              } else {
+                                const data = await response.json();
+                                toast({
+                                  title: "Failed to trust connection",
+                                  description: data.error || "An unexpected error occurred",
+                                  variant: "destructive"
+                                });
+                              }
+                            } catch (err) {
+                              console.error("Error trusting connection:", err);
+                              toast({
+                                title: "Error",
+                                description: "Failed to trust Strava connection",
+                                variant: "destructive"
+                              });
+                            }
+                          }}
+                          className="bg-white dark:bg-gray-800"
+                        >
+                          Trust Connection Anyway
+                        </Button>
+                      </div>
                     </AlertDescription>
                   </Alert>
                 )}
