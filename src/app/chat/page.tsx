@@ -78,6 +78,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
 export default function ChatPage() {
   const { data: session } = useSession();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([ // Use Message[] type
@@ -89,6 +90,11 @@ export default function ChatPage() {
   ]);
 
   const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there";
+
+  // Focus input on initial mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   // Fetch initial greeting (simplified)
   useEffect(() => {
@@ -118,7 +124,7 @@ export default function ChatPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     const currentMessageContent = input;
     setInput(""); 
@@ -170,6 +176,8 @@ export default function ChatPage() {
       setMessages(prev => prev.map(msg => 
          msg.id === loadingAssistantMessage.id ? aiMessage : msg
       ));
+      // Refocus input after successful response
+      inputRef.current?.focus(); 
 
     } catch (error: any) {
       console.error("Chat Submission Error:", error);
@@ -201,19 +209,20 @@ export default function ChatPage() {
         role: "assistant", // Correct role type
         content: getRandomWelcomeMessage(userDisplayName)
      }]);
+     inputRef.current?.focus(); // Focus after reset
   };
 
   // --- Render JSX ---
   return (
-    <div className="flex flex-col h-[calc(100vh-65px)] container mx-auto px-0 py-4">
-      <div className="flex items-center justify-between px-4 mb-4">
-         <h1 className="text-xl font-semibold">AI Chat</h1>
+    <div className="flex flex-col h-[calc(100vh-65px)] md:h-screen container mx-auto px-0 md:py-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b">
+         <h1 className="text-lg font-semibold">AI Chat</h1>
          <Button variant="ghost" size="icon" onClick={resetChat} title="Reset Chat">
              <LucideRefreshCw className="h-4 w-4" />
          </Button>
       </div>
 
-      <Card className="flex-1 flex flex-col overflow-hidden border-0 shadow-none">
+      <Card className="flex-1 flex flex-col overflow-hidden border-0 shadow-none rounded-none">
           <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
             <div className="space-y-4">
               {/* Render messages using the simplified ChatMessage component */}
@@ -224,14 +233,16 @@ export default function ChatPage() {
             </div>
           </ScrollArea>
           
-          <CardContent className="py-4 px-4 border-t">
+          <CardContent className="py-3 px-4 border-t bg-background">
             <form onSubmit={handleSubmit} className="flex items-center gap-2">
               <Input 
+                ref={inputRef}
                 placeholder="Ask your fitness AI..." 
                 value={input} 
                 onChange={handleInputChange} 
                 disabled={isLoading}
                 className="flex-1"
+                autoComplete="off"
               />
               <Button type="submit" disabled={isLoading || !input.trim()} size="icon">
                 {isLoading ? <LucideLoader className="h-4 w-4 animate-spin" /> : <LucideSend className="h-4 w-4" />}
