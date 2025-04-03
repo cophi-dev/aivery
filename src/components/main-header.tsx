@@ -79,7 +79,7 @@ export function MainHeader() {
           <Link href="/" className="flex items-center">
             <div className="w-8 h-8 relative">
               <Image
-                src="/aivery-logo.svg"
+                src="/icon.svg"
                 alt="Aivery"
                 width={32}
                 height={32}
