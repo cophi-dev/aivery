@@ -35,7 +35,7 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent 
-        className="w-56 bg-popover dark:bg-popover border border-border text-popover-foreground" 
+        className="w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md" 
         align="end" 
         forceMount
         sideOffset={5}
