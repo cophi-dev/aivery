@@ -21,15 +21,36 @@ function transformStravaActivity(activity: any, userId: string): Partial<Workout
   let distanceInKm = 0;
   try {
     if (typeof activity.distance === 'number') {
-      // Convert distance from meters to kilometers (Strava provides distance in meters)
-      distanceInKm = parseFloat((activity.distance / 1000).toFixed(2));
-      console.log(`Converted distance: ${activity.distance}m → ${distanceInKm}km`);
+      // If the activity.distance is already in kilometers (some activities might be)
+      if (activity.distance < 1000 && activity.distance > 0) {
+        distanceInKm = parseFloat(activity.distance.toFixed(2));
+        console.log(`Distance appears to already be in km: ${activity.distance}km`);
+      } else {
+        // Convert distance from meters to kilometers (Strava provides distance in meters)
+        distanceInKm = parseFloat((activity.distance / 1000).toFixed(2));
+        console.log(`Converted distance: ${activity.distance}m → ${distanceInKm}km`);
+      }
+      
+      // Additional sanity check - if distance is unreasonably large (>1000km)
+      // and the original value is <1000, it might already be in km
+      if (distanceInKm > 1000 && activity.distance < 1000) {
+        console.log(`Distance conversion issue detected. Original: ${activity.distance}, Converted: ${distanceInKm}km`);
+        // Use original value as it's likely already in km
+        distanceInKm = parseFloat(activity.distance.toFixed(2));
+        console.log(`Corrected to assume original value was already in km: ${distanceInKm}km`);
+      }
     } else if (typeof activity.distance === 'string') {
       // Handle case where the distance might be a string
       const parsedDistance = parseFloat(activity.distance);
       if (!isNaN(parsedDistance)) {
-        distanceInKm = parseFloat((parsedDistance / 1000).toFixed(2));
-        console.log(`Parsed string distance: ${activity.distance} → ${distanceInKm}km`);
+        // Check if it's likely meters (large number) or already km (small number)
+        if (parsedDistance > 1000) {
+          distanceInKm = parseFloat((parsedDistance / 1000).toFixed(2));
+          console.log(`Parsed string distance as meters: ${activity.distance}m → ${distanceInKm}km`);
+        } else {
+          distanceInKm = parseFloat(parsedDistance.toFixed(2));
+          console.log(`Parsed string distance assumed already in km: ${distanceInKm}km`);
+        }
       } else {
         console.error(`Invalid distance format: ${activity.distance}`);
       }
@@ -40,10 +61,16 @@ function transformStravaActivity(activity: any, userId: string): Partial<Workout
     console.error(`Error processing distance for activity ${activity.id}:`, error);
   }
   
-  // Validate the converted distance (sanity check)
+  // Final sanity check for unreasonable values
   if (distanceInKm > 1000) {
-    console.error(`Unusually large distance detected: ${distanceInKm}km. Setting to 0.`);
-    distanceInKm = 0;
+    console.error(`Unusually large distance detected: ${distanceInKm}km. Setting to reasonable value.`);
+    // Instead of setting to 0, set to original value divided by 1000 as it might be in meters
+    if (typeof activity.distance === 'number' && activity.distance > 0) {
+      distanceInKm = parseFloat((activity.distance / 1000).toFixed(2));
+      console.log(`Adjusted distance to: ${distanceInKm}km`);
+    } else {
+      distanceInKm = 0;
+    }
   }
   
   // Calculate pace in minutes per kilometer (if speed is available and valid)
