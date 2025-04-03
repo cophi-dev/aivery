@@ -35,7 +35,7 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent 
-        className="w-56" 
+        className="w-56 bg-popover dark:bg-popover border border-border text-popover-foreground" 
         align="end" 
         forceMount
         sideOffset={5}
@@ -55,7 +55,7 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          className="cursor-pointer"
+          className="cursor-pointer text-destructive dark:text-red-500 focus:bg-destructive/10 focus:text-destructive dark:focus:text-red-500"
           onSelect={(event) => {
             event.preventDefault()
             console.log('Sign out clicked')
