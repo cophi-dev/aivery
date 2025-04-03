@@ -3,7 +3,7 @@ export const STRAVA_CONFIG = {
   clientSecret: process.env.STRAVA_CLIENT_SECRET,
   redirectUri: process.env.NODE_ENV === 'development' 
     ? 'http://localhost:3000/api/strava/callback'
-    : `https://aivery2.vercel.app/api/strava/callback`,
+    : `https://aivery.app/api/strava/callback`,
   scopes: ['read', 'activity:read_all'],
   authUrl: 'https://www.strava.com/oauth/authorize',
   tokenUrl: 'https://www.strava.com/api/v3/oauth/token',
@@ -22,7 +22,7 @@ export function getStravaAuthUrl() {
   // Make sure the redirect URI is properly set for the environment
   const redirectUri = process.env.NODE_ENV === 'development'
     ? 'http://localhost:3000/api/strava/callback'
-    : 'https://aivery2.vercel.app/api/strava/callback';
+    : 'https://aivery.app/api/strava/callback';
 
   console.log('Creating Strava auth URL with:', {
     clientId: STRAVA_CONFIG.clientId,
