@@ -43,7 +43,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
            <UserAvatar name={userDisplayName} imageUrl={session?.user?.image} size="sm" />
          ) : (
            <Avatar className="h-8 w-8 bg-primary/10 text-primary flex items-center justify-center">
-              <AvatarImage src="/aivery-logo.svg" alt="AI" />
+              <AvatarImage src="/icon.svg" alt="AI" />
               <AvatarFallback>AI</AvatarFallback>
            </Avatar>
          )}
