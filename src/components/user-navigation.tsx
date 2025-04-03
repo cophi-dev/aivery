@@ -139,7 +139,11 @@ function UserNavigationInner({ session }: { session: any }) {
           />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
+      <DropdownMenuContent 
+        className="w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg" 
+        align="end" 
+        forceMount
+      >
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium">
