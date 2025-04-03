@@ -68,8 +68,6 @@ export default async function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="build-time" content={getTimestamp()} />
         <meta name="build-id" content={VERSION} />
-        {/* Generate unique URLs for all resources */}
-        <link rel="manifest" href={`/manifest.json?v=${VERSION}`} />
         <script 
           dangerouslySetInnerHTML={{ 
             __html: `
