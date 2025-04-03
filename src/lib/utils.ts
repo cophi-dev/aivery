@@ -62,6 +62,21 @@ export function formatDistance(distance: number): string {
   if (isNaN(distance) || distance < 0) {
     return "0.00 km";
   }
+  
+  // Handle unreasonably large values (likely data errors)
+  if (distance > 1000) {
+    console.warn(`Unreasonably large distance value detected: ${distance}km. Limiting display.`);
+    
+    // If it's truly massive (>10,000), it's almost certainly an error
+    if (distance > 10000) {
+      return "Error: Invalid distance";
+    }
+    
+    // For large but potentially valid values, show without decimals
+    return `${Math.round(distance)} km`;
+  }
+  
+  // Normal handling for reasonable values
   return `${distance.toFixed(2)} km`;
 }
 

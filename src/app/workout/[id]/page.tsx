@@ -279,8 +279,18 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
   // Safely access duration (seconds) and distance (kilometers)
   const duration = workout.duration; // Duration is typically always present
   const potentialDistance = workout.distance ?? workout.cardioDetails?.distance; // Assume KILOMETERS (as per database)
-  const distanceValueKm: number | null = 
-    typeof potentialDistance === 'number' ? potentialDistance : null;
+  
+  // Validate distance value - sanitize unreasonable values
+  let distanceValueKm: number | null = null;
+  if (typeof potentialDistance === 'number') {
+    // Basic validation - reject extreme values
+    if (potentialDistance > 0 && potentialDistance < 10000) {
+      distanceValueKm = potentialDistance;
+    } else if (potentialDistance > 10000) {
+      console.warn(`Invalid distance value detected in workout ${workout._id}: ${potentialDistance}km`);
+      // Leave as null - UI will handle it
+    }
+  }
 
   // ---- DEBUGGING LOGS START ----
   console.log('[WorkoutPage] Debug Data:', {
@@ -289,7 +299,7 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
   });
   // ---- DEBUGGING LOGS END ----
 
-  // Calculate pace in minutes per kilometer
+  // Calculate pace in minutes per kilometer, but only if distance is valid
   const paceValueMinPerKm: number | null = 
     distanceValueKm !== null && distanceValueKm > 0 && duration > 0 
       ? (duration / distanceValueKm) / 60 // (sec / km) / (60 sec / min)

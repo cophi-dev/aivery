@@ -60,6 +60,8 @@ export default function IntegrationsPage() {
 
         if (success && integration) {
           setStravaIntegration(integration)
+          // Always show the success banner for connected services
+          setAlert({ type: "success", message: "Successfully connected to Strava" })
         } else if (error) {
           console.warn("Failed to load Strava integration:", error)
         }
