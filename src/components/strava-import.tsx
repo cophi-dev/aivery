@@ -67,6 +67,20 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         console.log('[StravaImport] Integration status result:', { intSuccess, integration });
         if (intSuccess && integration) {
           setStravaIntegration(integration)
+          
+          // Verify actual API connectivity
+          try {
+            const response = await fetch('/api/strava-status');
+            const stravaStatus = await response.json();
+            
+            if (!stravaStatus.connected && stravaStatus.account?.exists) {
+              // We have an account record but the connection is invalid
+              console.log('[StravaImport] Strava connection invalid, showing reconnect UI');
+              setError('Your Strava connection appears to be invalid. Please reconnect your account.');
+            }
+          } catch (statusError) {
+            console.error('[StravaImport] Error checking Strava status:', statusError);
+          }
         } else {
           setStravaIntegration(null);
         }
@@ -582,6 +596,18 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const handleSetupWebhook = async () => {
     try {
       setIsSettingUpWebhook(true)
+      
+      // First check if integration is truly valid
+      const integrationCheck = await getStravaIntegrationAction()
+      if (!integrationCheck.success || !integrationCheck.integration) {
+        toast({
+          title: "Connection Error",
+          description: "Your Strava connection appears to be invalid. Please disconnect and reconnect your account.",
+          variant: "destructive"
+        })
+        return
+      }
+      
       const result = await setupStravaWebhookAction()
       
       if (result.success) {
@@ -606,7 +632,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       console.error("Error setting up webhook:", error)
       toast({
         title: "Error",
-        description: "An unexpected error occurred",
+        description: "An unexpected error occurred setting up auto-sync",
         variant: "destructive"
       })
     } finally {
@@ -834,6 +860,31 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     {isDisconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
                   </Button>
                 </div>
+                
+                {/* Display error with reconnect option if needed */}
+                {error && (
+                  <Alert variant="destructive" className="mt-2">
+                    <AlertTitle className="flex items-center gap-2">
+                      <X className="h-4 w-4" /> Connection Issue
+                    </AlertTitle>
+                    <AlertDescription className="mt-1">
+                      <p className="mb-2">{error}</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => {
+                          setError(null);
+                          handleDisconnectStrava().then(() => {
+                            setTimeout(() => handleConnectStrava(), 1000);
+                          });
+                        }}
+                        className="bg-white dark:bg-gray-800"
+                      >
+                        Reconnect Strava
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 {/* Automatic Syncing Toggle */}
                 <div className="space-y-2 pt-4 border-t">
@@ -844,18 +895,22 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                         Toggle to enable/disable syncing of new activities.
                       </p>
                     </div>
-                    <div> 
+                    <div className="flex items-center space-x-2"> 
                        {isWebhookLoading ? (
                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                        ) : (
                          stravaIntegration && (
-                           <Switch
-                             className="peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input opacity-100 visible"
-                             checked={webhookStatus?.subscribed ?? false}
-                             onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
-                             disabled={isSettingUpWebhook}
-                             aria-label="Toggle automatic Strava sync"
-                           />
+                           <>
+                             <span className="text-sm text-muted-foreground">
+                               {webhookStatus?.subscribed ? "On" : "Off"}
+                             </span>
+                             <Switch
+                               checked={webhookStatus?.subscribed ?? false}
+                               onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
+                               disabled={isSettingUpWebhook}
+                               aria-label="Toggle automatic Strava sync"
+                             />
+                           </>
                          )
                        )}
                      </div>

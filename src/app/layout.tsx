@@ -96,20 +96,20 @@ export default async function RootLayout({
         <AuthProvider>
           <ForceCleanup />
           
-          <ThemeProvider
+          {/* <ThemeProvider
             attribute="class"
             defaultTheme="light"
             enableSystem={false}
             storageKey="aivery-theme"
             disableTransitionOnChange
-          >
+          > */}
             <ToastProvider>
               <MainHeader />
               <main className="min-h-screen pt-14">{children}</main>
               {session?.user && <PersistentChat />}
               <Toaster />
             </ToastProvider>
-          </ThemeProvider>
+          {/* </ThemeProvider> */}
         </AuthProvider>
       </body>
     </html>

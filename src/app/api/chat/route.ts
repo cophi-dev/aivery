@@ -105,7 +105,7 @@ function getWorkoutTypeFromQuery(query: string): string | null {
     if (query.includes('swim') || query.includes('swimming')) return 'swimming';
     // Add other types if needed
     return null;
-}
+  }
 
 
 // --- Main POST handler ---
@@ -181,7 +181,7 @@ export async function POST(req: Request) {
             console.log("[CHAT] Could not determine date range from timeframe:", timeframe);
             dataContext = `Could not determine the date range for timeframe '${timeframe}'. Ask the user to clarify the period.`;
         }
-      } else {
+        } else {
          console.log("[CHAT] Could not determine workout type for distance query.");
          // Keep default dataContext
       }
@@ -220,7 +220,7 @@ RESPONSE GUIDELINES:
 - Use markdown formatting (bold, italics, lists).`;
 
     console.log("[CHAT] Calling Anthropic API with system prompt:", systemPrompt); // Log the prompt
-
+    
     const response = await client.messages.create({
       model: "claude-3-5-sonnet-20240620",
       max_tokens: 1024,

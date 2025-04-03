@@ -326,21 +326,21 @@ export default function HomePage() {
   const displayName = user?.nickname || user?.name || "User";
 
   return (
-    <div className="container mx-auto px-4 py-8 space-y-8 md:space-y-10">
-      <section className="p-6 bg-card rounded-xl shadow-sm">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+    <div className="container mx-auto px-4 py-6 md:py-8 space-y-6 md:space-y-10">
+      <section className="p-4 md:p-6 bg-card rounded-xl shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4">
           <UserAvatar 
             name={displayName} 
             imageUrl={user?.image || null}
             size="lg"
           />
-          <div className="flex-1">
-            <h1 className="text-2xl md:text-3xl font-bold">Hey {displayName}!</h1>
+          <div className="flex-1 mt-2 sm:mt-0">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Hey {displayName}!</h1>
             <p className="text-muted-foreground text-sm md:text-base mb-2">
               Your AI-powered fitness companion to track, plan and analyze your fitness journey.
             </p>
             <div className="flex items-center gap-2">
-              <p className="text-muted-foreground italic text-xs md:text-sm">
+              <p className="text-muted-foreground italic text-xs sm:text-sm">
                 {quote}
               </p>
               <Button 
@@ -357,31 +357,31 @@ export default function HomePage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-        <Button asChild size="lg" className="w-full">
-          <Link href="/chat">
-            <MessageSquare className="mr-2 h-5 w-5" /> Chat with AI Coach
-          </Link>
-        </Button>
-        <Button asChild variant="secondary" size="lg" className="w-full">
-          <Link href="/workout/new">
-            <Dumbbell className="mr-2 h-5 w-5" /> Log Workout
-          </Link>
-        </Button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-6">
+          <Button asChild size="lg" className="w-full">
+            <Link href="/chat">
+              <MessageSquare className="mr-2 h-5 w-5" /> Chat with AI Coach
+            </Link>
+          </Button>
+          <Button asChild variant="secondary" size="lg" className="w-full">
+            <Link href="/workout/new">
+              <Dumbbell className="mr-2 h-5 w-5" /> Log Workout
+            </Link>
+          </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <Card className="lg:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center">
+           <CardHeader className="pb-2">
+            <CardTitle className="text-base sm:text-lg flex items-center">
               <Dumbbell className="mr-2 h-4 w-4" /> Workouts
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold">{workoutCount}</div>
-            <p className="text-sm text-muted-foreground">Total logged</p>
+            <div className="text-3xl sm:text-4xl font-bold">{workoutCount}</div>
+            <p className="text-xs sm:text-sm text-muted-foreground">Total logged</p>
           </CardContent>
-          <CardFooter>
+          <CardFooter className="pt-3">
             <Button asChild className="w-full">
               <Link href="/workouts">
                 {workoutCount > 0 ? "View Workouts" : "Log First Workout"}
@@ -392,7 +392,7 @@ export default function HomePage() {
 
         <Card className="md:col-span-2 lg:col-span-2">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center">
+            <CardTitle className="text-base sm:text-lg flex items-center">
               <Activity className="mr-2 h-4 w-4" /> Recent Activity
             </CardTitle>
           </CardHeader>
@@ -415,10 +415,10 @@ export default function HomePage() {
                   }
 
                   return (
-                    <div key={workout._id} className="flex items-center justify-between gap-3 border-b border-border/50 pb-2 last:border-0 last:pb-0">
+                    <div key={workout._id} className="flex items-center justify-between gap-2 sm:gap-3 border-b border-border/50 pb-2 last:border-0 last:pb-0">
                       <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
                         {icon}
-                        <span className="text-xs font-normal w-14 text-right tabular-nums">{date}</span>
+                        <span className="text-xs font-normal w-12 sm:w-14 text-right tabular-nums">{date}</span>
                       </div>
                       <div className="flex-1 min-w-0 text-right">
                         {metric && (
@@ -445,31 +445,31 @@ export default function HomePage() {
         </Card>
 
         <Card className="lg:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center">
+           <CardHeader className="pb-2">
+            <CardTitle className="text-base sm:text-lg flex items-center">
               <MessageSquare className="mr-2 h-4 w-4" /> AI Coach
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Ask questions, get suggestions, and more.</p>
+            <p className="text-sm sm:text-base text-muted-foreground">Ask questions, get suggestions, and more.</p>
           </CardContent>
-          <CardFooter>
-            <Button asChild variant="outline" className="w-full">
-              <Link href="/chat">Chat Now</Link>
-            </Button>
+           <CardFooter className="pt-3">
+             <Button asChild variant="outline" className="w-full">
+               <Link href="/chat">Chat Now</Link>
+             </Button>
           </CardFooter>
         </Card>
 
         <Card className="lg:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center">
+           <CardHeader className="pb-2">
+            <CardTitle className="text-base sm:text-lg flex items-center">
               <BookOpen className="mr-2 h-4 w-4" /> My Story
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Let Aivery create a personalized story.</p>
+            <p className="text-sm sm:text-base text-muted-foreground">Let Aivery create a personalized story.</p>
           </CardContent>
-          <CardFooter>
+           <CardFooter className="pt-3">
             <Button asChild variant="outline" className="w-full">
               <Link href="/my-story">Read My Story</Link>
             </Button>
@@ -478,7 +478,7 @@ export default function HomePage() {
         
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center">
+            <CardTitle className="text-base sm:text-lg flex items-center">
               <BarChart className="mr-2 h-4 w-4" /> Weekly Progress
             </CardTitle>
           </CardHeader>
@@ -514,6 +514,36 @@ export default function HomePage() {
                 </Button>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-1">
+           <CardHeader className="pb-2">
+            <CardTitle className="text-base sm:text-lg flex items-center">
+              <Zap className="mr-2 h-4 w-4" /> Quick Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
+              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
+                 <Link href="/activity/new">Log Workout</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
+                 <Link href="/chat?q=suggest+workout">Get Suggestion</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
+                 <Link href="/plan/new">Create Plan</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
+                 <Link href="/exercises">Exercises</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
+                 <Link href="/my-story">My Story</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
+                 <Link href="/settings">Settings</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

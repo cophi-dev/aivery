@@ -1,5 +1,6 @@
 import { NextAuthOptions, getServerSession } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
+import StravaProvider from "next-auth/providers/strava"
 import { compare } from "bcryptjs"
 import dbConnect from "@/lib/db/mongodb"
 import UserModel from "@/lib/db/models/user"
@@ -13,6 +14,17 @@ console.log('[AUTH CONFIG] NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'Not set'
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    StravaProvider({
+      clientId: process.env.STRAVA_CLIENT_ID!,
+      clientSecret: process.env.STRAVA_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: "read_all,activity:read_all",
+          approval_prompt: "auto",
+          response_type: "code",
+        },
+      },
+    }),
     CredentialsProvider({
       name: "credentials",
       credentials: {
@@ -77,8 +89,17 @@ export const authOptions: NextAuthOptions = {
     error: "/login", // Show login page with error param on auth errors
   },
   callbacks: {
-    async jwt({ token, trigger, user }) {
+    async jwt({ token, trigger, user, account }) {
       try {
+        if (account && user) {
+          token.accessToken = account.access_token;
+          token.refreshToken = account.refresh_token;
+          token.accessTokenExpires = account.expires_at;
+          token.providerAccountId = account.providerAccountId;
+          token.provider = account.provider;
+          console.log(`[AUTH] Added OAuth account details to token for provider: ${account.provider}`);
+        }
+        
         if (trigger === "signIn" && user) {
           // Add user ID to token
           token.id = user.id;
@@ -123,6 +144,11 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       try {
+        if (token) {
+           session.accessToken = token.accessToken as string | undefined;
+           session.provider = token.provider as string | undefined;
+        }
+        
         // Keep session minimal
         if (session.user && token) {
           session.user.id = token.id as string
@@ -181,7 +207,6 @@ export const authOptions: NextAuthOptions = {
       }
     }
   },
-  // Modify cookie options to fix cross-domain issues
   cookies: {
     sessionToken: {
       name: `next-auth.session-token`,
@@ -218,9 +243,11 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET
 }
 
-// Session extension to include ID
+// Session extension to include ID AND accessToken/provider
 declare module "next-auth" {
   interface Session {
+    accessToken?: string;
+    provider?: string;
     user: {
       id: string
       name?: string | null
@@ -228,6 +255,19 @@ declare module "next-auth" {
       image?: string | null
       nickname?: string | null
     }
+  }
+}
+
+// Add JWT extension if using JWT strategy
+declare module "next-auth/jwt" {
+  interface JWT {
+    id?: string;
+    nickname?: string;
+    accessToken?: string;
+    refreshToken?: string;
+    accessTokenExpires?: number;
+    providerAccountId?: string;
+    provider?: string;
   }
 }
 

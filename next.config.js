@@ -20,7 +20,7 @@ const nextConfig = {
     },
     largePageDataBytes: 128 * 1000, // 128KB
     serverComponentsExternalPackages: ['mongodb'],
-    disableOptimizedLoading: true,
+    // disableOptimizedLoading: true, // <-- Temporarily commented out
   },
   
   // Cache busting for builds
@@ -29,6 +29,7 @@ const nextConfig = {
   },
 
   // Configure headers for cache control and CORS
+  // --- RESTORING HEADERS --- 
   async headers() {
     return [
       {
@@ -58,6 +59,7 @@ const nextConfig = {
       }
     ]
   },
+  // --- HEADERS RESTORED ---
 
   // Rendering configuration
   distDir: '.next',
