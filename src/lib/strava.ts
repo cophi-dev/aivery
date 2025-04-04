@@ -20,23 +20,26 @@ interface StravaTokenResponse {
  * Updates the account in the database with the new tokens.
  */
 export async function refreshStravaToken(account: IAccount): Promise<string | null> { // Use IAccount from your model
+  console.log(`[refreshStravaToken] Attempting refresh for account ID: ${account._id}, Provider Account ID: ${account.providerAccountId}`);
   if (!account.refresh_token || !account.userId) {
-    console.error('Strava refresh token or userId missing for account:', account.providerAccountId);
+    console.error(`[refreshStravaToken] ERROR: Strava refresh token or userId missing for account ${account._id}`);
     return null;
   }
 
-  console.log(`Refreshing Strava token for account ${account.providerAccountId}`);
+  // Log only essential, non-sensitive parts
+  console.log(`[refreshStravaToken] Details - UserID: ${account.userId}, Expires At: ${account.expires_at}, Has Refresh Token: ${!!account.refresh_token}`);
 
   try {
     await dbConnect(); // Ensure database is connected
     
     if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET) {
-      console.error('Missing Strava API credentials. Check STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET env variables');
+      console.error('[refreshStravaToken] ERROR: Missing Strava API credentials.');
       throw new Error('Missing Strava API credentials');
     }
     
-    console.log(`Using Client ID: ${STRAVA_CLIENT_ID.substring(0, 3)}... for token refresh`);
+    console.log(`[refreshStravaToken] Using Client ID: ${STRAVA_CLIENT_ID.substring(0, 3)}...`);
     
+    console.log(`[refreshStravaToken] Calling Strava token endpoint: ${STRAVA_TOKEN_ENDPOINT}`);
     const response = await fetch(STRAVA_TOKEN_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -57,8 +60,10 @@ export async function refreshStravaToken(account: IAccount): Promise<string | nu
     }
 
     const tokenData: StravaTokenResponse = await response.json();
+    console.log(`[refreshStravaToken] Successfully fetched new token data. New expiry: ${tokenData.expires_at}`);
 
     // Update the account in the database using the model directly
+    console.log(`[refreshStravaToken] Attempting to update AccountModel for ID: ${account._id}`);
     const updatedAccount = await AccountModel.findByIdAndUpdate(
       account._id, // Use the document's _id
       {
@@ -70,14 +75,16 @@ export async function refreshStravaToken(account: IAccount): Promise<string | nu
     );
 
     if (!updatedAccount) {
+      console.error(`[refreshStravaToken] ERROR: Failed to update account in DB for ID: ${account._id}. AccountModel.findByIdAndUpdate returned null.`);
       throw new Error("Failed to update account with new Strava tokens.");
     }
     
-    console.log(`Strava token refreshed and updated for account ${account.providerAccountId}`);
+    console.log(`[refreshStravaToken] Successfully refreshed and updated DB for account ${account.providerAccountId}. New expiry: ${updatedAccount.expires_at}`);
     return tokenData.access_token; // Return the new access token
 
   } catch (error) {
-    console.error('Error refreshing Strava token:', error);
+    // Log the specific error
+    console.error(`[refreshStravaToken] ERROR during refresh for account ${account.providerAccountId}:`, error);
     return null; // Indicate failure
   }
 }

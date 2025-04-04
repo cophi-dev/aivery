@@ -50,12 +50,18 @@ export async function exchangeCodeForToken(code: string) {
     throw new Error('Strava credentials are not configured')
   }
 
+  // Determine the correct redirect URI based on environment
+  const redirectUri = process.env.NODE_ENV === 'development'
+    ? 'http://localhost:3000/api/strava/callback'
+    : 'https://aivery.app/api/strava/callback';
+
   // Create form data params
   const params = new URLSearchParams({
     client_id: STRAVA_CONFIG.clientId,
     client_secret: STRAVA_CONFIG.clientSecret,
     code,
-    grant_type: 'authorization_code'
+    grant_type: 'authorization_code',
+    redirect_uri: redirectUri
   });
 
   // Log attempt with detailed info
@@ -64,7 +70,7 @@ export async function exchangeCodeForToken(code: string) {
     client_id: STRAVA_CONFIG.clientId,
     has_client_secret: !!STRAVA_CONFIG.clientSecret,
     code_prefix: code.substring(0, 5) + '...',
-    redirect_uri: STRAVA_CONFIG.redirectUri,
+    redirect_uri: redirectUri,
     environment: process.env.NODE_ENV || 'unknown',
     app_url: process.env.NEXT_PUBLIC_APP_URL || 'not set'
   });
