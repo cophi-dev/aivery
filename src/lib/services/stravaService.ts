@@ -374,7 +374,8 @@ async function fetchStravaActivity(accessToken: string, activityId: string) {
 }
 
 // Find the user associated with a Strava athlete ID
-async function findUserByStravaAthleteId(athleteId: number | string) {
+// Export this function so it can be used by the webhook handler
+export async function findUserByStravaAthleteId(athleteId: number | string) {
   const integrationCollection = await getCollection(INTEGRATIONS_COLLECTION);
   
   const integration = await integrationCollection.findOne({

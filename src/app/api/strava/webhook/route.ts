@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncStravaActivity } from "@/lib/services/stravaService";
+import { syncStravaActivity, findUserByStravaAthleteId } from "@/lib/services/stravaService";
 import { WEBHOOK_VERIFY_TOKEN } from "@/lib/strava/webhook";
 
 // This is the verification token we'll configure in Strava
@@ -73,31 +73,67 @@ export async function POST(request: NextRequest) {
       );
 
       if (aspectType === "create" || aspectType === "update") {
-        // Sync the new or updated activity
-        // This may be processed asynchronously
-        await syncStravaActivity(athleteId, activityId.toString());
-        
-        // Update the webhook event record to mark as processed
         try {
-          const { getCollection } = await import("@/lib/db/mongodb");
-          const webhookEventsCollection = await getCollection("webhook_events");
-          
-          await webhookEventsCollection.updateOne(
-            { 
-              "event.object_id": activityId,
-              "event.owner_id": athleteId,
-              "event.aspect_type": aspectType
-            },
-            { 
-              $set: { 
-                processedAt: new Date(),
-                status: "processed"
-              } 
-            }
-          );
-        } catch (updateError) {
-          console.error("Error updating webhook event status:", updateError);
-          // Continue even if update fails
+          // 1. Find the application user ID associated with the Strava athlete ID
+          const appUserId = await findUserByStravaAthleteId(athleteId);
+          console.log(`Found app user ID ${appUserId} for athlete ID ${athleteId}`);
+
+          // 2. Sync the new or updated activity using the correct application user ID
+          await syncStravaActivity(appUserId.toString(), activityId.toString());
+          console.log(`Successfully synced activity ${activityId} for user ${appUserId}`);
+
+          // 3. Update the webhook event record to mark as processed
+          try {
+            const { getCollection } = await import("@/lib/db/mongodb");
+            const webhookEventsCollection = await getCollection("webhook_events");
+            
+            // Use the original event details to find the record
+            await webhookEventsCollection.updateOne(
+              { 
+                "event.object_id": activityId,
+                "event.owner_id": athleteId,
+                "event.aspect_type": aspectType,
+                // Optionally add a timestamp condition if duplicates are possible
+              },
+              { 
+                $set: { 
+                  processedAt: new Date(),
+                  status: "processed",
+                  appUserId: appUserId // Optionally store the resolved app user ID
+                } 
+              }
+            );
+            console.log(`Marked webhook event for activity ${activityId} as processed.`);
+          } catch (updateError) {
+            console.error(`Error updating webhook event status for activity ${activityId}:`, updateError);
+            // Continue even if update fails, the core sync worked.
+          }
+
+        } catch (syncError) {
+          // Catch errors specifically from findUserByStravaAthleteId or syncStravaActivity
+          console.error(`Error during sync process for activity ${activityId} (Athlete: ${athleteId}):`, syncError);
+          // Don't update processedAt, leave it null to indicate failure
+          // Update the DB record with an error status?
+          try {
+             const { getCollection } = await import("@/lib/db/mongodb");
+             const webhookEventsCollection = await getCollection("webhook_events");
+             await webhookEventsCollection.updateOne(
+               { 
+                 "event.object_id": activityId,
+                 "event.owner_id": athleteId,
+                 "event.aspect_type": aspectType,
+                 processedAt: null // Target the unprocessed event
+               },
+               { 
+                 $set: { 
+                   status: "error",
+                   errorMessage: syncError instanceof Error ? syncError.message : "Unknown sync error"
+                 } 
+               }
+             );
+          } catch (dbError) {
+             console.error(`Error marking webhook event as failed for activity ${activityId}:`, dbError);
+          }
         }
       }
       // We don't handle "delete" events for now
