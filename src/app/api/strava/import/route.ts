@@ -14,6 +14,15 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
+// Increase the body size limit for this route
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '100mb', // Adjust this value as needed
+    },
+  },
+}
+
 // Define FitActivity interface
 interface FitActivity {
   timestamp: string | number;
