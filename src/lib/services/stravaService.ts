@@ -130,7 +130,7 @@ export async function connectStrava(userId: string, authCode: string) {
 }
 
 // Helper function to get a valid access token
-async function getValidAccessToken(userId: string) {
+export async function getValidAccessToken(userId: string) {
   const collection = await getCollection(INTEGRATIONS_COLLECTION);
   const integration = await collection.findOne({
     userId: new ObjectId(userId),

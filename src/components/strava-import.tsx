@@ -67,26 +67,53 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         console.log('[StravaImport] Integration status result:', { intSuccess, integration });
         if (intSuccess && integration) {
           setStravaIntegration(integration)
+          setError(null); // Clear previous errors before re-validating
           
-          // Verify actual API connectivity - but don't force a test by default to avoid unnecessary API calls
+          // Verify actual API connectivity
           try {
-            // Use the non-test endpoint by default
+            console.log('[StravaImport] Fetching /api/strava-status...');
             const response = await fetch('/api/strava-status');
             const stravaStatus = await response.json();
-            
-            if (!stravaStatus.connected && stravaStatus.account?.exists) {
-              // We have an account record but the connection is invalid - only show error if not forced valid
-              if (!stravaStatus.forcedValid) {
-                console.log('[StravaImport] Strava connection invalid, showing reconnect UI');
-                setError('Your Strava connection appears to be invalid. You can try reconnecting or trust the connection anyway to override validation.');
+            console.log('[StravaImport] /api/strava-status response:', stravaStatus);
+
+            // Check if the API call was successful and if the connection is valid according to the backend
+            if (!stravaStatus.success || !stravaStatus.connected) {
+              console.log('[StravaImport] Strava connection reported as invalid by API status check.');
+              // Construct a more informative error based on the response
+              let errorMsg = stravaStatus.error || 'Your Strava connection appears to be invalid or expired.';
+              if (stravaStatus.account?.tokenValid === false) {
+                errorMsg = 'Your Strava token seems invalid or expired. Please try reconnecting.';
+              } else if (stravaStatus.account?.apiCallSuccess === false) {
+                errorMsg = 'Could not verify connection with Strava API. Please try reconnecting.';
+              }
+              setError(errorMsg + " You may need to disconnect and reconnect your account.");
+              // Optionally, we could set stravaIntegration back to null to force reconnect UI,
+              // but showing an error within the connected view might be better UX.
+              // setStravaIntegration(null);
+            } else {
+              // Connection is valid, ensure no error is shown
+              setError(null);
+              
+              // Check if auto-sync (webhook) is enabled, if not, enable it automatically
+              // by calling loadWebhookStatus first, then setting it up if not already enabled
+              const webhookResult = await getStravaWebhookStatusAction();
+              console.log('[StravaImport] Auto-checking webhook status:', webhookResult);
+              
+              if (webhookResult.success && !webhookResult.subscribed) {
+                console.log('[StravaImport] Auto-enabling webhook/auto-sync on connection');
+                // Auto-enable webhook for the user
+                await handleSetupWebhook();
               }
             }
           } catch (statusError) {
-            console.error('[StravaImport] Error checking Strava status:', statusError);
-            // Don't set error state here - be lenient
+            console.error('[StravaImport] Error fetching Strava status:', statusError);
+            setError('Could not verify Strava connection status. Please check your network or try again later.');
+            // Don't set error state here - be lenient // <-- Keep this comment? Or set error as above?
+            // Let's set an error here for clarity to the user.
           }
         } else {
           setStravaIntegration(null);
+          setError(null); // Ensure no error if not integrated
         }
         
         console.log('[StravaImport] Fetching supported activity types...');
@@ -132,18 +159,53 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
           variant: "default"
         });
         
-        // Refresh the integration status
-        const loadStravaIntegration = async () => {
+        // Refresh the integration status and then setup webhook
+        const setupAutoSync = async () => {
           try {
+            console.log('[StravaImport] Refreshing integration after connect...');
             const { success, integration } = await getStravaIntegrationAction();
             if (success && integration) {
               setStravaIntegration(integration);
+              console.log('[StravaImport] Integration refreshed, now attempting automatic webhook setup...');
+              
+              // ---- Add automatic webhook setup call ----
+              const webhookResult = await setupStravaWebhookAction();
+              if (webhookResult.success) {
+                console.log('[StravaImport] Automatic webhook setup successful. Optimistically updating UI.');
+                // --- Optimistically update status locally --- 
+                setWebhookStatus({ subscribed: true, success: true });
+                toast({
+                  title: "Auto-sync enabled",
+                  description: "New Strava activities will now be automatically synced."
+                });
+              } else {
+                console.error('[StravaImport] Automatic webhook setup failed. Updating UI.', webhookResult.error);
+                 // --- Update status locally on failure --- 
+                setWebhookStatus({ subscribed: false, success: false, error: webhookResult.error || "Failed automatic setup" });
+                toast({
+                  title: "Auto-sync setup failed",
+                  description: webhookResult.error || "Could not enable automatic syncing automatically. You can try enabling it manually.",
+                  variant: "destructive"
+                });
+              }
+              // ---- End automatic webhook setup call ----
+              
+              // --- Remove explicit reload status AFTER setup attempt --- 
+              // console.log('[StravaImport] Re-checking webhook status after setup attempt...')
+              // await new Promise(resolve => setTimeout(resolve, 250)); // Remove delay
+              // await loadWebhookStatus(); // Remove explicit reload
+              
+            } else {
+              console.error('[StravaImport] Failed to refresh integration after connect.');
             }
           } catch (error) {
-            console.error("Error refreshing Strava integration:", error);
+            console.error("Error during post-connection setup:", error);
+             // Set status to disconnected on error during setup
+             setWebhookStatus({ subscribed: false, success: false, error: "Error during setup" });
+             // await loadWebhookStatus(); // Remove explicit reload here too
           }
         };
-        loadStravaIntegration();
+        setupAutoSync(); // Call the async function
         
         // Clear the URL parameters to avoid showing the message again on refresh
         router.replace('/integrations', { scroll: false })
@@ -561,40 +623,43 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
   }
 
-  // Add this useEffect to load webhook status
-  useEffect(() => {
-    const loadWebhookStatus = async () => {
-      // Only run if connected
-      if (stravaIntegration?.id) { // Check for integration ID specifically
-        console.log('[StravaImport] Strava connected, checking webhook status...');
-          setIsWebhookLoading(true)
-        setWebhookStatus(null); // Reset status before loading
-        try {
-          const result = await getStravaWebhookStatusAction()
-          console.log('[StravaImport] Webhook status result:', result);
-          if (result.success) {
-            setWebhookStatus(result) // Includes { active: boolean, lastUpdated?: string, subscription?: any }
-          } else {
-            console.error('[StravaImport] Failed to get webhook status:', result.error);
-            setWebhookStatus({ active: false }); // Assume inactive on error
-          }
-        } catch (error) {
-          console.error("[StravaImport] Error loading webhook status:", error)
-          setWebhookStatus({ active: false }); // Assume inactive on error
-        } finally {
-          console.log('[StravaImport] Finished checking webhook status.');
-          setIsWebhookLoading(false)
+  // Define loadWebhookStatus as a standalone async function callable from elsewhere
+  const loadWebhookStatus = useCallback(async () => {
+    // Only run if connected
+    if (stravaIntegration?.id) { // Check for integration ID specifically
+      console.log('[StravaImport] Strava connected, checking webhook status...');
+        setIsWebhookLoading(true)
+      setWebhookStatus(null); // Reset status before loading
+      try {
+        const result = await getStravaWebhookStatusAction()
+        console.log('[StravaImport] Webhook status result:', result);
+        if (result.success) {
+          setWebhookStatus(result) // Includes { subscribed: boolean, ... }
+        } else {
+          console.error('[StravaImport] Failed to get webhook status:', result.error);
+          // Explicitly set subscribed to false on failure
+          setWebhookStatus({ subscribed: false, success: false, error: result.error || "Failed to get status" }); 
         }
-      } else {
-        console.log('[StravaImport] Strava not connected, skipping webhook status check.');
-        setWebhookStatus(null); // Clear status if disconnected
-        setIsWebhookLoading(false); // Ensure loading is false if not connected
+      } catch (error) {
+        console.error("[StravaImport] Error loading webhook status:", error)
+        // Explicitly set subscribed to false on catch
+        const errorMsg = error instanceof Error ? error.message : "Unknown error during status check";
+        setWebhookStatus({ subscribed: false, success: false, error: errorMsg });
+      } finally {
+        console.log('[StravaImport] Finished checking webhook status.');
+        setIsWebhookLoading(false)
       }
+    } else {
+      console.log('[StravaImport] Strava not connected, skipping webhook status check.');
+      setWebhookStatus(null); // Clear status if disconnected
+      setIsWebhookLoading(false); // Ensure loading is false if not connected
     }
-    
-    loadWebhookStatus()
-  // Depend on stravaIntegration object itself - will re-run if integration status changes
-  }, [stravaIntegration])
+  }, [stravaIntegration]); // Keep dependency on stravaIntegration
+
+  // Use useEffect to call loadWebhookStatus when stravaIntegration changes
+  useEffect(() => {
+    loadWebhookStatus();
+  }, [loadWebhookStatus]); // Dependency array includes the useCallback function
 
   // Add these functions to handle webhook subscription
   const handleSetupWebhook = async () => {
@@ -943,34 +1008,73 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                       </p>
                     </div>
                     <div className="flex items-center space-x-2"> 
-                       {isWebhookLoading ? (
-                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                       ) : (
-                         stravaIntegration && (
+                       {!isWebhookLoading ? (
+                         // Only render if integration exists AND status has been loaded (is not null)
+                         stravaIntegration && webhookStatus !== null ? (
                            <>
                              <span className="text-sm text-muted-foreground">
                                {webhookStatus?.subscribed ? "On" : "Off"}
                              </span>
                              <Switch
+                               key={`webhook-switch-${webhookStatus?.subscribed}`} // Simplify key
                                checked={webhookStatus?.subscribed ?? false}
                                onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
                                disabled={isSettingUpWebhook}
                                aria-label="Toggle automatic Strava sync"
+                               className="data-[state=checked]:bg-green-500"
                              />
                            </>
+                         ) : (
+                           // If status is null but integration exists, show default switch 
+                           // that triggers status check and setup on change
+                           stravaIntegration ? (
+                             <>
+                               <span className="text-sm text-muted-foreground">Off</span>
+                               <Switch
+                                 checked={false}
+                                 onCheckedChange={() => {
+                                   console.log('[StravaImport] Manually triggering webhook status check and setup');
+                                   loadWebhookStatus().then(() => {
+                                     if (!webhookStatus?.subscribed) {
+                                       handleSetupWebhook();
+                                     }
+                                   });
+                                 }}
+                                 disabled={isSettingUpWebhook}
+                                 aria-label="Toggle automatic Strava sync"
+                                 className="data-[state=checked]:bg-green-500"
+                               />
+                             </>
+                           ) : null
                          )
+                        ) : (
+                         // Render loader only when actively loading webhook status
+                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                        )}
                      </div>
                    </div>
-                   {/* Status text */}
+                   {/* Add explicit debug logging to help identify issues */} 
+                   {console.log('[StravaImport] Rendering auto-sync toggle:', {
+                     isWebhookLoading,
+                     webhookStatus,
+                     hasStravaIntegration: !!stravaIntegration,
+                     toggleVisible: !isWebhookLoading && (stravaIntegration && webhookStatus !== null || stravaIntegration)
+                   })}
+                   
+                   {/* Status text - Ensure webhookStatus is checked before accessing properties */}
                    {!isWebhookLoading && webhookStatus?.subscribed && (
                      <p className="text-xs text-muted-foreground">
                        Auto-sync active. Last update check: {webhookStatus.lastUpdated ? formatDate(webhookStatus.lastUpdated) : "N/A"}
                      </p>
                    )}
-                    {!isWebhookLoading && !webhookStatus?.subscribed && !isSettingUpWebhook && (
+                    {!isWebhookLoading && webhookStatus !== null && !webhookStatus?.subscribed && !isSettingUpWebhook && (
                        <p className="text-xs text-muted-foreground">
                          Auto-sync is currently disabled.
+                       </p>
+                    )}
+                    {!isWebhookLoading && webhookStatus === null && stravaIntegration && (
+                       <p className="text-xs text-muted-foreground">
+                         Auto-sync status unknown. Toggle the switch to enable it.
                        </p>
                     )}
                 </div>

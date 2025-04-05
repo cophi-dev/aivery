@@ -7,6 +7,7 @@ import WorkoutModel from '@/lib/db/models/workout';
 import dbConnect from '@/lib/db/mongodb';
 import { WorkoutData } from '@/types/db'; // Type for workout data structure
 import { Types } from 'mongoose'; // Import Types
+import { getValidAccessToken } from "@/lib/services/stravaService"; // Add this import
 
 // Helper function to map Strava activity types to our system's workout types
 function mapActivityType(stravaType: string): string | null {
@@ -290,85 +291,55 @@ export async function POST(request: Request) {
     const userId = session.user.id;
     console.log(`POST /api/strava/sync-recent: User ${userId} initiated sync.`);
 
-    // 1. Fetch user's Strava account
-    console.log(`POST /api/strava/sync-recent: Searching for Strava account with userId (string): ${userId}`);
-    const stravaAccount = await AccountModel.findOne({
-      userId: new Types.ObjectId(userId), // Convert string userId to ObjectId
-      provider: 'strava'
-    }).exec();
-    
-    if (!stravaAccount) {
-      console.error(`POST /api/strava/sync-recent: Strava account not found for user ${userId}`);
-      return NextResponse.json({ error: 'Strava account not connected' }, { status: 400 });
-    }
-    
-    // 2. Get a valid access token (refresh if necessary)
-    let accessToken = stravaAccount.access_token;
-    const nowInSeconds = Math.floor(Date.now() / 1000);
-    
-    // Check if token exists and is expired (add a small buffer, e.g., 5 minutes)
-    if (!accessToken || (stravaAccount.expires_at && stravaAccount.expires_at < (nowInSeconds + 300))) {
-      console.log(`POST /api/strava/sync-recent: Access token expired or missing for user ${userId}. Refreshing...`);
-      try {
-        accessToken = await refreshStravaToken(stravaAccount);
-        if (!accessToken) {
-          return NextResponse.json({ 
-            error: 'Failed to refresh Strava token. Please disconnect and reconnect your Strava account.' 
-          }, { status: 401 });
-        }
-      } catch (tokenError) {
-        console.error(`POST /api/strava/sync-recent: Token refresh error for user ${userId}:`, tokenError);
-        return NextResponse.json({ 
-          error: 'Your Strava authorization has expired. Please disconnect and reconnect your Strava account.' 
-        }, { status: 401 });
-      }
-    } else {
-      console.log(`POST /api/strava/sync-recent: Using existing access token for user ${userId}`);
-    }
-
-    // 3. Fetch recent Strava activities
+    // 2. Get a valid access token (refresh if necessary) - REPLACE this section
+    let accessToken;
     try {
-      const activities = await getRecentStravaActivities(accessToken);
-      if (!activities) { // Should return empty array on failure, but check null just in case
-         return NextResponse.json({ error: 'Failed to fetch activities from Strava' }, { status: 500 });
-     }
-     
-     let newActivitiesCount = 0;
-     
-      // 4. Process activities
-     for (const activity of activities) {
-       try {
-          // Check if workout already exists
-         const existingWorkout = await WorkoutModel.findOne({
-            userId: userId,
-            source: 'strava',
-            sourceId: activity.id.toString()
-          }).exec();
-
-          if (!existingWorkout) {
-            // Transform and create new workout
-            const workoutData = transformStravaActivity(activity, userId);
-            await WorkoutModel.create(workoutData);
-            newActivitiesCount++;
-            console.log(`POST /api/strava/sync-recent: Imported Strava activity ${activity.id} for user ${userId}`);
-         } else {
-            // console.log(`POST /api/strava/sync-recent: Skipping existing Strava activity ${activity.id} for user ${userId}`);
-         }
-        } catch (activityError) {
-          console.error(`POST /api/strava/sync-recent: Error processing activity ${activity.id} for user ${userId}:`, activityError);
-          // Decide if you want to stop the whole sync or just skip this activity
-       }
-     }
-     
-      console.log(`POST /api/strava/sync-recent: Sync completed for user ${userId}. Imported ${newActivitiesCount} new activities.`);
-      return NextResponse.json({ success: true, count: newActivitiesCount });
-    } catch (activitiesError) {
-      console.error(`POST /api/strava/sync-recent: Error fetching activities for user ${userId}:`, activitiesError);
-      return NextResponse.json({ 
-        error: 'Failed to fetch activities from Strava. Your access may have been revoked. Please reconnect your account.' 
-      }, { status: 401 });
+        console.log(`POST /api/strava/sync-recent: Getting valid access token for user ${userId}`);
+        accessToken = await getValidAccessToken(userId);
+        if (!accessToken) {
+          throw new Error("Failed to obtain valid Strava access token.");
+        }
+        console.log(`POST /api/strava/sync-recent: Obtained valid access token for user ${userId}`);
+    } catch (error) {
+        console.error(`POST /api/strava/sync-recent: Error getting valid token for user ${userId}:`, error);
+        const errorMessage = error instanceof Error ? error.message : "Failed to validate Strava connection";
+        return NextResponse.json({ error: errorMessage }, { status: 401 }); // Use 401 for auth issues
     }
 
+    // 3. Fetch recent activities from Strava using the valid token
+    console.log(`POST /api/strava/sync-recent: Fetching recent activities for user ${userId}`);
+    const recentActivities = await getRecentStravaActivities(accessToken);
+    console.log(`POST /api/strava/sync-recent: Found ${recentActivities.length} recent activities for user ${userId}`);
+
+    let newActivitiesCount = 0;
+    
+    // 4. Process activities
+    for (const activity of recentActivities) {
+      try {
+         // Check if workout already exists
+        const existingWorkout = await WorkoutModel.findOne({
+           userId: userId,
+           source: 'strava',
+           sourceId: activity.id.toString()
+         }).exec();
+
+         if (!existingWorkout) {
+           // Transform and create new workout
+           const workoutData = transformStravaActivity(activity, userId);
+           await WorkoutModel.create(workoutData);
+           newActivitiesCount++;
+           console.log(`POST /api/strava/sync-recent: Imported Strava activity ${activity.id} for user ${userId}`);
+        } else {
+           // console.log(`POST /api/strava/sync-recent: Skipping existing Strava activity ${activity.id} for user ${userId}`);
+        }
+       } catch (activityError) {
+         console.error(`POST /api/strava/sync-recent: Error processing activity ${activity.id} for user ${userId}:`, activityError);
+         // Decide if you want to stop the whole sync or just skip this activity
+      }
+    }
+    
+    console.log(`POST /api/strava/sync-recent: Sync completed for user ${userId}. Imported ${newActivitiesCount} new activities.`);
+    return NextResponse.json({ success: true, count: newActivitiesCount });
   } catch (error: any) {
     console.error("POST /api/strava/sync-recent Error:", error);
     const errorMessage = error.message || 'Failed to sync Strava activities';

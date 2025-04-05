@@ -3,9 +3,8 @@ import { STRAVA_CONFIG } from "@/lib/strava/config"
 import { getStravaAuthUrl } from "@/lib/strava/config"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import AccountModel from "@/lib/db/models/account"
 import dbConnect from "@/lib/db/mongodb"
-import { refreshStravaToken } from "@/lib/strava"
+import { getValidAccessToken, getStravaIntegration } from "@/lib/services/stravaService"
 
 export const dynamic = 'force-dynamic'
 
@@ -26,12 +25,9 @@ export async function GET(request: NextRequest) {
     await dbConnect()
 
     // Check if the user has a Strava account connected
-    const stravaAccount = await AccountModel.findOne({
-      userId: session.user.id,
-      provider: 'strava'
-    }).exec()
+    const integration = await getStravaIntegration(session.user.id);
 
-    if (!stravaAccount) {
+    if (!integration) {
       return NextResponse.json({ 
         success: true, 
         connected: false,
@@ -58,75 +54,46 @@ export async function GET(request: NextRequest) {
     }
     
     // Verify token validity
-    const nowInSeconds = Math.floor(Date.now() / 1000)
-    let accessToken = stravaAccount.access_token
-    let tokenValid = true
-    
-    // Check for force valid flag (user forced the connection to be considered valid)
-    const forceValid = stravaAccount.forceValid === true
-    if (forceValid) {
-      console.log('Using force-valid flag for Strava connection')
-      
-      return NextResponse.json({
-        success: true,
-        message: "Strava integration status (force-valid)",
-        connected: true,
-        forcedValid: true,
-        account: {
-          exists: true,
-          tokenValid: true,
-          apiCallSuccess: true,
-          athleteId: stravaAccount?.providerAccountId || null,
-          expiryStatus: stravaAccount?.expires_at ? 
-            { 
-              expiresAt: new Date(stravaAccount.expires_at * 1000).toISOString(),
-              expired: false
-            } : null
-        },
-        config: sanitizedConfig,
-      })
-    }
+    let accessToken = null;
+    let tokenValid = false;
+    let apiCallSuccess = false;
+    let athleteId = null;
+    let expiryStatus = null;
 
-    // Check token expiration
-    if (!accessToken || (stravaAccount.expires_at && stravaAccount.expires_at < nowInSeconds)) {
-      console.log('Strava token expired, attempting refresh')
-      
-      try {
-        accessToken = await refreshStravaToken(stravaAccount)
-        if (!accessToken) {
-          tokenValid = false
-        }
-      } catch (error) {
-        console.error('Error refreshing token:', error)
-        tokenValid = false
-      }
-    }
+    try {
+      accessToken = await getValidAccessToken(session.user.id);
+      tokenValid = true;
+      athleteId = integration.athleteId;
 
-    // Test API call if token is valid, but only if the URL includes ?test=true parameter
-    // This makes validation less strict by default
-    const url = new URL(request.url)
-    const shouldTest = url.searchParams.get('test') === 'true'
-    
-    let apiCallSuccess = false
-    if (tokenValid && accessToken && shouldTest) {
-      try {
-        // Make a simple request to Strava API to check access
-        const testResponse = await fetch('https://www.strava.com/api/v3/athlete', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
+      // Test API call if token is valid, but only if the URL includes ?test=true parameter
+      const url = new URL(request.url)
+      const shouldTest = url.searchParams.get('test') === 'true'
+
+      if (shouldTest && accessToken) {
+        try {
+          // Make a simple request to Strava API to check access
+          const testResponse = await fetch('https://www.strava.com/api/v3/athlete', {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          })
+          apiCallSuccess = testResponse.ok
+          if (!testResponse.ok) {
+            console.error('Strava API test failed:', await testResponse.text())
+            tokenValid = false;
           }
-        })
-
-        apiCallSuccess = testResponse.ok
-        if (!testResponse.ok) {
-          console.error('Strava API test failed:', await testResponse.text())
+        } catch (error) {
+          console.error('Error making Strava API test call:', error)
+          apiCallSuccess = false;
+          tokenValid = false;
         }
-      } catch (error) {
-        console.error('Error making Strava API test call:', error)
+      } else if (accessToken) {
+        apiCallSuccess = true;
       }
-    } else if (tokenValid && accessToken) {
-      // If we have a valid token but aren't explicitly testing, assume the connection is good
-      apiCallSuccess = true
+
+    } catch (error) {
+      console.error('Error validating Strava token via getValidAccessToken:', error)
+      tokenValid = false;
     }
 
     return NextResponse.json({
@@ -134,15 +101,11 @@ export async function GET(request: NextRequest) {
       message: "Strava integration status",
       connected: tokenValid && apiCallSuccess,
       account: {
-        exists: !!stravaAccount,
+        exists: !!integration,
         tokenValid,
         apiCallSuccess,
-        athleteId: stravaAccount?.providerAccountId || null,
-        expiryStatus: stravaAccount?.expires_at ? 
-          { 
-            expiresAt: new Date(stravaAccount.expires_at * 1000).toISOString(),
-            expired: stravaAccount.expires_at < nowInSeconds 
-          } : null
+        athleteId: athleteId,
+        expiryStatus: tokenValid ? { expired: false } : { expired: true }
       },
       config: sanitizedConfig,
       authUrl: authUrl ? authUrl.split('?')[0] + '?...' : null,

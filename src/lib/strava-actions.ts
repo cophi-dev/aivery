@@ -22,6 +22,15 @@ export async function connectStravaAction(authCode: string) {
     // Connect Strava using real user ID
     const result = await connectStrava(userId, authCode)
     
+    // Automatically set up webhook subscription for auto-sync after connecting
+    try {
+      console.log("Automatically setting up webhook subscription for auto-sync after Strava connection")
+      await createWebhookSubscription()
+    } catch (webhookError) {
+      console.error("Failed to automatically set up webhook subscription:", webhookError)
+      // Don't fail the overall connection process if webhook setup fails
+    }
+    
     // Revalidate relevant pages
     revalidatePath("/integrations")
     return { success: true, data: result }

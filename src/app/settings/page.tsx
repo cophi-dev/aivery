@@ -120,9 +120,9 @@ export default function SettingsPage() {
   // Add state to track the active tab
   const [activeTab, setActiveTab] = useState("profile")
 
-  // Add Strava Sync State
-  const [isSyncingStrava, setIsSyncingStrava] = useState(false);
-  const [syncStravaError, setSyncStravaError] = useState<string | null>(null);
+  // Add Strava Sync State - Comment out
+  // const [isSyncingStrava, setIsSyncingStrava] = useState(false);
+  // const [syncStravaError, setSyncStravaError] = useState<string | null>(null);
 
   // Simple handleImageUpload function to fix the error
   const handleImageUpload = () => {
@@ -860,7 +860,8 @@ export default function SettingsPage() {
     });
   }, [session?.user?.email, userData.email, profileChanges.email]);
 
-  // --- Strava Sync Handler ---
+  // --- Strava Sync Handler --- Comment out entire function
+  /*
   const handleSyncStrava = async () => {
     setIsSyncingStrava(true);
     setSyncStravaError(null);
@@ -906,6 +907,7 @@ export default function SettingsPage() {
       setIsSyncingStrava(false);
     }
   };
+  */
 
   return (
     <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8 max-w-6xl">
@@ -1237,27 +1239,40 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-3">
-                <Button 
-                  onClick={handleSyncStrava} 
-                  disabled={isSyncingStrava}
-                  variant="default"
-                  size="default"
-                  className="w-full"
-                >
-                  {isSyncingStrava ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing...</>
-                  ) : (
-                    <><RefreshCw className="mr-2 h-4 w-4" /> Sync Last 30 Days from Strava</>
+                {/* Comment out the Strava Sync button and related error message */}
+                {/*
+                <div className="space-y-2">
+                  <Label htmlFor="strava-sync">Sync Recent Activities</Label>
+                  <div className="flex items-center space-x-2">
+                    <Button 
+                      onClick={handleSyncStrava} 
+                      disabled={isSyncingStrava}
+                      variant="outline"
+                    >
+                      {isSyncingStrava ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Sync Last 30 Days from Strava
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Manually sync recent activities if auto-sync missed something or is disabled.
+                  </p>
+                  {syncStravaError && (
+                    <p className="text-sm text-red-600 mt-1">Error: {syncStravaError}</p>
                   )}
-                </Button>
-              </div>
+                </div>
+                <Separator />
+                */}
 
-              {syncStravaError && (
-                <p className="text-sm text-red-600 mt-2">Error: {syncStravaError}</p>
-              )}
-              <Separator />
-               {/* Existing StravaImport component if needed */}
-              <StravaImport /> 
+                <div className="space-y-2">
+                  <Label>Full Data Archive Import</Label>
+                  {/* Existing StravaImport component if needed */}
+                  <StravaImport /> 
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
