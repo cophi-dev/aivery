@@ -155,56 +155,51 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       if (success === 'strava_connected') {
         toast({
           title: "Connected to Strava",
-          description: "Your Strava account is now connected. You can now sync your activities.",
+          description: "Your Strava account is now connected with auto-sync enabled.",
           variant: "default"
         });
         
-        // Refresh the integration status and then setup webhook
+        // Refresh the integration status and then setup webhook (if not already done on server)
         const setupAutoSync = async () => {
           try {
             console.log('[StravaImport] Refreshing integration after connect...');
             const { success, integration } = await getStravaIntegrationAction();
             if (success && integration) {
               setStravaIntegration(integration);
-              console.log('[StravaImport] Integration refreshed, now attempting automatic webhook setup...');
               
-              // ---- Add automatic webhook setup call ----
-              const webhookResult = await setupStravaWebhookAction();
-              if (webhookResult.success) {
-                console.log('[StravaImport] Automatic webhook setup successful. Optimistically updating UI.');
-                // --- Optimistically update status locally --- 
-                setWebhookStatus({ subscribed: true, success: true });
-                toast({
-                  title: "Auto-sync enabled",
-                  description: "New Strava activities will now be automatically synced."
-                });
+              // Check webhook status first
+              const webhookResult = await getStravaWebhookStatusAction();
+              console.log('[StravaImport] Checking webhook status:', webhookResult);
+              
+              if (!webhookResult.subscribed) {
+                console.log('[StravaImport] Auto-sync not enabled yet, setting up...');
+                // Try to set up webhook if not already done on server
+                const setupResult = await setupStravaWebhookAction();
+                if (setupResult.success) {
+                  setWebhookStatus({ 
+                    subscribed: true, 
+                    success: true, 
+                    subscription: setupResult.subscription
+                  });
+                } else {
+                  console.error('[StravaImport] Failed to set up webhook on client:', setupResult.error);
+                  setWebhookStatus({ 
+                    subscribed: false, 
+                    success: false, 
+                    error: setupResult.error
+                  });
+                }
               } else {
-                console.error('[StravaImport] Automatic webhook setup failed. Updating UI.', webhookResult.error);
-                 // --- Update status locally on failure --- 
-                setWebhookStatus({ subscribed: false, success: false, error: webhookResult.error || "Failed automatic setup" });
-                toast({
-                  title: "Auto-sync setup failed",
-                  description: webhookResult.error || "Could not enable automatic syncing automatically. You can try enabling it manually.",
-                  variant: "destructive"
-                });
+                // Webhook is already set up, just update UI
+                setWebhookStatus(webhookResult);
+                console.log('[StravaImport] Auto-sync already enabled');
               }
-              // ---- End automatic webhook setup call ----
-              
-              // --- Remove explicit reload status AFTER setup attempt --- 
-              // console.log('[StravaImport] Re-checking webhook status after setup attempt...')
-              // await new Promise(resolve => setTimeout(resolve, 250)); // Remove delay
-              // await loadWebhookStatus(); // Remove explicit reload
-              
-            } else {
-              console.error('[StravaImport] Failed to refresh integration after connect.');
             }
           } catch (error) {
             console.error("Error during post-connection setup:", error);
-             // Set status to disconnected on error during setup
-             setWebhookStatus({ subscribed: false, success: false, error: "Error during setup" });
-             // await loadWebhookStatus(); // Remove explicit reload here too
           }
         };
+        
         setupAutoSync(); // Call the async function
         
         // Clear the URL parameters to avoid showing the message again on refresh
@@ -1008,75 +1003,48 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                       </p>
                     </div>
                     <div className="flex items-center space-x-2"> 
-                       {!isWebhookLoading ? (
-                         // Only render if integration exists AND status has been loaded (is not null)
-                         stravaIntegration && webhookStatus !== null ? (
-                           <>
-                             <span className="text-sm text-muted-foreground">
-                               {webhookStatus?.subscribed ? "On" : "Off"}
-                             </span>
-                             <Switch
-                               key={`webhook-switch-${webhookStatus?.subscribed}`} // Simplify key
-                               checked={webhookStatus?.subscribed ?? false}
-                               onCheckedChange={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
-                               disabled={isSettingUpWebhook}
-                               aria-label="Toggle automatic Strava sync"
-                               className="data-[state=checked]:bg-green-500"
-                             />
-                           </>
-                         ) : (
-                           // If status is null but integration exists, show default switch 
-                           // that triggers status check and setup on change
-                           stravaIntegration ? (
-                             <>
-                               <span className="text-sm text-muted-foreground">Off</span>
-                               <Switch
-                                 checked={false}
-                                 onCheckedChange={() => {
-                                   console.log('[StravaImport] Manually triggering webhook status check and setup');
-                                   loadWebhookStatus().then(() => {
-                                     if (!webhookStatus?.subscribed) {
-                                       handleSetupWebhook();
-                                     }
-                                   });
-                                 }}
-                                 disabled={isSettingUpWebhook}
-                                 aria-label="Toggle automatic Strava sync"
-                                 className="data-[state=checked]:bg-green-500"
-                               />
-                             </>
-                           ) : null
-                         )
-                        ) : (
-                         // Render loader only when actively loading webhook status
-                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                       )}
-                     </div>
+                      {isWebhookLoading ? (
+                        // Show loader when checking webhook status
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : (
+                        // Always show a clickable toggle for connected accounts
+                        stravaIntegration ? (
+                          <Button
+                            onClick={webhookStatus?.subscribed ? handleRemoveWebhook : handleSetupWebhook}
+                            disabled={isSettingUpWebhook}
+                            variant={webhookStatus?.subscribed ? "default" : "outline"}
+                            className={`px-3 py-1 h-8 ${webhookStatus?.subscribed ? "bg-green-500 hover:bg-green-600 text-white" : ""}`}
+                            size="sm"
+                          >
+                            {isSettingUpWebhook ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : webhookStatus?.subscribed ? (
+                              "On"
+                            ) : (
+                              "Off"
+                            )}
+                          </Button>
+                        ) : null
+                      )}
+                    </div>
                    </div>
-                   {/* Add explicit debug logging to help identify issues */} 
-                   {console.log('[StravaImport] Rendering auto-sync toggle:', {
-                     isWebhookLoading,
-                     webhookStatus,
-                     hasStravaIntegration: !!stravaIntegration,
-                     toggleVisible: !isWebhookLoading && (stravaIntegration && webhookStatus !== null || stravaIntegration)
-                   })}
                    
-                   {/* Status text - Ensure webhookStatus is checked before accessing properties */}
+                   {/* Status text */}
                    {!isWebhookLoading && webhookStatus?.subscribed && (
                      <p className="text-xs text-muted-foreground">
                        Auto-sync active. Last update check: {webhookStatus.lastUpdated ? formatDate(webhookStatus.lastUpdated) : "N/A"}
                      </p>
                    )}
-                    {!isWebhookLoading && webhookStatus !== null && !webhookStatus?.subscribed && !isSettingUpWebhook && (
-                       <p className="text-xs text-muted-foreground">
-                         Auto-sync is currently disabled.
-                       </p>
-                    )}
-                    {!isWebhookLoading && webhookStatus === null && stravaIntegration && (
-                       <p className="text-xs text-muted-foreground">
-                         Auto-sync status unknown. Toggle the switch to enable it.
-                       </p>
-                    )}
+                   {!isWebhookLoading && webhookStatus !== null && !webhookStatus?.subscribed && !isSettingUpWebhook && (
+                     <p className="text-xs text-muted-foreground">
+                       Auto-sync is currently disabled. Click "Off" to enable it.
+                     </p>
+                   )}
+                   {!isWebhookLoading && webhookStatus === null && stravaIntegration && (
+                     <p className="text-xs text-muted-foreground">
+                       Auto-sync status unknown. Click "Off" to enable it.
+                     </p>
+                   )}
                 </div>
 
                 {/* Sync Preferences */}
