@@ -101,11 +101,18 @@ export default async function RootLayout({
             ` 
           }} 
         />
+        {/* Apple Touch Icon */}
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons.ico/apple-icon-180x180.png" />
+        <link rel="apple-touch-icon" sizes="512x512" href="/icons.ico/apple-icon-512x512.png" />
+        {/* Add other sizes if needed, e.g.:
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons.ico/apple-icon-152x152.png" />
+        <link rel="apple-touch-icon" sizes="120x120" href="/icons.ico/apple-icon-120x120.png" /> 
+        */}
       </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         {/* Initial Load Splash Screen */}
         <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
-          <img src="/icons.ico/aivery.svg" alt="Loading Aivery..." style={{ width: '100px', height: '100px' }} />
+          <img src="/icons.ico/aivery-cropped.svg" alt="Loading Aivery..." style={{ width: '100px', height: '100px' }} />
         </div>
 
         {/* Client-side cache buster */}

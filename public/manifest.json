@@ -8,7 +8,7 @@
   "theme_color": "#4B9EFF",
   "icons": [
     {
-      "src": "/icons.ico/aivery.svg",
+      "src": "/icons.ico/aivery-cropped.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
@@ -16,6 +16,12 @@
     {
       "src": "/icons.ico/android-icon-192x192.png",
       "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons.ico/android-icon-512x512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },

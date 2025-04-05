@@ -228,7 +228,7 @@ export default function HomePage() {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-background z-40">
         <Image 
-          src="/icons.ico/aivery.svg" 
+          src="/icons.ico/aivery-cropped.svg" 
           alt="Loading Aivery Dashboard..." 
           width={100} 
           height={100} 
