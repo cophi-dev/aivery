@@ -17,6 +17,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { motion } from "framer-motion";
 import { fetchWithAuth, getUserData, getQuote } from "@/lib/client-utils";
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import Image from 'next/image';
 
 // --- Helper Functions ---
 
@@ -225,8 +226,15 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[calc(100vh-200px)]">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      <div className="fixed inset-0 flex items-center justify-center bg-background z-40">
+        <Image 
+          src="/icons.ico/aivery.svg" 
+          alt="Loading Aivery Dashboard..." 
+          width={100} 
+          height={100} 
+          priority
+          className="animate-pulse"
+        />
       </div>
     );
   }

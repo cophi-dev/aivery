@@ -8,10 +8,22 @@
   "theme_color": "#4B9EFF",
   "icons": [
     {
-      "src": "/aivery-logo.svg",
-      "sizes": "512x512",
+      "src": "/icons.ico/aivery.svg",
+      "sizes": "any",
       "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons.ico/android-icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
+    },
+    {
+        "src": "/icons.ico/apple-icon-180x180.png",
+        "sizes": "180x180",
+        "type": "image/png",
+        "purpose": "apple touch icon"
     }
   ],
   "mobile_web_app_capable": "yes",

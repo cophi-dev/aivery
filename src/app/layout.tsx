@@ -68,6 +68,19 @@ export default async function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="build-time" content={getTimestamp()} />
         <meta name="build-id" content={VERSION} />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: .5; }
+              }
+              #splash-screen img {
+                animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+              }
+            `,
+          }}
+        />
         <script 
           dangerouslySetInnerHTML={{ 
             __html: `
@@ -90,6 +103,11 @@ export default async function RootLayout({
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
+        {/* Initial Load Splash Screen */}
+        <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
+          <img src="/icons.ico/aivery.svg" alt="Loading Aivery..." style={{ width: '100px', height: '100px' }} />
+        </div>
+
         {/* Client-side cache buster */}
         <CacheBuster />
         
@@ -111,6 +129,24 @@ export default async function RootLayout({
             </ToastProvider>
           {/* </ThemeProvider> */}
         </AuthProvider>
+        {/* Script to hide splash screen */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.addEventListener('load', () => {
+                setTimeout(() => { // Add a delay before starting fade
+                  const splash = document.getElementById('splash-screen');
+                  if (splash) {
+                    splash.style.opacity = '0';
+                    setTimeout(() => {
+                      splash.style.display = 'none';
+                    }, 500); // Must match transition duration
+                  }
+                }, 300); // Delay in milliseconds (e.g., 300ms)
+              });
+            `,
+          }}
+        />
       </body>
     </html>
   )
