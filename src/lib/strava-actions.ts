@@ -148,10 +148,30 @@ export async function getSupportedActivityTypes() {
 export async function getStravaWebhookStatusAction() {
   try {
     const subscription = await getWebhookSubscription();
+    
+    // Get the last updated timestamp from the webhook events collection
+    let lastUpdated = null;
+    try {
+      const webhookEventsCollection = await getCollection("webhook_events");
+      // Find the most recent webhook event for Strava
+      const latestEvent = await webhookEventsCollection.findOne(
+        { provider: "strava" },
+        { sort: { timestamp: -1 } }
+      );
+      
+      if (latestEvent) {
+        lastUpdated = latestEvent.timestamp;
+      }
+    } catch (dbError) {
+      console.error("Error getting last webhook event timestamp:", dbError);
+      // Don't fail the overall status check if this fails
+    }
+    
     return { 
       success: true, 
       subscribed: !!subscription,
-      subscription 
+      subscription,
+      lastUpdated
     };
   } catch (error) {
     console.error("Error getting Strava webhook status:", error);

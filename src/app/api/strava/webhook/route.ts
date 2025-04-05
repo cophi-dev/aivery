@@ -46,6 +46,22 @@ export async function POST(request: NextRequest) {
     }
     */
 
+    // Record this webhook event in the database for tracking
+    try {
+      const { getCollection } = await import("@/lib/db/mongodb");
+      const webhookEventsCollection = await getCollection("webhook_events");
+      
+      await webhookEventsCollection.insertOne({
+        provider: "strava",
+        event: event,
+        timestamp: new Date(),
+        processedAt: null // Will be updated after processing
+      });
+    } catch (dbError) {
+      console.error("Error recording webhook event:", dbError);
+      // Continue processing even if recording fails
+    }
+
     // Only process activity events
     if (event.object_type === "activity") {
       const athleteId = event.owner_id;
@@ -60,6 +76,29 @@ export async function POST(request: NextRequest) {
         // Sync the new or updated activity
         // This may be processed asynchronously
         await syncStravaActivity(athleteId, activityId.toString());
+        
+        // Update the webhook event record to mark as processed
+        try {
+          const { getCollection } = await import("@/lib/db/mongodb");
+          const webhookEventsCollection = await getCollection("webhook_events");
+          
+          await webhookEventsCollection.updateOne(
+            { 
+              "event.object_id": activityId,
+              "event.owner_id": athleteId,
+              "event.aspect_type": aspectType
+            },
+            { 
+              $set: { 
+                processedAt: new Date(),
+                status: "processed"
+              } 
+            }
+          );
+        } catch (updateError) {
+          console.error("Error updating webhook event status:", updateError);
+          // Continue even if update fails
+        }
       }
       // We don't handle "delete" events for now
     }

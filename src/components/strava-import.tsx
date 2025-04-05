@@ -1033,6 +1033,62 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                    {!isWebhookLoading && webhookStatus?.subscribed && (
                      <p className="text-xs text-muted-foreground">
                        Auto-sync active. Last update check: {webhookStatus.lastUpdated ? formatDate(webhookStatus.lastUpdated) : "N/A"}
+                       
+                       {/* Add test webhook button in development mode */}
+                       {process.env.NODE_ENV === 'development' && (
+                         <Button
+                           variant="outline"
+                           size="sm"
+                           onClick={async () => {
+                             try {
+                               const testData = {
+                                 object_type: "activity",
+                                 object_id: Math.floor(Math.random() * 10000000),
+                                 aspect_type: "create",
+                                 owner_id: webhookStatus?.subscription?.athlete_id || stravaIntegration?.athleteId,
+                                 event_time: Math.floor(Date.now() / 1000)
+                               };
+                               
+                               toast({
+                                 title: "Testing webhook",
+                                 description: "Sending test activity event..."
+                               });
+                               
+                               const response = await fetch('/api/strava/test-webhook', {
+                                 method: 'POST',
+                                 headers: {
+                                   'Content-Type': 'application/json'
+                                 },
+                                 body: JSON.stringify(testData)
+                               });
+                               
+                               const result = await response.json();
+                               
+                               if (result.success) {
+                                 toast({
+                                   title: "Test successful",
+                                   description: "Webhook test event was processed successfully"
+                                 });
+                                 
+                                 // Reload webhook status to update lastUpdated
+                                 setTimeout(loadWebhookStatus, 1000);
+                               } else {
+                                 throw new Error(result.error || "Unknown error processing test webhook");
+                               }
+                             } catch (error) {
+                               console.error("Error testing webhook:", error);
+                               toast({
+                                 title: "Test failed",
+                                 description: error instanceof Error ? error.message : "Failed to test webhook",
+                                 variant: "destructive"
+                               });
+                             }
+                           }}
+                           className="ml-2 mt-1"
+                         >
+                           Test Auto-sync
+                         </Button>
+                       )}
                      </p>
                    )}
                    {!isWebhookLoading && webhookStatus !== null && !webhookStatus?.subscribed && !isSettingUpWebhook && (

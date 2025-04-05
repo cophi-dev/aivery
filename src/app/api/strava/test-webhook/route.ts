@@ -26,10 +26,49 @@ export async function POST(request: NextRequest) {
     if (eventData.object_type === "activity" && 
         (eventData.aspect_type === "create" || eventData.aspect_type === "update")) {
       
+      // Record this test webhook event
+      try {
+        const { getCollection } = await import("@/lib/db/mongodb");
+        const webhookEventsCollection = await getCollection("webhook_events");
+        
+        await webhookEventsCollection.insertOne({
+          provider: "strava",
+          event: eventData,
+          timestamp: new Date(),
+          processedAt: null,
+          isTest: true // Mark as test event
+        });
+      } catch (dbError) {
+        console.error("Error recording test webhook event:", dbError);
+      }
+      
       const result = await syncStravaActivity(
         eventData.owner_id, 
         eventData.object_id.toString()
       );
+      
+      // Update the test webhook event record
+      try {
+        const { getCollection } = await import("@/lib/db/mongodb");
+        const webhookEventsCollection = await getCollection("webhook_events");
+        
+        await webhookEventsCollection.updateOne(
+          { 
+            "event.object_id": eventData.object_id,
+            "event.owner_id": eventData.owner_id,
+            isTest: true
+          },
+          { 
+            $set: { 
+              processedAt: new Date(),
+              status: "processed",
+              result: result
+            } 
+          }
+        );
+      } catch (updateError) {
+        console.error("Error updating test webhook event status:", updateError);
+      }
       
       return NextResponse.json({ 
         success: true, 
