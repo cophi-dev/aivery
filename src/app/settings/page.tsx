@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser, Loader2, RefreshCw } from "lucide-react"
+import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser, Loader2, RefreshCw, LucideAlertCircle } from "lucide-react"
 import { StravaImport } from "@/components/strava-import"
 import { useToast } from "@/components/ui/use-toast"
 import { useTheme } from "next-themes"
@@ -123,6 +123,19 @@ export default function SettingsPage() {
   // Add Strava Sync State - Comment out
   // const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   // const [syncStravaError, setSyncStravaError] = useState<string | null>(null);
+
+  // Define workout types for deletion
+  const workoutTypes = [
+    { id: 'running', label: 'Running' },
+    { id: 'cycling', label: 'Cycling' },
+    { id: 'swimming', label: 'Swimming' },
+    { id: 'strength', label: 'Strength' },
+    { id: 'hiit', label: 'HIIT' },
+    { id: 'flexibility', label: 'Flexibility' },
+    { id: 'walking', label: 'Walking' },
+    { id: 'hiking', label: 'Hiking' },
+    { id: 'other', label: 'Other' }
+  ]
 
   // Simple handleImageUpload function to fix the error
   const handleImageUpload = () => {
@@ -608,16 +621,13 @@ export default function SettingsPage() {
     const formData = new FormData(e.currentTarget);
     const confirmation = formData.get('confirmation')?.toString() || '';
     
-    // Use the selectedWorkoutTypes state instead of reading from form data
-    const types = selectedWorkoutTypes;
-    
     // Validate
     if (confirmation !== 'delete') {
       setDeleteWorkoutsError("Please type 'delete' to confirm");
       return;
     }
     
-    if (types.length === 0) {
+    if (selectedWorkoutTypes.length === 0) {
       setDeleteWorkoutsError("Please select at least one workout type");
       return;
     }
@@ -633,7 +643,7 @@ export default function SettingsPage() {
       description: "This might take a few seconds",
     });
     
-    // Use fetchWithAuth to call the API endpoint instead of server action
+    // Use fetchWithAuth to call the API endpoint
     (async () => {
       try {
         const response = await fetchWithAuth('/api/user/delete-workouts', {
@@ -642,7 +652,7 @@ export default function SettingsPage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            workoutTypes: types,
+            workoutTypes: selectedWorkoutTypes,
             confirmation: confirmation
           }),
         });
@@ -660,33 +670,22 @@ export default function SettingsPage() {
           });
         } else {
           // Format workout types for display
-          const workoutTypesList = types
-            .map(type => type.charAt(0).toUpperCase() + type.slice(1))
+          const workoutTypesList = selectedWorkoutTypes
+            .map(type => {
+              const typeObj = workoutTypes.find(wt => wt.id === type);
+              return typeObj ? typeObj.label : type.charAt(0).toUpperCase() + type.slice(1);
+            })
             .join(', ');
 
           // Create success message
           let successMessage = '';
           
           if (result.deletedCount === 0) {
-            if (result.userHasWorkouts && result.availableTypes && result.availableTypes.length > 0) {
-              // The user has workouts but not of the selected types
-              const availableTypesList = result.availableTypes
-                .map((type: string) => type.charAt(0).toUpperCase() + type.slice(1))
-                .join(', ');
-              
-              successMessage = `No workouts found matching the selected types: ${workoutTypesList}. ` +
-                `Your account has workouts with these types: ${availableTypesList}. ` +
-                `Please select one of these types to delete workouts.`;
-            } else if (result.userHasWorkouts) {
-              successMessage = `No workouts found matching the selected types: ${workoutTypesList}. ` +
-                `You have workouts, but they use different workout type names than selected.`;
-            } else {
-              successMessage = `No workouts found matching the selected types: ${workoutTypesList}.`;
-            }
+            successMessage = `No workouts found matching the selected types: ${workoutTypesList}.`;
           } else {
             // Use the string returned from the API
             successMessage = `Successfully deleted ${result.deletedCount} ${result.deletedCount === 1 ? 'workout' : 'workouts'} ` +
-              `of types: ${result.deletedTypesString}.`; // Use result.deletedTypesString
+              `of types: ${result.deletedTypesString || workoutTypesList}.`;
           }
           
           setDeleteWorkoutsSuccess(successMessage);
@@ -1024,6 +1023,127 @@ export default function SettingsPage() {
                   >
                     Update Password
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Danger Zone Section */}
+            <Card className="border-red-200 dark:border-red-900">
+              <CardHeader className="border-b border-red-100 dark:border-red-900/40 bg-red-50/50 dark:bg-red-900/20">
+                <CardTitle className="text-red-700 dark:text-red-400 flex items-center gap-2">
+                  <LucideAlertCircle className="h-5 w-5" />
+                  Danger Zone
+                </CardTitle>
+                <CardDescription className="text-red-600/90 dark:text-red-400/80">
+                  Irreversible actions that affect your account and data
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 sm:px-6 pt-6 space-y-6">
+                {/* Delete Workout History */}
+                <div className="rounded-md border border-red-200 dark:border-red-800 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-medium">Delete Workout History</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Permanently delete all your workouts by type. This action cannot be undone.
+                      </p>
+                    </div>
+                    <form onSubmit={handleDeleteWorkoutsSubmit} className="space-y-2">
+                      <div className="grid gap-2">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {workoutTypes.map(type => (
+                            <div key={type.id} className="flex items-center space-x-2">
+                              <Checkbox 
+                                id={`delete-${type.id}`}
+                                checked={selectedWorkoutTypes.includes(type.id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setSelectedWorkoutTypes(prev => [...prev, type.id]);
+                                  } else {
+                                    setSelectedWorkoutTypes(prev => 
+                                      prev.filter(id => id !== type.id)
+                                    );
+                                  }
+                                }}
+                              />
+                              <label 
+                                htmlFor={`delete-${type.id}`}
+                                className="text-sm font-medium cursor-pointer"
+                              >
+                                {type.label}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <Label htmlFor="delete-confirmation" className="text-xs">
+                            Type <span className="font-mono text-red-600">delete</span> to confirm
+                          </Label>
+                          <Input 
+                            id="delete-confirmation"
+                            name="confirmation"
+                            placeholder="delete"
+                            className="h-8 border-red-200 dark:border-red-900/50"
+                          />
+                        </div>
+                        
+                        <Button 
+                          type="submit"
+                          variant="destructive"
+                          size="sm"
+                          disabled={isDeletingWorkouts || selectedWorkoutTypes.length === 0}
+                          className="w-full sm:w-auto"
+                        >
+                          {isDeletingWorkouts ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Deleting...
+                            </>
+                          ) : (
+                            'Delete Selected Workouts'
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {deleteWorkoutsError && (
+                        <p className="text-xs text-red-500 mt-2">{deleteWorkoutsError}</p>
+                      )}
+                      
+                      {deleteWorkoutsSuccess && (
+                        <p className="text-xs text-green-500 mt-2">{deleteWorkoutsSuccess}</p>
+                      )}
+                    </form>
+                  </div>
+                </div>
+                
+                {/* Delete Account */}
+                <div className="rounded-md border border-red-200 dark:border-red-800 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-medium">Delete Account</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Permanently delete your account and all associated data. This action cannot be undone.
+                      </p>
+                    </div>
+                    <Button 
+                      variant="destructive"
+                      size="sm"
+                      className="w-full sm:w-auto"
+                      onClick={() => {
+                        const confirmed = window.confirm(
+                          "Are you sure you want to delete your account? This will remove all your data and cannot be undone."
+                        );
+                        
+                        if (confirmed) {
+                          // Here we would handle account deletion - temporarily just show an alert
+                          alert("Account deletion is temporarily disabled. Please contact support to delete your account.");
+                        }
+                      }}
+                    >
+                      Delete Account
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
