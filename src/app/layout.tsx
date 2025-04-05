@@ -32,8 +32,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: "Aivery - AI Fitness Coach",
-  description: "Your personal AI fitness coach",
+  title: "Aivery",
+  description: "Your AI-powered fitness companion.",
   // Add cache control directive 
   other: {
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
@@ -102,17 +102,33 @@ export default async function RootLayout({
           }} 
         />
         {/* Apple Touch Icon */}
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons.ico/apple-icon-180x180.png" />
-        <link rel="apple-touch-icon" sizes="512x512" href="/icons.ico/apple-icon-512x512.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-icon-180x180.png" />
+        <link rel="apple-touch-icon" sizes="512x512" href="/icons/apple-icon-512x512.png" />
         {/* Add other sizes if needed, e.g.:
-        <link rel="apple-touch-icon" sizes="152x152" href="/icons.ico/apple-icon-152x152.png" />
-        <link rel="apple-touch-icon" sizes="120x120" href="/icons.ico/apple-icon-120x120.png" /> 
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-icon-152x152.png" />
+        <link rel="apple-touch-icon" sizes="120x120" href="/icons/apple-icon-120x120.png" /> 
         */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  const theme = localStorage.getItem('aivery-theme');
+                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                  }
+                } catch (_) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         {/* Initial Load Splash Screen */}
-        <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
-          <img src="/icons.ico/aivery-cropped.svg" alt="Loading Aivery..." style={{ width: '100px', height: '100px' }} />
+        <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
+          <img src="/icons/aivery-cropped.svg" alt="Loading Aivery..." style={{ width: '100px', height: '100px' }} />
         </div>
 
         {/* Client-side cache buster */}
@@ -121,20 +137,20 @@ export default async function RootLayout({
         <AuthProvider>
           <ForceCleanup />
           
-          {/* <ThemeProvider
+          <ThemeProvider
             attribute="class"
             defaultTheme="light"
             enableSystem={false}
             storageKey="aivery-theme"
             disableTransitionOnChange
-          > */}
+          >
             <ToastProvider>
               <MainHeader />
               <main className="min-h-screen pt-14">{children}</main>
-              {session?.user && <PersistentChat />}
+              {/* {session?.user && <PersistentChat />} */}
               <Toaster />
             </ToastProvider>
-          {/* </ThemeProvider> */}
+          </ThemeProvider>
         </AuthProvider>
         {/* Script to hide splash screen */}
         <script

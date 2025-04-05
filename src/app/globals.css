@@ -78,22 +78,22 @@
   }
  
   .dark {
-    --background: 222.2 24% 10%;
+    --background: 220 15% 22%;
     --foreground: 210 40% 98%;
  
-    --card: 222.2 18% 12%;
+    --card: 220 15% 25%;
     --card-foreground: 210 40% 98%;
  
-    --popover: 222.2 24% 10%;
+    --popover: 220 15% 22%;
     --popover-foreground: 210 40% 98%;
  
     --primary: 217 85% 60%;
     --primary-foreground: 222.2 47.4% 11.2%;
  
-    --secondary: 217.2 32.6% 8%;
+    --secondary: 217.2 32.6% 22%;
     --secondary-foreground: 210 40% 98%;
  
-    --muted: 217.2 32.6% 8%;
+    --muted: 217.2 32.6% 22%;
     --muted-foreground: 215 20.2% 75%;
  
     --accent: 217 85% 60%;
@@ -101,9 +101,9 @@
  
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
- 
-    --border: 217.2 32.6% 8%;
-    --input: 217.2 32.6% 8%;
+
+    --border: 217.2 32.6% 30%;
+    --input: 217.2 32.6% 30%;
     --ring: 217 85% 60%;
   }
 }
@@ -111,6 +111,11 @@
 @layer base {
   body {
     @apply bg-background text-foreground;
+  }
+  
+  /* Splash screen background */
+  #splash-screen {
+    background-color: hsl(var(--background));
   }
   
   /* Markdown styling for chat messages */

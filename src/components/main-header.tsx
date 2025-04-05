@@ -27,7 +27,7 @@ export function MainHeader() {
   const navLinks = [
     {
       href: "/workouts",
-      label: "Workout History",
+      label: "Workouts",
       icon: <History className="h-5 w-5 md:h-4 md:w-4" />,
       active: isPath("/workouts") || isPath("/workout")
     },
@@ -38,14 +38,8 @@ export function MainHeader() {
       active: isPath("/exercises")
     },
     {
-      href: "/plan",
-      label: "Planner",
-      icon: <BarChart2 className="h-5 w-5 md:h-4 md:w-4" />,
-      active: isPath("/plan")
-    },
-    {
       href: "/chat",
-      label: "Chat",
+      label: "Talk to Aivery",
       icon: <MessageSquare className="h-5 w-5 md:h-4 md:w-4" />,
       active: isPath("/chat")
     }

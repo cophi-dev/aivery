@@ -1,5 +1,5 @@
 {
-  "name": "Aivery Fitness",
+  "name": "Aivery",
   "short_name": "Aivery",
   "description": "AI-powered fitness tracking and planning",
   "start_url": "/",
@@ -8,25 +8,19 @@
   "theme_color": "#4B9EFF",
   "icons": [
     {
-      "src": "/icons.ico/aivery-cropped.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icons/android-icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons.ico/android-icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons.ico/android-icon-512x512.png",
+      "src": "/icons/android-icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-        "src": "/icons.ico/apple-icon-180x180.png",
+        "src": "/icons/apple-icon-180x180.png",
         "sizes": "180x180",
         "type": "image/png",
         "purpose": "apple touch icon"
