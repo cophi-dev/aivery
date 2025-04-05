@@ -2,8 +2,8 @@ import { getCollection } from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { mockIntegrations } from "../db/mock-data"
 import { exchangeCodeForToken, refreshToken } from "../strava/config"
-import { mapStravaType, calculateIntensity } from '@/app/api/strava/import/route'
 
+// Define in this file directly instead of importing from the route
 const DB_NAME = "aivery"
 const INTEGRATIONS_COLLECTION = "integrations"
 const WORKOUTS_COLLECTION = "workouts"
@@ -51,6 +51,87 @@ interface CardioDetails {
 
 // Mock user ID for demo purposes
 const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
+
+// Map Strava sport types to our workout types
+function mapStravaType(sport: string, subSport?: string): string {
+  if (!sport) return 'other'
+  
+  const sportLower = sport.toLowerCase()
+  const subSportLower = subSport?.toLowerCase()
+
+  // Map common sport types
+  switch (sportLower) {
+    case 'running':
+    case 'run':
+    case 'trail_running':
+    case 'treadmill_running':
+      return 'running'
+    case 'cycling':
+    case 'bike':
+    case 'ride':
+    case 'virtual_ride':
+    case 'indoor_cycling':
+      return 'cycling'
+    case 'swimming':
+    case 'swim':
+    case 'pool_swimming':
+    case 'open_water_swimming':
+      return 'swimming'
+    case 'walking':
+    case 'walk':
+      return 'walking'
+    case 'hiking':
+    case 'hike':
+      return 'hiking'
+    case 'training':
+    case 'workout':
+    case 'strength_training':
+    case 'weight_training':
+    case 'functional_strength':
+      return 'strength'
+    case 'yoga':
+    case 'flexibility':
+      return 'flexibility'
+    case 'hiit':
+    case 'circuit_training':
+    case 'crossfit':
+      return 'hiit'
+    default:
+      // Check sub_sport for additional context
+      if (subSportLower === 'strength_training' || subSportLower === 'weight_training') {
+        return 'strength'
+      }
+      return 'other'
+  }
+}
+
+// Helper function to calculate heart rate zones
+function calculateIntensity(activity: any): "Low" | "Medium" | "High" {
+  // Calculate intensity based on heartrate zones if available
+  if (activity.has_heartrate || activity.avg_heart_rate) {
+    const maxHr = activity.max_heartrate || activity.max_heart_rate || 0;
+    const avgHr = activity.average_heartrate || activity.avg_heart_rate || 0;
+    
+    if (avgHr > maxHr * 0.85) return "High";
+    if (avgHr > maxHr * 0.7) return "Medium";
+    return "Low";
+  }
+  
+  // Fallback to perceived exertion based on relative speed
+  if ((activity.average_speed && activity.max_speed) || 
+      (activity.avg_speed && activity.enhanced_max_speed)) {
+    const avgSpeed = activity.average_speed || activity.avg_speed || 0;
+    const maxSpeed = activity.max_speed || activity.enhanced_max_speed || 0;
+    const relativeEffort = avgSpeed / maxSpeed;
+    
+    if (relativeEffort > 0.8) return "High";
+    if (relativeEffort > 0.6) return "Medium";
+    return "Low";
+  }
+  
+  // Default to medium if no data available
+  return "Medium";
+}
 
 export async function connectStrava(userId: string, authCode: string) {
   try {
@@ -180,11 +261,16 @@ export function transformStravaActivity(activity: any) {
   }
 
   try {
+    // Check if distance is already in km (likely < 100) or in meters (likely > 100)
+    // Strava's API returns distance in meters, but our imported activities might already be in km
+    const distanceValue = activity.distance || activity.total_distance || 0;
+    const distanceInKm = distanceValue > 100 ? distanceValue / 1000 : distanceValue;
+    
     const transformed = {
       name: activity.name || `${activity.type} Activity`,
       date: new Date(activity.start_date || activity.timestamp),
       duration: activity.elapsed_time || activity.total_elapsed_time || 0,
-      distance: activity.distance || activity.total_distance || 0,
+      distance: parseFloat(distanceInKm.toFixed(3)),
       type: activity.type || mapStravaType(activity.sport, activity.sub_sport),
       notes: activity.description || '',
       intensity: calculateIntensity(activity),
