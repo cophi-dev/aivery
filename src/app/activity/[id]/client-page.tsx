@@ -19,6 +19,7 @@ import {
   LucideMapPin,
   LucideZap,
   LucideDumbbell,
+  LucideExternalLink,
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import type { WorkoutData } from "@/types/db"
@@ -148,6 +149,14 @@ export default function ActivityDetailClient({ id }: { id: string }) {
           </div>
         </div>
         <div className="flex gap-2">
+          {workout.source === 'strava' && workout.sourceId && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`https://strava.com/activities/${workout.sourceId}`} target="_blank" rel="noopener noreferrer">
+                <LucideExternalLink className="h-4 w-4 mr-2" />
+                View on Strava
+              </Link>
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
