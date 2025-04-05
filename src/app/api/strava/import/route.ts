@@ -14,7 +14,8 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Increase the body size limit for this route
+// Increase the body size limit for this route - REMOVED Deprecated Config
+/*
 export const config = {
   api: {
     bodyParser: {
@@ -22,6 +23,7 @@ export const config = {
     },
   },
 }
+*/
 
 // Define FitActivity interface
 interface FitActivity {
