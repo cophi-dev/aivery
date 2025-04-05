@@ -790,108 +790,106 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   return (
     <div className="space-y-8">
       {/* === STEP 1: Import Existing Archive (ZIP) === */}
-      {!stravaIntegration && (
-        <Card className="border shadow-sm">
-          <CardHeader>
-            <div className="flex items-center space-x-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold">1</span>
-              <div>
-                <CardTitle className="font-semibold text-lg">Import Existing Archive</CardTitle>
-                <CardDescription>Upload your full history from Strava (or other platforms).</CardDescription>
-              </div>
+      <Card className="border shadow-sm">
+        <CardHeader>
+          <div className="flex items-center space-x-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold">1</span>
+            <div>
+              <CardTitle className="font-semibold text-lg">Import Existing Archive</CardTitle>
+              <CardDescription>Upload your full history from Strava (or other platforms).</CardDescription>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Instructions for getting the Strava Archive */}
-            <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/50 p-4 rounded-md border">
-              <h4 className="font-medium">How to get your Strava Archive:</h4>
-              <ol>
-                <li>Go to <a href="https://www.strava.com/account" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Strava Settings</a> &gt; "My Account".</li>
-                <li>Scroll down to "Download or Delete Your Account".</li>
-                <li>Click "Request Your Archive" under Step 1.</li>
-                <li>Strava will email you a link to download a .zip file (this may take a few hours).</li>
-                <li>Download the .zip file and upload it below.</li>
-              </ol>
-            </div>
-            
-            {/* ZIP File Uploader Form */}
-            <form onSubmit={handleUpload} className="space-y-4 pt-2">
-              {!file ? (
-                <label
-                  htmlFor="zip-file-input"
-                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-background hover:bg-muted/50 transition-colors dark:hover:bg-muted/20"
-                >
-                  <input
-                    type="file"
-                    accept=".zip,application/zip,application/x-zip-compressed"
-                    onChange={handleFileChange}
-                    ref={fileInputRef}
-                    className="hidden"
-                    id="zip-file-input"
-                    aria-label="Select ZIP file"
-                  />
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground">
-                      Click to select the downloaded .zip file
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Max 100MB.
-                    </p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Instructions for getting the Strava Archive */}
+          <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/50 p-4 rounded-md border">
+            <h4 className="font-medium">How to get your Strava Archive:</h4>
+            <ol>
+              <li>Go to <a href="https://www.strava.com/account" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Strava Settings</a> &gt; "My Account".</li>
+              <li>Scroll down to "Download or Delete Your Account".</li>
+              <li>Click "Request Your Archive" under Step 1.</li>
+              <li>Strava will email you a link to download a .zip file (this may take a few hours).</li>
+              <li>Download the .zip file and upload it below.</li>
+            </ol>
+          </div>
+          
+          {/* ZIP File Uploader Form */}
+          <form onSubmit={handleUpload} className="space-y-4 pt-2">
+            {!file ? (
+              <label
+                htmlFor="zip-file-input"
+                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-background hover:bg-muted/50 transition-colors dark:hover:bg-muted/20"
+              >
+                <input
+                  type="file"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  onChange={handleFileChange}
+                  ref={fileInputRef}
+                  className="hidden"
+                  id="zip-file-input"
+                  aria-label="Select ZIP file"
+                />
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Click to select the downloaded .zip file
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Max 100MB.
+                  </p>
+                </div>
+              </label>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                  <div className="flex items-center space-x-2 overflow-hidden">
+                    <FileUp className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="text-sm font-medium truncate" title={file.name}>{file.name}</span>
+                    <Badge variant="outline" className="ml-2 shrink-0">
+                      {Math.round(file.size / 1024)} KB
+                    </Badge>
                   </div>
-                </label>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
-                    <div className="flex items-center space-x-2 overflow-hidden">
-                      <FileUp className="h-4 w-4 text-blue-500 shrink-0" />
-                      <span className="text-sm font-medium truncate" title={file.name}>{file.name}</span>
-                      <Badge variant="outline" className="ml-2 shrink-0">
-                        {Math.round(file.size / 1024)} KB
-                      </Badge>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={resetFileInput}
-                      aria-label="Clear selected file"
-                      className="h-7 w-7"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-
                   <Button
-                    type="submit"
-                    disabled={isLoading || !file}
-                    className="w-full relative py-2.5"
-                    size="lg"
+                    variant="ghost"
+                    size="icon"
+                    onClick={resetFileInput}
+                    aria-label="Clear selected file"
+                    className="h-7 w-7"
                   >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        <span>Importing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="h-4 h-4 mr-2" />
-                        Import Archive File
-                      </>
-                    )}
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
-              )}
 
-              {(isLoading || progress > 0) && (
-                <div className="space-y-1 pt-2">
-                  <Progress value={progress} className="w-full h-2" aria-label={`Upload progress: ${progress}%`} />
-                  <p className="text-sm text-muted-foreground text-center h-4">{uploadStatus}</p>
-                </div>
-              )}
-            </form>
-          </CardContent>
-        </Card>
-      )}
+                <Button
+                  type="submit"
+                  disabled={isLoading || !file}
+                  className="w-full relative py-2.5"
+                  size="lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <span>Importing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 h-4 mr-2" />
+                      Import Archive File
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {(isLoading || progress > 0) && (
+              <div className="space-y-1 pt-2">
+                <Progress value={progress} className="w-full h-2" aria-label={`Upload progress: ${progress}%`} />
+                <p className="text-sm text-muted-foreground text-center h-4">{uploadStatus}</p>
+              </div>
+            )}
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Import Summary Card (Renders after successful ZIP import) */} 
       {uploadStats && renderImportSummary()}
@@ -900,7 +898,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       <Card className="border shadow-sm">
         <CardHeader>
            <div className="flex items-center space-x-3">
-             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold">{stravaIntegration ? "1" : "2"}</span>
+             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold">2</span>
              <div>
                <CardTitle className="font-semibold text-lg">Connect for Automatic Sync</CardTitle>
                <CardDescription>Connect your Strava account to automatically sync *new* activities.</CardDescription>
