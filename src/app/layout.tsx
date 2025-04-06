@@ -68,6 +68,9 @@ export default async function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="build-time" content={getTimestamp()} />
         <meta name="build-id" content={VERSION} />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="theme-color" content="#4B9EFF" />
+        <link rel="manifest" href="/manifest.json" />
         <style
           dangerouslySetInnerHTML={{
             __html: `
@@ -96,6 +99,16 @@ export default async function RootLayout({
                 });
               });
             }
+            
+            // Force PWA to update icons by registering a new service worker
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (let registration of registrations) {
+                  registration.update();
+                }
+              });
+            }
+            
             // Add unique timestamp to prevent edge caching
             window.CACHE_BUSTER = Date.now();
             ` 
@@ -128,7 +141,7 @@ export default async function RootLayout({
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         {/* Initial Load Splash Screen */}
         <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
-          <img src="/icons/aivery-cropped.svg" alt="Loading Aivery..." style={{ width: '100px', height: '100px' }} />
+          <img src="/icons/aivery.svg" alt="Loading Aivery..." style={{ width: '150px', height: '150px' }} />
         </div>
 
         {/* Client-side cache buster */}
