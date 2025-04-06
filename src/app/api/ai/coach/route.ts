@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 // Revert back to path alias for dateUtils import
-import { calculateDateRange } from "@/lib/utils/dateUtils";
+// import { calculateDateRange } from "@/lib/utils/dateUtils";
+import { calculateDateRange } from "./dateUtils"; // Use local import
 // import { db } from "@/lib/db"; // Placeholder for actual db import
 import Anthropic from "@anthropic-ai/sdk"; // Import Anthropic SDK
 import { ObjectId } from 'mongodb'; // Import ObjectId
