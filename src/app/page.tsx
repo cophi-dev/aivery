@@ -456,207 +456,89 @@ export default function HomePage() {
   const displayName = user?.nickname || user?.name || "User";
 
   return (
-    <div className="container mx-auto px-4 py-8 space-y-8">
+    <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-8">
       
       {/* Header Section (No Log Button) */}
-      <section className="p-4 md:p-6 bg-card rounded-xl shadow-sm">
+      <section className="p-4 md:p-6 bg-card rounded-xl shadow-sm w-full max-w-3xl">
          <div className="flex items-center gap-3 md:gap-4"> 
           <UserAvatar 
             name={displayName} 
             imageUrl={user?.image || null}
             size="lg"
           />
-           <div className="flex-1">
+           <div className="flex-1 text-center sm:text-left">
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Hey {displayName}!</h1>
+            <p className="text-sm text-muted-foreground mt-1">{quote}</p>
           </div>
         </div>
       </section>
 
-      {/* Main Content Grid (2 Columns) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> 
-        
-         {/* --- Left Column --- */} 
-         <div className="flex flex-col gap-6">
-           
-            {/* Item 1: AI Highlight Card (Moved Here) */} 
-            {mostRecentWorkout && (
-              <Card className="bg-primary/5 border-primary/20 shadow-sm">
-                <CardHeader>
-                    <CardTitle className="text-base font-medium text-muted-foreground">About Your Last Workout</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-4"> 
-                  <div className="flex flex-col gap-4"> 
-                    {/* AI Generated Summary */} 
-                    {isLoadingHighlight ? (
-                      <div className="flex items-center text-muted-foreground italic flex-1 text-lg">
-                        <Zap className="h-5 w-5 mr-2 animate-pulse" /> 
-                        Generating highlight...
-                      </div>
-                    ) : (
-                      <p className="text-xl font-semibold flex-1 leading-snug">{highlightedNote}</p>
-                    )}
-                    {/* Workout Details Row */} 
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-x-4 gap-y-2 pt-4 border-t border-primary/10"> 
-                      {/* Left side: Type, Date, Metric */} 
-                      <div className="text-sm text-muted-foreground">
-                         <span className="font-medium text-foreground">{capitalizeFirstLetter(mostRecentWorkout.type || 'Workout')}</span>
-                         <span className="mx-1.5">·</span>
-                         <span>{format(parseISO(mostRecentWorkout.date as any), 'MMM d, yyyy')}</span>
-                         {/* Add Volume/Distance/Duration - with bodyweight estimation */} 
-                         <span className="mx-1.5">·</span>
-                         <span>
-                           {mostRecentWorkout.type === 'strength' && mostRecentWorkout.exercises ? 
-                             formatVolume(mostRecentWorkout.exercises.reduce((volSum, ex) => volSum + (ex.sets?.reduce((setSum, set) => { 
-                                 const weight = set.weight ?? 0;
-                                 const reps = set.reps ?? 0;
-                                 const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(ex.name);
-                                 return setSum + (estimatedWeight * reps);
-                              }, 0) || 0), 0))
-                             : mostRecentWorkout.distance ? 
-                             formatDistance(mostRecentWorkout.distance)
-                             : mostRecentWorkout.duration ?
-                             formatDurationFromMinutes(mostRecentWorkout.duration)
-                             : null
-                           }
-                         </span>
-                      </div>
-                      {/* Right side: View Button */} 
-                      <Button asChild variant="secondary" size="sm" className="flex-shrink-0 w-full sm:w-auto">
-                         <Link href={`/workout/${mostRecentWorkout._id}`}>View Details</Link>
-          </Button>
-      </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+      {/* Main Content Area (Single Column Flow) */}
+      <div className="flex flex-col gap-6 w-full max-w-3xl"> 
 
-           {/* Item 2: Strength Progress */} 
+         {/* Item 1: Log Workout Button (Moved to Top & Prominent) */} 
+         <Button size="lg" variant="default" asChild className="w-full">
+             <Link href="/workouts/new" className="flex items-center justify-center w-full h-full">
+               <LucidePlusCircle className="mr-2 h-5 w-5" /> Log New Workout
+            </Link>
+         </Button>
+        
+         {/* Item 2 & 3: Progress Cards (Side-by-side on larger screens) */}
+         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+           {/* Strength Progress */} 
            <Card>
-             <CardHeader>
-               <CardTitle className="text-lg flex items-center">
+             <CardHeader className="text-center">
+               <CardTitle className="text-lg flex items-center justify-center">
                  <Dumbbell className="mr-2 h-5 w-5" /> Strength Progress
                </CardTitle>
                 <CardDescription>Total Volume (Last 7 Days)</CardDescription>
              </CardHeader>
-             <CardContent>
+             <CardContent className="text-center">
                <p className="text-3xl font-bold">{formatVolume(strengthVolumeLast7Days) || "0 kg"}</p>
                {/* Add comparison to previous week later? */} 
              </CardContent>
            </Card>
 
-           {/* Item 3: Cardio Progress */} 
+           {/* Cardio Progress */} 
            <Card>
-             <CardHeader>
-               <CardTitle className="text-lg flex items-center">
+             <CardHeader className="text-center">
+               <CardTitle className="text-lg flex items-center justify-center">
                   <HeartPulse className="mr-2 h-5 w-5" /> Cardio Progress
             </CardTitle>
                <CardDescription>Running Distance (Last 7 Days)</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="text-center">
                <p className="text-3xl font-bold">{formatDistance(runningDistanceLast7Days) || "0 km"}</p>
                {/* Add comparison to previous week later? */} 
           </CardContent>
            </Card>
          </div>
 
-         {/* --- Right Column --- */} 
-         <div className="flex flex-col gap-6">
-            {/* Item 1: Log Workout Button (More Prominent) */} 
-            <Button size="lg">
-               <Link href="/workouts/new" className="flex items-center justify-center w-full h-full">
-                 <LucidePlusCircle className="mr-2 h-5 w-5" /> Log New Workout
-              </Link>
-            </Button>
 
-           {/* Item 2: Recent Activity */} 
-           <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center">
-                  <Activity className="mr-2 h-5 w-5" /> Recent Activity
-            </CardTitle>
-          </CardHeader>
-              <CardContent className="space-y-1 pr-1">
-                 {recentWorkoutList.length > 0 ? (
-                  recentWorkoutList.map(workout => {
-                      // Calculate metric for this specific workout
-                  let metric: string | null = null;
-                      if (workout.type === 'strength' && workout.exercises) {
-                          const volume = workout.exercises.reduce((volSum, ex) => volSum + (ex.sets?.reduce((setSum, set) => { 
-                              const weight = set.weight ?? 0;
-                              const reps = set.reps ?? 0;
-                              const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(ex.name);
-                              return setSum + (estimatedWeight * reps);
-                          }, 0) || 0), 0);
-                          metric = formatVolume(volume);
-                      } else if (workout.distance != null) {
-                     metric = formatDistance(workout.distance);
-                      } else if (workout.duration != null) {
-                          metric = formatDurationFromMinutes(workout.duration);
-                  }
-
-                  return (
-                    <Link href={`/workout/${workout._id}`} key={workout._id} className="block group">
-                            <div className="flex items-center justify-between gap-3 px-2 py-2 rounded-md group-hover:bg-muted/60 transition-colors border-b border-border/50 group-last:border-b-0">
-                        <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
-                                {getWorkoutTypeIcon(workout.type)}
-                                <span className="text-xs font-normal tabular-nums">{format(parseISO(workout.date as any), 'MMM d')}</span>
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                                <p className="text-sm font-medium truncate group-hover:text-foreground transition-colors">
-                                  {workout.name || capitalizeFirstLetter(workout.type || 'Activity')}
-                                </p>
-                        </div>
-                              {/* Display Metric Here */} 
-                        <div className="flex-shrink-0 text-right">
-                          {metric && (
-                            <Badge variant="secondary" className="h-5 px-1.5 text-xs font-normal tabular-nums">
-                              {metric}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                  })
-            ) : (
-                  <p className="text-sm text-muted-foreground p-4 text-center">No workouts logged yet.</p>
-            )}
-          </CardContent>
-               {workouts.length > 5 && (
-                 <CardFooter className="pt-2">
-                     <Button asChild variant="outline" size="sm" className="w-full">
-                <Link href="/workouts">View All Activity</Link>
-              </Button>
-            </CardFooter>
+         {/* Item 4: Personal Records (Moved Here) */} 
+         <Card>
+           <CardHeader className="text-center">
+             <CardTitle className="text-lg flex items-center justify-center">
+               <Zap className="mr-2 h-5 w-5" /> Personal Records
+          </CardTitle>
+             <CardDescription>Your best lifts across all exercises</CardDescription>
+        </CardHeader>
+           <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-center">
+             {topPRs.length > 0 ? (
+               topPRs.map(([exercise, record]) => (
+                 <div key={exercise} className="text-sm border-b border-border/50 pb-2 last:border-b-0 sm:last:border-b-0">
+                   <p className="font-medium truncate">{exercise}</p>
+                   <p className="text-muted-foreground">
+                      <span className="font-semibold text-foreground">{record.weight} kg</span>
+                      <span className="text-xs"> on {format(record.date, 'MMM d, yyyy')}</span>
+                   </p>
+                 </div>
+               ))
+             ) : (
+               <p className="text-sm text-muted-foreground sm:col-span-2">No PRs recorded yet.</p>
           )}
-        </Card>
-
-           {/* Item 3: Personal Records (Moved Here) */} 
-           <Card>
-             <CardHeader>
-               <CardTitle className="text-lg flex items-center">
-                 <Zap className="mr-2 h-5 w-5" /> Personal Records
-            </CardTitle>
-               <CardDescription>Your best lifts across all exercises</CardDescription>
-          </CardHeader>
-             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-               {topPRs.length > 0 ? (
-                 topPRs.map(([exercise, record]) => (
-                   <div key={exercise} className="text-sm border-b border-border/50 pb-2 last:border-b-0 sm:last:border-b-0">
-                     <p className="font-medium truncate">{exercise}</p>
-                     <p className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{record.weight} kg</span>
-                        <span className="text-xs"> on {format(record.date, 'MMM d, yyyy')}</span>
-                     </p>
-                   </div>
-                 ))
-               ) : (
-                 <p className="text-sm text-muted-foreground sm:col-span-2">No PRs recorded yet.</p>
-            )}
-          </CardContent>
-        </Card>
-
-            </div>
+        </CardContent>
+      </Card>
 
       </div>
 
