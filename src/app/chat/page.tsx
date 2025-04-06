@@ -146,25 +146,39 @@ export default function ChatPage() {
     setIsLoading(true);
     
     try {
-      const history = currentMessages; // History includes the user message just added
+      // const history = currentMessages; // History not needed for the new endpoint
 
-      const response = await fetch('/api/chat', {
+      // Call the NEW AI coach endpoint
+      const response = await fetch('/api/ai/coach', { // <--- UPDATED ENDPOINT
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: currentMessageContent,
-          history: history 
+          query: currentMessageContent, // <--- UPDATED BODY: Send only query
+          userName: userDisplayName // <-- ADD user's display name
+          // history: history 
         }),
       });
 
       if (!response.ok) {
          let errorBody = "Failed to get response from server.";
-         try { errorBody = await response.text(); } catch (_) {}
+         try {
+            // Attempt to parse error JSON from the new endpoint
+            const errorData = await response.json(); 
+            errorBody = errorData.error || errorBody;
+        } catch (_) {
+            // Fallback if JSON parsing fails or no error field
+            try { errorBody = await response.text(); } catch { /* ignore */ }
+        }
          console.error("API Error Response:", errorBody);
          throw new Error(`API request failed: ${errorBody}`);
       }
       
-      const text = await response.text();
+      // Get the JSON response from the new endpoint
+      const result = await response.json(); // <--- GET JSON RESPONSE
+      const text = result.response; // <--- Extract the 'response' field
+
+      console.log("AI Coach API Response Data:", result.data); // Log data for debugging
+      console.log("AI Coach Analysis:", result.analysis); // Log analysis for debugging
 
       const aiMessage: Message = {
         id: `ai-${Date.now()}`,
