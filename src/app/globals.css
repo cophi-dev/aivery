@@ -228,3 +228,26 @@
 html {
   scroll-behavior: smooth;
 }
+
+/* Navigation Loading Indicator Animation */
+@keyframes loading-fade-out {
+  0%, 80% { /* Stay visible for 2s (80% of 2.5s) */
+    opacity: 1;
+    pointer-events: auto;
+  }
+  100% { /* Fade out over 0.5s (20% of 2.5s) */
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+#page-loading-indicator {
+  animation: loading-fade-out 2.5s ease-out forwards; /* 2s visible + 0.5s fade */
+  /* Ensure background color is consistent */
+  background-color: hsl(var(--background)); 
+}
+
+/* Ensure the image inside also follows the animation (optional, but good practice) */
+#page-loading-indicator img {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
