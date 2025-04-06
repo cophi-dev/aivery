@@ -6,11 +6,44 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { ObjectId } from 'mongodb';
+import { formatDistance as formatDistanceUtil } from "@/lib/utils"; // Use existing formatter
+
+// --- Fun Analogy Helpers ---
+
+// Rough estimate: 1 banana ~ 100 kcal
+function caloriesToBananas(calories?: number | null): number | null {
+    if (!calories || calories <= 0) return null;
+    return Math.round(calories / 100);
+}
+
+// Standard track lap = 400 meters = 0.4 km
+function distanceToTrackLaps(distanceKm?: number | null): number | null {
+    if (!distanceKm || distanceKm <= 0) return null;
+    return Math.round(distanceKm / 0.4);
+}
+
+// Average car ~ 1500 kg
+function volumeToCars(volumeKg?: number | null): number | null {
+    if (!volumeKg || volumeKg <= 0) return null;
+    const weightRatio = volumeKg / 1500;
+    // Return only if it's a somewhat meaningful fraction or multiple
+    if (weightRatio < 0.05) return null; // Less than 5% of a car isn't very intuitive
+    return parseFloat(weightRatio.toFixed(2)); // Return as decimal (e.g., 0.5 cars)
+}
+
+// Average adult African Elephant ~ 5000 kg
+function volumeToElephants(volumeKg?: number | null): number | null {
+     if (!volumeKg || volumeKg <= 0) return null;
+     const weightRatio = volumeKg / 5000;
+     if (weightRatio < 0.1) return null; // Less than 10% of an elephant
+     return parseFloat(weightRatio.toFixed(2));
+}
+
+// --- API Route ---
 
 export async function GET(
   req: NextRequest,
-  // Correct the parameter name to match the directory name
-  { params }: { params: { workoutId: string } } 
+  { params }: { params: { workoutId: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -20,81 +53,104 @@ export async function GET(
     const userId = session.user.id;
     const workoutId = params.workoutId;
 
-    // Validate workoutId
     if (!workoutId || !ObjectId.isValid(workoutId)) {
-        console.warn(`Invalid ObjectId received for insight lookup: ${workoutId}`);
         return NextResponse.json({ error: "Valid Workout ID is required" }, { status: 400 });
     }
 
     await dbConnect();
 
-    // 1. Fetch the specific workout
     const workout = await WorkoutModel.findOne({
         _id: new ObjectId(workoutId),
-        // Crucially, ensure the workout belongs to the logged-in user
-        userId: new ObjectId(userId) 
-    }).lean<IWorkout>(); // Use lean for plain object
+        userId: new ObjectId(userId)
+    }).lean<IWorkout>();
 
     if (!workout) {
-        // Workout not found OR it doesn't belong to this user
         return NextResponse.json({ error: "Workout not found or not authorized" }, { status: 404 });
     }
 
-    // 2. --- Insight Generation Logic --- 
-    // Placeholder - enhance this logic as needed
-    let insightStatement = `Great job on this ${workout.type} workout!`; 
+    // --- Fun Insight Generation ---
+    let insightStatement = `You absolutely crushed this ${workout.type} workout! Great job! 💪`; // Default fun fallback
+    const funFacts: string[] = [];
 
-    if (workout.type === 'running' && workout.distance && workout.distance > 0) {
-        const oneMonthAgo = new Date();
-        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-        // Fetch user's average running distance (ensure correct query)
-        const avgResult = await WorkoutModel.aggregate([
-            { $match: {
-                userId: new ObjectId(userId), 
-                type: 'running',
-                date: { $gte: oneMonthAgo },
-                distance: { $exists: true, $gt: 0 } // Only average valid distances
-            }},
-            { $group: {
-                _id: null,
-                averageDistance: { $avg: '$distance' },
-                count: { $sum: 1 } // Count how many workouts are averaged
-            }}
-        ]);
-
-        const avgStats = avgResult[0];
-        const avgDistance = avgStats?.averageDistance;
-        const avgCount = avgStats?.count ?? 0;
-
-        // Generate insight based on comparison (only if avg is valid and based on enough data)
-        if (avgDistance && avgCount > 1 && workout.distance > avgDistance) {
-            const percentBetter = ((workout.distance - avgDistance) / avgDistance) * 100;
-            insightStatement = `Awesome run! Your ${workout.distance.toFixed(2)}km was ${percentBetter.toFixed(0)}% longer than your average run this past month! Keep pushing! 🚀`;
-        } else if (avgDistance && avgCount > 1) {
-             const percentDiff = Math.abs(((workout.distance - avgDistance) / avgDistance) * 100);
-             if (percentDiff < 10) { // Close to average
-                  insightStatement = `Solid ${workout.distance.toFixed(2)}km run! Right around your monthly average. Consistent effort! 👍`;
-             } else {
-                  insightStatement = `Nice ${workout.distance.toFixed(2)}km run logged! Keep building that consistency!`;
-             }
-        } else {
-             insightStatement = `That's a ${workout.distance.toFixed(2)}km run logged! Keep building that running history!`;
+    // 1. Distance Facts (Running, Cycling, Walking, Hiking, Swimming)
+    if (['running', 'cycling', 'walking', 'hiking', 'swimming'].includes(workout.type) && workout.distance && workout.distance > 0) {
+        const laps = distanceToTrackLaps(workout.distance);
+        const formattedDist = formatDistanceUtil(workout.distance); // Use the util function
+        if (laps && laps > 0) {
+            funFacts.push(`That's like running ${laps} lap${laps > 1 ? 's' : ''} around a track! 🏃`);
         }
-    } 
-    // TODO: Add more sophisticated logic for other workout types (strength volume, swim pace etc.)
-    // else if (workout.type === 'strength' && workout.volume) { ... }
+         // Add another distance comparison (e.g., length of Golden Gate Bridge ~ 2.7km)
+         if (workout.distance > 2 && workout.distance < 4) {
+             funFacts.push(`You covered about the length of the Golden Gate Bridge! 🌉`);
+         } else if (workout.distance >= 5 && workout.distance < 7) {
+              funFacts.push(`That's roughly a 5k run distance, nice! 👍`);
+         }
+    }
 
-    // 3. Return the generated statement
+    // 2. Volume Facts (Strength) - Calculate volume if not stored
+    let calculatedVolume: number | null = workout.volume ?? null;
+    if (!calculatedVolume && workout.type === 'strength' && workout.exercises) {
+         // Basic volume calculation placeholder (sum of weight * reps)
+         calculatedVolume = workout.exercises.reduce((totalVol, ex) => {
+             // Ensure sets exists and is an array before reducing
+             const exerciseSets = Array.isArray(ex.sets) ? ex.sets : [];
+             const exerciseVol = exerciseSets.reduce((setVol, set) => setVol + ((set.weight ?? 0) * (set.reps ?? 0)), 0);
+             return totalVol + exerciseVol;
+         }, 0);
+    }
+
+    if (workout.type === 'strength' && calculatedVolume && calculatedVolume > 0) {
+        const cars = volumeToCars(calculatedVolume);
+        const elephants = volumeToElephants(calculatedVolume);
+
+        if (elephants && elephants >= 0.1) {
+            funFacts.push(`In total, you lifted about the weight of ${elephants} adult elephant${elephants > 1 ? 's' : ''}! 🐘 Wow!`);
+        } else if (cars && cars >= 0.1) {
+             funFacts.push(`That's like lifting ${cars} ${cars > 1 ? 'small cars' : 'small car'}! 🚗 Strong work!`);
+        } else {
+             // Fallback for smaller volumes
+             funFacts.push(`You lifted a total volume of ${calculatedVolume.toLocaleString()} kg! Keep building! 🏋️`);
+        }
+    }
+
+    // 3. Calorie Facts (Any type with calories)
+    if (workout.calories && workout.calories > 50) { // Only if meaningful calories burned
+        const bananas = caloriesToBananas(workout.calories);
+        if (bananas && bananas > 0) {
+             funFacts.push(`You burned roughly the energy of ${bananas} banana${bananas > 1 ? 's' : ''}! 🍌`);
+        }
+    }
+
+    // 4. Duration Facts (Fallback if no other facts generated)
+    if (funFacts.length === 0 && workout.duration && workout.duration > 600) { // Min 10 mins
+         const durationMinutes = Math.round(workout.duration / 60);
+         if (durationMinutes > 20 && durationMinutes < 40) {
+              funFacts.push(`That ${durationMinutes}-minute session is about the length of a TV sitcom episode! 📺`);
+         } else if (durationMinutes >= 45) {
+              funFacts.push(`You powered through for ${durationMinutes} minutes! That's dedication! ⏳`);
+         }
+    }
+
+    // --- Combine Facts for the Final Statement --- 
+    if (funFacts.length === 1) {
+        // If only one fact, use it directly
+        insightStatement = funFacts[0];
+    } else if (funFacts.length >= 2) {
+        // If two or more, combine the first two for variety
+        // Make the second fact start lowercase for better flow
+        insightStatement = `${funFacts[0]} Plus, ${funFacts[1].charAt(0).toLowerCase() + funFacts[1].slice(1)}`;
+    }
+    // If funFacts is empty, the default insightStatement remains.
+
     console.log(`Generated insight for workout ${workoutId}: "${insightStatement}"`);
     return NextResponse.json({ insight: insightStatement });
 
   } catch (error) {
     console.error(`API Insight Error for workout ${params?.workoutId}:`, error);
-    // Provide a generic fallback insight on error
     return NextResponse.json(
-      { insight: "Keep up the great work on your fitness journey!" },
-      { status: 500 } // Keep internal server error status
+      // Keep a positive fallback even on error
+      { insight: "Awesome effort on that workout! Keep it up!" },
+      { status: 500 }
     );
   }
 }
