@@ -316,7 +316,7 @@ export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Pr
       }
     }
 
-    // Format the workout data
+    // Format the workout data, including the new records field
     const formattedWorkoutData = {
       userId: workoutData.userId || user.id,
       name: workoutData.name || "Cardio Workout",
@@ -331,6 +331,7 @@ export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Pr
       importedFrom: workoutData.importedFrom,
       importId: workoutData.importId,
       stravaLink: stravaLink,
+      records: workoutData.records ?? [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

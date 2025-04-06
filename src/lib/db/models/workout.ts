@@ -44,6 +44,19 @@ interface ICardioDetails {
   }
 }
 
+// Define schema for individual time-series data points
+const RecordSchema = new Schema({
+  timestamp: { type: Date, required: true },
+  heart_rate: { type: Number },
+  distance: { type: Number }, // Cumulative distance in meters
+  speed: { type: Number }, // Speed in m/s
+  altitude: { type: Number }, // Altitude in meters
+  latitude: { type: Number },
+  longitude: { type: Number },
+  cadence: { type: Number }, // Running cadence (steps/min) or cycling cadence (rpm)
+  power: { type: Number } // Power in watts
+}, { _id: false }); // Disable _id for subdocuments
+
 export interface IWorkout extends Document {
   userId: mongoose.Types.ObjectId
   name: string
@@ -64,6 +77,17 @@ export interface IWorkout extends Document {
   importedFrom?: string
   importId?: string
   stravaLink?: string
+  records?: Array<{ // Add the records field
+    timestamp: Date;
+    heart_rate?: number;
+    distance?: number;
+    speed?: number;
+    altitude?: number;
+    latitude?: number;
+    longitude?: number;
+    cadence?: number;
+    power?: number;
+  }>;
   createdAt: Date
   updatedAt: Date
   deletedAt?: Date
@@ -156,6 +180,7 @@ const WorkoutSchema: Schema = new Schema(
     importedFrom: { type: String },
     importId: { type: String },
     stravaLink: { type: String },
+    records: [RecordSchema], // Add records to the schema definition
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },

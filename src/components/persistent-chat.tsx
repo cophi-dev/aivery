@@ -15,12 +15,26 @@ type ChatMessage = {
   content: string;
 }
 
+// Helper to get a random welcome message for variety
+function getRandomWelcomeMessage(): string {
+  const welcomeMessages = [
+    `Hey there! 👋 I'm your fitness coach. How can I help you today?`,
+    `Hi! Ready to crush some fitness goals? I'm here to help!`,
+    `Welcome! I'm your AI fitness buddy. How's your training going?`,
+    `Hey there! 💪 What aspect of your fitness journey can I support you with today?`,
+    `Hi! I'm your personal fitness assistant. What's on your workout agenda?`
+  ]
+  // Simple random selection
+  return welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+}
+
 export function PersistentChat() {
   const [isOpen, setIsOpen] = useState(false)
+  // Initialize with a welcome message
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [chatId] = useState(`chat-${Date.now()}`)
+  // const [chatId] = useState(`chat-${Date.now()}`) // No longer needed for the new endpoint
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { data: session } = useSession()
@@ -34,65 +48,16 @@ export function PersistentChat() {
     return nickname || name || "there";
   })();
 
-  // Get a random welcome message for variety
-  function getRandomWelcomeMessage(): string {
-    const welcomeMessages = [
-      `Hey there! 👋 I'm your fitness coach. How can I help you today?`,
-      `Hi! Ready to crush some fitness goals? I'm here to help!`,
-      `Welcome! I'm your AI fitness buddy. How's your training going?`,
-      `Hey there! 💪 What aspect of your fitness journey can I support you with today?`,
-      `Hi! I'm your personal fitness assistant. What's on your workout agenda?`
-    ]
-    return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)]
-  }
-
-  // Initialize chat on first open
+  // Set initial welcome message when chat opens for the first time
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      // Fetch personalized greeting from AI
-      const fetchGreeting = async () => {
-        setIsLoading(true);
-        try {
-          // Call the chat API specifically requesting a greeting
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              messages: [{ role: "user", content: "__GREETING__" }],
-              chatId
-            }),
-          });
-          
-          if (!response.ok) {
-            throw new Error('Failed to get greeting');
-          }
-          
-          // Get the personalized greeting text
-          const greeting = await response.text();
-          
-          // Add greeting message
-          setMessages([{
-            id: "welcome",
-            role: "assistant",
-            content: greeting || getRandomWelcomeMessage()
-          }]);
-        } catch (error) {
-          // Fall back to random greeting
-          setMessages([{
-            id: "welcome",
-            role: "assistant",
-            content: getRandomWelcomeMessage()
-          }]);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      
-      fetchGreeting();
+       setMessages([{
+         id: "welcome",
+         role: "assistant",
+         content: getRandomWelcomeMessage().replace('{userName}', userName) // Personalize if needed
+       }]);
     }
-  }, [isOpen, messages.length, chatId]);
+  }, [isOpen, messages.length, userName]); // Add userName dependency
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -124,61 +89,51 @@ export function PersistentChat() {
     setIsLoading(true)
     
     try {
-      // Call the chat API
-      const response = await fetch('/api/chat', {
+      // Call the NEW chat API endpoint
+      const response = await fetch('/api/ai/coach', { // <--- UPDATED ENDPOINT
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          chatId
+          query: input // <--- UPDATED BODY: Send only the query
+          // messages: [...messages, userMessage], // No longer sending history
+          // chatId // No longer needed
         }),
       })
-      
+
       if (!response.ok) {
-        throw new Error('Failed to get response')
-      }
-      
-      // Get the response text
-      const text = await response.text()
-      
-      // Parse the AI response (handle special formatting if present)
-      let cleanContent = ""
-      
-      // Handle different response formats
-      if (text.includes('0:"')) {
-        // This is the token-by-token format with metadata
-        const lines = text.split('\n')
-        for (const line of lines) {
-          if (line.trim()) {
-            // Extract actual text content (typically after 0:")
-            const contentMatch = line.match(/0:"([^"]*)"/)
-            if (contentMatch && contentMatch[1]) {
-              cleanContent += contentMatch[1]
-            } else if (!line.includes('f:') && !line.includes('e:') && !line.includes('d:')) {
-              // If no special formatting, just add the raw line
-              cleanContent += line
-            }
-          }
+        // Attempt to get error details from response body
+        let errorDetails = 'Failed to get response';
+        try {
+            const errorData = await response.json();
+            errorDetails = errorData.error || errorDetails;
+        } catch (parseError) {
+            // Ignore if parsing fails, use default message
         }
-      } else {
-        // Plain text response
-        cleanContent = text
+        throw new Error(errorDetails);
       }
-      
+
+      // Get the JSON response
+      const result = await response.json(); // <--- GET JSON RESPONSE
+      const aiContent = result.response; // <--- Extract the 'response' field
+
+      console.log("AI Coach API Response Data:", result.data); // Log data for debugging
+      console.log("AI Coach Analysis:", result.analysis); // Log analysis for debugging
+
       // Add the AI response with parsed content
       setMessages(prev => [...prev, {
         id: `ai-${Date.now()}`,
         role: "assistant",
-        content: cleanContent || "I'm here to help with your fitness journey. What would you like to know?"
+        content: aiContent || "I seem to be speechless! Please try asking differently." // Use extracted content
       }])
     } catch (error) {
+      console.error("Chat API Error:", error); // Log the actual error
       // Add an error message
       setMessages(prev => [...prev, {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: "Sorry, I encountered an error. Please try again."
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Please try again.'}` // Show error message
       }])
     } finally {
       setIsLoading(false)

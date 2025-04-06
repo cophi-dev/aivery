@@ -235,7 +235,9 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
       createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : 
                 (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
       updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
-                (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString())
+                (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
+      // Include the records field
+      records: doc.records ? JSON.parse(JSON.stringify(doc.records)) : [] // Deep copy
     };
 
   } catch (error) {

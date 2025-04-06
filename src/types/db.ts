@@ -80,6 +80,17 @@ export interface WorkoutData {
   };
   pace?: number;
   calculatedVolume?: number;
+  records?: Array<{ 
+    timestamp: Date | string;
+    heart_rate?: number;
+    distance?: number;
+    speed?: number;
+    altitude?: number;
+    latitude?: number;
+    longitude?: number;
+    cadence?: number;
+    power?: number;
+  }>;
 }
 
 export interface UserData {

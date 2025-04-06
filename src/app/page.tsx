@@ -18,6 +18,8 @@ import { motion } from "framer-motion";
 import { fetchWithAuth, getUserData, getQuote } from "@/lib/client-utils";
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import Image from 'next/image';
+import { capitalizeFirstLetter } from "@/lib/utils";
+import { formatDuration, formatDistance as formatDistanceUtil } from "@/lib/utils";
 
 // --- Helper Functions ---
 
@@ -44,10 +46,17 @@ const formatDurationFromMinutes = (minutes: number | undefined | null): string =
   return `${hours}h ${mins > 0 ? `${mins}m` : ''}`.trim(); // Trim trailing space if mins is 0
 };
 
-// Format distance (assuming km)
+// Format distance (assuming km) using the utility function
 const formatDistance = (distance: number | undefined | null): string | null => {
   if (distance === undefined || distance === null || distance <= 0) return null;
-  return `${distance.toFixed(1)} km`;
+  // Use the imported utility function
+  return formatDistanceUtil(distance); 
+};
+
+// Format volume (assuming kg)
+const formatVolume = (volume: number | undefined | null): string | null => {
+  if (volume === undefined || volume === null || volume <= 0) return null;
+  return `${Math.round(volume)} kg`;
 };
 
 export default function HomePage() {
@@ -404,38 +413,52 @@ export default function HomePage() {
               <Activity className="mr-2 h-4 w-4" /> Recent Activity
             </CardTitle>
           </CardHeader>
-          <CardContent className="max-h-64 overflow-y-auto pr-1 space-y-3">
+          <CardContent className="max-h-64 overflow-y-auto pr-1 space-y-1">
             {hasWorkouts ? (
               <>
                 {recentWorkouts.map((workout) => {
                   const icon = getWorkoutTypeIcon(workout.type);
                   const date = format(new Date(workout.date), 'MMM d');
                   const typeLower = workout.type?.toLowerCase() || '';
+                  const typeDisplay = capitalizeFirstLetter(workout.type || 'Activity');
                   let metric: string | null = null;
                   
-                  // Prioritize distance for cardio types
+                  // Log duration to check its value/unit
+                  console.log(`[Recent Activity] Workout ${workout._id} (${typeDisplay}) duration (seconds?): ${workout.duration}, volume: ${workout.volume}, calcVolume: ${workout.calculatedVolume}, distance: ${workout.distance}`);
+                  
+                  // Determine metric based on type
                   if (typeLower.includes('run') || typeLower.includes('cycle') || typeLower.includes('swim')) {
                      metric = formatDistance(workout.distance);
+                  } else if (typeLower.includes('strength') || typeLower.includes('weight')) {
+                     // Prioritize explicit volume, fallback to calculatedVolume
+                     const volume = workout.volume ?? workout.calculatedVolume;
+                     metric = formatVolume(volume);
                   }
-                  // Fallback to formatted duration (from MINUTES)
-                  if (!metric) {
-                     metric = formatDurationFromMinutes(workout.duration);
+                  
+                  // Fallback to duration (using seconds formatter) if no specific metric found
+                  if (!metric && workout.duration !== undefined && workout.duration !== null) {
+                     metric = formatDuration(workout.duration);
                   }
 
                   return (
-                    <div key={workout._id} className="flex items-center justify-between gap-2 sm:gap-3 border-b border-border/50 pb-2 last:border-0 last:pb-0">
-                      <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
-                        {icon}
-                        <span className="text-xs font-normal w-12 sm:w-14 text-right tabular-nums">{date}</span>
+                    <Link href={`/workout/${workout._id}`} key={workout._id} className="block group">
+                      <div className="flex items-center justify-between gap-3 sm:gap-4 px-2 py-2.5 rounded-md group-hover:bg-muted/60 transition-colors border-b border-transparent group-last:border-0">
+                        <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
+                          {icon}
+                          <span className="text-xs font-normal w-12 sm:w-14 text-right tabular-nums">{date}</span>
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-sm truncate group-hover:text-foreground transition-colors">{typeDisplay}</p>
+                        </div>
+                        <div className="flex-shrink-0 text-right">
+                          {metric && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-xs font-normal tabular-nums">
+                              {metric}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0 text-right">
-                        {metric && (
-                          <Badge variant="secondary" className="h-5 px-1.5 text-xs font-normal">
-                            {metric}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </>

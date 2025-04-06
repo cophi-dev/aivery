@@ -94,3 +94,9 @@ export function formatDate(date: string | Date | undefined | null): string {
     return "Invalid Date";
   }
 }
+
+// Capitalize the first letter of a string
+export function capitalizeFirstLetter(string: string | undefined | null): string {
+  if (!string) return '';
+  return string.charAt(0).toUpperCase() + string.slice(1);
+}
