@@ -7,8 +7,8 @@ import {
   createWorkout as createWorkoutDb,
   deleteWorkout as deleteWorkoutDb,
   getPreviousWorkouts,
-  updateWorkoutInDatabase,
-} from "./db/repositories/workoutRepository"
+  updateWorkoutInDb,
+} from "@/lib/db/repositories/workoutRepository"
 import type { WorkoutData } from "@/types/db"
 import { getCurrentUser } from "./auth"
 import { getServerSession } from "next-auth/next"
@@ -137,7 +137,7 @@ export async function updateWorkout(workoutId: string, workoutData: Partial<Omit
   }
 
   try {
-    const updatedWorkout = await updateWorkoutInDatabase(workoutId, workoutData);
+    const updatedWorkout = await updateWorkoutInDb(workoutId, workoutData);
     if (!updatedWorkout) {
       throw new Error("Failed to update workout in database.");
     }
@@ -241,7 +241,7 @@ export async function completeWorkout(id: string, completionData: { duration: nu
       throw new Error("Workout not found or unauthorized")
     }
 
-    const updatedWorkout = await updateWorkoutInDatabase(id, {
+    const updatedWorkout = await updateWorkoutInDb(id, {
       duration: completionData.duration,
       updatedAt: new Date().toISOString(),
     })

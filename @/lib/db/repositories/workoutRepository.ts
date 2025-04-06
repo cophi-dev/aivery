@@ -16,10 +16,10 @@ export async function getWorkoutById(id: string | ObjectId): Promise<WorkoutData
 }
 
 // Update an existing workout
-export async function updateWorkoutInDatabase(id: string | ObjectId, updateData: Partial<Omit<WorkoutData, '_id'>>): Promise<WorkoutData | null> {
+export async function updateWorkoutInDb(id: string | ObjectId, updateData: Partial<Omit<WorkoutData, '_id'>>): Promise<WorkoutData | null> {
   await dbConnect();
   if (!ObjectId.isValid(id)) {
-    console.error("Invalid ObjectId passed to updateWorkoutInDatabase:", id);
+    console.error("Invalid ObjectId passed to updateWorkoutInDb:", id);
     return null;
   }
   const updatedWorkout = await Workout.findByIdAndUpdate(
