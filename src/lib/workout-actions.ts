@@ -2,12 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import {
-  getWorkoutsByUserId,
-  getWorkoutById,
+  getWorkoutsByUserId as getWorkoutsByUserIdDb,
+  getWorkoutById as getWorkoutByIdDb,
   createWorkout as createWorkoutDb,
   deleteWorkout as deleteWorkoutDb,
   getPreviousWorkouts,
-  updateWorkoutInDb,
+  updateWorkout as updateWorkoutDb,
 } from "@/lib/db/repositories/workoutRepository"
 import type { WorkoutData } from "@/types/db"
 import { getCurrentUser } from "./auth"
@@ -33,7 +33,7 @@ export async function fetchWorkouts(): Promise<WorkoutData[]> {
 
     // Try to get workouts
     try {
-      return await getWorkoutsByUserId(user.id);
+      return await getWorkoutsByUserIdDb(user.id);
     } catch (dbError) {
       console.error("Database error in fetchWorkouts:", dbError);
       return []; // Return empty array instead of throwing
@@ -51,7 +51,7 @@ export async function fetchWorkout(id: string): Promise<WorkoutData | null> {
     if (!user) {
       throw new Error("User not authenticated")
     }
-    const workout = await getWorkoutById(id)
+    const workout = await getWorkoutByIdDb(id)
     // Only return the workout if it belongs to the current user
     if (workout && workout.userId !== user.id) {
       return null
@@ -116,42 +116,32 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
 }
 
 // Update an existing workout
-export async function updateWorkout(workoutId: string, workoutData: Partial<Omit<WorkoutData, '_id' | 'userId' | 'createdAt' | 'updatedAt'>>): Promise<WorkoutData | null> {
-  'use server'
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    throw new Error("Not authenticated");
-  }
-
-  if (!ObjectId.isValid(workoutId)) {
-     throw new Error("Invalid Workout ID provided for update.");
-  }
-  
-  // Optional: Fetch the workout first to ensure the user owns it
-  const existingWorkout = await getWorkoutById(workoutId);
-  if (!existingWorkout) {
-      throw new Error("Workout not found.");
-  }
-  if (existingWorkout.userId?.toString() !== session.user.id) {
-      throw new Error("You do not have permission to update this workout.");
+export async function updateWorkoutAction(workoutId: string, workoutData: Partial<Omit<WorkoutData, "userId" | "_id" | "createdAt" | "updatedAt">>) {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("User not authenticated");
   }
 
   try {
-    const updatedWorkout = await updateWorkoutInDb(workoutId, workoutData);
+    // Optional: Fetch the workout first to ensure the user owns it
+    const existingWorkout = await getWorkoutByIdDb(workoutId);
+    if (!existingWorkout) {
+        throw new Error("Workout not found.");
+    }
+    if (existingWorkout.userId !== user.id) {
+        throw new Error("Unauthorized access to workout.");
+    }
+
+    const updatedWorkout = await updateWorkoutDb(workoutId, workoutData);
     if (!updatedWorkout) {
       throw new Error("Failed to update workout in database.");
     }
-
-    // Revalidate relevant paths
-    revalidatePath('/workouts');
-    revalidatePath(`/workout/${workoutId}`);
-    revalidatePath(`/workouts/new`); // Revalidate form page in case user goes back
-
+    revalidatePath("/dashboard/workouts");
+    revalidatePath(`/workouts/${workoutId}`);
     return updatedWorkout;
-  } catch (error) {
-    console.error("Error in updateWorkout server action:", error);
-    // Re-throw or return a specific error structure
-    throw error instanceof Error ? error : new Error("Failed to update workout due to an unexpected error.");
+  } catch (error: any) {
+    console.error("Error updating workout action:", error);
+    throw new Error(`Failed to update workout: ${error.message}`);
   }
 }
 
@@ -164,7 +154,7 @@ export async function deleteWorkout(id: string): Promise<void> {
     }
 
     // Check if the workout belongs to the current user
-    const existingWorkout = await getWorkoutById(id)
+    const existingWorkout = await getWorkoutByIdDb(id)
     if (!existingWorkout || existingWorkout.userId !== user.id) {
       throw new Error("Workout not found or unauthorized")
     }
@@ -203,7 +193,7 @@ export async function copyWorkoutToToday(id: string): Promise<string> {
       throw new Error("User not authenticated")
     }
 
-    const workout = await getWorkoutById(id)
+    const workout = await getWorkoutByIdDb(id)
     if (!workout || workout.userId !== user.id) {
       throw new Error("Workout not found or unauthorized")
     }
@@ -228,35 +218,38 @@ export async function copyWorkoutToToday(id: string): Promise<string> {
 }
 
 // Complete a workout
-export async function completeWorkout(id: string, completionData: { duration: number; completedExercises: Array<{ index: number; completed: boolean }> }): Promise<WorkoutData> {
-  try {
-    const user = await getCurrentUser()
-    if (!user) {
-      throw new Error("User not authenticated")
-    }
+export async function markWorkoutComplete(id: string, completionData: { duration: number }) {
+  const user = await getCurrentUser()
+  if (!user) {
+    throw new Error("User not authenticated")
+  }
 
+  try {
     // Check if the workout belongs to the current user
-    const existingWorkout = await getWorkoutById(id)
+    const existingWorkout = await getWorkoutByIdDb(id)
     if (!existingWorkout || existingWorkout.userId !== user.id) {
       throw new Error("Workout not found or unauthorized")
     }
 
-    const updatedWorkout = await updateWorkoutInDb(id, {
-      duration: completionData.duration,
-      updatedAt: new Date().toISOString(),
-    })
+    // Prepare update data including updatedAt
+    const updatePayload: Partial<WorkoutData> = {
+        duration: completionData.duration,
+        updatedAt: new Date().toISOString(), // Ensure updatedAt is included correctly
+        // Add any other fields that should be updated upon completion
+    };
 
+    const updatedWorkout = await updateWorkoutDb(id, updatePayload); // Use renamed function and correct payload type
     if (!updatedWorkout) {
-      throw new Error("Workout not found or not updated")
+      throw new Error("Failed to mark workout as complete in database.")
     }
 
-    revalidatePath("/calendar")
-    revalidatePath(`/workout/${id}`)
+    revalidatePath("/dashboard/workouts"); // Revalidate relevant paths
+    revalidatePath(`/workouts/${id}`);
 
-    return updatedWorkout
-  } catch (error) {
-    console.error(`Error completing workout ${id}:`, error)
-    throw new Error(`Failed to complete workout ${id}`)
+    return { success: true, workout: updatedWorkout };
+  } catch (error: any) {
+    console.error("Error marking workout complete:", error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -425,7 +418,7 @@ function enhanceCardioWorkout(workout: any): any {
 // Fetch workout data formatted for AI analysis
 export async function fetchWorkoutForAI(id: string): Promise<any> {
   try {
-    const workout = await getWorkoutById(id)
+    const workout = await getWorkoutByIdDb(id)
 
     if (!workout) {
       return null
