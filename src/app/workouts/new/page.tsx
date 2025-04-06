@@ -7,6 +7,7 @@ import { format, isToday, isPast, isFuture, parseISO } from "date-fns"
 import { useSession } from "next-auth/react"
 import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { toast } from 'react-hot-toast'
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,7 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { createWorkout, updateWorkout } from "@/lib/workout-actions"
+import { 
+  createWorkout as createWorkoutAction, 
+  updateWorkoutAction
+} from "@/lib/workout-actions"
 import { fetchExercises } from "@/lib/exercise-actions"
 import type { ExerciseData, WorkoutData, Exercise } from "@/types/db"
 
@@ -378,30 +382,34 @@ export default function NewWorkoutPage() {
     console.log("Submitting workout payload:", workoutPayload);
 
     try {
-      let savedWorkout: WorkoutData | null = null;
+      setIsLoadingData(true);
+      let savedWorkout;
       if (isEditing && editingWorkoutId) {
         console.log(`Attempting to update workout ID: ${editingWorkoutId}`);
-        savedWorkout = await updateWorkout(editingWorkoutId, workoutPayload);
+        savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload);
+        toast.success('Workout updated successfully!');
       } else {
         console.log("Attempting to create new workout");
         const createPayload = {
             ...workoutPayload,
             userId: session.user.id,
         } as Omit<WorkoutData, '_id' | 'createdAt' | 'updatedAt'> & { userId: string };
-        savedWorkout = await createWorkout(createPayload); 
+        savedWorkout = await createWorkoutAction(createPayload);
+        toast.success('Workout created successfully!');
       }
       
-      if (savedWorkout?._id) {
-        router.push(`/workout/${savedWorkout._id}`); 
+      if (savedWorkout && savedWorkout._id) {
+        router.push(`/workouts/${savedWorkout._id}`);
       } else {
         console.error("Workout save operation did not return a valid workout object or ID.", savedWorkout);
-        throw new Error("Failed to ${isEditing ? 'update' : 'create'} workout. No ID returned.");
+        toast.error('Failed to get workout ID after saving.');
       }
     } catch (err) {
-      console.error(`Failed to ${isEditing ? 'update' : 'save'} workout:`, err);
-      setError(err instanceof Error ? err.message : `An unknown error occurred while ${isEditing ? 'updating' : 'saving'}.`);
+      console.error('Failed to save workout:', err);
+      toast.error(`Error: ${err instanceof Error ? err.message : 'Failed to save workout'}`);
     } finally {
       setIsSubmitting(false);
+      setIsLoadingData(false);
     }
   }
 

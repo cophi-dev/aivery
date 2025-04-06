@@ -18,11 +18,14 @@ import {
   LucideX,
   LucideTimer,
   LucideCheckCircle,
+  LucidePlay,
+  LucidePause,
 } from "lucide-react"
-import { fetchWorkout, completeWorkout } from "@/lib/workout-actions"
+import { fetchWorkout, markWorkoutComplete } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
 import type { WorkoutData } from "@/types/db"
 import { Label } from "@/components/ui/label"
+import { toast } from "react-hot-toast"
 
 export default function WorkoutSessionPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -108,16 +111,22 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
 
     try {
       setIsCompleting(true)
-      await completeWorkout(workout._id, {
+      const result = await markWorkoutComplete(workout._id, {
         duration: Math.round(elapsedTime / 60), // Convert seconds to minutes
-        completedExercises: Object.entries(completedExercises).map(([index, completed]) => ({
-          index: Number.parseInt(index),
-          completed,
-        })),
       })
-      router.push("/workouts")
+      
+      if (result.success && result.workout) {
+        // Update local state to reflect completion
+        setWorkout(result.workout)
+        setIsCompleting(false)
+        toast.success("Workout marked as complete!")
+      } else {
+        console.error("Failed to complete workout:", result.error)
+        toast.error(`Error: ${result.error || 'Failed to complete workout.'}`)
+      }
     } catch (error) {
-      console.error("Failed to complete workout:", error)
+      console.error("Error completing workout:", error)
+      toast.error("An unexpected error occurred while completing the workout.")
     } finally {
       setIsCompleting(false)
     }
