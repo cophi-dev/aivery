@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,8 @@ import {
   Trash,
   Copy,
   Trophy,
-  Clock
+  Clock,
+  RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
 import { WorkoutAnalysis } from "@/components/workout-analysis";
@@ -31,6 +32,7 @@ import { formatDate, formatDuration, formatDistance } from "@/lib/utils";
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
 import { WorkoutData } from '@/types/db';
+import { useSession } from "next-auth/react";
 
 const formatPace = (pace: number | null): string => {
   if (pace === null || pace <= 0 || !isFinite(pace)) return "N/A";
@@ -146,34 +148,45 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
   const [isLoadingInsight, setIsLoadingInsight] = useState<boolean>(true);
   const params = useParams();
   const workoutId = params?.id as string;
+  const { data: session } = useSession();
 
-  useEffect(() => {
+  const fetchInsight = useCallback(async () => {
+    const userName = session?.user?.nickname || session?.user?.name || "Fitness Pro";
+
     if (!workoutId || typeof workoutId !== 'string') {
       setIsLoadingInsight(false);
       setInsight('Could not load workout highlight.');
       return;
     }
-
-    const fetchInsight = async () => {
-      setIsLoadingInsight(true);
-      try {
-        const response = await fetch(`/api/workout-insight/${workoutId}/`);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setInsight(data.insight || 'Highlight unavailable.');
-      } catch (error) {
-        console.error("Error fetching workout insight:", error);
-        setInsight('Oops! Could not generate a highlight.');
-      } finally {
-        setIsLoadingInsight(false);
+    setIsLoadingInsight(true);
+    try {
+      const response = await fetch(`/api/ai/workout-highlight?t=${Date.now()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userName: userName,
+          workout: workout
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
-    };
+      const data = await response.json();
+      setInsight(data.insight || 'Highlight unavailable.');
+    } catch (error) {
+      console.error("Error fetching workout insight:", error);
+      setInsight('Oops! Could not generate a highlight.');
+    } finally {
+      setIsLoadingInsight(false);
+    }
+  }, [workoutId, workout, session]);
 
+  useEffect(() => {
     fetchInsight();
-  }, [workoutId]);
+  }, [fetchInsight]);
 
   const totalVolume = workout.type === 'strength' && workout.exercises ? workout.exercises.reduce((sum, ex) => sum + calculateExerciseVolume(ex), 0) : null;
   const stravaLink = getFixedStravaLink(workout);
@@ -189,16 +202,32 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
 
   return (
     <div className="bg-background text-foreground min-h-screen">
-      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-primary/10 to-secondary/10 relative">
-        {isLoadingInsight ? (
-          <p className="text-2xl sm:text-3xl font-semibold animate-pulse text-center">Generating your workout highlight...</p>
-        ) : (
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-center leading-tight text-primary px-4">
-            {insight}
-          </h1>
-        )}
+      <div className="min-h-screen flex flex-col items-center justify-between p-6 py-10 bg-gradient-to-br from-primary/10 to-secondary/10 relative">
+        <div className="w-full flex justify-center pt-4"> 
+           <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={fetchInsight} 
+              disabled={isLoadingInsight} 
+              className="text-muted-foreground hover:text-primary"
+              title="Refresh Highlight"
+           >
+             <RefreshCw className={`h-5 w-5 ${isLoadingInsight ? 'animate-spin' : ''}`} />
+           </Button>
+        </div>
+        <div className="text-center relative w-full max-w-4xl">
+          {isLoadingInsight ? (
+            <p className="text-2xl sm:text-3xl font-semibold animate-pulse text-center">Generating your workout highlight...</p>
+          ) : (
+             <>
+               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-center leading-tight text-primary px-4 mb-2">
+                 {insight}
+               </h1>
+             </>
+           )}
+        </div>
         {!isLoadingInsight && (
-           <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 text-center animate-bounce">
+           <div className="text-center animate-bounce">
              <span className="text-xs text-muted-foreground block">Scroll for details</span>
              <svg className="w-6 h-6 text-muted-foreground mx-auto mt-1" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
            </div>
