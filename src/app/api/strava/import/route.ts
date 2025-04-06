@@ -287,7 +287,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Map Strava sport types to our workout types
-export function mapStravaType(sport: string, subSport?: string): string {
+function mapStravaType(sport: string, subSport?: string): string {
   if (!sport) return 'other'
   
   const sportLower = sport.toLowerCase()
@@ -340,7 +340,7 @@ export function mapStravaType(sport: string, subSport?: string): string {
 }
 
 // Helper function to calculate heart rate zones
-export function calculateIntensity(activity: any): "Low" | "Medium" | "High" {
+function calculateIntensity(activity: any): "Low" | "Medium" | "High" {
   // Calculate intensity based on heartrate zones if available
   if (activity.has_heartrate || activity.avg_heart_rate) {
     const maxHr = activity.max_heartrate || activity.max_heart_rate || 0;
