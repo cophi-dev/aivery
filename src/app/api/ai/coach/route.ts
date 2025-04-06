@@ -145,9 +145,9 @@ Key considerations:
   };
 
   try {
-    console.log(`Sending query to Anthropic: "${query}"`);
+    console.log(`Sending query to Anthropic: \\"${query}\\"`);
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620", // Use Claude 3.5 Sonnet
+      model: "claude-3-5-haiku-20241022", // Use Claude 3.5 Haiku
       max_tokens: 500,
       system: systemPrompt,
       messages: [

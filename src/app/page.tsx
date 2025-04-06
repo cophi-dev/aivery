@@ -10,16 +10,18 @@ import {
   Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen, 
   Bike, Waves, HeartPulse, LucidePlusCircle
 } from "lucide-react";
-import type { WorkoutData } from "@/types/db";
+import type { WorkoutData, ExerciseData } from "@/types/db";
 import { format, startOfWeek, endOfWeek, isWithinInterval, subWeeks, parseISO } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { motion } from "framer-motion";
 import { fetchWithAuth, getUserData, getQuote } from "@/lib/client-utils";
+import { fetchWorkouts } from "@/lib/workout-actions";
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import Image from 'next/image';
 import { capitalizeFirstLetter } from "@/lib/utils";
 import { formatDuration, formatDistance as formatDistanceUtil } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // --- Helper Functions ---
 
@@ -59,17 +61,31 @@ const formatVolume = (volume: number | undefined | null): string | null => {
   return `${Math.round(volume)} kg`;
 };
 
+// --- Bodyweight Estimation (copied from new-alt page) ---
+const estimateBodyweightForExercise = (exerciseName: string): number => {
+  const defaultBodyweight = 75;
+  const bodyweightExercises: Record<string, number> = { /* ... as before ... */ };
+  const normalizedName = exerciseName.toLowerCase().trim();
+  for (const [exerciseKey, percentage] of Object.entries(bodyweightExercises)) {
+    if (normalizedName.includes(exerciseKey)) { 
+      return Math.round(defaultBodyweight * percentage);
+    }
+  }
+  return 0;
+}
+
 export default function HomePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
-  const [recentWorkouts, setRecentWorkouts] = useState<WorkoutData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
+  const [highlightedNote, setHighlightedNote] = useState<string>("Loading workout highlight...");
+  const [isLoadingHighlight, setIsLoadingHighlight] = useState<boolean>(true);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,63 +144,53 @@ export default function HomePage() {
   }, [location]);
 
   const fetchUserData = useCallback(async () => {
+    if (status !== "authenticated" || !session?.user?.id) {
+      console.log("[PAGE] fetchUserData called but session not ready. Status:", status);
+      setLoading(false);
+      return;
+    }
+      
+    setLoading(true);
+    setError(null);
+      
     try {
-      if (!session?.user?.id) {
-        return;
+      console.log("[PAGE] Fetching user data and workouts...");
+      const [userDataResponse, workoutsData] = await Promise.all([
+        getUserData(),
+        fetchWorkouts()
+      ]);
+
+      if (userDataResponse?.user) {
+        setUser(userDataResponse.user);
+        console.log("[PAGE] User data set:", userDataResponse.user.name);
+      } else {
+        console.warn("[PAGE] No user data received from getUserData.");
       }
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const userData = await getUserData();
-        if (userData?.user) {
-          setUser(userData.user);
-          
-          if (userData.user._id) {
-            const workoutsResponse = await fetchWithAuth(`/api/workouts/${userData.user._id}`);
-            if (!workoutsResponse.ok) {
-              throw new Error(`Failed to fetch workouts: ${workoutsResponse.statusText}`);
-            }
-            const workoutsData = await workoutsResponse.json();
-            
-            if (!workoutsData.workouts) {
-              setWorkouts([]);
-              setRecentWorkouts([]);
-            } else {
-              setWorkouts(workoutsData.workouts);
-              
-              const sortedWorkouts = [...workoutsData.workouts].sort(
-                (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-              ).slice(0, 5);
-              
-              setRecentWorkouts(sortedWorkouts);
-            }
-          }
-        }
-      } catch (userErr) {
-        console.error("Error fetching user data:", userErr);
-        setError("Failed to load user data. Please try again.");
-      }
+
+      setWorkouts(workoutsData || []);
+      console.log(`[PAGE] ${workoutsData?.length || 0} workouts set.`);
+
     } catch (err: any) {
-      console.error("Error loading data:", err);
-      setError(err.message || "Failed to load data. Please try again.");
+      console.error("[PAGE] Error loading dashboard data:", err);
+      setError(err.message || "Failed to load dashboard data. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [session, status]);
 
   useEffect(() => {
-    if (status === "authenticated" && session?.user?.id) {
+    if (status === "authenticated") {
       fetchUserData();
     } else if (status === "loading") {
       setLoading(true);
+      setError(null);
     } else {
       setLoading(false);
     }
-  }, [status, session, retryCount, fetchUserData]);
+  }, [status, retryCount, fetchUserData]);
 
   const handleRetry = () => {
+    setError(null);
     setRetryCount(prev => prev + 1);
   };
 
@@ -203,35 +209,142 @@ export default function HomePage() {
     }
   }, [location]);
 
-  const weeklyWorkoutData = useMemo(() => {
-    if (!workouts || workouts.length === 0) return [];
+  const mostRecentWorkout = useMemo(() => {
+    if (!workouts || workouts.length === 0) return null;
+    // Assuming workouts are sorted descending by date from fetch
+    const sorted = [...workouts].sort((a, b) => parseISO(b.date as any).getTime() - parseISO(a.date as any).getTime());
+    return sorted[0];
+  }, [workouts]);
+  const recentWorkoutList = useMemo(() => { 
+      return workouts.slice(0, 5); 
+  }, [workouts]); 
+  const strengthVolumeLast7Days = useMemo(() => {
+    if (!workouts) return 0;
+    const oneWeekAgo = subWeeks(new Date(), 1);
+    let totalVolume = 0;
 
-    const numberOfWeeks = 4;
-    const today = new Date();
-    const weeklyData: { name: string; workouts: number }[] = [];
-
-    for (let i = 0; i < numberOfWeeks; i++) {
-      const weekEndDate = endOfWeek(subWeeks(today, i), { weekStartsOn: 1 });
-      const weekStartDate = startOfWeek(subWeeks(today, i), { weekStartsOn: 1 });
-
-      const workoutsInWeek = workouts.filter(w => {
-        try {
-           const workoutDate = w.date instanceof Date ? w.date : parseISO(w.date as any);
-           return isWithinInterval(workoutDate, { start: weekStartDate, end: weekEndDate });
-        } catch (e) {
-          console.warn("Error parsing workout date for chart:", w.date, e);
-          return false;
+    workouts.forEach(workout => {
+      try {
+        const workoutDate = parseISO(workout.date as any);
+        if (workoutDate >= oneWeekAgo && workout.type === 'strength' && workout.exercises) {
+          workout.exercises.forEach(exercise => {
+            if (exercise.sets && exercise.sets.length > 0) {
+              const exerciseVolume = exercise.sets.reduce((sum, set) => {
+                const weight = set.weight ?? 0;
+                const reps = set.reps ?? 0;
+                const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exercise.name);
+                return sum + (estimatedWeight * reps);
+              }, 0);
+              totalVolume += exerciseVolume;
+            }
+          });
         }
-      });
+      } catch (e) { console.warn("Error processing workout for volume:", e); }
+    });
+    return Math.round(totalVolume);
+  }, [workouts]);
 
-      weeklyData.push({
-        name: `Wk ${format(weekStartDate, 'MMM d')}`,
-        workouts: workoutsInWeek.length,
-      });
+  const runningDistanceLast7Days = useMemo(() => {
+    if (!workouts) return 0;
+    const oneWeekAgo = subWeeks(new Date(), 1);
+    let totalDistance = 0;
+
+    workouts.forEach(workout => {
+      try {
+        const workoutDate = parseISO(workout.date as any);
+        if (workoutDate >= oneWeekAgo && workout.type === 'run' && workout.distance) {
+          totalDistance += workout.distance;
+        }
+      } catch (e) { console.warn("Error processing workout for distance:", e); }
+    });
+    return totalDistance;
+  }, [workouts]);
+
+  const personalRecords = useMemo(() => {
+    if (!workouts) return {};
+    // Find max weight for ANY exercise
+    const records: Record<string, { weight: number; date: Date }> = {};
+
+    workouts.forEach(workout => {
+      if (workout.type === 'strength' && workout.exercises) {
+        try {
+           const workoutDate = parseISO(workout.date as any);
+           workout.exercises.forEach(exercise => {
+             if (exercise.sets) {
+               exercise.sets.forEach(set => {
+                 const weight = set.weight ?? 0;
+                 // Check if this set is a new PR for this exercise
+                 if (weight > (records[exercise.name]?.weight || 0)) {
+                   records[exercise.name] = { weight, date: workoutDate };
+                 }
+               });
+             }
+           });
+         } catch (e) { console.warn("Error processing workout for PR:", e); }
+      }
+    });
+    return records;
+  }, [workouts]);
+
+  // Get top 4 PRs for display, sorted alphabetically for consistency
+  const topPRs = useMemo(() => {
+    return Object.entries(personalRecords)
+      .sort(([nameA], [nameB]) => nameA.localeCompare(nameB))
+      .slice(0, 4); // Take top 4 alphabetically
+      // Alternative: sort by weight: .sort(([,a], [,b]) => b.weight - a.weight)
+  }, [personalRecords]);
+
+  const workoutsLast7DaysCount = useMemo(() => {
+    if (!workouts) return 0;
+    const oneWeekAgo = subWeeks(new Date(), 1);
+    return workouts.filter(workout => {
+      try {
+        const workoutDate = parseISO(workout.date as any);
+        return workoutDate >= oneWeekAgo;
+      } catch (e) { return false; }
+    }).length;
+  }, [workouts]);
+
+  // --- Re-add Highlighted Note Fetch Logic --- 
+  const fetchHighlightedNote = useCallback(async () => {
+    if (!mostRecentWorkout || !session?.user) {
+      setIsLoadingHighlight(false); 
+      setHighlightedNote("Log a workout to see your highlight!"); 
+      return;
     }
 
-    return weeklyData.reverse();
-  }, [workouts]);
+    const userName = session.user.nickname || session.user.name || "Fitness Pro";
+    setIsLoadingHighlight(true);
+    try {
+      const response = await fetch(`/api/ai/workout-highlight?t=${Date.now()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userName: userName,
+          workout: mostRecentWorkout
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setHighlightedNote(data.insight || 'Highlight unavailable for this workout.');
+    } catch (error) {
+      console.error("Error fetching workout highlight:", error);
+      setHighlightedNote('Oops! Could not generate a highlight for the latest workout.');
+    } finally {
+      setIsLoadingHighlight(false);
+    }
+  }, [mostRecentWorkout, session]);
+
+  useEffect(() => {
+    if (mostRecentWorkout) {
+        fetchHighlightedNote();
+    }
+  }, [mostRecentWorkout, fetchHighlightedNote]);
 
   if (loading) {
     return (
@@ -343,113 +456,157 @@ export default function HomePage() {
   const displayName = user?.nickname || user?.name || "User";
 
   return (
-    <div className="container mx-auto px-4 py-6 md:py-8 space-y-6 md:space-y-10">
+    <div className="container mx-auto px-4 py-8 space-y-8">
+      
+      {/* Header Section (No Log Button) */}
       <section className="p-4 md:p-6 bg-card rounded-xl shadow-sm">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4">
+         <div className="flex items-center gap-3 md:gap-4"> 
           <UserAvatar 
             name={displayName} 
             imageUrl={user?.image || null}
             size="lg"
           />
-          <div className="flex-1 mt-2 sm:mt-0">
+           <div className="flex-1">
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Hey {displayName}!</h1>
-            <p className="text-muted-foreground text-sm md:text-base mb-2">
-              Your AI-powered fitness companion to track, plan and analyze your fitness journey.
-            </p>
-            <div className="flex items-center gap-2">
-              <p className="text-muted-foreground italic text-xs sm:text-sm">
-                {quote}
-              </p>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6 rounded-full hover:bg-muted/50 flex-shrink-0"
-                onClick={refreshQuote}
-                title="Refresh quote"
-              >
-                <RefreshCcw className="h-3 w-3" />
-              </Button>
-            </div>
           </div>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-6">
-          <Button asChild size="lg" className="w-full">
-            <Link href="/chat">
-              <MessageSquare className="mr-2 h-5 w-5" /> Chat with AI Coach
-            </Link>
-          </Button>
-          <Button asChild variant="secondary" size="lg" className="w-full">
-            <Link href="/workouts/new">
-              <LucidePlusCircle className="mr-2 h-5 w-5" /> Log Workout
-            </Link>
+      {/* Main Content Grid (2 Columns) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> 
+        
+         {/* --- Left Column --- */} 
+         <div className="flex flex-col gap-6">
+           
+            {/* Item 1: AI Highlight Card (Moved Here) */} 
+            {mostRecentWorkout && (
+              <Card className="bg-primary/5 border-primary/20 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="text-base font-medium text-muted-foreground">About Your Last Workout</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4"> 
+                  <div className="flex flex-col gap-4"> 
+                    {/* AI Generated Summary */} 
+                    {isLoadingHighlight ? (
+                      <div className="flex items-center text-muted-foreground italic flex-1 text-lg">
+                        <Zap className="h-5 w-5 mr-2 animate-pulse" /> 
+                        Generating highlight...
+                      </div>
+                    ) : (
+                      <p className="text-xl font-semibold flex-1 leading-snug">{highlightedNote}</p>
+                    )}
+                    {/* Workout Details Row */} 
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-x-4 gap-y-2 pt-4 border-t border-primary/10"> 
+                      {/* Left side: Type, Date, Metric */} 
+                      <div className="text-sm text-muted-foreground">
+                         <span className="font-medium text-foreground">{capitalizeFirstLetter(mostRecentWorkout.type || 'Workout')}</span>
+                         <span className="mx-1.5">·</span>
+                         <span>{format(parseISO(mostRecentWorkout.date as any), 'MMM d, yyyy')}</span>
+                         {/* Add Volume/Distance/Duration - with bodyweight estimation */} 
+                         <span className="mx-1.5">·</span>
+                         <span>
+                           {mostRecentWorkout.type === 'strength' && mostRecentWorkout.exercises ? 
+                             formatVolume(mostRecentWorkout.exercises.reduce((volSum, ex) => volSum + (ex.sets?.reduce((setSum, set) => { 
+                                 const weight = set.weight ?? 0;
+                                 const reps = set.reps ?? 0;
+                                 const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(ex.name);
+                                 return setSum + (estimatedWeight * reps);
+                              }, 0) || 0), 0))
+                             : mostRecentWorkout.distance ? 
+                             formatDistance(mostRecentWorkout.distance)
+                             : mostRecentWorkout.duration ?
+                             formatDurationFromMinutes(mostRecentWorkout.duration)
+                             : null
+                           }
+                         </span>
+                      </div>
+                      {/* Right side: View Button */} 
+                      <Button asChild variant="secondary" size="sm" className="flex-shrink-0 w-full sm:w-auto">
+                         <Link href={`/workout/${mostRecentWorkout._id}`}>View Details</Link>
           </Button>
       </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <Card className="lg:col-span-1">
-           <CardHeader className="pb-2">
-            <CardTitle className="text-base sm:text-lg flex items-center">
-              <Dumbbell className="mr-2 h-4 w-4" /> Workouts
+           {/* Item 2: Strength Progress */} 
+           <Card>
+             <CardHeader>
+               <CardTitle className="text-lg flex items-center">
+                 <Dumbbell className="mr-2 h-5 w-5" /> Strength Progress
+               </CardTitle>
+                <CardDescription>Total Volume (Last 7 Days)</CardDescription>
+             </CardHeader>
+             <CardContent>
+               <p className="text-3xl font-bold">{formatVolume(strengthVolumeLast7Days) || "0 kg"}</p>
+               {/* Add comparison to previous week later? */} 
+             </CardContent>
+           </Card>
+
+           {/* Item 3: Cardio Progress */} 
+           <Card>
+             <CardHeader>
+               <CardTitle className="text-lg flex items-center">
+                  <HeartPulse className="mr-2 h-5 w-5" /> Cardio Progress
             </CardTitle>
+               <CardDescription>Running Distance (Last 7 Days)</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl sm:text-4xl font-bold">{workoutCount}</div>
-            <p className="text-xs sm:text-sm text-muted-foreground">Total logged</p>
+               <p className="text-3xl font-bold">{formatDistance(runningDistanceLast7Days) || "0 km"}</p>
+               {/* Add comparison to previous week later? */} 
           </CardContent>
-          <CardFooter className="pt-3">
-            <Button asChild className="w-full">
-              <Link href="/workouts">
-                {workoutCount > 0 ? "View Workouts" : "Log First Workout"}
+           </Card>
+         </div>
+
+         {/* --- Right Column --- */} 
+         <div className="flex flex-col gap-6">
+            {/* Item 1: Log Workout Button (More Prominent) */} 
+            <Button size="lg">
+               <Link href="/workouts/new" className="flex items-center justify-center w-full h-full">
+                 <LucidePlusCircle className="mr-2 h-5 w-5" /> Log New Workout
               </Link>
             </Button>
-          </CardFooter>
-        </Card>
 
-        <Card className="md:col-span-2 lg:col-span-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base sm:text-lg flex items-center">
-              <Activity className="mr-2 h-4 w-4" /> Recent Activity
+           {/* Item 2: Recent Activity */} 
+           <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center">
+                  <Activity className="mr-2 h-5 w-5" /> Recent Activity
             </CardTitle>
           </CardHeader>
-          <CardContent className="max-h-64 overflow-y-auto pr-1 space-y-1">
-            {hasWorkouts ? (
-              <>
-                {recentWorkouts.map((workout) => {
-                  const icon = getWorkoutTypeIcon(workout.type);
-                  const date = format(new Date(workout.date), 'MMM d');
-                  const typeLower = workout.type?.toLowerCase() || '';
-                  const typeDisplay = capitalizeFirstLetter(workout.type || 'Activity');
+              <CardContent className="space-y-1 pr-1">
+                 {recentWorkoutList.length > 0 ? (
+                  recentWorkoutList.map(workout => {
+                      // Calculate metric for this specific workout
                   let metric: string | null = null;
-                  
-                  // Log duration to check its value/unit
-                  console.log(`[Recent Activity] Workout ${workout._id} (${typeDisplay}) duration (seconds?): ${workout.duration}, volume: ${workout.volume}, calcVolume: ${workout.calculatedVolume}, distance: ${workout.distance}`);
-                  
-                  // Determine metric based on type
-                  if (typeLower.includes('run') || typeLower.includes('cycle') || typeLower.includes('swim')) {
+                      if (workout.type === 'strength' && workout.exercises) {
+                          const volume = workout.exercises.reduce((volSum, ex) => volSum + (ex.sets?.reduce((setSum, set) => { 
+                              const weight = set.weight ?? 0;
+                              const reps = set.reps ?? 0;
+                              const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(ex.name);
+                              return setSum + (estimatedWeight * reps);
+                          }, 0) || 0), 0);
+                          metric = formatVolume(volume);
+                      } else if (workout.distance != null) {
                      metric = formatDistance(workout.distance);
-                  } else if (typeLower.includes('strength') || typeLower.includes('weight')) {
-                     // Prioritize explicit volume, fallback to calculatedVolume
-                     const volume = workout.volume ?? workout.calculatedVolume;
-                     metric = formatVolume(volume);
-                  }
-                  
-                  // Fallback to duration (using seconds formatter) if no specific metric found
-                  if (!metric && workout.duration !== undefined && workout.duration !== null) {
-                     metric = formatDuration(workout.duration);
+                      } else if (workout.duration != null) {
+                          metric = formatDurationFromMinutes(workout.duration);
                   }
 
                   return (
                     <Link href={`/workout/${workout._id}`} key={workout._id} className="block group">
-                      <div className="flex items-center justify-between gap-3 sm:gap-4 px-2 py-2.5 rounded-md group-hover:bg-muted/60 transition-colors border-b border-transparent group-last:border-0">
+                            <div className="flex items-center justify-between gap-3 px-2 py-2 rounded-md group-hover:bg-muted/60 transition-colors border-b border-border/50 group-last:border-b-0">
                         <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
-                          {icon}
-                          <span className="text-xs font-normal w-12 sm:w-14 text-right tabular-nums">{date}</span>
+                                {getWorkoutTypeIcon(workout.type)}
+                                <span className="text-xs font-normal tabular-nums">{format(parseISO(workout.date as any), 'MMM d')}</span>
                         </div>
                         <div className="flex-1 min-w-0 text-left">
-                          <p className="text-sm truncate group-hover:text-foreground transition-colors">{typeDisplay}</p>
+                                <p className="text-sm font-medium truncate group-hover:text-foreground transition-colors">
+                                  {workout.name || capitalizeFirstLetter(workout.type || 'Activity')}
+                                </p>
                         </div>
+                              {/* Display Metric Here */} 
                         <div className="flex-shrink-0 text-right">
                           {metric && (
                             <Badge variant="secondary" className="h-5 px-1.5 text-xs font-normal tabular-nums">
@@ -460,124 +617,49 @@ export default function HomePage() {
                       </div>
                     </Link>
                   );
-                })}
-              </>
+                  })
             ) : (
-              <p className="text-muted-foreground text-sm py-4 text-center">No workouts logged yet.</p>
+                  <p className="text-sm text-muted-foreground p-4 text-center">No workouts logged yet.</p>
             )}
           </CardContent>
-          {hasWorkouts && (
-            <CardFooter className="pt-3">
-              <Button asChild variant="outline" className="w-full">
+               {workouts.length > 5 && (
+                 <CardFooter className="pt-2">
+                     <Button asChild variant="outline" size="sm" className="w-full">
                 <Link href="/workouts">View All Activity</Link>
               </Button>
             </CardFooter>
           )}
         </Card>
 
-        <Card className="lg:col-span-1">
-           <CardHeader className="pb-2">
-            <CardTitle className="text-base sm:text-lg flex items-center">
-              <MessageSquare className="mr-2 h-4 w-4" /> AI Coach
+           {/* Item 3: Personal Records (Moved Here) */} 
+           <Card>
+             <CardHeader>
+               <CardTitle className="text-lg flex items-center">
+                 <Zap className="mr-2 h-5 w-5" /> Personal Records
             </CardTitle>
+               <CardDescription>Your best lifts across all exercises</CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm sm:text-base text-muted-foreground">Ask questions, get suggestions, and more.</p>
-          </CardContent>
-           <CardFooter className="pt-3">
-             <Button asChild variant="outline" className="w-full">
-               <Link href="/chat">Chat Now</Link>
-             </Button>
-          </CardFooter>
-        </Card>
-
-        <Card className="lg:col-span-1">
-           <CardHeader className="pb-2">
-            <CardTitle className="text-base sm:text-lg flex items-center">
-              <BookOpen className="mr-2 h-4 w-4" /> My Story
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm sm:text-base text-muted-foreground">Let Aivery create a personalized story.</p>
-          </CardContent>
-           <CardFooter className="pt-3">
-            <Button asChild variant="outline" className="w-full">
-              <Link href="/my-story">Read My Story</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-        
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base sm:text-lg flex items-center">
-              <BarChart className="mr-2 h-4 w-4" /> Weekly Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-[150px] pl-0 pr-2 pb-0">
-            {hasWorkouts && weeklyWorkoutData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsBarChart 
-                  data={weeklyWorkoutData}
-                  margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
-                  <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} interval={0} dy={5}/>
-                  <YAxis fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} width={25}/>
-                  <Tooltip 
-                     cursor={{ fill: 'hsl(var(--muted))' }} 
-                     contentStyle={{ 
-                       backgroundColor: 'hsl(var(--background))', 
-                       borderColor: 'hsl(var(--border))', 
-                       borderRadius: 'var(--radius)',
-                       fontSize: '12px',
-                       padding: '4px 8px' 
-                     }}
-                     labelStyle={{ marginBottom: '2px' }}
-                  />
-                  <Bar dataKey="workouts" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                </RechartsBarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="text-center flex flex-col items-center justify-center h-full">
-                <p className="text-sm text-muted-foreground mb-2">Log workouts to see progress</p>
-                <Button asChild size="sm">
-                    <Link href="/workouts/new">Log Workout</Link>
-                </Button>
-              </div>
+             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+               {topPRs.length > 0 ? (
+                 topPRs.map(([exercise, record]) => (
+                   <div key={exercise} className="text-sm border-b border-border/50 pb-2 last:border-b-0 sm:last:border-b-0">
+                     <p className="font-medium truncate">{exercise}</p>
+                     <p className="text-muted-foreground">
+                        <span className="font-semibold text-foreground">{record.weight} kg</span>
+                        <span className="text-xs"> on {format(record.date, 'MMM d, yyyy')}</span>
+                     </p>
+                   </div>
+                 ))
+               ) : (
+                 <p className="text-sm text-muted-foreground sm:col-span-2">No PRs recorded yet.</p>
             )}
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1">
-           <CardHeader className="pb-2">
-            <CardTitle className="text-base sm:text-lg flex items-center">
-              <Zap className="mr-2 h-4 w-4" /> Quick Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
-              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/workouts/new">Log Workout</Link>
-              </Button>
-              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/chat?q=suggest+workout">Get Suggestion</Link>
-              </Button>
-              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/plan/new">Create Plan</Link>
-              </Button>
-              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/exercises">Exercises</Link>
-              </Button>
-              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/my-story">My Story</Link>
-              </Button>
-              <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/settings">Settings</Link>
-              </Button>
             </div>
-          </CardContent>
-        </Card>
+
       </div>
+
     </div>
   );
 }

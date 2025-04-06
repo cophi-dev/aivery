@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     // 4. Call Anthropic API
     console.log(`Sending workout data to Anthropic for highlight generation for user: ${userName}, workout type: ${workout.type}`);
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 150, // Limit response length
       system: prompt, // Use the generated prompt as the system message
       messages: [

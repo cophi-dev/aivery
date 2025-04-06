@@ -81,13 +81,7 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([ // Use Message[] type
-    {
-      id: "initial-loading",
-      role: "assistant", // Correct role type
-      content: "Loading your personalized greeting...",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]); // Initialize as empty
 
   const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there";
 
