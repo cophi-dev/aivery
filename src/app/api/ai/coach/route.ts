@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
-import { calculateDateRange } from "@/lib/utils/dateUtils";
+// Use relative path for dateUtils import as alias is failing in build
+import { calculateDateRange } from "../../../../lib/utils/dateUtils";
 // import { db } from "@/lib/db"; // Placeholder for actual db import
 import Anthropic from "@anthropic-ai/sdk"; // Import Anthropic SDK
 import { ObjectId } from 'mongodb'; // Import ObjectId
