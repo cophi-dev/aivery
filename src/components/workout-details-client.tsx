@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -146,9 +146,30 @@ interface WorkoutDetailsClientProps {
 export default function WorkoutDetailsClient({ workout, previousWorkouts }: WorkoutDetailsClientProps) {
   const [insight, setInsight] = useState<string>('');
   const [isLoadingInsight, setIsLoadingInsight] = useState<boolean>(true);
+  const [scrollOpacity, setScrollOpacity] = useState<number>(1);
   const params = useParams();
   const workoutId = params?.id as string;
   const { data: session } = useSession();
+  const detailsRef = useRef<HTMLDivElement>(null);
+
+  const scrollToDetails = () => {
+    detailsRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Handle scroll event to fade out the indicator
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY;
+      // Start fading at 50px, completely fade out by 200px
+      const newOpacity = Math.max(0, 1 - (scrollPosition / 200));
+      setScrollOpacity(newOpacity);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   const fetchInsight = useCallback(async () => {
     const userName = session?.user?.nickname || session?.user?.name || "Fitness Pro";
@@ -201,40 +222,35 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
   const workoutIdString = workout._id.toString();
 
   return (
-    <div className="bg-background text-foreground min-h-screen">
-      <div className="min-h-screen flex flex-col items-center justify-between p-6 py-10 bg-gradient-to-br from-primary/10 to-secondary/10 relative">
-        <div className="w-full flex justify-center pt-4"> 
-           <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={fetchInsight} 
-              disabled={isLoadingInsight} 
-              className="text-muted-foreground hover:text-primary"
-              title="Refresh Highlight"
-           >
-             <RefreshCw className={`h-5 w-5 ${isLoadingInsight ? 'animate-spin' : ''}`} />
-           </Button>
-        </div>
-        <div className="text-center relative w-full max-w-4xl">
-          {isLoadingInsight ? (
-            <p className="text-2xl sm:text-3xl font-semibold animate-pulse text-center">Generating your workout highlight...</p>
-          ) : (
-             <>
-               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-center leading-tight text-primary px-4 mb-2">
+    <div className="bg-background text-foreground">
+      <div className="h-screen flex flex-col items-center bg-gradient-to-br from-primary/10 to-secondary/10 relative p-6">
+        <div className="w-full max-w-4xl flex flex-col justify-center items-center h-full mt-[-5vh]">
+          <div className="text-center">
+            {isLoadingInsight ? (
+              <p className="text-2xl sm:text-3xl font-semibold animate-pulse text-center">Aivery is checking out your workout now...</p>
+            ) : (
+               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-center leading-tight text-primary">
                  {insight}
                </h1>
-             </>
-           )}
+             )}
+          </div>
         </div>
-        {!isLoadingInsight && (
-           <div className="text-center animate-bounce">
-             <span className="text-xs text-muted-foreground block">Scroll for details</span>
-             <svg className="w-6 h-6 text-muted-foreground mx-auto mt-1" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-           </div>
-         )}
       </div>
 
-      <div className="container mx-auto p-4 md:p-6 lg:p-8 relative z-10 -mt-16 md:-mt-24">
+      {!isLoadingInsight && (
+         <div 
+           className="text-center animate-bounce fixed bottom-8 left-0 right-0 cursor-pointer z-50 transition-opacity duration-200"
+           style={{ opacity: scrollOpacity }}
+           onClick={scrollToDetails}
+           role="button"
+           aria-label="Scroll to details"
+         >
+           <span className="text-xs text-muted-foreground block">Scroll for details</span>
+           <svg className="w-6 h-6 text-muted-foreground mx-auto mt-1" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+         </div>
+       )}
+
+      <div ref={detailsRef} className="container mx-auto p-4 md:p-6 lg:p-8 relative z-10">
         <Card className="overflow-hidden shadow-lg bg-card">
           <CardHeader className="flex flex-row items-center justify-between p-4 bg-card-foreground/5 border-b">
             <Link href="/dashboard" className="text-primary hover:underline inline-flex items-center text-sm">
