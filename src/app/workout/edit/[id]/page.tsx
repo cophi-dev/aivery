@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 
 export default function EditWorkoutRedirect({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -12,7 +12,7 @@ export default function EditWorkoutRedirect({ params }: { params: { id: string }
     const duplicateIndex = searchParams.get('duplicate');
     
     // Build the redirect URL
-    let redirectUrl = `/workout/new?edit=true&id=${params.id}`;
+    let redirectUrl = `/workouts/new?edit=true&id=${params.id}`;
     
     // If we have a duplicate exercise instruction, add it to the URL
     if (duplicateIndex) {

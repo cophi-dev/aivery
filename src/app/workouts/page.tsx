@@ -44,7 +44,7 @@ export default async function WorkoutsPage() {
           <div className="mt-6 flex items-center justify-between">
             <h1 className="text-2xl font-bold tracking-tight">Your Workouts</h1>
             <div className="space-x-2">
-              <Link href="/activity/new" prefetch={false}>
+              <Link href="/workouts/new" prefetch={false}>
                 <Button>
                   <LucidePlus className="h-4 w-4 mr-2" />
                   New Workout

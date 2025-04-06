@@ -120,7 +120,7 @@ export default function ClientWorkoutsPage() {
           <p className="text-muted-foreground mt-2">Track and manage your training sessions</p>
         </div>
         <div className="mt-4 md:mt-0">
-          <Link href="/workout/new" prefetch={false}>
+          <Link href="/workouts/new" prefetch={false}>
             <Button size="lg" className="bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-600 hover:to-cyan-600">
               <LucidePlus className="mr-2 h-5 w-5" />
               New Workout

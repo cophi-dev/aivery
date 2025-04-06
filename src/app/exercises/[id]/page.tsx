@@ -16,7 +16,7 @@ import {
   SelectTrigger, 
   SelectValue
 } from "@/components/ui/select"
-import { LucideArrowLeft, LucideSave, LucideTrash, LucideEdit, LucideTrendingUp, LucidePlus } from "lucide-react"
+import { LucideArrowLeft, LucideSave, LucideTrash, LucideEdit, LucideTrendingUp, LucidePlus, PlusCircle } from "lucide-react"
 import { fetchExercise, updateExerciseAction, deleteExerciseAction, getExerciseHistory } from "@/lib/exercise-actions"
 import { Badge } from "@/components/ui/badge"
 import { X } from "lucide-react"
@@ -296,12 +296,13 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
             Edit
           </Button>
           
-          <Link href={`/workout/new?exercise=${params.id}`}>
-            <Button variant="default">
-              <LucidePlus className="h-4 w-4 mr-2" />
-              Start Workout
-            </Button>
-          </Link>
+          <div className="w-full md:w-auto mt-4 md:mt-0">
+            <Link href={`/workouts/new?exercise=${params.id}`}>
+              <Button variant="outline">
+                <PlusCircle className="mr-2 h-4 w-4" /> Add to Workout
+              </Button>
+            </Link>
+          </div>
           
           <Button 
             variant="destructive" 

@@ -85,8 +85,9 @@ export async function createExerciseAction(exerciseData: Partial<ExerciseData>):
 
     const newExercise = await createExercise(exerciseData);
     
-    revalidatePath("/workout/new");
     revalidatePath("/exercises");
+    revalidatePath(`/exercises/${newExercise._id}`);
+    revalidatePath("/workouts/new");
     
     return newExercise;
   } catch (error) {
@@ -114,9 +115,9 @@ export async function updateExerciseAction(id: string, exerciseData: Partial<Exe
 
     const updatedExercise = await updateExercise(id, exerciseData);
     
-    revalidatePath("/workout/new");
     revalidatePath("/exercises");
     revalidatePath(`/exercises/${id}`);
+    revalidatePath("/workouts/new");
     
     return updatedExercise;
   } catch (error) {
@@ -136,8 +137,9 @@ export async function deleteExerciseAction(id: string): Promise<boolean> {
 
     const success = await deleteExercise(id);
     
-    revalidatePath("/workout/new");
     revalidatePath("/exercises");
+    revalidatePath(`/exercises/${id}`);
+    revalidatePath("/workouts/new");
     
     return success;
   } catch (error) {

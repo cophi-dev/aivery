@@ -22,7 +22,8 @@ import {
   Copy,
   Trophy,
   Clock,
-  RefreshCw
+  RefreshCw,
+  Share
 } from "lucide-react";
 import { format } from "date-fns";
 import { WorkoutAnalysis } from "@/components/workout-analysis";
@@ -33,6 +34,7 @@ import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
 import { WorkoutData } from '@/types/db';
 import { useSession } from "next-auth/react";
+import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 const formatPace = (pace: number | null): string => {
   if (pace === null || pace <= 0 || !isFinite(pace)) return "N/A";
@@ -257,8 +259,9 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
               <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Dashboard
             </Link>
             <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm"><Share className="w-4 h-4 mr-1" /> Share</Button>
+              <Link href={`/workouts/new?duplicate=${workoutIdString}`} passHref><Button variant="outline" size="sm"><Copy className="w-4 h-4 mr-1" /> Duplicate</Button></Link>
               <Link href={`/workout/edit/${workoutIdString}`} passHref><Button variant="outline" size="sm"><Pencil className="w-4 h-4 mr-1" /> Edit</Button></Link>
-              <Link href={`/workout/new?duplicate=${workoutIdString}`} passHref><Button variant="outline" size="sm"><Copy className="w-4 h-4 mr-1" /> Duplicate</Button></Link>
               <DeleteWorkoutButton workoutId={workoutIdString} />
             </div>
           </CardHeader>

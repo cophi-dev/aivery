@@ -61,9 +61,9 @@ export default function NewActivityPage() {
 
     // Navigate to the appropriate form based on activity type
     if (activityId === "strength") {
-      router.push("/workout/new")
+      router.push("/workouts/new")
     } else {
-      router.push(`/activity/${activityId}/new`)
+      alert(`Logging ${activityId} workouts is not yet implemented.`)
     }
   }
 

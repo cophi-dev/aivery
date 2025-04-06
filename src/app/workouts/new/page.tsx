@@ -822,13 +822,18 @@ export default function NewWorkoutPage() {
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex items-center mb-4">
-        <Link href="/activity/new">
+        <Link href="/workouts">
           <Button variant="ghost" size="sm" className="mr-2">
             <LucideArrowLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
         </Link>
         <h1 className="text-xl font-bold tracking-tight">{isEditMode ? "Edit Workout" : "Strength Training"}</h1>
+        <Link href="/workouts/new-alt" className="ml-auto">
+          <Button variant="outline" size="sm">
+            Try New UI
+          </Button>
+        </Link>
       </div>
 
       {isLoading ? (

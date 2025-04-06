@@ -8,6 +8,7 @@ import { useEffect, useState } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WorkoutCard } from "@/components/calendar/workout-card"
 import { getWorkoutsForDate } from "@/app/actions/workout"
+import { Card, CardHeader, CardDescription, CardContent } from "@/components/ui/card"
 
 interface PageProps {
   searchParams: { date?: string }
@@ -56,9 +57,15 @@ export default function CalendarPage({ searchParams }: PageProps) {
           <h1 className="text-2xl font-bold tracking-tight">Calendar</h1>
           <p className="text-muted-foreground">Plan and schedule your workouts</p>
         </div>
-        <Button asChild>
-          <Link href="/workout/new">+ New Workout</Link>
-        </Button>
+        <Card>
+          <CardHeader>
+            <CardDescription>Upcoming workouts & schedule</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <Link href="/workouts/new">+ New Workout</Link>
+            {/* Add calendar display here */}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-8 md:grid-cols-2">

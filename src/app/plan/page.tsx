@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { LucideChevronLeft, LucideChevronRight, LucideClock, LucidePlus, LucideCalendarDays } from "lucide-react"
 import { fetchWorkouts, createWorkout } from "@/lib/workout-actions"
@@ -267,7 +267,7 @@ export default function PlanPage() {
             ) : (
               <div className="grid gap-2">
                 <div className="p-4 border rounded-md hover:border-primary cursor-pointer" 
-                  onClick={() => router.push("/workout/new")}>
+                  onClick={() => router.push("/workouts/new")}>
                   <div className="font-medium">Create New Template</div>
                   <p className="text-sm text-muted-foreground mt-1">Design a custom workout template</p>
                 </div>
@@ -394,10 +394,10 @@ export default function PlanPage() {
             </div>
           </div>
           
-          <DialogFooter>
+          <CardFooter className="ml-auto">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleCreateWorkout}>Create Workout</Button>
-          </DialogFooter>
+          </CardFooter>
         </DialogContent>
       </Dialog>
     </div>

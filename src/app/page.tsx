@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen, 
-  Bike, Waves, HeartPulse
+  Bike, Waves, HeartPulse, LucidePlusCircle
 } from "lucide-react";
 import type { WorkoutData } from "@/types/db";
 import { format, startOfWeek, endOfWeek, isWithinInterval, subWeeks, parseISO } from "date-fns";
@@ -381,8 +381,8 @@ export default function HomePage() {
             </Link>
           </Button>
           <Button asChild variant="secondary" size="lg" className="w-full">
-            <Link href="/workout/new">
-              <Dumbbell className="mr-2 h-5 w-5" /> Log Workout
+            <Link href="/workouts/new">
+              <LucidePlusCircle className="mr-2 h-5 w-5" /> Log Workout
             </Link>
           </Button>
       </div>
@@ -541,7 +541,7 @@ export default function HomePage() {
               <div className="text-center flex flex-col items-center justify-center h-full">
                 <p className="text-sm text-muted-foreground mb-2">Log workouts to see progress</p>
                 <Button asChild size="sm">
-                    <Link href="/activity/new">Log Workout</Link>
+                    <Link href="/workouts/new">Log Workout</Link>
                 </Button>
               </div>
             )}
@@ -557,7 +557,7 @@ export default function HomePage() {
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
               <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
-                 <Link href="/activity/new">Log Workout</Link>
+                 <Link href="/workouts/new">Log Workout</Link>
               </Button>
               <Button asChild variant="ghost" size="sm" className="justify-start h-8 px-2">
                  <Link href="/chat?q=suggest+workout">Get Suggestion</Link>
