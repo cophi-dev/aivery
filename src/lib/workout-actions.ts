@@ -5,7 +5,6 @@ import {
   getWorkoutsByUserId,
   getWorkoutById,
   createWorkout as createWorkoutDb,
-  updateWorkout as updateWorkoutDb,
   deleteWorkout as deleteWorkoutDb,
   getPreviousWorkouts,
   updateWorkoutInDb,
@@ -242,8 +241,7 @@ export async function completeWorkout(id: string, completionData: { duration: nu
       throw new Error("Workout not found or unauthorized")
     }
 
-    const updatedWorkout = await updateWorkoutDb(id, {
-      ...existingWorkout,
+    const updatedWorkout = await updateWorkoutInDb(id, {
       duration: completionData.duration,
       updatedAt: new Date().toISOString(),
     })
