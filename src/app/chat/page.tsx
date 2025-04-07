@@ -1,6 +1,7 @@
 "use client"
 
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useState, useCallback } from "react"
+import { useSearchParams } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -61,13 +62,10 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
             </div>
          ) : (
             <ReactMarkdown 
-              className="prose prose-sm dark:prose-invert prose-p:m-0"
-              components={{
-                p: ({node, ...props}) => <span {...props} /> 
-              }}
-             >
-               {message.content}
-             </ReactMarkdown>
+              className="prose prose-sm dark:prose-invert"
+              >
+                {message.content}
+              </ReactMarkdown>
          )}
        </div>
      </div>
@@ -81,7 +79,9 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]); // Initialize as empty
+  const [messages, setMessages] = useState<Message[]>([]);
+  const searchParams = useSearchParams(); // Get search params
+  const initialMessageSentRef = useRef(false); // Ref to track initial message
 
   const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there";
 
@@ -90,16 +90,117 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, []);
 
-  // Fetch initial greeting (simplified)
+  // Function to send a message (refactored from handleSubmit)
+  const sendMessage = useCallback(async (messageContent: string) => {
+    if (!messageContent.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: messageContent
+    };
+
+    const loadingAssistantMessage: Message = {
+      id: `ai-loading-${Date.now()}`,
+      role: "assistant",
+      content: "" 
+    };
+    
+    // Add user message and loading placeholder immediately
+    setMessages(prev => [...prev, userMessage, loadingAssistantMessage]);
+    setIsLoading(true);
+    
+    try {
+      // **Enhanced prompt for keyword explanation**
+      let finalQuery = messageContent;
+      const keywordMatch = messageContent.match(/^What is (.*)\?$/i);
+      if (keywordMatch && keywordMatch[1]) {
+         const keyword = keywordMatch[1];
+         // Use a more detailed prompt for keywords
+         finalQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
+      }
+
+      const response = await fetch('/api/ai/coach', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: finalQuery, // Use potentially enhanced query
+          userName: userDisplayName 
+        }),
+      });
+
+      if (!response.ok) {
+         let errorBody = "Failed to get response from server.";
+         try {
+            const errorData = await response.json(); 
+            errorBody = errorData.error || errorBody;
+        } catch (_) {
+            try { errorBody = await response.text(); } catch { /* ignore */ }
+        }
+         console.error("API Error Response:", errorBody);
+         throw new Error(`API request failed: ${errorBody}`);
+      }
+      
+      const result = await response.json();
+      const text = result.response; 
+      console.log("[ChatPage] Received result from backend:", result); // Log 1
+      console.log("[ChatPage] Extracted text:", text); // Log 2
+
+      const aiMessage: Message = {
+        id: `ai-${Date.now()}`,
+        role: "assistant",
+        content: text || "Sorry, I couldn't get a proper response."
+      };
+      console.log("[ChatPage] Created aiMessage object:", aiMessage); // Log 3
+      
+      // Replace the loading message with the actual response
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === loadingAssistantMessage.id ? aiMessage : msg
+        );
+        console.log("[ChatPage] Messages state AFTER update:", updatedMessages); // Log 4
+        return updatedMessages;
+      });
+      inputRef.current?.focus(); 
+
+    } catch (error: any) {
+      console.error("[ChatPage] Chat Submission Error:", error);
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: error.message || "Sorry, I encountered an error. Please try again."
+      };
+       setMessages(prev => prev.map(msg => 
+         msg.id === loadingAssistantMessage.id ? errorMessage : msg
+      ));
+    } finally {
+      setIsLoading(false);
+      // Refocus input AFTER loading state is false and message processing is done
+      inputRef.current?.focus(); 
+    }
+  }, [isLoading, userDisplayName]); // Dependencies for sendMessage
+
+  // Fetch initial message OR handle keyword query
   useEffect(() => {
-     // Directly set a random welcome message on load, removing initial API call
-     setMessages([{
-          id: "welcome-message-" + Date.now(),
-          role: "assistant", // Correct role type
-          content: getRandomWelcomeMessage(userDisplayName)
-        }]);
-    // No dependency array needed if it only runs once
-  }, []); // Removed dependencies to run only once
+    const keyword = searchParams?.get('keyword');
+
+    if (keyword && !initialMessageSentRef.current) {
+      // If keyword exists AND initial message not sent yet
+      initialMessageSentRef.current = true; // Mark as sent
+      setMessages([]); // Start fresh
+      const initialQuery = `What is ${keyword}?`;
+      console.log(`[ChatPage] Keyword detected: '${keyword}'. Sending initial message.`);
+      sendMessage(initialQuery);
+    } else if (!keyword && messages.length === 0 && !isLoading) {
+      // Otherwise, set a random welcome message if NO keyword and messages are empty
+      setMessages([{
+        id: "welcome-message-" + Date.now(),
+        role: "assistant",
+        content: getRandomWelcomeMessage(userDisplayName)
+      }]);
+    }
+    // Run only when searchParams changes or userDisplayName changes
+  }, [searchParams, userDisplayName, isLoading]); // Keep isLoading to trigger welcome message check after loading finishes
 
   function getRandomWelcomeMessage(name: string): string {
     const welcomeMessages = [
@@ -116,108 +217,38 @@ export default function ChatPage() {
     setInput(e.target.value);
   };
 
+  // Updated handleSubmit to use sendMessage
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-
-    const currentMessageContent = input;
-    setInput(""); 
-
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      role: "user", // Correct role type
-      content: currentMessageContent
-    };
-
-    // Add user message and a temporary empty assistant message for loading state
-    const loadingAssistantMessage: Message = {
-        id: `ai-loading-${Date.now()}`,
-        role: "assistant", // Correct role type
-        content: "" // Empty content signifies loading in ChatMessage component
-    };
-    const currentMessages = [...messages, userMessage];
-    setMessages([...currentMessages, loadingAssistantMessage]);
-    setIsLoading(true);
     
-    try {
-      // const history = currentMessages; // History not needed for the new endpoint
-
-      // Call the NEW AI coach endpoint
-      const response = await fetch('/api/ai/coach', { // <--- UPDATED ENDPOINT
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: currentMessageContent, // <--- UPDATED BODY: Send only query
-          userName: userDisplayName // <-- ADD user's display name
-          // history: history 
-        }),
-      });
-
-      if (!response.ok) {
-         let errorBody = "Failed to get response from server.";
-         try {
-            // Attempt to parse error JSON from the new endpoint
-            const errorData = await response.json(); 
-            errorBody = errorData.error || errorBody;
-        } catch (_) {
-            // Fallback if JSON parsing fails or no error field
-            try { errorBody = await response.text(); } catch { /* ignore */ }
-        }
-         console.error("API Error Response:", errorBody);
-         throw new Error(`API request failed: ${errorBody}`);
-      }
-      
-      // Get the JSON response from the new endpoint
-      const result = await response.json(); // <--- GET JSON RESPONSE
-      const text = result.response; // <--- Extract the 'response' field
-
-      console.log("AI Coach API Response Data:", result.data); // Log data for debugging
-      console.log("AI Coach Analysis:", result.analysis); // Log analysis for debugging
-
-      const aiMessage: Message = {
-        id: `ai-${Date.now()}`,
-        role: "assistant", // Correct role type
-        content: text || "Sorry, I couldn't get a proper response."
-      };
-      
-      // Replace the loading message with the actual response
-      setMessages(prev => prev.map(msg => 
-         msg.id === loadingAssistantMessage.id ? aiMessage : msg
-      ));
-      // Refocus input after successful response
-      inputRef.current?.focus(); 
-
-    } catch (error: any) {
-      console.error("Chat Submission Error:", error);
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        role: "assistant", // Correct role type
-        content: error.message || "Sorry, I encountered an error. Please try again."
-      };
-      // Replace the loading message with the error message
-       setMessages(prev => prev.map(msg => 
-         msg.id === loadingAssistantMessage.id ? errorMessage : msg
-      ));
-    } finally {
-      setIsLoading(false);
-    }
+    const currentMessageContent = input;
+    setInput(""); // Clear input immediately
+    await sendMessage(currentMessageContent);
   };
 
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
-    }
+    // Scroll to bottom when messages change
+    // Use setTimeout to ensure scroll happens after DOM update
+    setTimeout(() => {
+      if (scrollAreaRef.current) {
+        scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+      }
+    }, 0); // Delay of 0ms is usually enough
   }, [messages]);
 
   const resetChat = () => {
      setInput("");
      setIsLoading(false);
+     // Reset also clears keyword context and shows welcome message
      setMessages([{
         id: "welcome-reset-" + Date.now(),
-        role: "assistant", // Correct role type
+        role: "assistant",
         content: getRandomWelcomeMessage(userDisplayName)
      }]);
-     inputRef.current?.focus(); // Focus after reset
+     inputRef.current?.focus(); 
+     // Optional: Navigate back to /chat without params on reset?
+     // window.history.pushState({}, '', '/chat');
   };
 
   // --- Render JSX ---

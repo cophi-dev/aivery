@@ -11,6 +11,7 @@ import { ObjectId } from 'mongodb'; // Import ObjectId
 // Mongoose imports
 import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
+import { capitalizeFirstLetter } from "@/lib/utils"; // Import capitalizeFirstLetter
 // import { Prisma } from "@prisma/client"; // Remove unused Prisma types import
 
 // Define valid intents
@@ -677,6 +678,46 @@ async function compareMetricBetweenPeriods(
     return { value1, value2 };
 }
 
+// --- Helper Function to Get Direct AI Text Response ---
+async function getDirectTextResponse(query: string): Promise<string | null> {
+  try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
+    // Enhanced system prompt for a more engaging tone
+    const systemPrompt = `You are Aivery, a friendly, encouraging, and knowledgeable AI fitness coach. 
+ You are explaining a fitness concept to the user. 
+ Use a conversational and supportive tone. Address the user directly sometimes.
+ Explain the concept clearly and concisely. Structure the explanation with the following sections using markdown headings (like '## Key Benefits' or '### How to Incorporate'): Key Benefits, Potential Considerations, How to Incorporate, and Pro Tip (if applicable). Use bullet points within sections for readability.
+ End by asking a relevant follow-up question to encourage interaction. 
+ Ensure the entire output is valid markdown.`;
+
+    const msg = await anthropic.messages.create({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 500,
+      system: systemPrompt,
+      messages: [{ role: "user", content: query }],
+    });
+
+    console.log("Direct Anthropic Raw Response:", msg);
+
+    // Extract the text content safely
+    const firstBlock = msg.content?.[0];
+    if (firstBlock && firstBlock.type === "text") {
+      return firstBlock.text.trim();
+    }
+
+    console.error("Direct Anthropic response content is empty or not text", msg.content);
+    return "Sorry, I received an empty or non-text response from the AI.";
+
+  } catch (error) {
+    console.error("Error calling Anthropic API for direct response:", error);
+    return "Sorry, I couldn't connect to the AI service right now. Please try again later.";
+  }
+  return null; // Add fallback return to satisfy linter/type checking
+}
+
 // --- Main POST Handler ---
 
 export async function POST(req: NextRequest) {
@@ -695,9 +736,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
-    console.log(`Received query from user ${userId}: \"${query}\"`);
+    console.log(`Received query from user ${userId}: \\"${query}\\"`);
 
-    // 1. Analyze Query
+    // --- START: Conditional Logic for Keyword Explanation ---
+    const keywordExplanationPrefix = "Explain the fitness concept";
+    if (query.startsWith(keywordExplanationPrefix)) {
+      console.log("Handling direct keyword explanation request.");
+      const directResponse = await getDirectTextResponse(query);
+      return NextResponse.json({
+        response: directResponse || "Sorry, I couldn't generate an explanation for that concept.",
+        // Keep data and analysis null/empty for direct responses
+        data: null,
+        analysis: { intent: 'keyword_explanation' } // Indicate the type of response
+      });
+    }
+    // --- END: Conditional Logic ---
+
+    // 1. Analyze Query (Only if not a direct keyword explanation)
     const analysisResult = await analyzeUserQuery(query);
     console.log("Query Analysis Result:", analysisResult);
 
@@ -1019,11 +1074,17 @@ function generateTotalResponse(
     const periodDesc = describePeriod(period, startDate, endDate);
 
     if (totalValue === null || totalValue === 0) {
-        return `Looks like you didn't log any ${metric} for ${typeDesc}workouts ${periodDesc}, ${userName}. No worries, keep logging!`;
+        return `Hey ${userName}, I checked for ${typeDesc}workouts ${periodDesc}, but it seems there wasn't any ${metric} logged for that time. Keep logging those sessions! 👍`;
     }
 
     const formattedValue = formatValue(totalValue, metric);
-    return `Alright ${userName}, your total ${typeDesc}${metric} ${periodDesc} was ${formattedValue}! Keep up the great work! 💪`;
+    // Add more specific encouragement based on metric
+    let encouragement = "Keep up the great work! 💪";
+    if (metric === 'distance') encouragement = "That's some serious mileage! Awesome job! 🏃‍♀️💨";
+    if (metric === 'duration') encouragement = "Great consistency! Keep putting in the time! ⏰";
+    if (metric === 'count') encouragement = `That's ${formattedValue} sessions logged! Fantastic dedication! ✨`;
+
+    return `Alright ${userName}, digging into your ${typeDesc}workouts ${periodDesc}, your total ${metric} was ${formattedValue}! ${encouragement}`;
 }
 
 function generateAverageResponse(
@@ -1039,13 +1100,18 @@ function generateAverageResponse(
     const typeDesc = describeWorkoutType(workoutType);
     const periodDesc = describePeriod(period, startDate, endDate);
 
+    if (average === null) {
+        // Handle null average case with personality
+        return `Hmm ${userName}, I couldn't calculate the average ${metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data for that period?`;
+    }
+
     // Add personality
     if (metric === 'pace') {
-      return `Nice one, ${userName}! Your average ${typeDesc}pace ${periodDesc} was ${formattedValue}. Steady going!`;
+        return `Nice one, ${userName}! Your average ${typeDesc}pace ${periodDesc} was ${formattedValue}. Looking steady! 👀`;
     } else if (metric === 'speed') {
-      return `Picking up speed, ${userName}! Your average ${typeDesc}speed ${periodDesc} was ${formattedValue}.`;
+        return `Zoom! 🚀 Your average ${typeDesc}speed ${periodDesc} was ${formattedValue}, ${userName}. Keep flying!`;
     } else {
-      return `Okay ${userName}, your average ${typeDesc}${metric} ${periodDesc} was ${formattedValue}.`;
+        return `Okay ${userName}, looking at the numbers, your average ${typeDesc}${metric} ${periodDesc} came out to ${formattedValue}. Solid work!`;
     }
 }
 
@@ -1057,12 +1123,15 @@ function generateRecordResponse(
     qualifier: string | undefined,
     userName: string // Add userName
 ): string {
+    if (value === null) {
+        return `Couldn't find that specific record for ${metric} (${workoutType || 'any workout'}), ${userName}. Keep pushing for those PBs! 🚀`;
+    }
     const formattedValue = formatValue(value, metric);
     const typeDesc = describeWorkoutType(workoutType);
     const dateStr = date ? new Date(date).toLocaleDateString() : "an unknown date";
 
     let recordDesc = '';
-    let intro = `Check this out, ${userName}!`;
+    let intro = `New record alert, ${userName}! 🔔`;
     let emoji = '🏆';
 
     if (metric === 'distance') { recordDesc = 'longest'; intro = `Wow ${userName}, serious distance!`; emoji = '🏃‍♂️💨'; }
@@ -1093,7 +1162,7 @@ function generateListResponse(
     const count = workouts.length;
     const limitReached = limit && count >= limit;
 
-    let response = `Okay ${name}, here ${limitReached ? `are your latest ${count}` : count === 1 ? 'is your' : `are your ${count}`} ${typeDesc}workout${count === 1 ? '' : 's'} ${periodDesc}:\n`;
+    let response = `Okay ${name}, you asked about ${typeDesc}workouts ${periodDesc}. Here ${limitReached ? `are the latest ${count}` : count === 1 ? 'is the one I found' : `are the ${count} I found`}:\n\n`;
 
     response += workouts.map(w => {
         const dateStr = new Date(w.date).toLocaleDateString();
@@ -1110,14 +1179,16 @@ function generateListResponse(
 
 
 function generateDetailsResponse(details: WorkoutDetailItem, userName: string): string { // Add userName
-    const dateStr = new Date(details.date).toLocaleDateString();
+    const dateStr = new Date(details.date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
     const name = userName || 'there'; // Default if needed
     
     // Start with a more conversational tone
     let response = `Alright ${name}, let's break down your ${details.type} workout from ${dateStr}:
 `;
-    response += `*   **Workout Name:** ${details.name || 'Unnamed Workout'}
-`; // Use markdown for structure
+    response += `*   **Workout Name:** ${details.name || `(${capitalizeFirstLetter(details.type)} Workout)`}
+`; // Use markdown for structure, provide default if unnamed
+
+    const mainMetrics = [];
     if (details.duration) response += `*   **Duration:** ${formatDuration(details.duration)}
 `;
     if (details.distance) response += `*   **Distance:** ${formatDistance(details.distance)}
@@ -1126,32 +1197,37 @@ function generateDetailsResponse(details: WorkoutDetailItem, userName: string): 
 `;
     if (details.intensity) response += `*   **Intensity:** ${details.intensity}
 `;
-    
-    // Add cardio details if present (example: pace)
-    if (details.cardioDetails?.pace) {
-        response += `*   **Average Pace:** ${formatPace(details.cardioDetails.pace)}
-`;
-    }
-    // TODO: Add more cardio details (heart rate, elevation etc.) here in a similar fashion
 
-    if (details.notes) response += `*   **Your Notes:** ${details.notes}
-`;
-
+    // Add exercise details if available (assuming strength)
     if (details.exercises && details.exercises.length > 0) {
-        response += `*   **Exercises Logged:**
-`;
+        response += `\n*   **Exercises:**\n`;
         details.exercises.forEach(ex => {
-            const exName = ex.exercise?.name || 'Unnamed Exercise';
-            // Basic sets info - can be expanded later
-            const setsInfo = ex.sets?.length ? `(${ex.sets.length} sets)` : '(Sets info missing)'; 
-            response += `    *   ${exName} ${setsInfo}
-`;
-            // TODO: Add more detailed set info (reps/weight)
+            response += `    *   **${ex.exercise?.name ?? 'Unknown Exercise'}:** `; // Bold exercise name (Corrected access)
+            if (ex.sets && ex.sets.length > 0) {
+                const setStrings = ex.sets.map(set => {
+                    let setStr = ``;
+                    if (set.reps) setStr += `${set.reps} reps`;
+                    if (set.weight) setStr += ` x ${set.weight} kg`;
+                    // Remove unsupported fields from set string
+                    // if (set.duration) setStr += ` for ${formatDuration(set.duration)}`; 
+                    // if (set.distance) setStr += ` at ${formatDistance(set.distance)}`;
+                    return setStr.trim();
+                }).filter(Boolean);
+                response += setStrings.join(', ');
+            } else {
+                response += `(No sets logged)`;
+            }
+            response += `\n`;
         });
     }
     
-    response += `
-Anything else you want to know about this one, ${name}?`;
+    // Add notes if available
+    if (details.notes) {
+        response += `\n*   **Notes:** ${details.notes}\n`;
+    }
+
+    response += `\nHow did this session feel, ${name}? Anything specific you'd like to discuss about it?`; // Add follow-up
+
     return response;
 }
 
@@ -1180,29 +1256,22 @@ function generateCompareResponse(
         let missingPeriods = [];
         if (value1 === null) missingPeriods.push(period1Desc);
         if (value2 === null) missingPeriods.push(period2Desc);
-        return `Hmm ${name}, I seem to be missing the data for ${typeDesc}${metric} in ${missingPeriods.join(' or ')} to make that comparison. Maybe log some more workouts? 😉`;
+        return `Hmm ${name}, I seem to be missing the data for ${typeDesc}${metric} in ${missingPeriods.join(' or ')} to make that comparison. Maybe log some more workouts?`;
     }
 
-    const diff = value1 - value2;
-    const percentageChange = (value2 !== 0 && !isNaN(value2)) ? (diff / Math.abs(value2)) * 100 : 0;
+    const change = value1 - value2;
+    const percentageChange = value2 !== 0 ? (change / value2) * 100 : 0;
 
-    let comparisonText: string;
-    const higherIsBetterMetrics: Array<z.infer<typeof ValidMetrics>> = ['distance', 'duration', 'calories', 'count', 'volume', 'speed', 'elevation'];
-    const lowerIsBetterMetrics: Array<z.infer<typeof ValidMetrics>> = ['pace'];
+    let comparisonText = `Okay ${name}, let's compare your ${typeDesc}${metric} for ${period1Desc} versus ${period2Desc}:\n`;
+    comparisonText += `*   **${period1Desc}:** ${formattedValue1}\n`;
+    comparisonText += `*   **${period2Desc}:** ${formattedValue2}\n\n`;
 
-    const higherIsBetter = higherIsBetterMetrics.includes(metric);
-    const lowerIsBetter = lowerIsBetterMetrics.includes(metric);
-
-    if (Math.abs(percentageChange) < 1) { 
-        comparisonText = `Looking good, ${name}! Your ${typeDesc}${metric} was pretty consistent: ${formattedValue1} ${period1Desc} vs ${formattedValue2} ${period2Desc}.`;
+    if (change === 0) {
+        comparisonText += `Looks like your ${metric} stayed exactly the same between these periods! Consistent work! 👍`;
     } else {
-        const direction = diff > 0 ? (higherIsBetter ? 'up' : (lowerIsBetter ? 'slower' : 'up')) 
-                                  : (higherIsBetter ? 'down' : (lowerIsBetter ? 'faster' : 'down'));
-        const trendWord = diff > 0 ? (higherIsBetter ? 'increase' : (lowerIsBetter ? 'decrease in speed' : 'increase'))
-                                   : (higherIsBetter ? 'decrease' : (lowerIsBetter ? 'improvement' : 'decrease'));
-        const emoji = direction === 'up' && higherIsBetter ? '📈' : (direction === 'down' && lowerIsBetter ? '🚀' : (direction === 'down' && higherIsBetter ? '📉' : ''));
-
-        comparisonText = `Alright ${name}, comparing ${typeDesc}${metric}: you went from ${formattedValue2} ${period2Desc} to ${formattedValue1} ${period1Desc}. That's a ${Math.abs(percentageChange).toFixed(0)}% ${trendWord}! ${emoji}`;
+        const direction = change > 0 ? "an increase" : "a decrease";
+        const emoji = change > 0 ? "📈" : "📉";
+        comparisonText += `That's ${direction} of ${formatValue(Math.abs(change), metric)} (${percentageChange.toFixed(1)}%) ${emoji}.`;
     }
 
     return comparisonText;

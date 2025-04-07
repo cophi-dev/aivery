@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen, 
-  Bike, Waves, HeartPulse, LucidePlusCircle
+  Bike, Waves, HeartPulse, LucidePlusCircle, Lightbulb
 } from "lucide-react";
 import type { WorkoutData, ExerciseData } from "@/types/db";
 import { format, startOfWeek, endOfWeek, isWithinInterval, subWeeks, parseISO } from "date-fns";
@@ -22,6 +22,18 @@ import Image from 'next/image';
 import { capitalizeFirstLetter } from "@/lib/utils";
 import { formatDuration, formatDistance as formatDistanceUtil } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+// --- Keyword List ---
+const fitnessKeywords = [
+  "Plyometrics", "Progressive Overload", "Zone 2 Training", "HIIT", "Tabata",
+  "Compound Exercises", "Isolation Exercises", "Supersets", "Drop Sets",
+  "Periodization", "Active Recovery", "Foam Rolling", "Dynamic Stretching",
+  "Static Stretching", "Mind-Muscle Connection", "Time Under Tension",
+  "Macronutrients", "Micronutrients", "Caloric Deficit", "Caloric Surplus",
+  "Intermittent Fasting", "Nasal Breathing", "VO2 Max", "Lactate Threshold",
+  "Heart Rate Variability (HRV)", "DOMS (Delayed Onset Muscle Soreness)",
+  "Functional Training", "Circuit Training", "Bodyweight Training", "Kettlebell Swings"
+];
 
 // --- Helper Functions ---
 
@@ -84,8 +96,7 @@ export default function HomePage() {
   const [retryCount, setRetryCount] = useState(0);
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
-  const [highlightedNote, setHighlightedNote] = useState<string>("Loading workout highlight...");
-  const [isLoadingHighlight, setIsLoadingHighlight] = useState<boolean>(true);
+  const [spotlightKeyword, setSpotlightKeyword] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -142,6 +153,14 @@ export default function HomePage() {
       document.removeEventListener('mousemove', handleMouseMove);
     };
   }, [location]);
+
+  // Effect to set the spotlight keyword
+  useEffect(() => {
+    if (fitnessKeywords.length > 0) {
+      const randomIndex = Math.floor(Math.random() * fitnessKeywords.length);
+      setSpotlightKeyword(fitnessKeywords[randomIndex]);
+    }
+  }, []); // Run only once on mount
 
   const fetchUserData = useCallback(async () => {
     if (status !== "authenticated" || !session?.user?.id) {
@@ -304,47 +323,6 @@ export default function HomePage() {
       } catch (e) { return false; }
     }).length;
   }, [workouts]);
-
-  // --- Re-add Highlighted Note Fetch Logic --- 
-  const fetchHighlightedNote = useCallback(async () => {
-    if (!mostRecentWorkout || !session?.user) {
-      setIsLoadingHighlight(false); 
-      setHighlightedNote("Log a workout to see your highlight!"); 
-      return;
-    }
-
-    const userName = session.user.nickname || session.user.name || "Fitness Pro";
-    setIsLoadingHighlight(true);
-    try {
-      const response = await fetch(`/api/ai/workout-highlight?t=${Date.now()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userName: userName,
-          workout: mostRecentWorkout
-        }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setHighlightedNote(data.insight || 'Highlight unavailable for this workout.');
-    } catch (error) {
-      console.error("Error fetching workout highlight:", error);
-      setHighlightedNote('Oops! Could not generate a highlight for the latest workout.');
-    } finally {
-      setIsLoadingHighlight(false);
-    }
-  }, [mostRecentWorkout, session]);
-
-  useEffect(() => {
-    if (mostRecentWorkout) {
-        fetchHighlightedNote();
-    }
-  }, [mostRecentWorkout, fetchHighlightedNote]);
 
   if (loading) {
     return (
@@ -514,8 +492,28 @@ export default function HomePage() {
            </Card>
          </div>
 
+         {/* Item 4: Concept Spotlight Card */}
+         {spotlightKeyword && (
+           <Card className="hover:bg-muted/50 transition-colors">
+             <Link 
+               href={`/chat?keyword=${encodeURIComponent(spotlightKeyword)}`} 
+               className="block p-4" // Make the link cover the card padding area
+               title={`Ask about ${spotlightKeyword}`}
+             >
+               <div className="flex items-center gap-3">
+                 <Lightbulb className="h-5 w-5 text-primary flex-shrink-0" />
+                 <div className="flex-1">
+                   <p className="text-sm font-medium">Concept Spotlight</p>
+                   <p className="text-base font-semibold text-primary">
+                     What is {spotlightKeyword}?
+                   </p>
+                 </div>
+               </div>
+             </Link>
+           </Card>
+         )}
 
-         {/* Item 4: Personal Records (Moved Here) */} 
+         {/* Item 5: Personal Records (Moved Here) */} 
          <Card>
            <CardHeader className="text-center">
              <CardTitle className="text-lg flex items-center justify-center">
