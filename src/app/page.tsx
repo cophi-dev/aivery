@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Activity, Dumbbell, Calendar, BarChart, Zap, MessageSquare, Loader2, RefreshCcw, BookOpen, 
-  Bike, Waves, HeartPulse, LucidePlusCircle, Lightbulb
+  Bike, Waves, HeartPulse, LucidePlusCircle, Lightbulb, Search
 } from "lucide-react";
 import type { WorkoutData, ExerciseData } from "@/types/db";
 import { format, startOfWeek, endOfWeek, isWithinInterval, subWeeks, parseISO } from "date-fns";
@@ -33,6 +33,19 @@ const fitnessKeywords = [
   "Intermittent Fasting", "Nasal Breathing", "VO2 Max", "Lactate Threshold",
   "Heart Rate Variability (HRV)", "DOMS (Delayed Onset Muscle Soreness)",
   "Functional Training", "Circuit Training", "Bodyweight Training", "Kettlebell Swings"
+];
+
+// --- Data Insight Questions List ---
+const dataInsightQuestions = [
+  "How far did I run last month?",
+  "What was my longest run ever?",
+  "How much total weight did I lift this week?",
+  "What was my average pace last week?",
+  "How many workouts did I log in July 2024?", // Example with specific month
+  "Did I do any cycling last week?",
+  "Show my strength workouts from the last 7 days.",
+  "What\'s my best bench press record?",
+  "Compare my running distance this month to last month."
 ];
 
 // --- Helper Functions ---
@@ -97,6 +110,7 @@ export default function HomePage() {
   const [quote, setQuote] = useState("Your fitness journey begins with a single step.");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
   const [spotlightKeyword, setSpotlightKeyword] = useState<string | null>(null);
+  const [dataInsightQuestion, setDataInsightQuestion] = useState<string | null>(null); // State for the data question
 
   useEffect(() => {
     let isMounted = true;
@@ -159,6 +173,14 @@ export default function HomePage() {
     if (fitnessKeywords.length > 0) {
       const randomIndex = Math.floor(Math.random() * fitnessKeywords.length);
       setSpotlightKeyword(fitnessKeywords[randomIndex]);
+    }
+  }, []); // Run only once on mount
+
+  // Effect to set the data insight question
+  useEffect(() => {
+    if (dataInsightQuestions.length > 0) {
+      const randomIndex = Math.floor(Math.random() * dataInsightQuestions.length);
+      setDataInsightQuestion(dataInsightQuestions[randomIndex]);
     }
   }, []); // Run only once on mount
 
@@ -513,7 +535,28 @@ export default function HomePage() {
            </Card>
          )}
 
-         {/* Item 5: Personal Records (Moved Here) */} 
+         {/* Item 5: Data Insights Card */}
+         {dataInsightQuestion && (
+           <Card className="hover:bg-muted/50 transition-colors">
+             <Link 
+               href={`/chat?dataQuery=${encodeURIComponent(dataInsightQuestion)}`} 
+               className="block p-4"
+               title={`Ask: ${dataInsightQuestion}`}
+             >
+               <div className="flex items-center gap-3">
+                 <Search className="h-5 w-5 text-primary flex-shrink-0" />
+                 <div className="flex-1">
+                   <p className="text-sm font-medium">Explore Your Data</p>
+                   <p className="text-base font-semibold text-primary">
+                     {dataInsightQuestion}
+                   </p>
+                 </div>
+               </div>
+             </Link>
+           </Card>
+         )}
+
+         {/* Item 6: Personal Records (Moved Here) */} 
          <Card>
            <CardHeader className="text-center">
              <CardTitle className="text-lg flex items-center justify-center">

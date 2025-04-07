@@ -180,26 +180,33 @@ export default function ChatPage() {
     }
   }, [isLoading, userDisplayName]); // Dependencies for sendMessage
 
-  // Fetch initial message OR handle keyword query
+  // Fetch initial message OR handle keyword query OR data query
   useEffect(() => {
-    const keyword = searchParams?.get('keyword');
+     const keyword = searchParams?.get('keyword');
+     const dataQuery = searchParams?.get('dataQuery');
 
-    if (keyword && !initialMessageSentRef.current) {
-      // If keyword exists AND initial message not sent yet
+    if (dataQuery && !initialMessageSentRef.current) {
+      // Priority 1: Handle Data Query
+      initialMessageSentRef.current = true; 
+      setMessages([]); 
+      console.log(`[ChatPage] Data query detected: '${dataQuery}'. Sending initial message.`);
+      sendMessage(dataQuery); // Send the data query directly
+    } else if (keyword && !initialMessageSentRef.current) {
+      // Priority 2: Handle Keyword Query
       initialMessageSentRef.current = true; // Mark as sent
       setMessages([]); // Start fresh
       const initialQuery = `What is ${keyword}?`;
       console.log(`[ChatPage] Keyword detected: '${keyword}'. Sending initial message.`);
       sendMessage(initialQuery);
-    } else if (!keyword && messages.length === 0 && !isLoading) {
-      // Otherwise, set a random welcome message if NO keyword and messages are empty
+    } else if (!keyword && !dataQuery && messages.length === 0 && !isLoading) {
+      // Priority 3: Display Welcome Message (if no query and chat is empty)
       setMessages([{
         id: "welcome-message-" + Date.now(),
         role: "assistant",
         content: getRandomWelcomeMessage(userDisplayName)
       }]);
     }
-    // Run only when searchParams changes or userDisplayName changes
+    // Dependencies include searchParams to react to changes in URL query params
   }, [searchParams, userDisplayName, isLoading]); // Keep isLoading to trigger welcome message check after loading finishes
 
   function getRandomWelcomeMessage(name: string): string {
