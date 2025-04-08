@@ -212,30 +212,33 @@ export const authOptions: NextAuthOptions = {
       name: `next-auth.session-token`,
       options: {
         httpOnly: true,
-        sameSite: 'lax', // Change to 'lax' for all environments to fix cookie issues
+        sameSite: 'lax', 
         path: '/',
-        secure: process.env.NODE_ENV === 'production', // Secure in production
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-        domain: undefined, // Remove domain restriction to fix cookie issues
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 30 * 24 * 60 * 60, 
+        // Explicitly set domain for production to cover www and non-www
+        domain: process.env.NODE_ENV === 'production' ? '.aivery.app' : undefined, 
       },
     },
     callbackUrl: {
       name: `next-auth.callback-url`,
       options: {
-        sameSite: 'lax', // Change to 'lax' for all environments to fix cookie issues
+        sameSite: 'lax', 
         path: '/',
-        secure: process.env.NODE_ENV === 'production', // Secure in production
-        domain: undefined, // Remove domain restriction to fix cookie issues
+        secure: process.env.NODE_ENV === 'production', 
+        // Explicitly set domain for production
+        domain: process.env.NODE_ENV === 'production' ? '.aivery.app' : undefined,
       },
     },
     csrfToken: {
       name: `next-auth.csrf-token`,
       options: {
         httpOnly: true,
-        sameSite: 'lax', // Change to 'lax' for all environments to fix cookie issues
+        sameSite: 'lax',
         path: '/',
-        secure: process.env.NODE_ENV === 'production', // Secure in production
-        domain: undefined, // Remove domain restriction to fix cookie issues
+        secure: process.env.NODE_ENV === 'production', 
+        // Explicitly set domain for production
+        domain: process.env.NODE_ENV === 'production' ? '.aivery.app' : undefined,
       },
     },
   },
