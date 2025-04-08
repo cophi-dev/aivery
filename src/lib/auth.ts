@@ -212,22 +212,22 @@ export const authOptions: NextAuthOptions = {
       name: `next-auth.session-token`,
       options: {
         httpOnly: true,
-        sameSite: 'lax', 
+        sameSite: 'lax',
         path: '/',
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 30 * 24 * 60 * 60, 
-        // Explicitly set domain for production to cover www and non-www
-        domain: process.env.NODE_ENV === 'production' ? '.aivery.app' : undefined, 
+        maxAge: 30 * 24 * 60 * 60,
+        // Revert explicit domain setting
+        domain: undefined, 
       },
     },
     callbackUrl: {
       name: `next-auth.callback-url`,
       options: {
-        sameSite: 'lax', 
+        sameSite: 'lax',
         path: '/',
-        secure: process.env.NODE_ENV === 'production', 
-        // Explicitly set domain for production
-        domain: process.env.NODE_ENV === 'production' ? '.aivery.app' : undefined,
+        secure: process.env.NODE_ENV === 'production',
+        // Revert explicit domain setting
+        domain: undefined,
       },
     },
     csrfToken: {
@@ -236,9 +236,9 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        secure: process.env.NODE_ENV === 'production', 
-        // Explicitly set domain for production
-        domain: process.env.NODE_ENV === 'production' ? '.aivery.app' : undefined,
+        secure: process.env.NODE_ENV === 'production',
+        // Revert explicit domain setting
+        domain: undefined,
       },
     },
   },
