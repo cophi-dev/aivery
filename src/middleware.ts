@@ -21,17 +21,30 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // --- DEBUGGING: Log Raw Cookie Header ---
+  const rawCookieHeader = request.headers.get('cookie') || '[No Cookie Header]';
+  console.log(`[MIDDLEWARE] Path: ${pathname} | Raw Cookie Header: ${rawCookieHeader.substring(0, 100)}...`); // Log first 100 chars
+  // ----------------------------------------
+
   // Get token
-  let token;
+  let token = null; // Initialize to null
+  let getTokenError = null;
   try {
     token = await getToken({ req: request });
-  } catch (error) {
-    console.error("[MIDDLEWARE] Error getting token:", error);
+    console.log(`[MIDDLEWARE] Path: ${pathname} | getToken Result: ${token ? `User: ${token.email || token.id}` : 'null'}`); // Log token result
+  } catch (error: any) {
+    getTokenError = error.message || 'Unknown error';
+    console.error(`[MIDDLEWARE] Path: ${pathname} | Error calling getToken:`, error);
   }
   const isAuthenticated = !!token;
 
-  // Log request details
-  console.log(`[MIDDLEWARE] Path: ${pathname}, Authenticated: ${isAuthenticated}, User: ${token?.email || 'none'}`);
+  // Log request details (including explicit auth status)
+  // console.log(`[MIDDLEWARE] Path: ${pathname}, Authenticated: ${isAuthenticated}, User: ${token?.email || 'none'}`); // Original log, replaced by above
+  if (getTokenError) {
+      console.error(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: false (due to getToken error: ${getTokenError})`);
+  } else {
+      console.log(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: ${isAuthenticated}`);
+  }
 
   // --- START ROUTING LOGIC ---
 
