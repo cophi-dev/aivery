@@ -23,9 +23,9 @@ export const GET = withApiAuth(async (request: NextRequest, session: any) => {
     // Connect to database
     await dbConnect()
     
-    // Find the user by ID with all needed fields
+    // Find the user by ID with all needed fields, including tier
     const user = await User.findById(session.user.id)
-      .select('name email nickname image height weight age gender activityLevel aiPreferences')
+      .select('name email nickname image height weight age gender activityLevel aiPreferences tier')
       .lean()
     
     if (!user) {

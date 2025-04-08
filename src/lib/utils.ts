@@ -100,3 +100,13 @@ export function capitalizeFirstLetter(string: string | undefined | null): string
   if (!string) return '';
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
+
+// Add the absoluteUrl helper function
+export function absoluteUrl(path: string): string {
+  // Ensure NEXT_PUBLIC_APP_URL is set in your .env.local for deployment
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  // Ensure path starts with a slash and baseUrl doesn't end with one
+  const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${cleanBase}${cleanPath}`;
+}

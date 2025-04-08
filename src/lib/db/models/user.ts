@@ -26,6 +26,11 @@ export interface IUser extends Document {
     fitnessGoals?: string
     dietaryPreferences?: string
   }
+  tier: 'free' | 'premium' | 'expert'
+  stripeCustomerId?: string
+  stripeSubscriptionId?: string
+  stripeSubscriptionStatus?: string
+  planExpiresAt?: Date
 }
 
 const AiPreferencesSchema = new Schema({
@@ -58,7 +63,24 @@ const UserSchema: Schema = new Schema(
     emailVerified: { type: Date },
     accounts: [{ type: Schema.Types.ObjectId, ref: 'Account' }],
     sessions: [{ type: Schema.Types.ObjectId, ref: 'Session' }],
-    aiPreferences: { type: AiPreferencesSchema }
+    aiPreferences: { type: AiPreferencesSchema },
+    tier: {
+      type: String,
+      enum: ['free', 'premium', 'expert'],
+      default: 'free'
+    },
+    stripeCustomerId: {
+      type: String,
+      unique: true,
+      sparse: true // Allows multiple nulls while enforcing uniqueness for actual values
+    },
+    stripeSubscriptionId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    stripeSubscriptionStatus: { type: String }, // e.g., 'active', 'canceled', 'past_due'
+    planExpiresAt: { type: Date }
   },
   { timestamps: true },
 )
