@@ -113,9 +113,18 @@ function UserNavigationInner({ session }: { session: any }) {
     fetchUserData();
   }, [session]);
 
-  // Handle logout safely - direct to URL, don't use callback
-  const handleLogout = () => {
-    signOut({ callbackUrl: '/login' }); // Redirect to login page after sign out
+  // Manual redirect AFTER awaiting signOut
+  const handleLogout = async () => {
+    console.log('[handleLogout] Clicked!');
+    try {
+      // Wait for signout to complete server-side AND for the browser to potentially process cookie clearing
+      await signOut({ redirect: false }); 
+      console.log('[handleLogout] signOut promise resolved. Manually redirecting...');
+      // Now manually redirect
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('[handleLogout] Error during signOut process:', error);
+    }
   };
 
   // Create safe display values
