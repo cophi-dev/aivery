@@ -113,8 +113,8 @@ function UserNavigationInner({ session }: { session: any }) {
     fetchUserData();
   }, [session]);
 
-  // Clean logout with minimal page reloads
-  const handleLogout = async () => {
+  // Combine robust client-side clearing with non-blocking server-side attempt
+  const handleLogout = () => { // No need for async if we don't await
     console.log('[handleLogout] Clicked!');
     try {
       // Define all possible cookie names to clear
@@ -130,22 +130,36 @@ function UserNavigationInner({ session }: { session: any }) {
       // Get domain for cookie clearing
       const domain = window.location.hostname;
       const isLocalhost = domain === 'localhost';
+      const cookieDomain = !isLocalhost ? `Domain=.${domain};` : '';
+      const secureFlag = window.location.protocol === 'https:' ? 'Secure;' : '';
       
       // Clear cookies with multiple approaches to ensure success
       cookiesToClear.forEach(name => {
-        // Clear with domain
-        document.cookie = `${name}=; Max-Age=0; Path=/; ${!isLocalhost ? `Domain=.${domain};` : ''} Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
+        // Clear with domain, path, and secure flag if applicable
+        document.cookie = `${name}=; Max-Age=0; Path=/; ${cookieDomain} ${secureFlag} Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
         
-        // Also try without domain specification
+        // Clear with only path and secure flag
+        document.cookie = `${name}=; Max-Age=0; Path=/; ${secureFlag} Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
+        
+        // Fallback: Clear with only path
         document.cookie = `${name}=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
       });
       
       console.log('[handleLogout] Cleared cookies directly in browser');
       
-      // Direct navigation without setTimeout to prevent multiple reloads
+      // Attempt NextAuth sign out in the background (non-blocking)
+      try {
+        signOut({ redirect: false });
+        console.log('[handleLogout] Initiated background NextAuth signOut');
+      } catch (e) {
+        console.log('[handleLogout] Background NextAuth signOut failed, continuing anyway');
+      }
+      
+      // Immediate redirect
       window.location.href = '/login?logout=true';
     } catch (error) {
       console.error('[handleLogout] Error during logout process:', error);
+      // Fallback redirect
       window.location.href = '/login';
     }
   };
