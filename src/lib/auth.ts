@@ -212,12 +212,14 @@ export const authOptions: NextAuthOptions = {
       name: `next-auth.session-token`,
       options: {
         httpOnly: true,
-        // Temporarily test SameSite=None to diagnose cookie sending issue
-        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax',
+        // Revert SameSite back to lax for better compatibility/security
+        sameSite: 'lax', // Was: process.env.NODE_ENV === 'production' ? 'None' : 'lax',
         path: '/',
-        secure: process.env.NODE_ENV === 'production', // MUST be true for SameSite=None
+        // Secure flag should still be true in production
+        secure: process.env.NODE_ENV === 'production', 
         maxAge: 30 * 24 * 60 * 60,
-        domain: undefined, 
+        // Explicitly set domain for production, remove leading 'www.' if present
+        domain: process.env.NODE_ENV === 'production' ? process.env.NEXTAUTH_URL?.replace(/^(https?:\/\/)?(www\.)?/, '') : undefined, 
       },
     },
     callbackUrl: {
