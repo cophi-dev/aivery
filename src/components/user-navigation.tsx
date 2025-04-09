@@ -113,17 +113,17 @@ function UserNavigationInner({ session }: { session: any }) {
     fetchUserData();
   }, [session]);
 
-  // Manual redirect AFTER awaiting signOut
+  // Use our custom logout endpoint instead of NextAuth signOut
   const handleLogout = async () => {
     console.log('[handleLogout] Clicked!');
     try {
-      // Wait for signout to complete server-side AND for the browser to potentially process cookie clearing
-      await signOut({ redirect: false }); 
-      console.log('[handleLogout] signOut promise resolved. Manually redirecting...');
-      // Now manually redirect
-      window.location.href = '/login';
+      // Direct browser navigation to our custom logout endpoint
+      window.location.href = '/api/auth/logout';
+      console.log('[handleLogout] Redirecting to custom logout endpoint');
     } catch (error) {
-      console.error('[handleLogout] Error during signOut process:', error);
+      console.error('[handleLogout] Error during logout process:', error);
+      // Fallback to manual redirect if there's an error
+      window.location.href = '/login';
     }
   };
 
