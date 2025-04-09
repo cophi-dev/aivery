@@ -186,5 +186,8 @@ const WorkoutSchema: Schema = new Schema(
   { timestamps: true },
 )
 
+// Add compound index for uniqueness on source + sourceId per user
+WorkoutSchema.index({ userId: 1, source: 1, sourceId: 1 }, { unique: true, sparse: true });
+
 export default mongoose.models.Workout || mongoose.model<IWorkout>("Workout", WorkoutSchema)
 
