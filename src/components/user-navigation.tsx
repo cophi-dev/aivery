@@ -113,7 +113,7 @@ function UserNavigationInner({ session }: { session: any }) {
     fetchUserData();
   }, [session]);
 
-  // Clear cookies directly in the browser and redirect to login page
+  // Clean logout with minimal page reloads
   const handleLogout = async () => {
     console.log('[handleLogout] Clicked!');
     try {
@@ -138,30 +138,14 @@ function UserNavigationInner({ session }: { session: any }) {
         
         // Also try without domain specification
         document.cookie = `${name}=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
-        
-        // For secure cookies
-        if (window.location.protocol === 'https:') {
-          document.cookie = `${name}=; Max-Age=0; Path=/; ${!isLocalhost ? `Domain=.${domain};` : ''} Secure; Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
-        }
       });
       
       console.log('[handleLogout] Cleared cookies directly in browser');
       
-      // Also try the original signOut but don't wait for it
-      try {
-        signOut({ redirect: false });
-      } catch (e) {
-        console.log('[handleLogout] NextAuth signOut failed, continuing anyway');
-      }
-      
-      // Short delay to allow browser to process cookie changes
-      setTimeout(() => {
-        // Force redirect to login page
-        window.location.href = '/login?logout=true';
-      }, 100);
+      // Direct navigation without setTimeout to prevent multiple reloads
+      window.location.href = '/login?logout=true';
     } catch (error) {
       console.error('[handleLogout] Error during logout process:', error);
-      // Emergency fallback
       window.location.href = '/login';
     }
   };
