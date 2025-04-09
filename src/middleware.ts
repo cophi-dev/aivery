@@ -21,43 +21,24 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // --- DEBUGGING: Log Raw Cookie Header ---
-  const rawCookieHeader = request.headers.get('cookie') || '[No Cookie Header]';
-  console.log(`[MIDDLEWARE] Path: ${pathname} | Raw Cookie Header: ${rawCookieHeader.substring(0, 100)}...`); // Log first 100 chars
-  // ----------------------------------------
-
-  // --- DEBUGGING: Check for specific auth cookie and secret ---
-  const secureCookieName = `__Secure-next-auth.session-token`;
-  const cookieName = `next-auth.session-token`;
-  const hasSecureCookie = rawCookieHeader.includes(secureCookieName + '=');
-  const hasCookie = rawCookieHeader.includes(cookieName + '=');
-  const loadedSecret = process.env.NEXTAUTH_SECRET;
-  console.log(`[MIDDLEWARE] Path: ${pathname} | Has Secure Cookie (${secureCookieName}): ${hasSecureCookie} | Has Cookie (${cookieName}): ${hasCookie}`);
-  if (loadedSecret) {
-    console.log(`[MIDDLEWARE] Path: ${pathname} | NEXTAUTH_SECRET loaded (len: ${loadedSecret.length}), starts: ${loadedSecret.substring(0, 3)}, ends: ${loadedSecret.slice(-3)}`);
-  } else {
-    console.log(`[MIDDLEWARE] Path: ${pathname} | !!! NEXTAUTH_SECRET is NOT loaded in middleware env !!!`);
-  }
-  // ------------------------------------------------------
-
-  // Get token
-  let token = null; // Initialize to null
+  // --- Get Token ---
+  let token = null;
   let getTokenError = null;
   try {
     token = await getToken({ req: request });
-    console.log(`[MIDDLEWARE] Path: ${pathname} | getToken Result: ${token ? `User: ${token.email || token.id}` : 'null'}`); // Log token result
+    console.log(`[MIDDLEWARE] Path: ${pathname} | getToken Result: ${token ? `User: ${token.email || token.id}` : 'null'}`);
   } catch (error: any) {
     getTokenError = error.message || 'Unknown error';
     console.error(`[MIDDLEWARE] Path: ${pathname} | Error calling getToken:`, error);
   }
   const isAuthenticated = !!token;
+  // ----------------
 
   // Log request details (including explicit auth status)
-  // console.log(`[MIDDLEWARE] Path: ${pathname}, Authenticated: ${isAuthenticated}, User: ${token?.email || 'none'}`); // Original log, replaced by above
   if (getTokenError) {
-      console.error(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: false (due to getToken error: ${getTokenError})`);
+    console.error(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: false (due to getToken error: ${getTokenError})`);
   } else {
-      console.log(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: ${isAuthenticated}`);
+    console.log(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: ${isAuthenticated}`);
   }
 
   // --- START ROUTING LOGIC ---
