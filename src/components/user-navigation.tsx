@@ -113,17 +113,32 @@ function UserNavigationInner({ session }: { session: any }) {
     fetchUserData();
   }, [session]);
 
-  // Use our custom logout endpoint instead of NextAuth signOut
+  // Use our custom logout endpoint with POST method to bypass any middleware
   const handleLogout = async () => {
     console.log('[handleLogout] Clicked!');
     try {
-      // Direct browser navigation to our custom logout endpoint
-      window.location.href = '/api/auth/logout';
-      console.log('[handleLogout] Redirecting to custom logout endpoint');
+      // First try using fetch with POST to avoid middleware interception
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        redirect: 'follow', // Follow redirects automatically
+      });
+      
+      console.log(`[handleLogout] POST to /api/auth/logout returned status: ${response.status}`);
+      
+      // If fetch works, follow the redirect from the response
+      if (response.redirected) {
+        window.location.href = response.url;
+      } else {
+        // If not redirected, go to login
+        window.location.href = '/login';
+      }
     } catch (error) {
       console.error('[handleLogout] Error during logout process:', error);
-      // Fallback to manual redirect if there's an error
-      window.location.href = '/login';
+      // Fallback direct navigation
+      window.location.href = '/api/auth/logout';
     }
   };
 
