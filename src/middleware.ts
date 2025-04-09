@@ -21,11 +21,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // --- DEBUGGING: Log Raw Cookie Header ---
+  const rawCookieHeader = request.headers.get('cookie') || '[No Cookie Header]';
+  console.log(`[MIDDLEWARE] Path: ${pathname} | Raw Cookie Header: ${rawCookieHeader.substring(0, 150)}...`); // Log first 150 chars
+  // ----------------------------------------
+
   // --- Get Token ---
   let token = null;
   let getTokenError = null;
+  const cookieName = `next-auth.session-token`;
+  const secureCookieName = `__Secure-next-auth.session-token`;
   try {
-    token = await getToken({ req: request });
+    token = await getToken({
+      req: request,
+      cookieName: cookieName, // Standard name
+      secureCookie: process.env.NODE_ENV === 'production', // Helps select __Secure- prefix if applicable
+    });
     console.log(`[MIDDLEWARE] Path: ${pathname} | getToken Result: ${token ? `User: ${token.email || token.id}` : 'null'}`);
   } catch (error: any) {
     getTokenError = error.message || 'Unknown error';
