@@ -31,6 +31,14 @@ export async function middleware(request: NextRequest) {
   let getTokenError = null;
   const cookieName = `next-auth.session-token`;
   const secureCookieName = `__Secure-next-auth.session-token`;
+  // --- DEBUGGING: Check if secret is loaded just before getToken ---
+  const loadedSecret = process.env.NEXTAUTH_SECRET;
+  if (loadedSecret) {
+    console.log(`[MIDDLEWARE] Path: ${pathname} | NEXTAUTH_SECRET CHECK (pre-getToken): Loaded (len: ${loadedSecret.length}), starts: ${loadedSecret.substring(0, 3)}, ends: ${loadedSecret.slice(-3)}`);
+  } else {
+    console.log(`[MIDDLEWARE] Path: ${pathname} | !!! NEXTAUTH_SECRET CHECK (pre-getToken): NOT LOADED !!!`);
+  }
+  // ------------------------------------------------------------------
   try {
     token = await getToken({
       req: request,

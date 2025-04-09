@@ -114,9 +114,8 @@ function UserNavigationInner({ session }: { session: any }) {
   }, [session]);
 
   // Handle logout safely - direct to URL, don't use callback
-  const handleLogout = async () => {
-    await signOut({ redirect: false });
-    window.location.href = '/login';
+  const handleLogout = () => {
+    signOut({ callbackUrl: '/login' }); // Redirect to login page after sign out
   };
 
   // Create safe display values
