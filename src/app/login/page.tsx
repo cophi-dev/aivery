@@ -35,6 +35,28 @@ export default function LoginPage() {
     if (errorParam === "session_required") {
       setError("You need to be logged in to access that page.")
     }
+    
+    // Check for logout parameter
+    const logoutParam = searchParams?.get("logout")
+    if (logoutParam === "true") {
+      setSuccess("You have been successfully logged out.")
+      
+      // Replace URL without the parameter to prevent seeing the message on refresh
+      const url = new URL(window.location.href)
+      url.searchParams.delete("logout")
+      window.history.replaceState({}, "", url)
+    }
+    
+    // Check for reset parameter
+    const resetParam = searchParams?.get("reset")
+    if (resetParam === "true") {
+      setSuccess("Your session has been reset. You can now try logging in again.")
+      
+      // Replace URL without the parameter to prevent seeing the message on refresh
+      const url = new URL(window.location.href)
+      url.searchParams.delete("reset")
+      window.history.replaceState({}, "", url)
+    }
   }, [searchParams])
 
   // TEMPORARILY DISABLED - Handle redirection if already authenticated

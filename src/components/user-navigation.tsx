@@ -113,32 +113,56 @@ function UserNavigationInner({ session }: { session: any }) {
     fetchUserData();
   }, [session]);
 
-  // Use our custom logout endpoint with POST method to bypass any middleware
+  // Clear cookies directly in the browser and redirect to login page
   const handleLogout = async () => {
     console.log('[handleLogout] Clicked!');
     try {
-      // First try using fetch with POST to avoid middleware interception
-      const response = await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        redirect: 'follow', // Follow redirects automatically
+      // Define all possible cookie names to clear
+      const cookiesToClear = [
+        'next-auth.session-token',
+        'next-auth.callback-url',
+        'next-auth.csrf-token',
+        '__Secure-next-auth.callback-url',
+        '__Host-next-auth.csrf-token',
+        '__Secure-next-auth.session-token',
+      ];
+      
+      // Get domain for cookie clearing
+      const domain = window.location.hostname;
+      const isLocalhost = domain === 'localhost';
+      
+      // Clear cookies with multiple approaches to ensure success
+      cookiesToClear.forEach(name => {
+        // Clear with domain
+        document.cookie = `${name}=; Max-Age=0; Path=/; ${!isLocalhost ? `Domain=.${domain};` : ''} Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
+        
+        // Also try without domain specification
+        document.cookie = `${name}=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
+        
+        // For secure cookies
+        if (window.location.protocol === 'https:') {
+          document.cookie = `${name}=; Max-Age=0; Path=/; ${!isLocalhost ? `Domain=.${domain};` : ''} Secure; Expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
+        }
       });
       
-      console.log(`[handleLogout] POST to /api/auth/logout returned status: ${response.status}`);
+      console.log('[handleLogout] Cleared cookies directly in browser');
       
-      // If fetch works, follow the redirect from the response
-      if (response.redirected) {
-        window.location.href = response.url;
-      } else {
-        // If not redirected, go to login
-        window.location.href = '/login';
+      // Also try the original signOut but don't wait for it
+      try {
+        signOut({ redirect: false });
+      } catch (e) {
+        console.log('[handleLogout] NextAuth signOut failed, continuing anyway');
       }
+      
+      // Short delay to allow browser to process cookie changes
+      setTimeout(() => {
+        // Force redirect to login page
+        window.location.href = '/login?logout=true';
+      }, 100);
     } catch (error) {
       console.error('[handleLogout] Error during logout process:', error);
-      // Fallback direct navigation
-      window.location.href = '/api/auth/logout';
+      // Emergency fallback
+      window.location.href = '/login';
     }
   };
 
