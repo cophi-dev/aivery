@@ -23,6 +23,8 @@ import { LucideClock, LucideDumbbell, LucidePlus, LucideTrash, LucideEdit, Lucid
 import { fetchWorkouts, createWorkout, deleteWorkout } from "@/lib/workout-actions"
 import type { WorkoutData } from "@/types/db"
 import { EditWorkoutForm } from "@/components/forms/edit-workout-form"
+import { format } from "date-fns"
+import { Pencil } from "lucide-react"
 
 export default function WorkoutPlannerPage() {
   const router = useRouter()
@@ -311,27 +313,14 @@ export default function WorkoutPlannerPage() {
                         {workout.notes && <p className="mt-2 text-sm text-muted-foreground">{workout.notes}</p>}
                       </div>
                       <div className="flex gap-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => router.push(`/activity/edit/${workout._id}`)}
-                            >
-                              <LucidePencil className="h-4 w-4 mr-2" />
-                              Edit
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Edit Workout</DialogTitle>
-                              <DialogDescription>
-                                Make changes to your workout here. Click save when you're done.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <EditWorkoutForm workout={workout} onSuccess={() => router.refresh()} />
-                          </DialogContent>
-                        </Dialog>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="ml-2"
+                          onClick={() => router.push(`/workouts/${workout._id}/edit`)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
@@ -344,7 +333,7 @@ export default function WorkoutPlannerPage() {
                       </div>
                     </div>
                     <div className="mt-4 flex gap-2">
-                      <Button variant="default" size="sm" onClick={() => router.push(`/activity/${workout._id}`)}>
+                      <Button variant="default" size="sm" onClick={() => router.push(`/workouts/${workout._id}`)}>
                         View Details
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => router.push(`/workout/start/${workout._id}`)}>

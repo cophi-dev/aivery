@@ -94,7 +94,7 @@ export default function NewCyclingActivityPage() {
       }
 
       const newWorkoutId = await createCardioWorkout(workoutData)
-      router.push(`/activity/${newWorkoutId}`)
+      router.push(`/workouts/${newWorkoutId}`)
     } catch (error) {
       console.error("Failed to create cycling activity:", error)
     } finally {
@@ -105,7 +105,7 @@ export default function NewCyclingActivityPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center mb-6">
-        <Link href="/activity/new">
+        <Link href="/workouts/new">
           <Button variant="ghost" size="sm" className="mr-4">
             <LucideArrowLeft className="h-4 w-4 mr-2" />
             Back

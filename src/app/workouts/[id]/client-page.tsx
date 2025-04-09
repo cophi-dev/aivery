@@ -159,11 +159,11 @@ export default function ActivityDetailClient({ id }: { id: string }) {
           )}
           <Button
             variant="outline"
-            size="sm"
-            onClick={() => router.push(`/activity/${workout.type}/edit/${workout._id}`)}
+            size="icon"
+            className="ml-2"
+            onClick={() => router.push(`/workouts/${workout._id}/edit`)}
           >
-            <LucidePencil className="h-4 w-4 mr-2" />
-            Edit
+            <LucidePencil className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={handleDelete} disabled={isDeleting}>
             {isDeleting ? (
@@ -257,7 +257,7 @@ export default function ActivityDetailClient({ id }: { id: string }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => router.push(`/activity/${workout.type}/edit/${workout._id}`)}
+            onClick={() => router.push(`/workouts/${workout._id}/edit`)}
           >
             <LucidePencil className="h-4 w-4 mr-2" />
             Edit

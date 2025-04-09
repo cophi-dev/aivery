@@ -74,7 +74,7 @@ export default function RecentWorkouts() {
         ) : recentWorkouts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-60 text-center">
             <p className="text-muted-foreground mb-3">You haven't logged any workouts yet.</p>
-            <Link href="/activity/new">
+            <Link href="/workouts/new">
               <Button>
                 <LucidePlus className="h-4 w-4 mr-2" />
                 Log a Workout
@@ -128,6 +128,11 @@ export default function RecentWorkouts() {
                   </Link>
                 </div>
               ))}
+            </div>
+            <div className="mt-4">
+              <Button variant="link" asChild>
+                <Link href="/workouts/new">Log a new activity</Link>
+              </Button>
             </div>
           </>
         )}

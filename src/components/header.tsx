@@ -2,6 +2,7 @@ import Link from "next/link"
 import { LucideBrain, Menu, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 export function Header() {
   return (
@@ -49,7 +50,7 @@ export function Header() {
                   <Link href="/chat" className="px-2 py-1 hover:underline">
                     AI Coach
                   </Link>
-                  <Link href="/activity/new" className="px-2 py-1 hover:underline">
+                  <Link href="/workouts/new" className="px-2 py-1 hover:underline">
                     Log Activity
                   </Link>
                   <Link href="/analytics" className="px-2 py-1 hover:underline">

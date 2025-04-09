@@ -21,6 +21,7 @@ import {
   LucideDumbbell,
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
+import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 
 export default function ActivityDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -129,14 +130,17 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
           </div>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/activity/edit/${workout._id}`)}
-          >
-            <LucidePencil className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => router.push(`/workouts/${workout._id}/edit`)}
+              >
+                <LucidePencil className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </Dialog>
           <Button variant="outline" size="sm" onClick={handleDelete} disabled={isDeleting}>
             {isDeleting ? (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
@@ -194,15 +198,11 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
       <div className="flex justify-between items-center mb-8">
         <Link href="/workouts">Back to Workouts</Link>
-        <Button 
-          variant="ghost"
-          asChild
-        >
-          <Link href={`/activity/edit/${workout.id}`}>
-            <LucidePencil className="h-4 w-4 mr-2" />
+        <div className="mt-2 text-right">
+          <Link href={`/workouts/${workout.id}/edit`} className="text-sm text-blue-600 hover:underline">
             Edit Workout
           </Link>
-        </Button>
+        </div>
       </div>
     </div>
   )
