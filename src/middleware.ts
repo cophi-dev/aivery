@@ -26,6 +26,20 @@ export async function middleware(request: NextRequest) {
   console.log(`[MIDDLEWARE] Path: ${pathname} | Raw Cookie Header: ${rawCookieHeader.substring(0, 100)}...`); // Log first 100 chars
   // ----------------------------------------
 
+  // --- DEBUGGING: Check for specific auth cookie and secret ---
+  const secureCookieName = `__Secure-next-auth.session-token`;
+  const cookieName = `next-auth.session-token`;
+  const hasSecureCookie = rawCookieHeader.includes(secureCookieName + '=');
+  const hasCookie = rawCookieHeader.includes(cookieName + '=');
+  const loadedSecret = process.env.NEXTAUTH_SECRET;
+  console.log(`[MIDDLEWARE] Path: ${pathname} | Has Secure Cookie (${secureCookieName}): ${hasSecureCookie} | Has Cookie (${cookieName}): ${hasCookie}`);
+  if (loadedSecret) {
+    console.log(`[MIDDLEWARE] Path: ${pathname} | NEXTAUTH_SECRET loaded (len: ${loadedSecret.length}), starts: ${loadedSecret.substring(0, 3)}, ends: ${loadedSecret.slice(-3)}`);
+  } else {
+    console.log(`[MIDDLEWARE] Path: ${pathname} | !!! NEXTAUTH_SECRET is NOT loaded in middleware env !!!`);
+  }
+  // ------------------------------------------------------
+
   // Get token
   let token = null; // Initialize to null
   let getTokenError = null;
