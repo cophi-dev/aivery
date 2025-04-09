@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { signIn, signOut, useSession } from "next-auth/react"
+import { signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,7 +12,7 @@ import { Icons } from "@/components/icons"
 
 export default function LoginPage() {
   const router = useRouter()
-  const { data: session, status } = useSession()
+  const { status } = useSession()
   const searchParams = useSearchParams()
   
   const [email, setEmail] = useState("")
@@ -20,17 +20,14 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
-  const [isResetting, setIsResetting] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
-  
-  // Track whether a login has been attempted in this session
-  const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false)
   
   // Get callback URL from search params
   const callbackUrl = searchParams?.get("callbackUrl") || "/"
 
-  // Check for error parameter in URL
+  // Check URL parameters
   useEffect(() => {
+    // Check for error parameter
     const errorParam = searchParams?.get("error")
     if (errorParam === "session_required") {
       setError("You need to be logged in to access that page.")
@@ -46,91 +43,12 @@ export default function LoginPage() {
       url.searchParams.delete("logout")
       window.history.replaceState({}, "", url)
     }
-    
-    // Check for reset parameter
-    const resetParam = searchParams?.get("reset")
-    if (resetParam === "true") {
-      setSuccess("Your session has been reset. You can now try logging in again.")
-      
-      // Replace URL without the parameter to prevent seeing the message on refresh
-      const url = new URL(window.location.href)
-      url.searchParams.delete("reset")
-      window.history.replaceState({}, "", url)
-    }
   }, [searchParams])
-
-  // TEMPORARILY DISABLED - Handle redirection if already authenticated
-  // This was causing redirect loops
-  /*
-  useEffect(() => {
-    // Only redirect if authenticated and not in the middle of login or reset
-    if (status === 'authenticated' && session?.user?.id && !loading && !isResetting && !isRedirecting) {
-      // Don't redirect if we just logged in (prevent loops)
-      if (hasAttemptedLogin) {
-        return;
-      }
-      
-      console.log("Already authenticated, redirecting to:", callbackUrl);
-      setIsRedirecting(true);
-      
-      // Add small delay to prevent UI flashing
-      const timer = setTimeout(() => {
-        router.replace(callbackUrl);
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [status, session, router, callbackUrl, loading, isResetting, isRedirecting, hasAttemptedLogin]);
-  */
-
-  // Emergency reset function that works directly on this page
-  const resetEverything = async () => {
-    setIsResetting(true)
-    setError(null)
-    
-    try {
-      // Force sign out from NextAuth
-      await signOut({ redirect: false });
-      
-      // Clear all cookies - more thorough approach
-      document.cookie.split(';').forEach(cookie => {
-        const [name] = cookie.split('=')
-        if (name.trim()) {
-          // Clear for all possible domains and paths
-          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;`
-          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=localhost`
-          document.cookie = `${name.trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=.localhost`
-        }
-      })
-      
-      // Clear storage
-      localStorage.clear()
-      sessionStorage.clear()
-      
-      // Log the action
-      console.log("Session reset completed")
-      
-      // Success message
-      setSuccess("All session data cleared. Refreshing in 2 seconds...")
-      
-      // Force a complete page refresh after a delay
-      setTimeout(() => {
-        window.location.href = '/login?reset=true'
-      }, 2000)
-    } catch (error) {
-      console.error("Error during reset:", error)
-      setError("Failed to reset session. Please try refreshing the page manually.")
-      setIsResetting(false)
-    }
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    
-    // Mark that a login has been attempted
-    setHasAttemptedLogin(true)
 
     try {
       // Use callbackUrl parameter for clean redirection handling by NextAuth
@@ -149,14 +67,12 @@ export default function LoginPage() {
 
       // Success message
       setSuccess("Login successful! Redirecting...");
-      
-      // Set a flag in session storage to prevent redirect loops
-      sessionStorage.setItem('just_logged_in', 'true');
+      setIsRedirecting(true);
       
       // Wait a moment then redirect
       setTimeout(() => {
         router.replace(callbackUrl);
-      }, 1000);
+      }, 800);
       
     } catch (error) {
       console.error("Login error:", error);
@@ -233,7 +149,7 @@ export default function LoginPage() {
           <Button 
             type="submit" 
             className="w-full" 
-            disabled={loading || isResetting}
+            disabled={loading}
           >
             {loading && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
             Sign in
@@ -248,22 +164,6 @@ export default function LoginPage() {
             >
               Sign up
             </Link>
-          </div>
-          
-          <div className="flex justify-center mt-4">
-            <Button 
-              type="button"
-              variant="outline" 
-              size="sm" 
-              onClick={resetEverything}
-              disabled={isResetting}
-              className="text-xs"
-            >
-              {isResetting ? 
-                <><Icons.spinner className="mr-2 h-3 w-3 animate-spin" /> Resetting...</> : 
-                <>Fix Login Loop: Reset Session Data</>
-              }
-            </Button>
           </div>
         </form>
       </div>
