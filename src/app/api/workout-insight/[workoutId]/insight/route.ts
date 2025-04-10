@@ -44,8 +44,11 @@ export async function GET(
     // Placeholder insight generation
     let insightStatement = `Great job on this ${workout.type} workout!`; // Default message
 
-    // Example: Insight for a run based on distance
-    if (workout.type === 'running' && workout.distance) {
+    // For running workouts, we need to check the associated cardioDetails
+    if (workout.type === 'running' && workout.cardioDetails?.distance) {
+        // Use the distance from cardioDetails
+        const workoutDistance = workout.cardioDetails.distance;
+        
         // Fetch user's average running distance for the last month (example)
         const oneMonthAgo = new Date();
         oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
@@ -55,23 +58,23 @@ export async function GET(
                 userId: new ObjectId(userId),
                 type: 'running',
                 date: { $gte: oneMonthAgo },
-                distance: { $exists: true, $ne: null }
+                'cardioDetails.distance': { $exists: true, $ne: null }
             }},
             { $group: {
                 _id: null,
-                averageDistance: { $avg: '$distance' }
+                averageDistance: { $avg: '$cardioDetails.distance' }
             }}
         ]);
 
         const avgDistance = avgResult[0]?.averageDistance;
 
-        if (avgDistance && workout.distance > avgDistance) {
-            const percentBetter = ((workout.distance - avgDistance) / avgDistance) * 100;
-            insightStatement = `Awesome run! Your ${workout.distance.toFixed(2)}km was ${percentBetter.toFixed(0)}% longer than your average run this past month! Keep pushing! 🚀`;
+        if (avgDistance && workoutDistance > avgDistance) {
+            const percentBetter = ((workoutDistance - avgDistance) / avgDistance) * 100;
+            insightStatement = `Awesome run! Your ${workoutDistance.toFixed(2)}km was ${percentBetter.toFixed(0)}% longer than your average run this past month! Keep pushing! 🚀`;
         } else if (avgDistance) {
-            insightStatement = `Solid ${workout.distance.toFixed(2)}km run! Consistent effort pays off. 👍`;
+            insightStatement = `Solid ${workoutDistance.toFixed(2)}km run! Consistent effort pays off. 👍`;
         } else {
-             insightStatement = `That's a ${workout.distance.toFixed(2)}km run logged! Keep building that history!`;
+             insightStatement = `That's a ${workoutDistance.toFixed(2)}km run logged! Keep building that history!`;
         }
     }
     // TODO: Add more sophisticated logic for other workout types and metrics
