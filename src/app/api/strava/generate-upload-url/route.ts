@@ -33,8 +33,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     console.log(`Generating presigned URL for path: ${blobPath}`);
 
-    const blob = await put(blobPath, '', {
-      access: 'public', // Required for put, file itself won't be public if bucket isn't
+    const blob = await put(blobPath, new Blob(), {
+      access: 'public', // Required for put
       contentType: 'application/zip', // Set the expected content type
       addRandomSuffix: false, // We created a unique path already
       // Consider adding clientPayload: JSON.stringify({ userId }) if needed later
