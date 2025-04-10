@@ -14,8 +14,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Comment out the config block again, as per commit 3e0c4ca
-/*
+// Uncomment the config block
 export const config = {
   api: {
     bodyParser: {
@@ -23,11 +22,9 @@ export const config = {
     },
   },
 }
-*/
 
-// Restore other exports from commit 3e0c4ca
+// Keep runtime, remove maxDuration (will be set in vercel.json)
 export const runtime = 'nodejs';
-export const maxDuration = 60;
 
 // Define FitActivity interface
 interface FitActivity {

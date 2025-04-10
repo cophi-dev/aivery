@@ -46,7 +46,7 @@
       "memory": 1024,
       "maxDuration": 10
     },
-    "app/api/strava/import": {
+    "app/api/strava/import/route.ts": {
       "memory": 1024,
       "maxDuration": 60,
       "includeFiles": "node_modules/fit-file-parser/**"
