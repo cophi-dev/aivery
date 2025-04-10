@@ -82,7 +82,39 @@ export default function WorkoutPlannerPage() {
       }
 
       const createdWorkout = await createWorkout(newWorkout)
-      setWorkouts([...workouts, createdWorkout])
+      
+      // Convert the IWorkout to a WorkoutData type
+      const workoutDataToAdd: WorkoutData = {
+        _id: createdWorkout._id ? createdWorkout._id.toString() : '',
+        userId: createdWorkout.userId ? createdWorkout.userId.toString() : '',
+        name: createdWorkout.name,
+        date: createdWorkout.date,
+        duration: createdWorkout.duration,
+        intensity: createdWorkout.intensity,
+        type: createdWorkout.type,
+        notes: createdWorkout.notes,
+        createdAt: createdWorkout.createdAt ? createdWorkout.createdAt.toISOString() : new Date().toISOString(),
+        updatedAt: createdWorkout.updatedAt ? createdWorkout.updatedAt.toISOString() : new Date().toISOString(),
+      }
+      
+      // Only add cardioDetails if they exist
+      if (createdWorkout.cardioDetails) {
+        workoutDataToAdd.cardioDetails = {
+          distance: createdWorkout.cardioDetails.distance,
+          duration: createdWorkout.cardioDetails.duration,
+          pace: createdWorkout.cardioDetails.pace,
+        };
+        
+        // Add heart rate data if it exists
+        if (createdWorkout.cardioDetails.heartRate) {
+          workoutDataToAdd.cardioDetails.heartRate = {
+            average: createdWorkout.cardioDetails.heartRate.average,
+            max: createdWorkout.cardioDetails.heartRate.max,
+          };
+        }
+      }
+      
+      setWorkouts([...workouts, workoutDataToAdd])
 
       // Reset form
       setWorkoutName("")
