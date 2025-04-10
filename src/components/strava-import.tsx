@@ -358,7 +358,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
 
         // Set headers explicitly
         xhr.setRequestHeader('Content-Type', 'application/zip');
-        xhr.setRequestHeader('Content-Length', file.size.toString());
+        xhr.setRequestHeader('content-length', file.size.toString());
         // Set 'x-ms-blob-type': 'BlockBlob' if it were Azure Blob Storage, check if Vercel needs similar?
         // Vercel Blob docs don't specify extra required headers for PUT, let's stick to standard ones for now.
 
