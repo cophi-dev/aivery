@@ -18,6 +18,8 @@ import os from 'os'
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+// Add the correct config export here
 export const config = {
   api: {
     bodyParser: {
