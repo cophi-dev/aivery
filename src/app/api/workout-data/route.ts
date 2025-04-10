@@ -78,15 +78,22 @@ async function calculateWorkoutStats(userId: string) {
     
     // Calculate stats by type
     const statsByType = Object.entries(workoutsByType).map(([type, typeWorkouts]) => {
-      const count = typeWorkouts.length;
-      const totalDuration = typeWorkouts.reduce((sum, w) => sum + w.duration, 0);
+      // Type assertion for typeWorkouts
+      const workouts = typeWorkouts as Array<{
+        duration: number;
+        distance?: number;
+        volume?: number;
+      }>;
+      
+      const count = workouts.length;
+      const totalDuration = workouts.reduce((sum, w) => sum + w.duration, 0);
       const avgDuration = Math.round(totalDuration / count);
       
       // Additional stats based on workout type
       let additionalStats = {};
       
       if (type === 'running' || type === 'cycling' || type === 'swimming') {
-        const totalDistance = typeWorkouts.reduce((sum, w) => sum + (w.distance || 0), 0);
+        const totalDistance = workouts.reduce((sum, w) => sum + (w.distance || 0), 0);
         const avgDistance = totalDistance / count;
         additionalStats = {
           totalDistance,
@@ -94,7 +101,7 @@ async function calculateWorkoutStats(userId: string) {
           avgPace: totalDistance > 0 ? totalDuration / totalDistance : 0
         };
       } else if (type === 'strength') {
-        const totalVolume = typeWorkouts.reduce((sum, w) => sum + (w.volume || 0), 0);
+        const totalVolume = workouts.reduce((sum, w) => sum + (w.volume || 0), 0);
         additionalStats = {
           totalVolume,
           avgVolume: totalVolume / count
@@ -210,7 +217,7 @@ export async function POST(req: Request) {
             totalVolume += workout.volume
           }
           
-          workout.exercises?.forEach(exercise => {
+          workout.exercises?.forEach((exercise: { name?: string }) => {
             if (exercise && exercise.name) {
               const exerciseName = exercise.name
               if (!exerciseFrequency[exerciseName]) {
