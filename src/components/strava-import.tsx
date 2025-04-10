@@ -357,12 +357,11 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         // Use PUT method with direct URL
         xhr.open('PUT', url, true);
 
-        // Set content type only - don't set Content-Length as browser will set this automatically
+        // Set content type and the special x-content-length header required by Vercel Blob
         xhr.setRequestHeader('Content-Type', 'application/zip');
-        
-        // Add required Blob store headers
+        xhr.setRequestHeader('x-content-length', file.size.toString());
         xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
-
+        
         // Optional: Track progress
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
