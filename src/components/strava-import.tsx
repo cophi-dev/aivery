@@ -354,7 +354,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/zip', // Match the content type specified during URL generation
+          'Content-Type': 'application/zip',
+          'Content-Length': file.size.toString(),
           // Add x-vercel-blob-client header for analytics if desired
           // 'x-vercel-blob-client': 'aivery-app-frontend',
         },
