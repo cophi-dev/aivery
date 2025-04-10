@@ -19,14 +19,14 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// Add the correct config export here
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-  },
-};
+// Temporarily remove the config block for diagnostics
+// export const config = {
+//   api: {
+//     bodyParser: {
+//       sizeLimit: '50mb',
+//     },
+//   },
+// };
 
 // Define FitActivity interface
 interface FitActivity {
