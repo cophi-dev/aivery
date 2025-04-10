@@ -278,33 +278,28 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   }
 
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = event.target.files?.[0];
-    setFile(null); // Reset first
-    setProgress(0);
-    setUploadStatus('');
-    setError(null); // Clear previous errors
-    setUploadStats(null); // Clear previous stats
-
-    if (selected) {
-      // Validate file type
-      if (!selected.name.toLowerCase().endsWith('.zip')) {
+    const fileList = event.target.files;
+    if (fileList && fileList.length > 0) {
+      const selected = fileList[0];
+      // Check file type first
+      if (!selected.name.endsWith('.zip')) {
         toast({
           title: "Invalid file type",
-          description: "Please upload a .zip file.",
+          description: "Please select a ZIP file containing your Strava export.",
           variant: "destructive"
         });
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
-
-      // Validate file size (e.g., 100MB)
-      const MAX_FILE_SIZE_MB = 50;
+      
+      // Validate file size 
+      const MAX_FILE_SIZE_MB = 4;  // Lower for Vercel's serverless function limit
       const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
       if (selected.size > MAX_FILE_SIZE_BYTES) {
-      toast({
-          title: "File too large",
-          description: `Maximum file size is ${MAX_FILE_SIZE_MB}MB.`,
-        variant: "destructive"
+        toast({
+          title: "File too large for direct upload",
+          description: `Files larger than ${MAX_FILE_SIZE_MB}MB cannot be uploaded directly due to server limitations. Please try a smaller export or contact support.`,
+          variant: "destructive"
         });
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
@@ -835,7 +830,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     Click to select the downloaded .zip file
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Max 50MB.
+                    Max 4MB due to server limitations.
                   </p>
                 </div>
               </label>

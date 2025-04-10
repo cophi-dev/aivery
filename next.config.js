@@ -15,7 +15,7 @@ const nextConfig = {
   
   experimental: {
     serverActions: {
-      bodySizeLimit: '50mb', // For server actions
+      bodySizeLimit: '4mb', // Reduced to match Vercel's serverless function limit
       allowedOrigins: ['*'],
     },
     largePageDataBytes: 128 * 1000, // 128KB
