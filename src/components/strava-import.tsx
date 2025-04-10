@@ -344,8 +344,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         throw new Error(errorData.error || `Failed to get upload link: Server responded with ${presignedResponse.status}`);
       }
 
-      const { url: uploadUrl, pathname: blobPathname, downloadUrl } = await presignedResponse.json();
-      console.log('Received upload URL:', uploadUrl);
+      const { url, pathname: blobPathname, downloadUrl } = await presignedResponse.json();
+      console.log('Received upload URL:', url);
       console.log('File will be stored at path:', blobPathname);
       setProgress(25);
 
@@ -354,11 +354,12 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        // Use the uploadUrl directly - this is now provided by Vercel Blob
-        xhr.open('POST', uploadUrl, true);
+        // Use PUT method with direct URL
+        xhr.open('PUT', url, true);
 
-        // No need to set content-type or content-length headers with Vercel Blob client upload
-        // The upload endpoint will handle these automatically based on the multipart form
+        // Set required headers
+        xhr.setRequestHeader('Content-Type', 'application/zip');
+        xhr.setRequestHeader('Content-Length', file.size.toString());
 
         // Optional: Track progress
         xhr.upload.onprogress = (event) => {
@@ -385,10 +386,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
           reject(new Error('Network error during direct file upload.'));
         };
 
-        // Create FormData and add file
-        const formData = new FormData();
-        formData.append('file', file);
-        xhr.send(formData);
+        // Send the file directly
+        xhr.send(file);
       });
 
       // 3. Notify the backend API to process the file from Blob storage

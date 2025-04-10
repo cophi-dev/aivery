@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { generateUploadUrl } from '@vercel/blob/client';
+import { put } from '@vercel/blob';
 
 // Export dynamic runtime
 export const dynamic = 'force-dynamic';
@@ -33,23 +33,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     console.log(`Generating URL for client-side upload to path: ${blobPath}`);
 
-    // Generate upload URL using @vercel/blob/client generateUploadUrl
-    const { url, uploadUrl, pathname } = await generateUploadUrl({
-      pathname: blobPath,
-      // Access and CORS settings
-      contentType: 'application/zip',
+    // Generate a blob with a placeholder (single space)
+    const blob = await put(blobPath, new Blob([' ']), {
       access: 'public',
-      maxSize: 50 * 1024 * 1024, // 50MB max size
+      contentType: 'application/zip',
+      addRandomSuffix: false,
     });
 
-    console.log('Generated client-side upload URL:', uploadUrl);
-    console.log('Generated client-side upload pathname:', pathname);
+    console.log('Generated blob storage URL:', blob.url);
 
-    // Return the upload URL, pathname, and additional info for client use
+    // Return the URL and pathname for client use
     return NextResponse.json({ 
-        url: uploadUrl,
-        pathname,
-        downloadUrl: url 
+        url: blob.url,
+        pathname: blob.pathname,
+        downloadUrl: blob.url 
     });
 
   } catch (error) {
