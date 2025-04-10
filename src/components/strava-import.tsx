@@ -328,21 +328,44 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     const formData = new FormData();
     formData.append('file', file);
     // Append selected workout types if needed by the backend
-        if (selectedWorkoutTypes.length > 0) {
+    if (selectedWorkoutTypes.length > 0) {
       selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type));
     }
 
     console.log(`=== Starting file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
 
     try {
-      setUploadStatus('Sending file to server...');
+      // First test the upload with our check endpoint
+      setUploadStatus('Testing upload capability...');
+      const testResponse = await fetch('/api/strava/check-upload', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+      });
+
+      if (!testResponse.ok) {
+        const testErrorText = await testResponse.text().catch(() => "Could not read error response body.");
+        console.error("Upload test failed:", { status: testResponse.status, body: testErrorText });
+        throw new Error(`Upload test failed with status ${testResponse.status}: ${testErrorText}`);
+      }
+
+      const testResult = await testResponse.json();
+      console.log('Upload test successful:', testResult);
+      setUploadStatus(`Upload test successful for ${testResult.fileInfo.sizeInMB}MB file. Proceeding with import...`);
+      setProgress(20);
+
+      // Now proceed with the actual import
+      setUploadStatus('Sending file to server for processing...');
       console.log('Sending POST request to /api/strava/import');
 
       const response = await fetch('/api/strava/import', {
         method: 'POST',
         body: formData,
         headers: {
-          // Don't set Content-Type with FormData, browser will set it with boundary
           'Accept': 'application/json',
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
@@ -372,7 +395,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         throw new Error(errorMsg);
       }
 
-          const data = await response.json();
+      const data = await response.json();
       console.log('API Response data:', data);
 
       if (data.success) {

@@ -16,7 +16,7 @@ import os from 'os'
 
 // Configuration for this API route
 export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // Define FitActivity interface
