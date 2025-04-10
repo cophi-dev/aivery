@@ -18,7 +18,6 @@ import os from 'os'
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-export const bodySize = '50mb';
 
 // Define FitActivity interface
 interface FitActivity {
