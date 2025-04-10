@@ -80,7 +80,7 @@ export default async function DashboardPage() {
                 {/* Progress Cards - Client Component (receives metrics) */}
                 <ProgressCards 
                     strengthVolume={metrics?.strengthVolumeLast7Days ?? 0} 
-                    cardioDistance={metrics?.runningDistanceLast7Days ?? 0} 
+                    cardioDuration={metrics?.cardioDurationLast7Days ?? 0}
                 />
 
                 {/* Spotlight Cards - Client Component */}

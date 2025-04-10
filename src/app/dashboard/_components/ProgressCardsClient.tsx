@@ -12,19 +12,36 @@ const formatVolume = (volume: number | undefined | null): string | null => {
 };
 
 // Format distance (assuming km)
-const formatDistance = (distance: number | undefined | null): string | null => {
-  if (distance === undefined || distance === null || distance <= 0) return null;
-  // Format to 1 decimal place
-  return `${distance.toFixed(1)} km`;
+// const formatDistance = (distance: number | undefined | null): string | null => {
+//   if (distance === undefined || distance === null || distance <= 0) return null;
+//   // Format to 1 decimal place
+//   return `${distance.toFixed(1)} km`;
+// };
+
+// Format duration (assuming input is in minutes)
+const formatDuration = (minutes: number | undefined | null): string | null => {
+  if (minutes === undefined || minutes === null || minutes <= 0) return null;
+  const totalMinutes = Math.round(minutes);
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  
+  let formatted = "";
+  if (hours > 0) {
+    formatted += `${hours}h`;
+  }
+  if (remainingMinutes > 0) {
+    formatted += ` ${remainingMinutes}m`;
+  }
+  return formatted.trim() || "0m"; // Return "0m" if total duration rounds to 0
 };
 // -----------------------------------------
 
 interface ProgressCardsProps {
   strengthVolume: number;
-  cardioDistance: number;
+  cardioDuration: number; // Changed from cardioDistance
 }
 
-export function ProgressCards({ strengthVolume, cardioDistance }: ProgressCardsProps) {
+export function ProgressCards({ strengthVolume, cardioDuration }: ProgressCardsProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
       {/* Strength Progress Card */}
@@ -48,10 +65,10 @@ export function ProgressCards({ strengthVolume, cardioDistance }: ProgressCardsP
           <CardTitle className="text-lg flex items-center justify-center">
             <HeartPulse className="mr-2 h-5 w-5 text-red-500" /> Cardio Progress
           </CardTitle>
-          <CardDescription>Running Distance (Last 7 Days)</CardDescription>
+          <CardDescription>Total Time (Last 7 Days)</CardDescription>
         </CardHeader>
         <CardContent className="text-center">
-          <p className="text-3xl font-bold">{formatDistance(cardioDistance) ?? "0 km"}</p>
+          <p className="text-3xl font-bold">{formatDuration(cardioDuration) ?? "0m"}</p>
           {/* <p className="text-sm text-muted-foreground">+Y% from last week</p> */}
         </CardContent>
       </Card>
