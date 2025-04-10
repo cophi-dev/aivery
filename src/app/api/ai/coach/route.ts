@@ -546,7 +546,7 @@ interface PopulatedWorkoutDoc {
   volume?: number;
   distance?: number;
   calories?: number;
-  exercises?: IWorkout['exercises']; // Use indexed access type
+  exercises?: Array<{ name: string; sets: Array<{ weight: number; reps: number }> }>;
   cardioDetails?: IWorkout['cardioDetails']; // Use indexed access type
   notes?: string;
   completed?: boolean;
@@ -562,8 +562,11 @@ interface PopulatedWorkoutDoc {
 }
 
 // Define Mongoose-compatible detail item type
-// Infer Exercise type from IWorkout
-type NestedExerciseType = NonNullable<IWorkout['exercises']>[number];
+// Update to use the direct type rather than referencing IWorkout['exercises']
+type NestedExerciseType = {
+  name: string;
+  sets: Array<{ weight: number; reps: number }>;
+};
 
 interface ExerciseDetail {
     sets: NestedExerciseType['sets']; // Infer sets type
@@ -612,16 +615,21 @@ async function fetchWorkoutDetails(
 
     try {
         await dbConnect();
-        // Use WorkoutModel.findOne with the filter, lean() for plain object
-        // Add populate('exercises.exercise') if Exercise refs need population
-        const workoutDoc: PopulatedWorkoutDoc | null = await WorkoutModel.findOne(filter)
-            // .populate({ // Example population - uncomment/adjust if needed
-            //     path: 'exercises.exercise',
-            //     model: 'Exercise' // Assuming 'Exercise' is the model name
-            // })
-            .lean<PopulatedWorkoutDoc>(); // Add type hint to lean()
+        
+        // Get the main workout document with proper typing
+        const workoutDoc: any = await WorkoutModel.findOne(filter).lean();
 
         if (!workoutDoc) return null;
+        
+        // Get associated workout exercises
+        const WorkoutExerciseModel = (await import("@/lib/db/models/workoutExercise")).default;
+        const workoutExercises: any[] = await WorkoutExerciseModel.find({ 
+            workoutId: workoutDoc._id 
+        })
+        .populate('exerciseId') // Populate the canonical exercise reference
+        .lean();
+        
+        console.log(`Found ${workoutExercises.length} workout exercises for workout ${identifier}`);
 
         // Map Mongoose doc to WorkoutDetailItem
         const workout: WorkoutDetailItem = {
@@ -635,17 +643,17 @@ async function fetchWorkoutDetails(
             calories: workoutDoc.calories ?? null,
             notes: workoutDoc.notes ?? null,
             cardioDetails: workoutDoc.cardioDetails ?? null,
-            // Map exercises using inferred type
-            exercises: workoutDoc.exercises?.map((ex: NestedExerciseType): ExerciseDetail => ({
-                sets: ex.sets,
-                notes: null, // Explicitly null - notes aren't on IWorkout['exercises']
+            // Map exercises from the separate collection
+            exercises: workoutExercises.map(ex => ({
+                sets: ex.sets || [],
+                notes: ex.notes || null,
                 exercise: {
-                    name: ex.name || 'Unknown Exercise', // Use name from NestedExerciseType
+                    name: ex.exerciseId?.name || 'Unknown Exercise', // Name from the populated Exercise document
                     muscleGroups: [], // Placeholder
-                    category: 'unknown', // Placeholder
+                    category: ex.exerciseId?.category || 'unknown',
                     equipment: null // Placeholder
                 }
-            })) || []
+            }))
         };
         return workout;
 
