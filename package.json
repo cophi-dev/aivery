@@ -43,6 +43,7 @@
     "@types/adm-zip": "^0.5.7",
     "@types/bcryptjs": "^2.4.6",
     "@types/uuid": "^10.0.0",
+    "@vercel/blob": "^1.0.0",
     "adm-zip": "^0.5.16",
     "ai": "^4.1.64",
     "autoprefixer": "^10.0.1",
