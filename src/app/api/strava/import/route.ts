@@ -14,19 +14,20 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Temporarily comment out other exports for diagnostics
-// export const dynamic = 'force-dynamic';
-// export const runtime = 'nodejs';
-// export const maxDuration = 60;
-
-// Keep only the config export for now
+// Comment out the config block again, as per commit 3e0c4ca
+/*
 export const config = {
   api: {
     bodyParser: {
       sizeLimit: '50mb',
     },
   },
-};
+}
+*/
+
+// Restore other exports from commit 3e0c4ca
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 // Define FitActivity interface
 interface FitActivity {
