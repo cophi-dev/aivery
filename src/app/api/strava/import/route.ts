@@ -14,7 +14,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Configuration for this API route
+// Configuration for this API route - should support up to 10MB file uploads
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;

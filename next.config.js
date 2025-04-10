@@ -15,7 +15,7 @@ const nextConfig = {
   
   experimental: {
     serverActions: {
-      bodySizeLimit: '10mb', // Increased to handle 8.5MB files with buffer
+      bodySizeLimit: '10mb', // Increased to handle 8.5MB+ Strava files
       allowedOrigins: ['*'],
     },
     largePageDataBytes: 128 * 1000, // 128KB

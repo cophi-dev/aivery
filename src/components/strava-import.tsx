@@ -292,7 +292,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         return;
       }
       
-      // Validate file size - increased to allow typical Strava exports
+      // Validate file size - allow up to 10MB to handle typical Strava exports
       const MAX_FILE_SIZE_MB = 10;
       const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
       if (selected.size > MAX_FILE_SIZE_BYTES) {
@@ -362,14 +362,17 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       setUploadStatus('Sending file to server for processing...');
       console.log('Sending POST request to /api/strava/import');
 
+      // Create a fresh FormData for the actual import
+      const importFormData = new FormData();
+      importFormData.append('file', file);
+      if (selectedWorkoutTypes.length > 0) {
+        selectedWorkoutTypes.forEach(type => importFormData.append('workoutTypes', type));
+      }
+
       const response = await fetch('/api/strava/import', {
         method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        },
+        body: importFormData,
+        // No extra headers that might interfere with multipart/form-data
       });
 
       if (response.ok) {
@@ -861,7 +864,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                       Upload your Strava export .zip file to import activities. For best results, choose a smaller date range when exporting from Strava.
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Max 10MB.
+                      Maximum file size: 10MB. Your 8.19MB file should work fine.
                     </p>
                   </div>
                 </div>
