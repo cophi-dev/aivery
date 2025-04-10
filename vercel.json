@@ -46,10 +46,16 @@
       "memory": 1024,
       "maxDuration": 10
     },
-    "app/api/strava/import": {
-      "memory": 1024,
+    "app/api/strava/import/route.ts": {
+      "memory": 2048,
       "maxDuration": 60,
-      "includeFiles": "node_modules/fit-file-parser/**"
+      "includeFiles": "node_modules/fit-file-parser/**",
+      "maxPayloadSize": "50mb"
+    },
+    "app/api/strava/check-upload/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30,
+      "maxPayloadSize": "50mb"
     }
   }
 } 
