@@ -13,6 +13,7 @@ import { head, del } from '@vercel/blob'; // Import blob functions
 
 // Keep runtime (Node.js needed for AdmZip, zlib etc.)
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // Define FitActivity interface
 interface FitActivity {

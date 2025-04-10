@@ -325,10 +325,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     setUploadStats(null);
     setUploadStatus('Preparing upload...');
 
-    console.log(`=== Starting presigned URL upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
+    console.log(`=== Starting client-side upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
 
     try {
-      // 1. Get presigned URL from our new API route
+      // 1. Get upload URL from our new API route
       setUploadStatus('Requesting secure upload link...');
       setProgress(10);
       const presignedResponse = await fetch('/api/strava/generate-upload-url', {
@@ -344,30 +344,28 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         throw new Error(errorData.error || `Failed to get upload link: Server responded with ${presignedResponse.status}`);
       }
 
-      const { url: uploadUrl, pathname: blobPathname } = await presignedResponse.json();
-      console.log('Received presigned URL:', uploadUrl);
+      const { url: uploadUrl, pathname: blobPathname, downloadUrl } = await presignedResponse.json();
+      console.log('Received upload URL:', uploadUrl);
       console.log('File will be stored at path:', blobPathname);
       setProgress(25);
 
-      // 2. Upload the file directly to Vercel Blob using XMLHttpRequest for better header control
-      setUploadStatus(`Uploading file directly to storage...`);
+      // 2. Upload the file directly to Vercel Blob Storage
+      setUploadStatus(`Uploading file to secure storage...`);
       
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('PUT', uploadUrl, true);
+        // Use the uploadUrl directly - this is now provided by Vercel Blob
+        xhr.open('POST', uploadUrl, true);
 
-        // Set headers explicitly
-        xhr.setRequestHeader('Content-Type', 'application/zip');
-        xhr.setRequestHeader('content-length', file.size.toString());
-        // Set 'x-ms-blob-type': 'BlockBlob' if it were Azure Blob Storage, check if Vercel needs similar?
-        // Vercel Blob docs don't specify extra required headers for PUT, let's stick to standard ones for now.
+        // No need to set content-type or content-length headers with Vercel Blob client upload
+        // The upload endpoint will handle these automatically based on the multipart form
 
         // Optional: Track progress
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
             const currentProgress = 25 + Math.round((event.loaded / event.total) * 35); // Scale progress from 25% to 60%
             setProgress(currentProgress);
-            setUploadStatus(`Uploading file directly to storage... ${Math.round((event.loaded / event.total) * 100)}%`);
+            setUploadStatus(`Uploading file to secure storage... ${Math.round((event.loaded / event.total) * 100)}%`);
           }
         };
 
@@ -387,7 +385,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
           reject(new Error('Network error during direct file upload.'));
         };
 
-        xhr.send(file);
+        // Create FormData and add file
+        const formData = new FormData();
+        formData.append('file', file);
+        xhr.send(formData);
       });
 
       // 3. Notify the backend API to process the file from Blob storage
@@ -397,13 +398,11 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       const processResponse = await fetch('/api/strava/import', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json', // Sending JSON now, not FormData
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
             blobPathname: blobPathname, 
             originalFilename: file.name 
-            // Add selectedWorkoutTypes if needed by the backend
-            // workoutTypes: selectedWorkoutTypes
         }), 
       });
 
