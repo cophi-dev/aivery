@@ -292,13 +292,13 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         return;
       }
       
-      // Validate file size 
-      const MAX_FILE_SIZE_MB = 4;  // Lower for Vercel's serverless function limit
+      // Validate file size - increased to allow typical Strava exports
+      const MAX_FILE_SIZE_MB = 10;
       const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
       if (selected.size > MAX_FILE_SIZE_BYTES) {
         toast({
-          title: "File too large for direct upload",
-          description: `Files larger than ${MAX_FILE_SIZE_MB}MB cannot be uploaded directly due to server limitations. Please try a smaller export or contact support.`,
+          title: "File too large",
+          description: `Maximum file size is ${MAX_FILE_SIZE_MB}MB. Try selecting fewer activities when exporting from Strava.`,
           variant: "destructive"
         });
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -339,8 +339,14 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       console.log('Sending POST request to /api/strava/import');
 
       const response = await fetch('/api/strava/import', {
-            method: 'POST',
+        method: 'POST',
         body: formData,
+        headers: {
+          // Don't set Content-Type with FormData, browser will set it with boundary
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
       });
 
       if (response.ok) {
@@ -826,12 +832,15 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                 />
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
                   <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Click to select the downloaded .zip file
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Max 4MB due to server limitations.
-                  </p>
+                  <div className="mb-6">
+                    <h3 className="text-lg font-medium">Upload Strava Export</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Upload your Strava export .zip file to import activities. For best results, choose a smaller date range when exporting from Strava.
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Max 10MB.
+                    </p>
+                  </div>
                 </div>
               </label>
             ) : (
