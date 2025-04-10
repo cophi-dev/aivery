@@ -349,29 +349,46 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       console.log('File will be stored at path:', blobPathname);
       setProgress(25);
 
-      // 2. Upload the file directly to Vercel Blob using the presigned URL
+      // 2. Upload the file directly to Vercel Blob using XMLHttpRequest for better header control
       setUploadStatus(`Uploading file directly to storage...`);
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/zip',
-          'Content-Length': file.size.toString(),
-          // Add x-vercel-blob-client header for analytics if desired
-          // 'x-vercel-blob-client': 'aivery-app-frontend',
-        },
-        body: file,
-        // Consider adding progress tracking using XMLHttpRequest if needed
+      
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl, true);
+
+        // Set headers explicitly
+        xhr.setRequestHeader('Content-Type', 'application/zip');
+        xhr.setRequestHeader('Content-Length', file.size.toString());
+        // Set 'x-ms-blob-type': 'BlockBlob' if it were Azure Blob Storage, check if Vercel needs similar?
+        // Vercel Blob docs don't specify extra required headers for PUT, let's stick to standard ones for now.
+
+        // Optional: Track progress
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const currentProgress = 25 + Math.round((event.loaded / event.total) * 35); // Scale progress from 25% to 60%
+            setProgress(currentProgress);
+            setUploadStatus(`Uploading file directly to storage... ${Math.round((event.loaded / event.total) * 100)}%`);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            console.log('Direct upload to storage successful via XHR.');
+            setProgress(60); // Mark this step as complete
+            resolve();
+          } else {
+            console.error("Direct upload via XHR failed:", { status: xhr.status, response: xhr.responseText });
+            reject(new Error(`Direct file upload failed: Storage responded with status ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          console.error("Direct upload via XHR failed (Network Error)");
+          reject(new Error('Network error during direct file upload.'));
+        };
+
+        xhr.send(file);
       });
-
-      if (!uploadResponse.ok) {
-        // Attempt to get error details from Vercel Blob response if available
-        const errorText = await uploadResponse.text().catch(() => 'Could not read storage upload error response.');
-        console.error("Direct upload to storage failed:", { status: uploadResponse.status, body: errorText });
-        throw new Error(`Direct file upload failed: Storage responded with status ${uploadResponse.status}`);
-      }
-
-      console.log('Direct upload to storage successful.');
-      setProgress(60);
 
       // 3. Notify the backend API to process the file from Blob storage
       setUploadStatus('Requesting server to process uploaded file...');
