@@ -14,10 +14,12 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Configuration for this API route - should support up to 10MB file uploads
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Temporarily comment out other exports for diagnostics
+// export const dynamic = 'force-dynamic';
+// export const runtime = 'nodejs';
+// export const maxDuration = 60;
+
+// Keep only the config export for now
 export const config = {
   api: {
     bodyParser: {
