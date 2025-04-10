@@ -102,10 +102,12 @@ export async function GET(
     let insightStatement = `Great ${workout.type} session, ${userName}! Keep up the fantastic effort! 💪`;
 
     // 1. Distance Facts (Running, Cycling, Walking, Hiking, Swimming)
-    if (['running', 'cycling', 'walking', 'hiking', 'swimming'].includes(workout.type) && workout.distance && workout.distance > 0) {
-        const laps = distanceToTrackLaps(workout.distance);
-        const marathonFraction = distanceToMarathonFraction(workout.distance);
-        const formattedDist = formatDistanceUtil(workout.distance); // Use the util function
+    if (['running', 'cycling', 'walking', 'hiking', 'swimming'].includes(workout.type) && 
+        workout.cardioDetails?.distance && workout.cardioDetails.distance > 0) {
+        const distance = workout.cardioDetails.distance;
+        const laps = distanceToTrackLaps(distance);
+        const marathonFraction = distanceToMarathonFraction(distance);
+        const formattedDist = formatDistanceUtil(distance); // Use the util function
 
         if (laps && laps >= 1) { // Changed from > 0 to >= 1
             funFacts.push(`You covered ${formattedDist}, ${userName}! That's like running ${laps} lap${laps > 1 ? 's' : ''} around a track! 🏃`);
@@ -114,25 +116,38 @@ export async function GET(
             funFacts.push(`That ${formattedDist} is about ${(marathonFraction * 100).toFixed(0)}% of a full marathon, ${userName}! Making progress! 🏁`);
         }
         // Add another distance comparison (e.g., length of Golden Gate Bridge ~ 2.7km)
-         if (workout.distance > 2.5 && workout.distance < 3) {
+         if (distance > 2.5 && distance < 3) {
              funFacts.push(`Covering ${formattedDist}? Nice one, ${userName}! That's roughly the length of the Golden Gate Bridge! 🌉`);
-         } else if (workout.distance >= 5 && workout.distance < 7) {
+         } else if (distance >= 5 && distance < 7) {
               funFacts.push(`${formattedDist} is roughly a 5k distance, ${userName}! Solid run! 👍`);
-         } else if (workout.distance >= 10 && workout.distance < 15) {
+         } else if (distance >= 10 && distance < 15) {
              funFacts.push(`Hitting the 10k mark (${formattedDist}), ${userName}! Seriously impressive! 🔥`);
          }
     }
 
-    // 2. Volume Facts (Strength) - Calculate volume if not stored
-    let calculatedVolume: number | null = workout.volume ?? null;
-    if (!calculatedVolume && workout.type === 'strength' && workout.exercises) {
-         // Basic volume calculation placeholder (sum of weight * reps)
-         calculatedVolume = workout.exercises.reduce((totalVol, ex) => {
-             // Ensure sets exists and is an array before reducing
-             const exerciseSets = Array.isArray(ex.sets) ? ex.sets : [];
-             const exerciseVol = exerciseSets.reduce((setVol, set) => setVol + ((set.weight ?? 0) * (set.reps ?? 0)), 0);
-             return totalVol + exerciseVol;
-         }, 0);
+    // 2. Volume Facts (Strength) - Fetch WorkoutExercises for this workout
+    let calculatedVolume: number | null = null;
+    
+    if (workout.type === 'strength') {
+        try {
+            // Import WorkoutExerciseModel
+            const WorkoutExerciseModel = (await import("@/lib/db/models/workoutExercise")).default;
+            
+            // Fetch workout exercises for this workout
+            const workoutExercises = await WorkoutExerciseModel.find({ 
+                workoutId: workout._id 
+            }).populate('exerciseId').lean();
+            
+            // Calculate volume from workout exercises
+            calculatedVolume = workoutExercises.reduce((totalVol, ex) => {
+                // Ensure sets exists and is an array before reducing
+                const exerciseSets = Array.isArray(ex.sets) ? ex.sets : [];
+                const exerciseVol = exerciseSets.reduce((setVol, set) => setVol + ((set.weight ?? 0) * (set.reps ?? 0)), 0);
+                return totalVol + exerciseVol;
+            }, 0);
+        } catch (error) {
+            console.error("Error calculating volume from workout exercises:", error);
+        }
     }
 
     if (workout.type === 'strength' && calculatedVolume && calculatedVolume > 0) {
@@ -154,14 +169,33 @@ export async function GET(
     }
 
     // 3. Calorie Facts (Any type with calories)
-    if (workout.calories && workout.calories > 50) { // Only if meaningful calories burned
-        const bananas = caloriesToBananas(workout.calories);
-        const pizzaSlices = caloriesToPizzaSlices(workout.calories);
+    // For calorie data, we need to check cardioDetails for cardio workouts or set a reasonable estimate
+    let calorieEstimate: number | null = null;
+    
+    if (workout.type === 'running' || workout.type === 'cycling' || workout.type === 'swimming') {
+        // For cardio workouts, we can estimate calories based on duration and intensity
+        if (workout.duration) {
+            // Basic estimate: ~ 10 calories per minute for moderate intensity
+            const caloriesPerMinute = workout.intensity === 'High' ? 14 : 
+                                      workout.intensity === 'Medium' ? 10 : 7;
+            calorieEstimate = Math.round((workout.duration / 60) * caloriesPerMinute);
+        }
+    } else if (workout.type === 'strength') {
+        // For strength workouts, estimate based on duration
+        if (workout.duration) {
+            // Basic estimate: ~ 5-8 calories per minute
+            calorieEstimate = Math.round((workout.duration / 60) * 7);
+        }
+    }
+    
+    if (calorieEstimate && calorieEstimate > 50) { // Only if meaningful calories burned
+        const bananas = caloriesToBananas(calorieEstimate);
+        const pizzaSlices = caloriesToPizzaSlices(calorieEstimate);
 
         if (pizzaSlices) {
-             funFacts.push(`You burned ~${workout.calories} calories, ${userName}! That's roughly ${pizzaSlices} slice${pizzaSlices > 1 ? 's' : ''} of pizza! 🍕 Worth it!`);
+             funFacts.push(`You burned ~${calorieEstimate} calories, ${userName}! That's roughly ${pizzaSlices} slice${pizzaSlices > 1 ? 's' : ''} of pizza! 🍕 Worth it!`);
         } else if (bananas && bananas > 0) { // Fallback to bananas if not enough for pizza
-             funFacts.push(`Torching ~${workout.calories} calories? Nice, ${userName}! That's the energy in about ${bananas} banana${bananas > 1 ? 's' : ''}! 🍌`);
+             funFacts.push(`Torching ~${calorieEstimate} calories? Nice, ${userName}! That's the energy in about ${bananas} banana${bananas > 1 ? 's' : ''}! 🍌`);
         }
     }
 
