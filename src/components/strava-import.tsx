@@ -357,9 +357,11 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         // Use PUT method with direct URL
         xhr.open('PUT', url, true);
 
-        // Set required headers
+        // Set content type only - don't set Content-Length as browser will set this automatically
         xhr.setRequestHeader('Content-Type', 'application/zip');
-        xhr.setRequestHeader('Content-Length', file.size.toString());
+        
+        // Add required Blob store headers
+        xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
 
         // Optional: Track progress
         xhr.upload.onprogress = (event) => {

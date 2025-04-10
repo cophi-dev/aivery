@@ -33,11 +33,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     console.log(`Generating URL for client-side upload to path: ${blobPath}`);
 
-    // Generate a blob with a placeholder (single space)
-    const blob = await put(blobPath, new Blob([' ']), {
+    // Generate a blob with an empty placeholder
+    const blob = await put(blobPath, new Blob([]), {
       access: 'public',
       contentType: 'application/zip',
-      addRandomSuffix: false,
+      addRandomSuffix: false
     });
 
     console.log('Generated blob storage URL:', blob.url);
