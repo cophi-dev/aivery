@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, markWorkoutComplete } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
-import type { WorkoutData } from "@/types/db"
+import type { WorkoutData, Exercise } from "@/types/db"
 import { Label } from "@/components/ui/label"
 import { toast } from "react-hot-toast"
 
@@ -45,7 +45,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
           setWorkout(data)
           // Initialize all exercises as not completed
           const initialCompletedState: Record<number, boolean> = {}
-          data.exercises?.forEach((_, index) => {
+          data.exercises?.forEach((exercise: Exercise, index: number) => {
             initialCompletedState[index] = false
           })
           setCompletedExercises(initialCompletedState)
