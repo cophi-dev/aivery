@@ -9,21 +9,9 @@ import AdmZip from 'adm-zip'
 import { gunzip as gunzipCb } from 'zlib'
 import { promisify } from 'util'
 import { transformStravaActivity } from "@/lib/services/stravaService"
-import { Readable } from "stream"
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
+import { head, del } from '@vercel/blob'; // Import blob functions
 
-// Uncomment the config block
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-  },
-}
-
-// Keep runtime, remove maxDuration (will be set in vercel.json)
+// Keep runtime (Node.js needed for AdmZip, zlib etc.)
 export const runtime = 'nodejs';
 
 // Define FitActivity interface
@@ -47,93 +35,83 @@ interface FitActivity {
 
 const gunzipAsync = promisify(gunzipCb)
 
-// Helper function to wait for garbage collection
-const waitForGC = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper function to clean up temporary files
-async function cleanupTempFiles(tempDir: string | null) {
-  if (tempDir) {
-    try {
-      await fs.promises.rm(tempDir, { recursive: true, force: true });
-      console.log('Cleaned up temporary directory:', tempDir);
-        } catch (error) {
-      console.error('Error cleaning up temporary files:', error);
-        }
-      }
-}
-
 export async function POST(request: NextRequest) {
-  let tempDir: string | null = null;
-  
+  // No tempDir needed
+  // let tempDir: string | null = null;
+  let blobUrlToDelete: string | null = null; // Keep track of blob URL for deletion
+
   try {
-    // Log request details
-    console.log('=== Starting Strava import process ===');
+    // Log request details (content-length won't reflect file size anymore)
+    console.log('=== Starting Strava import process (from Blob Storage) ===');
     console.log('Request method:', request.method);
     console.log('Request URL:', request.url);
-    console.log('Content-Type:', request.headers.get('content-type'));
-    console.log('Content-Length:', request.headers.get('content-length'));
+    console.log('Content-Type:', request.headers.get('content-type')); // Should be application/json
 
     // Check authentication first
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    if (!session?.user?.id) {
       console.error('No authenticated session');
-      return NextResponse.json({ 
-        success: false, 
-        error: "Unauthorized" 
-      }, { 
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    console.log('User authenticated:', session.user.id);
+    const userId = session.user.id; // Get userId for potential validation
+    console.log('User authenticated:', userId);
 
-    // Get the raw request body
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    // 1. Get blob pathname from the request body
+    let blobPathname: string | undefined;
+    let originalFilename: string | undefined;
+    try {
+        const body = await request.json();
+        blobPathname = body.blobPathname;
+        originalFilename = body.originalFilename; // Get original filename too
+    } catch (e) {
+        console.error('Failed to parse request body:', e);
+        return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    }
+
+    if (!blobPathname || typeof blobPathname !== 'string') {
+      console.error('No blobPathname provided in request body');
+      return NextResponse.json({ success: false, error: "Missing blobPathname" }, { status: 400 });
+    }
     
-    if (!file) {
-      console.error('No file provided');
-      return NextResponse.json({ 
-        success: false,
-        error: "No file provided" 
-      }, { 
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    // Optional: Validate if the blob path belongs to the authenticated user
+    // e.g., check if blobPathname starts with `strava-imports/${userId}/`
+    if (!blobPathname.startsWith(`strava-imports/${userId}/`)) {
+        console.error('Blob path does not match authenticated user:', { userId, blobPathname });
+        return NextResponse.json({ success: false, error: "Unauthorized access to blob" }, { status: 403 });
     }
 
-    // Validate file
-    if (!file.name.endsWith('.zip')) {
-      console.error('Invalid file type:', file.type);
-      return NextResponse.json({ 
-        success: false,
-        error: "Please upload a ZIP file" 
-      }, { 
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    console.log('Processing file from blob storage:', { blobPathname, originalFilename });
+
+    // 2. Fetch the file content from Vercel Blob
+    console.log('Fetching file metadata from Blob storage...');
+    const blobHead = await head(blobPathname); // Use head with pathname directly
+
+    if (!blobHead || !blobHead.url) {
+        console.error('Blob not found or URL missing:', blobPathname);
+        return NextResponse.json({ success: false, error: "Uploaded file not found in storage." }, { status: 404 });
     }
+    
+    blobUrlToDelete = blobHead.url; // Store URL for potential deletion later
+    console.log('File metadata fetched:', { size: blobHead.size, contentType: blobHead.contentType });
 
-    console.log('Processing file:', {
-      name: file.name,
-      type: file.type,
-      size: file.size
-    });
-
-    // Create temporary directory with unique name
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(7);
-    tempDir = path.join(os.tmpdir(), `strava-import-${timestamp}-${randomString}`);
-    await fs.promises.mkdir(tempDir, { recursive: true });
-    console.log('Created temporary directory:', tempDir);
-
-    // Get file content
-    const arrayBuffer = await file.arrayBuffer();
+    console.log('Downloading file content from Blob storage URL:', blobHead.url);
+    const blobResponse = await fetch(blobHead.url);
+    if (!blobResponse.ok) {
+        console.error('Failed to download file from blob storage:', { status: blobResponse.status, url: blobHead.url });
+        return NextResponse.json({ success: false, error: `Failed to download file from storage (status ${blobResponse.status})` }, { status: 500 });
+    }
+    
+    const arrayBuffer = await blobResponse.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    console.log('File buffer size:', buffer.length);
+    console.log('File buffer size from blob:', buffer.length);
 
-    // Create ZIP instance
-    console.log('Creating ZIP instance...');
+    // No need to create temporary directory
+    // const timestamp = ...
+    // tempDir = ...
+    // await fs.promises.mkdir(...)
+
+    // 3. Process the ZIP buffer (existing logic)
+    console.log('Creating ZIP instance from buffer...');
     const zip = new AdmZip(buffer);
     
     // Get entries
@@ -143,7 +121,7 @@ export async function POST(request: NextRequest) {
     // Log all entry names for debugging
     console.log('All ZIP Entries:', entries.map(e => e.entryName));
       
-    // Track results
+    // Track results (existing logic)
     const results = {
       processed: 0,
       imported: 0,
@@ -156,122 +134,143 @@ export async function POST(request: NextRequest) {
     totalDuration: 0 // Assuming duration is in minutes or a consistent unit
   };
 
-  // Process each entry
-  for (const entry of entries) {
-    // Log every entry being considered
-    console.log(`Checking entry: ${entry.entryName}, isDirectory: ${entry.isDirectory}`);
-    // Make the path check case-insensitive
-    const isActivityPath = entry.entryName.toLowerCase().includes('activities/'); 
-    console.log(`  -> Checking path includes 'activities/' (case-insensitive): ${isActivityPath}`);
+    // Process each entry (existing logic, uses entry.getData() which works on the buffer)
+    for (const entry of entries) {
+      // Log every entry being considered
+      console.log(`Checking entry: ${entry.entryName}, isDirectory: ${entry.isDirectory}`);
+      // Make the path check case-insensitive
+      const isActivityPath = entry.entryName.toLowerCase().includes('activities/'); 
+      console.log(`  -> Checking path includes 'activities/' (case-insensitive): ${isActivityPath}`);
 
-    if (!entry.isDirectory && isActivityPath) {
-      results.processed++; // Increment processed count here, even if parsing fails later
-      console.log(`Processing: ${entry.entryName}`);
-      
-      try {
-        let workout = null;
-        let workoutTimestamp: number | null = null; // Use number for comparison
-        let workoutDistance = 0;
-        let workoutDuration = 0; // Store duration
-        let workoutActivityType = 'unknown';
+      if (!entry.isDirectory && isActivityPath) {
+        results.processed++; // Increment processed count here, even if parsing fails later
+        console.log(`Processing: ${entry.entryName}`);
         
-        if (entry.entryName.endsWith('.fit.gz')) {
-          const content = entry.getData();
-          const unzippedContent = await gunzipAsync(content);
-          workout = await processFitFile(unzippedContent, entry.entryName);
-        } else if (entry.entryName.endsWith('.gpx')) {
-          const content = entry.getData();
-          workout = await processGpxFile(Buffer.from(content), entry.entryName);
-        } else if (entry.entryName.endsWith('.fit')) {
-          const content = entry.getData();
-          workout = await processFitFile(content, entry.entryName);
-        }
-
-        if (workout) {
-          const transformedWorkout = transformStravaActivity(workout);
+        try {
+          let workout = null;
+          let workoutTimestamp: number | null = null; // Use number for comparison
+          let workoutDistance = 0;
+          let workoutDuration = 0; // Store duration
+          let workoutActivityType = 'unknown';
           
-          // Prepare data for saving, store duration in SECONDS
-          const workoutToSave = {
-            ...transformedWorkout,
-            distance: transformedWorkout.distance, // This should already be in KM
-            duration: transformedWorkout.duration || 0, // Store duration directly in seconds
-            userId: session.user.id,
-            source: "strava",
-            sourceId: extractStravaIdFromFilename(entry.entryName)
-          };
-          
-          // Aggregate stats using the duration in seconds from workoutToSave
-          workoutActivityType = workoutToSave.type || 'unknown'; 
-          workoutTimestamp = new Date(workoutToSave.date).getTime();
-          workoutDuration = workoutToSave.duration; // Use seconds
-          workoutDistance = workoutToSave.distance || 0;
-
-          results.activityTypesCount[workoutActivityType] = (results.activityTypesCount[workoutActivityType] || 0) + 1;
-          if (!isNaN(workoutTimestamp)) {
-               results.earliestTimestamp = Math.min(results.earliestTimestamp, workoutTimestamp);
-               results.latestTimestamp = Math.max(results.latestTimestamp, workoutTimestamp);
+          if (entry.entryName.endsWith('.fit.gz')) {
+            const content = entry.getData();
+            const unzippedContent = await gunzipAsync(content);
+            workout = await processFitFile(unzippedContent, entry.entryName);
+          } else if (entry.entryName.endsWith('.gpx')) {
+            const content = entry.getData();
+            workout = await processGpxFile(Buffer.from(content), entry.entryName);
+          } else if (entry.entryName.endsWith('.fit')) {
+            const content = entry.getData();
+            workout = await processFitFile(content, entry.entryName);
           }
-          results.totalDistance += workoutDistance;
-          // Use the duration (already converted to seconds) from workoutToSave for aggregation
-          results.totalDuration += workoutDuration; 
 
-          // Save the workout with duration in seconds and distance in KM
-          await createCardioWorkout(workoutToSave);
-          results.imported++;
-        } else {
-          // Still counts as processed, but not imported
-          console.log(`No workout data extracted from ${entry.entryName}, skipping import.`);
+          if (workout) {
+            const transformedWorkout = transformStravaActivity(workout);
+            
+            // Prepare data for saving, store duration in SECONDS
+            const workoutToSave = {
+              ...transformedWorkout,
+              distance: transformedWorkout.distance, // This should already be in KM
+              duration: transformedWorkout.duration || 0, // Store duration directly in seconds
+              userId: session.user.id,
+              source: "strava",
+              sourceId: extractStravaIdFromFilename(originalFilename || entry.entryName)
+            };
+            
+            // Aggregate stats using the duration in seconds from workoutToSave
+            workoutActivityType = workoutToSave.type || 'unknown'; 
+            workoutTimestamp = new Date(workoutToSave.date).getTime();
+            workoutDuration = workoutToSave.duration; // Use seconds
+            workoutDistance = workoutToSave.distance || 0;
+
+            results.activityTypesCount[workoutActivityType] = (results.activityTypesCount[workoutActivityType] || 0) + 1;
+            if (!isNaN(workoutTimestamp)) {
+                 results.earliestTimestamp = Math.min(results.earliestTimestamp, workoutTimestamp);
+                 results.latestTimestamp = Math.max(results.latestTimestamp, workoutTimestamp);
+            }
+            results.totalDistance += workoutDistance;
+            // Use the duration (already converted to seconds) from workoutToSave for aggregation
+            results.totalDuration += workoutDuration; 
+
+            // Save the workout with duration in seconds and distance in KM
+            await createCardioWorkout(workoutToSave);
+            results.imported++;
+          } else {
+            // Still counts as processed, but not imported
+            console.log(`No workout data extracted from ${entry.entryName}, skipping import.`);
+          }
+          
+          // Free up memory - consider if needed, maybe less frequently
+          // await waitForGC(50);
+          
+        } catch (error) {
+          console.error(`Error processing ${entry.entryName}:`, error);
+          results.errors.push(entry.entryName); // Log the filename that failed
+          // This file was processed but resulted in an error, don't increment imported
         }
-        
-        // Free up memory - consider if needed, maybe less frequently
-        // await waitForGC(50);
-        
-      } catch (error) {
-        console.error(`Error processing ${entry.entryName}:`, error);
-        results.errors.push(entry.entryName); // Log the filename that failed
-        // This file was processed but resulted in an error, don't increment imported
       }
     }
-  }
 
-  // Clean up temporary directory
-  await cleanupTempFiles(tempDir);
+    // No need to clean up temporary directory
+    // await cleanupTempFiles(tempDir);
 
-  // Revalidate paths after processing all files
-  revalidatePath("/calendar");
-  revalidatePath("/activity");
-  revalidatePath("/dashboard");
+    // 4. Delete the file from Blob storage after successful processing
+    try {
+        console.log('Deleting successfully processed file from Blob storage:', blobUrlToDelete);
+        if (blobUrlToDelete) {
+            await del(blobUrlToDelete); // Use del with the blob URL
+            console.log('Blob deleted successfully.');
+        } else {
+             console.warn('Could not delete blob, URL not available.');
+        }
+    } catch (deleteError) {
+        console.error('Failed to delete file from blob storage after processing:', deleteError);
+        // Log error but don't fail the entire request
+    }
 
-  // Convert timestamps back to ISO strings or keep as numbers?
-  // Let's convert back to ISO strings for consistency, handle cases where no dates were found
-  const finalResults = {
-      ...results,
-      earliestDate: results.earliestTimestamp === Infinity ? null : new Date(results.earliestTimestamp).toISOString(),
-      latestDate: results.latestTimestamp === -Infinity ? null : new Date(results.latestTimestamp).toISOString(),
-      totalDuration: Math.round(results.totalDuration / 60), // Convert seconds to minutes for display
-  };
-  // Remove intermediate timestamp numbers
-  delete (finalResults as any).earliestTimestamp;
-  delete (finalResults as any).latestTimestamp;
+    // Revalidate paths (existing logic)
+    revalidatePath("/calendar");
+    revalidatePath("/activity");
+    revalidatePath("/dashboard");
 
-  console.log('Final import results:', finalResults);
+    // Convert timestamps back to ISO strings or keep as numbers?
+    // Let's convert back to ISO strings for consistency, handle cases where no dates were found
+    const finalResults = {
+        ...results,
+        earliestDate: results.earliestTimestamp === Infinity ? null : new Date(results.earliestTimestamp).toISOString(),
+        latestDate: results.latestTimestamp === -Infinity ? null : new Date(results.latestTimestamp).toISOString(),
+        totalDuration: Math.round(results.totalDuration / 60), // Convert seconds to minutes for display
+    };
+    // Remove intermediate timestamp numbers
+    delete (finalResults as any).earliestTimestamp;
+    delete (finalResults as any).latestTimestamp;
 
-  // Return results including aggregate stats
-  return NextResponse.json({
-    success: true,
-    message: `Processed ${finalResults.processed} files, imported ${finalResults.imported} workouts`,
-    results: finalResults
-  }, {
-    headers: { 'Content-Type': 'application/json' }
-  });
+    console.log('Final import results:', finalResults);
+    return NextResponse.json({
+      success: true,
+      message: `Processed ${finalResults.processed} files, imported ${finalResults.imported} workouts`,
+      results: finalResults
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
     
   } catch (error) {
-    console.error('Error in Strava import:', error);
+    console.error('Error in Strava import (from Blob):', error);
     
-    // Clean up on error
-    await cleanupTempFiles(tempDir);
-    
-    // Return error response
+    // Don't cleanup tempDir, but maybe attempt blob delete on critical error?
+    // Consider if blob should be deleted on failure or kept for debugging
+    if (blobUrlToDelete) {
+        try {
+            console.warn('Attempting to delete blob due to processing error:', blobUrlToDelete);
+            await del(blobUrlToDelete);
+            console.log('Blob deleted after error.');
+        } catch (delErr) {
+            console.error('Failed to delete blob after error:', delErr);
+        }
+    }
+
+    // Return error response (existing logic)
     return NextResponse.json({ 
       success: false, 
       error: error instanceof Error ? error.message : "An error occurred during import",
