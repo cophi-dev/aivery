@@ -15,7 +15,7 @@ const nextConfig = {
   
   experimental: {
     serverActions: {
-      bodySizeLimit: '100mb',
+      bodySizeLimit: '50mb',
       allowedOrigins: ['*'],
     },
     largePageDataBytes: 128 * 1000, // 128KB
@@ -68,6 +68,13 @@ const nextConfig = {
   staticPageGenerationTimeout: 1,
   serverRuntimeConfig: {
     dynamicRoutes: true
+  },
+  // Added API configuration to handle large requests
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+    responseLimit: '50mb',
   },
   trailingSlash: false,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx'],

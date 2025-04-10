@@ -14,16 +14,11 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Increase the body size limit for this route - REMOVED Deprecated Config
-/*
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '100mb', // Adjust this value as needed
-    },
-  },
-}
-*/
+// Configuration for this API route
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+export const bodySize = '50mb';
 
 // Define FitActivity interface
 interface FitActivity {
@@ -45,10 +40,6 @@ interface FitActivity {
 }
 
 const gunzipAsync = promisify(gunzipCb)
-
-// Use Node.js runtime
-export const runtime = 'nodejs'
-export const maxDuration = 60; // Reduced from 300 to 60 seconds for Vercel Hobby plan limit
 
 // Helper function to wait for garbage collection
 const waitForGC = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));

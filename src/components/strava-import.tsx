@@ -298,7 +298,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       }
 
       // Validate file size (e.g., 100MB)
-      const MAX_FILE_SIZE_MB = 100;
+      const MAX_FILE_SIZE_MB = 50;
       const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
       if (selected.size > MAX_FILE_SIZE_BYTES) {
       toast({
@@ -835,7 +835,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     Click to select the downloaded .zip file
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Max 100MB.
+                    Max 50MB.
                   </p>
                 </div>
               </label>
