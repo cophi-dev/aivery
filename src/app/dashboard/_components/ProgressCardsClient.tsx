@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dumbbell, HeartPulse } from "lucide-react";
+import { Dumbbell, HeartPulse, Route } from "lucide-react";
 
 // --- Formatting Helpers (defined locally) ---
 // Format volume (assuming kg)
@@ -11,12 +11,19 @@ const formatVolume = (volume: number | undefined | null): string | null => {
   return `${Math.round(volume).toLocaleString()} kg`;
 };
 
-// Format distance (assuming km)
-// const formatDistance = (distance: number | undefined | null): string | null => {
-//   if (distance === undefined || distance === null || distance <= 0) return null;
-//   // Format to 1 decimal place
-//   return `${distance.toFixed(1)} km`;
-// };
+// Format distance (assuming meters, convert to km)
+const formatDistance = (meters: number | undefined | null): string => {
+  console.log('[ProgressCards] Formatting distance:', meters);
+  
+  // Handle undefined, null, or negative values
+  if (meters === undefined || meters === null || meters <= 0) {
+    return "0.0 km"; // Only show 0 when it's actually 0, not for missing data
+  }
+  
+  // Convert to km and format to 1 decimal place
+  const km = meters / 1000;
+  return `${km.toFixed(1)} km`;
+};
 
 // Format duration (assuming input is in minutes)
 const formatDuration = (minutes: number | undefined | null): string | null => {
@@ -38,10 +45,19 @@ const formatDuration = (minutes: number | undefined | null): string | null => {
 
 interface ProgressCardsProps {
   strengthVolume: number;
-  cardioDuration: number; // Changed from cardioDistance
+  cardioDuration: number;
+  cardioDistance?: number; // Added optional distance
 }
 
-export function ProgressCards({ strengthVolume, cardioDuration }: ProgressCardsProps) {
+export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }: ProgressCardsProps) {
+  // Determine if we should show distance alongside duration
+  const hasCardioDistance = cardioDistance !== undefined && cardioDistance !== null && cardioDistance > 0;
+  
+  // Debug values
+  console.log('[ProgressCards] Received cardioDistance:', cardioDistance);
+  console.log('[ProgressCards] Formatted distance:', formatDistance(cardioDistance));
+  console.log('[ProgressCards] Display distance:', hasCardioDistance);
+  
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
       {/* Strength Progress Card */}
@@ -69,7 +85,12 @@ export function ProgressCards({ strengthVolume, cardioDuration }: ProgressCardsP
         </CardHeader>
         <CardContent className="text-center">
           <p className="text-3xl font-bold">{formatDuration(cardioDuration) ?? "0m"}</p>
-          {/* <p className="text-sm text-muted-foreground">+Y% from last week</p> */}
+          
+          {/* Always show the distance element */}
+          <p className="text-md text-muted-foreground mt-1 flex items-center justify-center">
+            <Route className="h-4 w-4 mr-1" />
+            {formatDistance(cardioDistance)}
+          </p>
         </CardContent>
       </Card>
     </div>

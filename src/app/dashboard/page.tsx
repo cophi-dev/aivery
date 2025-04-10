@@ -1,6 +1,10 @@
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
+import { headers } from 'next/headers';
 import { authOptions } from "@/lib/auth";
+
+// Force dynamic rendering to disable data caching for this page
+export const dynamic = 'force-dynamic';
 
 // Import Client Components (assuming they exist in separate files)
 import { SubscriptionStatus } from "./_components/SubscriptionStatusClient"; 
@@ -16,13 +20,61 @@ import { calculateDashboardMetrics } from "@/lib/dashboard-metrics";
 import { fetchWorkouts } from "@/lib/workout-actions"; // Use actual workout fetching
 
 // --- Actual Server-Side Data Fetching ---
+// Refactored to use fetch API against our new route
 async function getDashboardWorkouts(userId: string) {
-    console.log("[Dashboard Page] Fetching workouts for user:", userId);
-    // Fetch workouts for the logged-in user (fetchWorkouts handles getting the userId internally)
-    const workouts = await fetchWorkouts(); 
-    console.log("[Dashboard Page] Finished fetching workouts.");
-    // Return only workouts now
-    return { workouts }; 
+    console.log("[Dashboard Page] Fetching workouts via API for user:", userId);
+    try {
+        // Construct the full URL for the API route
+        // Ensure NEXT_PUBLIC_APP_URL is set in your environment variables
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'; 
+        const apiUrl = `${baseUrl}/api/dashboard-workouts`;
+        console.log(`[Dashboard Page] Fetching from URL: ${apiUrl}`);
+        
+        // Get incoming request headers
+        const requestHeaders = headers();
+        const cookieHeader = requestHeaders.get('cookie') || '';
+        
+        const response = await fetch(apiUrl, { 
+            cache: 'no-store', // Explicitly disable caching for this fetch
+            // Forward necessary headers (especially cookies for authentication)
+            headers: { 
+                'Cookie': cookieHeader
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Dashboard Page] API fetch failed with status ${response.status}: ${errorText}`);
+            throw new Error(`Failed to fetch dashboard workouts. Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("[Dashboard Page] Finished fetching workouts via API.");
+        
+        // Additional validation and diagnostics
+        if (!data || !data.workouts || !Array.isArray(data.workouts)) {
+            console.error('[Dashboard Page] API returned invalid data structure:', JSON.stringify(data).substring(0, 100) + '...');
+            return { workouts: [] }; // Return empty array to prevent errors
+        }
+        
+        // Simple validation on the workout items
+        const validWorkouts = data.workouts.filter((w: any) => w && w.date && typeof w.date === 'string');
+        if (validWorkouts.length !== data.workouts.length) {
+            console.warn(`[Dashboard Page] Some workouts (${data.workouts.length - validWorkouts.length}) were filtered out due to missing/invalid date`);
+            data.workouts = validWorkouts;
+        }
+        
+        return data; // Assuming the API returns { workouts: [...] }
+    } catch (error) {
+        console.error("[Dashboard Page] Error in getDashboardWorkouts (API fetch):");
+        if (error instanceof Error) {
+            console.error(error.message);
+            throw new Error(`Network or fetch error fetching dashboard workouts: ${error.message}`);
+        } else {
+            console.error("Unknown error:", error);
+            throw new Error('An unknown error occurred while fetching dashboard workouts.');
+        }
+    }
 }
 // ----------------------------------------------
 
@@ -41,10 +93,27 @@ export default async function DashboardPage() {
     let workoutData;
     let metrics = null;
     try {
-        // Fetch only workout data now
+        // Fetch only workout data now using the new fetch-based function
+        // The function now returns { workouts: [...] }
         workoutData = await getDashboardWorkouts(userId);
-        metrics = calculateDashboardMetrics(workoutData.workouts || []);
-        console.log("[Dashboard Page] Calculated metrics:", metrics);
+        
+        // Enhanced logging to debug workout data
+        console.log(`[Dashboard Page] Fetched ${workoutData?.workouts?.length || 0} workouts`);
+        if (workoutData?.workouts?.length > 0) {
+            console.log('[Dashboard Page] First workout date:', workoutData.workouts[0].date);
+            console.log('[Dashboard Page] Last workout date:', workoutData.workouts[workoutData.workouts.length - 1].date);
+        }
+        
+        // Add debug object comparison to detect data corruption
+        const workouts = workoutData.workouts || [];
+        console.log(`[Dashboard Page] Before metrics calculation: workouts array length = ${workouts.length}`);
+        
+        metrics = calculateDashboardMetrics(workouts);
+        console.log("[Dashboard Page] Calculated metrics:", JSON.stringify(metrics, null, 2));
+
+        // More detailed logging for cardio distance
+        console.log(`[Dashboard Page] Cardio distance from metrics: ${metrics?.cardioDistanceLast7Days}`);
+        console.log(`[Dashboard Page] Cardio distance type: ${typeof metrics?.cardioDistanceLast7Days}`);
     } catch (error) {
         console.error("[Dashboard Page] Failed to fetch server-side data or calculate metrics:", error);
         // Basic error display
@@ -81,6 +150,8 @@ export default async function DashboardPage() {
                 <ProgressCards 
                     strengthVolume={metrics?.strengthVolumeLast7Days ?? 0} 
                     cardioDuration={metrics?.cardioDurationLast7Days ?? 0}
+                    cardioDistance={metrics?.cardioDistanceLast7Days ?? 0}
+                    // Note: All values are based only on actual data from the database, no assumptions
                 />
 
                 {/* Spotlight Cards - Client Component */}

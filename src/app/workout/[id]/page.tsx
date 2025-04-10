@@ -1,17 +1,57 @@
 // --- Server-Side Data Fetching Wrapper (Default Export) ---
-import { getWorkoutById, getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository";
+// Remove unused imports if getWorkoutById is no longer used directly here
+// import { getWorkoutById, getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
-import { WorkoutData } from "@/types/db";
+// Remove WorkoutData import if the type is handled by fetchWorkout or client component
+// import { WorkoutData } from "@/types/db";
 
-// Import the client component (assuming it exists, even with potential errors for now)
+// Import the fetchWorkout action (which includes exercise fetching and serialization)
+import { fetchWorkout } from "@/lib/workout-actions";
+
+// Import the client component
 import WorkoutDetailsClient from "@/components/workout-details-client";
+import { getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository";
+import mongoose from 'mongoose';
+
+// Define the manual serialization function again if it was removed
+// Helper function to deeply serialize Mongoose docs/objects
+function deepSerialize(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (obj instanceof mongoose.Types.ObjectId) {
+    return obj.toString();
+  }
+  if (typeof obj._id === 'object' && obj._id instanceof mongoose.Types.ObjectId) {
+     obj._id = obj._id.toString();
+  }
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => deepSerialize(item));
+  }
+  if (typeof obj.toObject === 'function') {
+    obj = obj.toObject();
+  }
+  const serializedObj: { [key: string]: any } = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        if (key === '_id' && obj[key] instanceof mongoose.Types.ObjectId) {
+            serializedObj[key] = obj[key].toString();
+        } else {
+            serializedObj[key] = deepSerialize(obj[key]);
+        }
+    }
+  }
+  return serializedObj;
+}
 
 export default async function WorkoutPageServerWrapper({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    // Redirect happens server-side before rendering the client component
     redirect(`/login?callbackUrl=/workout/${params.id}`);
   }
 
@@ -21,46 +61,50 @@ export default async function WorkoutPageServerWrapper({ params }: { params: { i
     notFound();
   }
 
-  let workout: WorkoutData | null = null;
+  let workoutData: any | null = null; // Use any type temporarily as fetchWorkout returns serialized
   try {
-    // Ensure you are passing the ID correctly based on your repository function
-    workout = await getWorkoutById(workoutId);
+    // --- Use the refactored fetchWorkout action --- 
+    console.log(`SERVER WRAPPER: Calling fetchWorkout for ID: ${workoutId}`);
+    workoutData = await fetchWorkout(workoutId);
+    console.log(`SERVER WRAPPER: fetchWorkout returned data: ${!!workoutData}`);
   } catch (error) {
-    console.error(`Error fetching workout ${workoutId}:`, error);
-    // Decide how to handle DB errors - show notFound or an error page?
+    console.error(`SERVER WRAPPER: Error calling fetchWorkout for ${workoutId}:`, error);
+    // Decide how to handle fetch errors - show notFound or an error page?
+    // For now, let's return notFound, but maybe a specific error state is better
     notFound(); 
   }
 
-  if (!workout) {
-    notFound(); // Workout not found in DB
+  // fetchWorkout already handles not found and ownership checks internally
+  // so we just need to check if it returned null
+  if (!workoutData) {
+    console.log(`SERVER WRAPPER: Workout ${workoutId} not found or user ${session.user.id} unauthorized.`);
+    notFound(); 
   }
 
-  // Verify user ownership
-  // Make sure workout.userId exists and is comparable
-  if (!workout.userId || workout.userId.toString() !== session.user.id) {
-     console.warn(`Unauthorized access attempt: User ${session.user.id} tried to access workout ${workoutId}`);
-     notFound(); 
-  }
-
-  // Fetch previous workouts for context
-  let previousWorkouts: WorkoutData[] = [];
+  // --- Fetch and serialize previous workouts --- 
+  let previousWorkoutsData: any[] = []; // Use any type for serialized data
   try {
-     // Ensure userId is passed as string if expected by the function
-     previousWorkouts = await getPreviousWorkoutsByType(
-       session.user.id, // Pass user ID string
-    workout.type, 
-    workout.date, 
-       10 // Limit context
+     console.log(`SERVER WRAPPER: Fetching previous workouts for user ${session!.user!.id}, type ${workoutData.type}`);
+     // Fetch previous workouts (might need refactoring later if structure changed)
+     const previousWorkoutsDocs = await getPreviousWorkoutsByType(
+       session!.user!.id, 
+       workoutData.type, 
+       new Date(workoutData.date), 
+       10 
      );
+     // Serialize the fetched previous workouts
+     previousWorkoutsData = deepSerialize(previousWorkoutsDocs);
+     console.log(`SERVER WRAPPER: Found and serialized ${previousWorkoutsData.length} previous workouts.`);
   } catch (error) {
-     console.error(`Error fetching previous workouts for user ${session.user.id}, type ${workout.type}:`, error);
-     // Proceed without previous workouts if fetch fails, component should handle empty array
+     console.error(`SERVER WRAPPER: Error fetching/serializing previous workouts:`, error);
+     // Proceed with empty array if fetch/serialization fails
   }
 
-  // Pass the fetched data as props to the client component
-  return <WorkoutDetailsClient workout={workout} previousWorkouts={previousWorkouts} />;
+  // Pass the fetched & serialized data as props to the client component
+  console.log("SERVER WRAPPER: Rendering WorkoutDetailsClient...");
+  // Pass props directly, client component will handle types
+  return <WorkoutDetailsClient workout={workoutData} previousWorkouts={previousWorkoutsData} />;
 }
 
-// Note: All previous helper functions and JSX rendering logic have been removed 
-// from this file and are now expected to be in WorkoutDetailsClient.
+// Remove comment about logic being moved
 

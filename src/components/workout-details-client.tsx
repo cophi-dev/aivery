@@ -144,8 +144,8 @@ const WorkoutProgressGraph = dynamic<WorkoutProgressGraphProps>(
 );
 
 interface WorkoutDetailsClientProps {
-  workout: WorkoutData;
-  previousWorkouts: WorkoutData[];
+  workout: any;
+  previousWorkouts: any[];
 }
 
 function capitalizeFirstLetter(string: string) {
@@ -228,39 +228,29 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
   }, [fetchInsight]);
 
   const totalVolume = useMemo(() => {
-    return workout.type === 'strength' && workout.exercises ? workout.exercises.reduce((sum, ex) => sum + calculateExerciseVolume(ex), 0) : null;
+    if (!workout?.workoutExercises || workout.type !== 'strength') return null;
+    return workout.workoutExercises.reduce((sum: number, ex: any) => {
+        const estimatedWeight = estimateBodyweightForExercise(ex.exerciseId?.name || '');
+        if (!ex.sets?.length) return sum;
+        return sum + ex.sets.reduce((setSum: number, set: any) => {
+            const weight = set.weight ?? 0;
+            const reps = set.reps ?? 0;
+            if (weight > 0) return setSum + weight * reps;
+            if (estimatedWeight > 0) return setSum + estimatedWeight * reps;
+            return setSum + reps; // Count reps if no weight/estimated weight
+        }, 0);
+    }, 0);
   }, [workout]);
   
   const overallTotalReps = useMemo(() => {
-      if (!workout.exercises) return 0;
-      return workout.exercises.reduce((exSum, ex) => 
-          exSum + (ex.sets?.reduce((setSum, set) => setSum + (set.reps ?? 0), 0) || 0)
+      if (!workout?.workoutExercises) return 0;
+      return workout.workoutExercises.reduce((exSum: number, ex: any) => 
+          exSum + (ex.sets?.reduce((setSum: number, set: any) => setSum + (set.reps ?? 0), 0) || 0)
       , 0);
-  }, [workout.exercises]);
+  }, [workout.workoutExercises]);
 
-  const exerciseSummaryString = useMemo(() => {
-      if (!workout.exercises || workout.exercises.length === 0) {
-          return "No exercises recorded.";
-      }
-      const parts = workout.exercises
-          .map(exercise => {
-              const totalSets = exercise.sets?.length || 0;
-              if (totalSets === 0) return null;
-              const firstReps = exercise.sets![0].reps;
-              const allRepsSame = firstReps != null && exercise.sets!.every(set => set.reps === firstReps);
-              if (allRepsSame && firstReps && firstReps > 0) {
-                  return `${totalSets}x${firstReps} ${capitalizeFirstLetter(exercise.name)}`;
-              } else {
-                  return `${totalSets} sets of ${capitalizeFirstLetter(exercise.name)}`;
-              }
-          })
-          .filter((part): part is string => part !== null);
-
-      if (parts.length === 0) return "No exercise sets recorded.";
-      return parts.join(' and '); 
-  }, [workout.exercises]);
-
-  const stravaLink = getFixedStravaLink(workout);
+  const fixedStravaLink = getFixedStravaLink(workout as WorkoutData);
+  const workoutTypeIcon = getWorkoutTypeIcon(workout.type);
   const cardioDetails: CardioDetails = {};
   if (workout.distance) cardioDetails.distance = workout.distance;
   if (workout.cardioDetails?.pace) cardioDetails.pace = workout.cardioDetails.pace;
@@ -271,6 +261,10 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
   const paceInfo = getPaceZone(cardioDetails.pace ?? null);
   const workoutIdString = workout._id.toString();
 
+  if (!workout) {
+    return <div>Workout data is missing.</div>;
+  }
+  
   return (
     <div className="bg-background text-foreground">
       <div className="h-screen flex flex-col items-center bg-gradient-to-br from-primary/10 to-secondary/10 relative p-6">
@@ -316,7 +310,7 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
         <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6 pb-4 border-b">
           <div className="space-y-1">
             <h2 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-              {getWorkoutTypeIcon(workout.type)} {workout.name || capitalizeFirstLetter(workout.type || 'Workout')}
+              {workoutTypeIcon} {workout.name || capitalizeFirstLetter(workout.type || 'Workout')}
             </h2>
             <p className="text-muted-foreground text-sm">{format(workout.date as any, 'EEEE, MMMM d, yyyy')}</p>
           </div>
@@ -334,33 +328,73 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
           </div>
         </div>
 
-        {stravaLink && isValidStravaLink(stravaLink) && (
-          <a href={stravaLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center px-3 py-1.5 mb-4 text-sm font-medium text-white bg-[#FC4C02] rounded-md hover:bg-[#e04402] shadow">
+        {fixedStravaLink && isValidStravaLink(fixedStravaLink) && (
+          <a href={fixedStravaLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center px-3 py-1.5 mb-4 text-sm font-medium text-white bg-[#FC4C02] rounded-md hover:bg-[#e04402] shadow">
             <StravaLogo /> View on Strava <ExternalLink className="w-3 h-3 ml-1.5" />
           </a>
         )}
 
-        {(workout.type === 'strength' && totalVolume !== null) && (
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-2">Summary</h3>
-            <p className="font-semibold text-lg mb-2"> 
-              {exerciseSummaryString}
-            </p>
-            {totalVolume > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Total volume of {totalVolume.toLocaleString()} kg over {overallTotalReps} reps.
-              </p>
-            )}
-          </div>
-        )}
-        {workout.notes && (
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-2">Notes</h3>
-            <p className="text-muted-foreground whitespace-pre-wrap bg-muted/30 p-3 rounded-md border text-sm">
-              {workout.notes}
-            </p>
-          </div>
-        )}
+        <Card className="mb-6">
+            <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center">
+                        <Dumbbell className="h-5 w-5 mr-2 text-primary" />
+                        Exercises Performed
+                    </div>
+                    {totalVolume !== null && totalVolume > 0 && (
+                        <span className="text-sm font-normal text-muted-foreground">Vol: {totalVolume.toLocaleString()} kg / {overallTotalReps} reps</span>
+                    )}
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                {workout.workoutExercises && workout.workoutExercises.length > 0 ? (
+                    <ul className="space-y-4"> 
+                        {workout.workoutExercises.map((exerciseDetail: any, index: number) => (
+                            <li key={exerciseDetail._id || index} className="border-b pb-4 last:border-b-0">
+                                <h3 className="text-lg font-medium mb-2 flex justify-between items-center">
+                                    <span>{index + 1}. {exerciseDetail.exerciseId?.name || 'Unknown Exercise'}</span>
+                                    {exerciseDetail.exerciseId?.category && <Badge variant="secondary" className="ml-2 text-xs font-normal">{capitalizeFirstLetter(exerciseDetail.exerciseId.category)}</Badge>}
+                                </h3>
+                                <div className="space-y-3 pl-2 sm:pl-4">
+                                    {exerciseDetail.sets && exerciseDetail.sets.length > 0 && (
+                                        <div className="text-sm">
+                                            <h4 className="font-semibold mb-1 text-muted-foreground">Sets:</h4>
+                                            <ul className="space-y-1 pl-4">
+                                                {exerciseDetail.sets.map((set: any, setIndex: number) => (
+                                                    <li key={`${exerciseDetail._id}-set-${set.order ?? setIndex}`}>
+                                                        <span className="font-medium">Set {set.order !== undefined ? set.order + 1 : setIndex + 1}:</span> 
+                                                        {set.weight !== undefined && set.weight > 0 ? <span className="ml-2">{set.weight}kg</span> : ''}
+                                                        {set.reps !== undefined ? <span className="ml-1">x {set.reps} reps</span> : ''}
+                                                        {set.duration !== undefined ? <span className="ml-2">for {set.duration}s</span> : ''}
+                                                        {set.distance !== undefined ? <span className="ml-2">for {set.distance}m</span> : ''}
+                                                        {set.notes ? <span className="text-xs text-muted-foreground italic ml-2">({set.notes})</span> : ''}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {exerciseDetail.duration !== undefined && exerciseDetail.duration > 0 && (!exerciseDetail.sets || exerciseDetail.sets.length === 0) && (
+                                        <div className="text-sm">
+                                            <h4 className="font-semibold mb-1 text-muted-foreground">Duration:</h4>
+                                            <p className="pl-4">{formatDuration(exerciseDetail.duration)}</p>
+                                        </div>
+                                    )}
+                                    {exerciseDetail.notes && (
+                                        <div className="text-sm mt-2">
+                                            <h4 className="font-semibold mb-1 text-muted-foreground">Notes:</h4>
+                                            <p className="pl-4">{exerciseDetail.notes}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-muted-foreground">No specific exercises were recorded for this workout.</p>
+                )}
+            </CardContent>
+        </Card>
+        
         {previousWorkouts.length > 0 && (
           <div className="mb-6">
              <h3 className="text-lg font-semibold mb-3">Progress Analysis</h3>

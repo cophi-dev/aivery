@@ -110,3 +110,48 @@ export function absoluteUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   return `${cleanBase}${cleanPath}`;
 }
+
+// Estimate weight for common bodyweight exercises
+export const estimateBodyweightForExercise = (exerciseName: string): number => {
+  // Default estimated bodyweight in kg if nothing else applies
+  const defaultBodyweight = 75; // Adjusted default
+
+  // Common bodyweight exercises with percentage of bodyweight used
+  const bodyweightExercises: Record<string, number> = {
+    // Higher percentage
+    "pull-up": 1.0,
+    "chin-up": 1.0,
+    "dip": 0.95,
+    "muscle-up": 1.0,
+    "inverted row": 0.8,
+    "bodyweight squat": 0.9,
+    "pistol squat": 0.9,
+    "lunge": 0.6,
+    // Medium percentage
+    "push-up": 0.65, // Key is "push-up"
+    "diamond push-up": 0.7,
+    "plank": 0.5,
+    // Lower percentage
+    "sit-up": 0.3,
+    "crunch": 0.2,
+    "leg raise": 0.3,
+    "mountain climber": 0.4,
+    "burpee": 0.7,
+    "jumping jack": 0.1
+  };
+
+  // Normalize exercise name for comparison
+  const normalizedName = exerciseName.toLowerCase().trim();
+
+  // Check if the exercise name contains any of the known bodyweight exercises
+  for (const [exerciseKey, percentage] of Object.entries(bodyweightExercises)) {
+    if (normalizedName.includes(exerciseKey)) {
+      // console.log(`[Volume Calc Util] Matched exercise: ${normalizedName} with key: ${exerciseKey}. Applying ${percentage * 100}% of ${defaultBodyweight}kg.`);
+      return Math.round(defaultBodyweight * percentage);
+    }
+  }
+
+  // console.log(`[Volume Calc Util] No bodyweight match found for exercise: ${normalizedName}. Using 0kg for estimation.`);
+  // If no specific match is found
+  return 0;
+}

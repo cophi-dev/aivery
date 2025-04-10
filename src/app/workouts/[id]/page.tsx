@@ -34,18 +34,31 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
   // Load workout data
   useEffect(() => {
+    console.log("=======================================");
+    console.log("CLIENT-SIDE: useEffect for ActivityDetailPage START");
+    console.log(`CLIENT-SIDE: ID Parameter = ${id}`);
+    console.log("=======================================");
+    
     const loadWorkout = async () => {
+      setIsLoading(true); 
       try {
         const data = await fetchWorkout(id)
+        console.log('>>> Fetched workout data (should be plain object):', data);
         setWorkout(data)
       } catch (error) {
-        console.error("Failed to load workout:", error)
+        console.error(">>> ERROR fetching workout:", error);
+        setWorkout(null); 
       } finally {
         setIsLoading(false)
       }
     }
 
-    loadWorkout()
+    if (id) { 
+        loadWorkout()
+    } else {
+        console.log('>>> CLIENT-SIDE: ID missing, skipping loadWorkout');
+        setIsLoading(false); 
+    }
   }, [id])
 
   // Handle delete
@@ -195,6 +208,78 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
           </CardContent>
         </Card>
       </div>
+
+      {/* --- Display Workout Exercises (Simplified) --- */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <LucideDumbbell className="h-5 w-5 mr-2 text-primary" />
+            Exercises Performed
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {workout.workoutExercises && workout.workoutExercises.length > 0 ? (
+            <ul className="space-y-4"> {/* Use a simple list */} 
+              {workout.workoutExercises.map((exerciseDetail: any, index: number) => (
+                <li key={exerciseDetail.exerciseId?._id || index} className="border-b pb-4 last:border-b-0">
+                  <h3 className="text-lg font-medium mb-2">
+                    {index + 1}. {exerciseDetail.exerciseId?.name || 'Unknown Exercise'}
+                  </h3>
+                  <div className="space-y-2 pl-4">
+                    {/* Display Sets for Strength */}
+                    {exerciseDetail.sets && exerciseDetail.sets.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-1">Sets:</h4>
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+                          {exerciseDetail.sets.map((set: any, setIndex: number) => (
+                            <li key={setIndex}>
+                              Set {setIndex + 1}: 
+                              {set.weight !== undefined ? ` ${set.weight}kg` : ''}
+                              {set.reps !== undefined ? ` x ${set.reps} reps` : ''}
+                              {set.duration !== undefined ? ` for ${set.duration}s` : ''}
+                              {set.distance !== undefined ? ` for ${set.distance}m` : ''}
+                              {set.notes ? ` (${set.notes})` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {/* Display Metrics for Cardio/Other */}
+                    {exerciseDetail.duration !== undefined && exerciseDetail.duration > 0 && (!exerciseDetail.sets || exerciseDetail.sets.length === 0) && (
+                      <div>
+                        <h4 className="font-semibold mb-1">Performance:</h4>
+                        <p className="text-sm text-muted-foreground">Duration: {formatDuration(exerciseDetail.duration / 60)}</p> 
+                        {exerciseDetail.distance !== undefined && <p className="text-sm text-muted-foreground">Distance: {exerciseDetail.distance} m</p>} 
+                      </div>
+                    )}
+                    {/* Display Notes */}
+                    {exerciseDetail.notes && (
+                      <div className="mt-2">
+                         <h4 className="font-semibold mb-1">Notes:</h4>
+                         <p className="text-sm text-muted-foreground">{exerciseDetail.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">No specific exercises were recorded for this workout.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* --- Existing Notes Section (Overall Workout Notes) --- */}
+      {workout.notes && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Notes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground whitespace-pre-wrap">{workout.notes}</p>
+            </CardContent>
+          </Card>
+      )}
 
       <div className="flex justify-between items-center mb-8">
         <Link href="/workouts">Back to Workouts</Link>

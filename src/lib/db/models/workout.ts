@@ -61,15 +61,15 @@ export interface IWorkout extends Document {
   userId: mongoose.Types.ObjectId
   name: string
   date: Date
-  duration: number
+  duration: number // Represents the *total* duration of the workout session
   intensity?: "Low" | "Medium" | "High"
-  type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "other"
-  volume?: number
-  distance?: number
-  calories?: number
-  exercises?: IExercise[]
-  cardioDetails?: ICardioDetails
-  notes?: string
+  type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "other" // Overall type, could be derived or set
+  // volume?: number // Volume might be better calculated on the fly from WorkoutExercises
+  // distance?: number // Total distance might be better calculated on the fly from WorkoutExercises
+  // calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
+  // REMOVED: exercises?: IExercise[] // This is now handled by WorkoutExercise collection
+  cardioDetails?: ICardioDetails // Keep for potentially storing *overall* cardio summary if needed, distinct from individual exercise performance
+  notes?: string // Overall workout notes
   completed?: boolean
   completedAt?: Date
   source?: "manual" | "garmin" | "coros" | "strava" | "apple" | "ai"
@@ -77,7 +77,7 @@ export interface IWorkout extends Document {
   importedFrom?: string
   importId?: string
   stravaLink?: string
-  records?: Array<{ // Add the records field
+  records?: Array<{ // Time-series data for the whole workout (e.g., from watch)
     timestamp: Date;
     heart_rate?: number;
     distance?: number;
@@ -92,16 +92,6 @@ export interface IWorkout extends Document {
   updatedAt: Date
   deletedAt?: Date
 }
-
-const SetSchema = new Schema({
-  weight: { type: Number, required: true },
-  reps: { type: Number, required: true },
-})
-
-const ExerciseSchema = new Schema({
-  name: { type: String, required: true },
-  sets: [SetSchema],
-})
 
 const LapSchema = new Schema({
   number: { type: Number, required: true },
@@ -160,18 +150,18 @@ const WorkoutSchema: Schema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: true },
     date: { type: Date, required: true },
-    duration: { type: Number, required: true },
+    duration: { type: Number, required: true }, // Total duration
     intensity: { type: String, enum: ["Low", "Medium", "High"], required: false },
     type: {
       type: String,
       enum: ["strength", "running", "swimming", "cycling", "hiit", "flexibility", "other"],
       required: true,
     },
-    volume: { type: Number },
-    distance: { type: Number },
-    calories: { type: Number },
-    exercises: [ExerciseSchema],
-    cardioDetails: { type: CardioDetailsSchema },
+    // REMOVED: volume: { type: Number },
+    // REMOVED: distance: { type: Number },
+    // REMOVED: calories: { type: Number },
+    // REMOVED: exercises: [ExerciseSchema], // Removed embedded exercises
+    cardioDetails: { type: CardioDetailsSchema }, // Keep overall details if needed
     notes: { type: String },
     completed: { type: Boolean, default: false },
     completedAt: { type: Date },
@@ -180,7 +170,7 @@ const WorkoutSchema: Schema = new Schema(
     importedFrom: { type: String },
     importId: { type: String },
     stravaLink: { type: String },
-    records: [RecordSchema], // Add records to the schema definition
+    records: [RecordSchema], // Keep time-series data
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },

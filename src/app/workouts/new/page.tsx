@@ -17,10 +17,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { 
   createWorkout as createWorkoutAction, 
-  updateWorkoutAction
+  updateWorkoutAction,
+  type WorkoutUpdatePayload
 } from "@/lib/workout-actions"
 import { fetchExercises } from "@/lib/exercise-actions"
 import type { ExerciseData, WorkoutData, Exercise } from "@/types/db"
+import { IWorkout } from "@/lib/db/models/workout"
+import { estimateBodyweightForExercise } from "@/lib/utils"
 
 // Define the shape of exercises within this component's state
 type JournalExercise = {
@@ -36,50 +39,11 @@ type WorkoutTense = "past" | "present" | "future"
 type WorkoutTypeOption = "gym" | "home_strength" | "run" | "swim" | "cycle" | "hike" | "other"
 type WorkoutTypeForDb = WorkoutData['type']
 
+// Define the specific workout types allowed by the schema
+type AllowedWorkoutType = IWorkout['type']
+
 // Estimate weight for common bodyweight exercises
-const estimateBodyweightForExercise = (exerciseName: string): number => {
-  // Default estimated bodyweight in kg if nothing else applies
-  const defaultBodyweight = 75; // Adjusted default
-  
-  // Common bodyweight exercises with percentage of bodyweight used
-  const bodyweightExercises: Record<string, number> = {
-    // Higher percentage
-    "pull-up": 1.0,
-    "chin-up": 1.0,
-    "dip": 0.95, 
-    "muscle-up": 1.0,
-    "inverted row": 0.8,
-    "bodyweight squat": 0.9, 
-    "pistol squat": 0.9, 
-    "lunge": 0.6,   
-    // Medium percentage
-    "push-up": 0.65, // Key is "push-up"
-    "diamond push-up": 0.7,
-    "plank": 0.5, 
-    // Lower percentage
-    "sit-up": 0.3,
-    "crunch": 0.2,
-    "leg raise": 0.3,
-    "mountain climber": 0.4, 
-    "burpee": 0.7, 
-    "jumping jack": 0.1 
-  };
-  
-  // Normalize exercise name for comparison
-  const normalizedName = exerciseName.toLowerCase().trim();
-  
-  // Check if the exercise name contains any of the known bodyweight exercises
-  for (const [exerciseKey, percentage] of Object.entries(bodyweightExercises)) {
-    if (normalizedName.includes(exerciseKey)) { 
-      console.log(`[Volume Calc] Matched exercise: ${normalizedName} with key: ${exerciseKey}. Applying ${percentage * 100}% of ${defaultBodyweight}kg.`);
-      return Math.round(defaultBodyweight * percentage);
-    }
-  }
-  
-  console.log(`[Volume Calc] No bodyweight match found for exercise: ${normalizedName}. Using 0kg for estimation.`);
-  // If no specific match is found
-  return 0;
-}
+// Moved to src/lib/utils.ts
 
 export default function NewWorkoutPage() {
   const router = useRouter()
@@ -97,6 +61,7 @@ export default function NewWorkoutPage() {
   const [duration, setDuration] = useState<string>("")
   const [exercises, setExercises] = useState<JournalExercise[]>([])
   const [dbExercises, setDbExercises] = useState<ExerciseData[]>([])
+  const [dbExercisesMap, setDbExercisesMap] = useState<Map<string, ExerciseData>>(new Map()); // Store exercises by name for lookup
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -126,6 +91,8 @@ export default function NewWorkoutPage() {
       try {
         const fetchedExercises = await fetchExercises()
         setDbExercises(fetchedExercises)
+        // Create map for easier ID lookup by name during submit
+        setDbExercisesMap(new Map(fetchedExercises.map(ex => [ex.name, ex]))); 
       } catch (err) {
         console.error("Failed to fetch exercises:", err)
         setError("Could not load exercises list.")
@@ -336,70 +303,151 @@ export default function NewWorkoutPage() {
     setError(null);
     setIsSubmitting(true);
 
-    // Determine DB type and default name
-    const workoutTypeForDb: WorkoutTypeForDb = 
+    // Determine DB type
+    const workoutTypeForDb = 
         (workoutType === "gym" || workoutType === "home_strength") ? "strength" : workoutType;
+    
+    // Explicitly cast to the allowed types for the payload
+    const finalWorkoutTypeForPayload = workoutTypeForDb as AllowedWorkoutType;
+
     const defaultWorkoutName = workoutTypeDisplayNames[workoutType] || "Workout";
     const finalWorkoutName = workoutName.trim() || defaultWorkoutName; // Use provided name or default
 
-    // Construct payload parts based on workout type
-    let payloadSpecifics: Partial<Pick<WorkoutData, 'duration' | 'distance' | 'exercises'>> = {};
+    let exercisesPayload: any[] = []; // Initialize for WorkoutExercise structure
+
     if (workoutTypeForDb === 'strength') {
-         // Map JournalExercise back to Exercise format for DB
-         payloadSpecifics.exercises = validExercises.map(ex => ({
-            // _id is NOT part of the Exercise type, so it's omitted here
-            name: ex.name,
-            sets: Array.from({ length: Number.parseInt(ex.sets) || 1 }).map(() => ({ 
-                weight: Number.parseFloat(ex.weight) || 0,
-                reps: Number.parseInt(ex.reps) || 0,
-                // notes could be added here if captured in the form
-            }))
+      if (validExercises.length === 0) {
+        // Existing validation for strength workouts needing exercises
+        setError("Please add at least one valid exercise (name, reps, sets).");
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Map form state (JournalExercise) to the structure needed by backend actions
+      exercisesPayload = validExercises.map((ex, index) => {
+          // Find the canonical exercise ID from the map created earlier
+          const canonicalExercise = dbExercisesMap.get(ex.name);
+          if (!canonicalExercise) {
+              console.warn(`Could not find canonical exercise ID for: ${ex.name}. Skipping in payload.`);
+              // Optionally throw error or handle differently
+              return null; 
+          }
+          
+          // Create the sets array based on form input
+          const numSets = Number.parseInt(ex.sets) || 1;
+          const exerciseSets = Array.from({ length: numSets }).map((_, setIndex) => ({
+              weight: Number.parseFloat(ex.weight) || 0, 
+              reps: Number.parseInt(ex.reps) || 0,
+              // Add duration/distance/notes per set if your form captures them
+              order: setIndex
           }));
-         payloadSpecifics.duration = undefined;
-         payloadSpecifics.distance = undefined;
-    } else {
-        // Handle cardio types (setting distance/duration)
-         const parsedDuration = Number.parseFloat(duration);
-         const parsedDistance = Number.parseFloat(distance);
-         if (!Number.isNaN(parsedDuration) && parsedDuration > 0) {
-             payloadSpecifics.duration = parsedDuration;
-         }
-         if (!Number.isNaN(parsedDistance) && parsedDistance > 0) {
-             payloadSpecifics.distance = parsedDistance;
-         }
-         payloadSpecifics.exercises = []; // Ensure exercises is empty for non-strength
+
+          return {
+              // _id: Might need this when *editing* existing WorkoutExercises
+              // If ex.id relates to an existing WorkoutExercise._id, pass it here
+              // For simplicity now, we assume create/update handles based on presence/absence
+              // but a robust edit needs to track original WorkoutExercise IDs.
+              exerciseId: canonicalExercise._id, // Use the looked-up ID
+              name: ex.name, // Send name too, might help backend if ID lookup fails? Redundant?
+              order: index,
+              sets: exerciseSets,
+              // notes: ex.notes, // If form captures notes per exercise
+          };
+      }).filter(Boolean); // Remove any skipped null entries
+      
+      if (exercisesPayload.length === 0 && validExercises.length > 0) {
+         // This happens if all exercises entered were invalid or couldn't be found
+         setError("Could not match provided exercises to known exercises. Please check names.");
+         setIsSubmitting(false);
+         return;
+      }
+
+    } else { 
+      // Handle Cardio Types - Create a single WorkoutExercise entry
+      const parsedDuration = Number.parseFloat(duration);
+      const parsedDistance = Number.parseFloat(distance);
+      if (Number.isNaN(parsedDuration) || parsedDuration <= 0 || Number.isNaN(parsedDistance) || parsedDistance <= 0) {
+          setError("Please enter a valid positive distance and duration for cardio.");
+          setIsSubmitting(false);
+          return;
+      }
+
+      // Find the canonical exercise ID for the cardio type (e.g., "Running")
+      const cardioExerciseName = workoutType.charAt(0).toUpperCase() + workoutType.slice(1);
+      
+      // Try multiple variations of the exercise name
+      let canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName); // First try e.g. "Run"
+      
+      if (!canonicalCardioExercise) {
+        // Try with "ing" suffix (e.g., "Running" instead of "Run")
+        const alternativeName = cardioExerciseName + (cardioExerciseName.endsWith('e') ? '' : 'ing');
+        canonicalCardioExercise = dbExercisesMap.get(alternativeName);
+        
+        // Try lowercase variations
+        if (!canonicalCardioExercise) {
+          canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName.toLowerCase()) || 
+                                  dbExercisesMap.get(alternativeName.toLowerCase());
+        }
+      }
+
+      if (!canonicalCardioExercise) {
+          console.error(`Could not find cardio exercise. Tried: ${cardioExerciseName} and ${cardioExerciseName}ing`);
+          console.log("Available exercises:", Array.from(dbExercisesMap.keys()));
+          
+          // Create a temporary entry for form submission with name only
+          exercisesPayload.push({
+              name: cardioExerciseName,
+              order: 0,
+              duration: parsedDuration * 60, // Assuming form duration is in minutes, convert to seconds
+              distance: parsedDistance * 1000, // Assuming form distance is in km, convert to meters
+              sets: [], // Cardio doesn't have sets in this structure
+          });
+      } else {
+          exercisesPayload.push({
+              exerciseId: canonicalCardioExercise._id,
+              name: canonicalCardioExercise.name,
+              order: 0,
+              duration: parsedDuration * 60, // Assuming form duration is in minutes, convert to seconds
+              distance: parsedDistance * 1000, // Assuming form distance is in km, convert to meters
+              sets: [], // Cardio doesn't have sets in this structure
+          });
+      }
     }
 
-    // Construct final WorkoutData payload for create or update
-    const workoutPayload: Partial<Omit<WorkoutData, '_id' | 'userId' | 'createdAt' | 'updatedAt'>> = {
+    // Construct final WorkoutData payload
+    const workoutPayload = {
       date: date, 
       name: finalWorkoutName, 
-      type: workoutTypeForDb, 
+      type: finalWorkoutTypeForPayload, 
       notes: getSummaryText() || "", 
-      ...payloadSpecifics 
+      duration: (finalWorkoutTypeForPayload !== 'strength' && duration) ? Number.parseFloat(duration) : undefined,
+      exercises: exercisesPayload, 
+      // Add other fields compatible with both create and update payloads if needed
     };
 
-    console.log("Submitting workout payload:", workoutPayload);
+    console.log("Submitting workout payload (NEW STRUCTURE):", JSON.stringify(workoutPayload, null, 2));
 
     try {
       setIsLoadingData(true);
       let savedWorkout;
       if (isEditing && editingWorkoutId) {
         console.log(`Attempting to update workout ID: ${editingWorkoutId}`);
-        savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload);
+        // Ensure the payload passed matches WorkoutUpdatePayload type expected by updateWorkoutAction
+        savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload as Omit<WorkoutUpdatePayload, 'userId'>);
         toast.success('Workout updated successfully!');
       } else {
         console.log("Attempting to create new workout");
+        // createWorkoutAction uses 'as any' for now, so less strict typing needed here
         const createPayload = {
             ...workoutPayload,
-            userId: session.user.id,
-        } as Omit<WorkoutData, '_id' | 'createdAt' | 'updatedAt'> & { userId: string };
-        savedWorkout = await createWorkoutAction(createPayload);
+            userId: session!.user!.id, 
+        };
+        savedWorkout = await createWorkoutAction(createPayload as any); 
         toast.success('Workout created successfully!');
       }
       
       if (savedWorkout && savedWorkout._id) {
-        router.push(`/workouts/${savedWorkout._id}`);
+        router.push(`/workout/${savedWorkout._id}`);
       } else {
         console.error("Workout save operation did not return a valid workout object or ID.", savedWorkout);
         toast.error('Failed to get workout ID after saving.');
