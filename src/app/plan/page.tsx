@@ -96,7 +96,41 @@ export default function PlanPage() {
         notes: workoutNotes,
       }
       
-      const newWorkout = await createWorkout(workoutData)
+      const createdWorkout = await createWorkout(workoutData)
+      
+      // Convert the IWorkout to a WorkoutData type
+      const newWorkout: WorkoutData = {
+        _id: createdWorkout._id ? createdWorkout._id.toString() : '',
+        userId: createdWorkout.userId ? createdWorkout.userId.toString() : '',
+        name: createdWorkout.name,
+        date: createdWorkout.date,
+        duration: createdWorkout.duration,
+        intensity: createdWorkout.intensity,
+        type: createdWorkout.type,
+        notes: createdWorkout.notes,
+        createdAt: createdWorkout.createdAt ? createdWorkout.createdAt.toISOString() : new Date().toISOString(),
+        updatedAt: createdWorkout.updatedAt ? createdWorkout.updatedAt.toISOString() : new Date().toISOString(),
+        // Safely omit cardioDetails if not needed for this workout type
+        // We'll add it if available and has the right structure
+      }
+      
+      // Only add cardioDetails if they exist
+      if (createdWorkout.cardioDetails) {
+        newWorkout.cardioDetails = {
+          distance: createdWorkout.cardioDetails.distance,
+          duration: createdWorkout.cardioDetails.duration,
+          pace: createdWorkout.cardioDetails.pace,
+        };
+        
+        // Add heart rate data if it exists
+        if (createdWorkout.cardioDetails.heartRate) {
+          newWorkout.cardioDetails.heartRate = {
+            average: createdWorkout.cardioDetails.heartRate.average,
+            max: createdWorkout.cardioDetails.heartRate.max,
+          };
+        }
+      }
+      
       setWorkouts([...workouts, newWorkout])
       setIsDialogOpen(false)
     } catch (error) {
