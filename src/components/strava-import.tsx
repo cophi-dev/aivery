@@ -344,52 +344,88 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         throw new Error(errorData.error || `Failed to get upload link: Server responded with ${presignedResponse.status}`);
       }
 
-      const { url, pathname: blobPathname, downloadUrl } = await presignedResponse.json();
+      const { url, pathname: initialBlobPathname, downloadUrl } = await presignedResponse.json();
       console.log('Received upload URL:', url);
-      console.log('File will be stored at path:', blobPathname);
+      console.log('File will be stored at path:', initialBlobPathname);
+      
+      // Use a variable that can be reassigned later if needed
+      let blobPathname = initialBlobPathname;
+      
       setProgress(25);
 
-      // 2. Upload the file directly to Vercel Blob Storage
+      // 2. Try direct upload to Vercel Blob Storage first
       setUploadStatus(`Uploading file to secure storage...`);
       
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        // Use PUT method with direct URL
-        xhr.open('PUT', url, true);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          // Use PUT method with direct URL
+          xhr.open('PUT', url, true);
 
-        // Set content type and the special x-content-length header required by Vercel Blob
-        xhr.setRequestHeader('Content-Type', 'application/zip');
-        xhr.setRequestHeader('x-content-length', file.size.toString());
-        xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
+          // Set headers required by Vercel Blob - try multiple header formats to ensure compatibility
+          xhr.setRequestHeader('Content-Type', 'application/zip');
+          xhr.setRequestHeader('x-content-length', file.size.toString());
+          xhr.setRequestHeader('[x]-content-length', file.size.toString()); // Add the exact format from the error message
+          xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
+          
+          // Optional: Track progress
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const currentProgress = 25 + Math.round((event.loaded / event.total) * 35); // Scale progress from 25% to 60%
+              setProgress(currentProgress);
+              setUploadStatus(`Uploading file to secure storage... ${Math.round((event.loaded / event.total) * 100)}%`);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              console.log('Direct upload to storage successful via XHR.');
+              setProgress(60); // Mark this step as complete
+              resolve();
+            } else {
+              console.error("Direct upload via XHR failed:", { status: xhr.status, response: xhr.responseText });
+              reject(new Error(`Direct file upload failed: Storage responded with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => {
+            console.error("Direct upload via XHR failed (Network Error)");
+            reject(new Error('Network error during direct file upload.'));
+          };
+
+          // Send the file directly
+          xhr.send(file);
+        });
+      } catch (directUploadError) {
+        // If direct upload fails, try the server-side upload approach
+        console.error("Direct upload failed, trying server-side upload instead:", directUploadError);
+        setUploadStatus(`Direct upload failed. Trying alternative upload method...`);
         
-        // Optional: Track progress
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const currentProgress = 25 + Math.round((event.loaded / event.total) * 35); // Scale progress from 25% to 60%
-            setProgress(currentProgress);
-            setUploadStatus(`Uploading file to secure storage... ${Math.round((event.loaded / event.total) * 100)}%`);
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            console.log('Direct upload to storage successful via XHR.');
-            setProgress(60); // Mark this step as complete
-            resolve();
-          } else {
-            console.error("Direct upload via XHR failed:", { status: xhr.status, response: xhr.responseText });
-            reject(new Error(`Direct file upload failed: Storage responded with status ${xhr.status}`));
-          }
-        };
-
-        xhr.onerror = () => {
-          console.error("Direct upload via XHR failed (Network Error)");
-          reject(new Error('Network error during direct file upload.'));
-        };
-
-        // Send the file directly
-        xhr.send(file);
-      });
+        // Create a FormData object for the server-side upload
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        // Use the server-side upload endpoint
+        const serverUploadResponse = await fetch('/api/strava/upload-blob', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!serverUploadResponse.ok) {
+          const errorData = await serverUploadResponse.json().catch(() => ({ error: 'Server-side upload failed. Could not parse response.' }));
+          throw new Error(errorData.error || `Server-side upload failed with status ${serverUploadResponse.status}`);
+        }
+        
+        // Get blob path from server response
+        const serverUploadData = await serverUploadResponse.json();
+        if (!serverUploadData.success || !serverUploadData.pathname) {
+          throw new Error("Server-side upload completed but returned invalid data");
+        }
+        
+        // Override the blobPathname with the one from the server upload
+        console.log('Server-side upload successful. Using new blob pathname:', serverUploadData.pathname);
+        blobPathname = serverUploadData.pathname;
+      }
 
       // 3. Notify the backend API to process the file from Blob storage
       setUploadStatus('Requesting server to process uploaded file...');
