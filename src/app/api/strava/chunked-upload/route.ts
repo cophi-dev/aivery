@@ -6,8 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 // Set dynamic to force-dynamic to prevent caching
 export const dynamic = 'force-dynamic';
-// Increase body parser size limit
-export const bodyParser = { bodyParser: false };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Check authentication
