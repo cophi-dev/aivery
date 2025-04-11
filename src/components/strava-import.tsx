@@ -330,69 +330,77 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     let blobPathname = ''; // Variable to hold the final pathname
 
     try {
-      // --- Upload file directly to our server endpoint, which will handle the Blob storage ---
-      setUploadStatus('Uploading file to server...');
-      setProgress(10);
+      // Generate a unique ID for this upload
+      const fileId = uuidv4();
       
-      // Create FormData object
-      const formData = new FormData();
-      formData.append('file', file);
+      // Determine chunk size - 2MB per chunk to stay well under the 4.5MB limit
+      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       
-      // Track upload progress using XMLHttpRequest
-      let uploadProgress = 0;
-      const xhr = new XMLHttpRequest();
+      console.log(`Uploading file in ${totalChunks} chunks of ${CHUNK_SIZE / (1024 * 1024)}MB each`);
+      setUploadStatus(`Preparing to upload in ${totalChunks} chunks...`);
       
-      // Wait for the upload to complete
-      await new Promise<void>((resolve, reject) => {
-        xhr.open('POST', '/api/strava/server-upload', true);
+      // Upload each chunk
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        // Calculate the start and end bytes for this chunk
+        const start = chunkIndex * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
         
-        // Track upload progress
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            // Progress: 10% (start) + 80% (upload to server) = 90% when done
-            uploadProgress = Math.round((event.loaded / event.total) * 100);
-            const currentProgress = 10 + Math.round((event.loaded / event.total) * 80);
-            setProgress(currentProgress);
-            setUploadStatus(`Uploading to server... ${uploadProgress}%`);
-          }
-        };
+        // Slice the file to get this chunk
+        const chunk = file.slice(start, end);
         
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              if (response.success && response.pathname) {
-                blobPathname = response.pathname;
-                console.log('File successfully uploaded to server, which stored it in Blob.');
-                console.log(`Blob pathname: ${blobPathname}`);
-                setProgress(90); // Mark upload complete
-                resolve();
-              } else {
-                reject(new Error(response.error || 'Server upload failed without error details.'));
-              }
-            } catch (e) {
-              reject(new Error('Failed to parse server response.'));
-            }
-          } else {
-            let errorMsg = `Server upload failed: Status ${xhr.status}.`;
-            try {
-              const errorData = JSON.parse(xhr.responseText);
-              errorMsg = errorData.error || errorMsg;
-            } catch (e) { /* Ignore parsing error */ }
-            reject(new Error(errorMsg));
-          }
-        };
+        // Update progress and status
+        const chunkProgress = Math.round((chunkIndex / totalChunks) * 80);
+        setProgress(10 + chunkProgress);
+        setUploadStatus(`Uploading chunk ${chunkIndex + 1}/${totalChunks}...`);
         
-        xhr.onerror = () => {
-          console.error("Server upload failed (Network Error)");
-          reject(new Error('Network error during file upload. Please check your connection.'));
-        };
+        // Create FormData for this chunk
+        const formData = new FormData();
+        formData.append('chunk', chunk);
+        formData.append('chunkIndex', chunkIndex.toString());
+        formData.append('totalChunks', totalChunks.toString());
+        formData.append('fileId', fileId);
+        formData.append('fileName', file.name);
         
-        xhr.send(formData); // Send the form data including the file
-      });
+        // If this is not the first chunk, include the blobPath from previous chunk responses
+        if (blobPathname && chunkIndex > 0) {
+          formData.append('blobPath', blobPathname);
+        }
+        
+        // Upload this chunk
+        const response = await fetch('/api/strava/chunked-upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`Error uploading chunk ${chunkIndex}:`, errorText);
+          throw new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks}: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || `Failed to process chunk ${chunkIndex + 1}/${totalChunks}`);
+        }
+        
+        // The first chunk response includes the blobPath we'll use for all chunks
+        if (chunkIndex === 0) {
+          blobPathname = result.blobPath;
+        }
+        
+        // If this is the last chunk, we'll have the final blobPathname
+        if (result.isComplete) {
+          blobPathname = result.blobPath;
+          console.log(`File upload complete. Blob path: ${blobPathname}`);
+        }
+      }
+      
+      setProgress(90);
+      setUploadStatus('Upload complete. Processing file...');
 
-      // --- Step 2: Notify the main import API to process the file from Blob storage ---
-      setUploadStatus('Requesting server to process stored file...');
+      // --- Process the uploaded file ---
       console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
 
       const processResponse = await fetch('/api/strava/import', {
