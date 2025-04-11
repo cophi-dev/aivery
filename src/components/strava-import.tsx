@@ -325,93 +325,73 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     setUploadStats(null);
     setUploadStatus('Preparing upload...');
 
-    console.log(`=== Starting client-side Blob upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
+    console.log(`=== Starting file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
     
     let blobPathname = ''; // Variable to hold the final pathname
 
     try {
-      // --- Step 1: Get the presigned URL from our backend ---
-      setUploadStatus('Getting upload destination...');
-      setProgress(5);
+      // --- Upload file directly to our server endpoint, which will handle the Blob storage ---
+      setUploadStatus('Uploading file to server...');
+      setProgress(10);
       
-      const generateUrlResponse = await fetch('/api/strava/upload-client', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ filename: file.name }),
-      });
-
-      if (!generateUrlResponse.ok) {
-        let errorMsg = 'Failed to get upload URL.';
-        try {
-          const errorData = await generateUrlResponse.json();
-          errorMsg = errorData.error || errorMsg;
-        } catch (e) { /* Ignore parsing error */ }
-        throw new Error(errorMsg);
-      }
-
-      const { url: presignedPutUrl, pathname } = await generateUrlResponse.json();
-      blobPathname = pathname; // Store the pathname for the import step
-
-      if (!presignedPutUrl || !blobPathname) {
-        throw new Error('Server did not provide a valid upload URL or pathname.');
-      }
-
-      console.log(`Received presigned URL: ${presignedPutUrl}`);
-      console.log(`Blob pathname: ${blobPathname}`);
-      setProgress(10); // Indicate URL received
-
-      // --- Step 2: Upload the file directly to Vercel Blob using the presigned URL ---
-      setUploadStatus('Uploading file directly to storage...');
+      // Create FormData object
+      const formData = new FormData();
+      formData.append('file', file);
       
-      // Use XMLHttpRequest to track upload progress directly to Blob storage
+      // Track upload progress using XMLHttpRequest
+      let uploadProgress = 0;
+      const xhr = new XMLHttpRequest();
+      
+      // Wait for the upload to complete
       await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', presignedPutUrl, true);
-        xhr.setRequestHeader('Content-Type', 'application/zip'); // Set correct content type for the blob
-        xhr.setRequestHeader('Origin', window.location.origin); // Add explicit Origin header
-
-        // Track progress of upload TO BLOB STORAGE
+        xhr.open('POST', '/api/strava/server-upload', true);
+        
+        // Track upload progress
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
-            // Progress: 10% (URL fetch) + 80% (upload to blob) = 90%
+            // Progress: 10% (start) + 80% (upload to server) = 90% when done
+            uploadProgress = Math.round((event.loaded / event.total) * 100);
             const currentProgress = 10 + Math.round((event.loaded / event.total) * 80);
             setProgress(currentProgress);
-            setUploadStatus(`Uploading to storage... ${Math.round((event.loaded / event.total) * 100)}%`);
+            setUploadStatus(`Uploading to server... ${uploadProgress}%`);
           }
         };
         
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            console.log('File successfully uploaded directly to Vercel Blob.');
-            setProgress(90); // Mark direct upload complete
-            resolve();
-          } else {
-            // Handle errors from Vercel Blob PUT request
-            console.error("Direct Blob upload failed:", { status: xhr.status, response: xhr.responseText });
-            // Vercel Blob might return XML error messages
-            let errorMsg = `File upload to storage failed: Status ${xhr.status}.`;
-            // Attempt to extract useful info if possible (might be XML)
-            if (xhr.responseText?.includes('<Message>')) {
-                try {
-                    const match = xhr.responseText.match(/<Message>(.*?)<\/Message>/);
-                    if (match && match[1]) errorMsg += ` Message: ${match[1]}`;
-                } catch (e) {/* ignore */}
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.success && response.pathname) {
+                blobPathname = response.pathname;
+                console.log('File successfully uploaded to server, which stored it in Blob.');
+                console.log(`Blob pathname: ${blobPathname}`);
+                setProgress(90); // Mark upload complete
+                resolve();
+              } else {
+                reject(new Error(response.error || 'Server upload failed without error details.'));
+              }
+            } catch (e) {
+              reject(new Error('Failed to parse server response.'));
             }
+          } else {
+            let errorMsg = `Server upload failed: Status ${xhr.status}.`;
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              errorMsg = errorData.error || errorMsg;
+            } catch (e) { /* Ignore parsing error */ }
             reject(new Error(errorMsg));
           }
         };
         
         xhr.onerror = () => {
-          console.error("Direct Blob upload failed (Network Error)");
-          reject(new Error('Network error during direct file upload. Please check connection.'));
+          console.error("Server upload failed (Network Error)");
+          reject(new Error('Network error during file upload. Please check your connection.'));
         };
         
-        xhr.send(file); // Send the file directly
+        xhr.send(formData); // Send the form data including the file
       });
 
-      // --- Step 3: Notify the main import API to process the file from Blob storage ---
+      // --- Step 2: Notify the main import API to process the file from Blob storage ---
       setUploadStatus('Requesting server to process stored file...');
       console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
 
