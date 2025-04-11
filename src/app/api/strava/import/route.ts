@@ -173,6 +173,8 @@ export async function POST(request: NextRequest) {
           const entryName = entry.fileName;
           console.log(`Found entry: ${entryName}, isDirectory: ${entryName.endsWith('/')}`);
           
+          // Check if the file is in the 'activities' directory (case-insensitive)
+          // Strava exports use 'activities/' as the folder name
           const isActivityPath = entryName.toLowerCase().includes('activities/');
           console.log(`  -> Checking path includes 'activities/' (case-insensitive): ${isActivityPath}`);
           
@@ -191,6 +193,7 @@ export async function POST(request: NextRequest) {
               
               // Read the entry data
               const content = await readEntryAsync(zipfile, entry);
+              console.log(`Read ${entryName} content, size: ${content.length} bytes`);
               
               let workout = null;
               let workoutTimestamp: number | null = null;
@@ -198,17 +201,38 @@ export async function POST(request: NextRequest) {
               let workoutDuration = 0;
               let workoutActivityType = 'unknown';
               
+              // Log the file extension to debug
+              console.log(`File extension check: ${entryName}`);
+              console.log(`  -> .fit.gz: ${entryName.endsWith('.fit.gz')}`);
+              console.log(`  -> .gpx: ${entryName.endsWith('.gpx')}`);
+              console.log(`  -> .fit: ${entryName.endsWith('.fit')}`);
+              
               if (entryName.endsWith('.fit.gz')) {
-                const unzippedContent = await gunzipAsync(content);
-                workout = await processFitFile(unzippedContent, entryName);
+                console.log(`Processing FIT.GZ file: ${entryName}`);
+                try {
+                  const unzippedContent = await gunzipAsync(content);
+                  console.log(`Successfully unzipped to ${unzippedContent.length} bytes`);
+                  workout = await processFitFile(unzippedContent, entryName);
+                } catch (error) {
+                  const unzipError = error instanceof Error ? error : new Error(String(error));
+                  console.error(`Error unzipping FIT.GZ file ${entryName}:`, unzipError);
+                  results.errors.push(`${entryName} - unzip error: ${unzipError.message}`);
+                }
               } else if (entryName.endsWith('.gpx')) {
+                console.log(`Processing GPX file: ${entryName}`);
                 workout = await processGpxFile(content, entryName);
               } else if (entryName.endsWith('.fit')) {
+                console.log(`Processing FIT file: ${entryName}`);
                 workout = await processFitFile(content, entryName);
+              } else {
+                console.log(`Unsupported file type: ${entryName}, ignoring`);
               }
 
+              console.log(`Workout processing result for ${entryName}:`, workout ? 'Success' : 'Failed/Null');
+              
               if (workout) {
                 const transformedWorkout = transformStravaActivity(workout);
+                console.log(`Transformed workout:`, JSON.stringify(transformedWorkout).substring(0, 200) + '...');
                 
                 const workoutToSave = {
                   ...transformedWorkout,
@@ -232,10 +256,18 @@ export async function POST(request: NextRequest) {
                 results.totalDistance += workoutDistance;
                 results.totalDuration += workoutDuration;
 
-                await createCardioWorkout(workoutToSave);
-                results.imported++;
+                try {
+                  await createCardioWorkout(workoutToSave);
+                  console.log(`Successfully imported workout from ${entryName}`);
+                  results.imported++;
+                } catch (error) {
+                  const saveError = error instanceof Error ? error : new Error(String(error));
+                  console.error(`Error saving workout from ${entryName}:`, saveError);
+                  results.errors.push(`${entryName} - save error: ${saveError.message}`);
+                }
               } else {
                 console.log(`No workout data extracted from ${entryName}, skipping import.`);
+                results.errors.push(`${entryName} - no workout data extracted`);
               }
             } catch (error) {
               console.error(`Error processing ${entryName}:`, error);
