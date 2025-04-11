@@ -343,6 +343,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       // Track which chunks have been successfully uploaded
       const uploadedChunks = new Set<number>();
       
+      // STEP 1: Upload each chunk - these are stored directly without assembly
+      setUploadStatus(`Step 1/2: Uploading chunks...`);
       // Upload each chunk SEQUENTIALLY with delays between chunks
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
         // Add a small delay between chunks to avoid race conditions
@@ -359,8 +361,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         const chunk = file.slice(start, end);
         
         // Update progress and status
-        const chunkProgress = Math.round((chunkIndex / totalChunks) * 70);
-        setProgress(10 + chunkProgress);
+        const chunkProgress = Math.round((chunkIndex / totalChunks) * 50); // First 50% is for uploads
+        setProgress(5 + chunkProgress);
         setUploadStatus(`Uploading chunk ${chunkIndex + 1}/${totalChunks}...`);
         
         // Create FormData for this chunk
@@ -371,7 +373,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         formData.append('fileId', fileId);
         formData.append('fileName', file.name);
         
-        // Include the blobPath from previous chunk responses after the first chunk
+        // Include the blobPath from previous chunk responses
         if (blobPathname) {
           formData.append('blobPath', blobPathname);
         }
@@ -407,11 +409,6 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             // Mark as successful and record this chunk as uploaded
             success = true;
             uploadedChunks.add(chunkIndex);
-            
-            // If this is the last chunk, we'll have the final blobPathname
-            if (result.isComplete) {
-              console.log(`File upload complete. Blob path: ${blobPathname}`);
-            }
           } catch (e) {
             console.error(`Error uploading chunk ${chunkIndex + 1}/${totalChunks}, retries left: ${retries - 1}`, e);
             lastError = e;
@@ -442,15 +439,82 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         throw new Error(`Upload incomplete. Missing chunks: ${missingChunks.join(', ')}`);
       }
       
+      // STEP 2: Once all chunks are uploaded, request assembly
+      setProgress(60);
+      setUploadStatus(`Step 2/2: Assembling file from chunks...`);
+      
+      // Send a special "complete" request to assemble the file
+      const completeFormData = new FormData();
+      completeFormData.append('complete', 'true');
+      completeFormData.append('fileId', fileId);
+      completeFormData.append('fileName', file.name);
+      completeFormData.append('blobPath', blobPathname);
+      completeFormData.append('totalChunks', totalChunks.toString());
+      
+      console.log(`Sending completion request to assemble ${totalChunks} chunks...`);
+      
+      // Allow more time for assembly and with retries
+      let assemblyRetries = 2;
+      let assemblySuccess = false;
+      let assemblyError = null;
+      
+      while (assemblyRetries > 0 && !assemblySuccess) {
+        try {
+          const assemblyResponse = await fetch('/api/strava/chunked-upload', {
+            method: 'POST',
+            body: completeFormData
+          });
+          
+          if (!assemblyResponse.ok) {
+            // Try to get detailed error if available
+            let errorDetail = '';
+            try {
+              const errorJson = await assemblyResponse.json();
+              errorDetail = errorJson.error || `Server responded with status ${assemblyResponse.status}`;
+              
+              // If specific chunks are missing, we can retry the upload for those chunks
+              if (errorJson.missingChunks && Array.isArray(errorJson.missingChunks) && errorJson.missingChunks.length > 0) {
+                errorDetail += ` Missing chunks: ${errorJson.missingChunks.join(', ')}`;
+                // Here we could implement logic to re-upload specific chunks
+              }
+            } catch (e) {
+              errorDetail = await assemblyResponse.text();
+            }
+            
+            throw new Error(`Failed to assemble file: ${errorDetail}`);
+          }
+          
+          const assemblyResult = await assemblyResponse.json();
+          
+          if (!assemblyResult.success) {
+            throw new Error(assemblyResult.error || 'Unknown error during file assembly');
+          }
+          
+          // Update the blobPathname with the completed file path
+          blobPathname = assemblyResult.blobPath;
+          assemblySuccess = true;
+          
+          console.log(`Assembly complete. Final file at: ${blobPathname}`);
+        } catch (e) {
+          console.error(`Error during file assembly, retries left: ${assemblyRetries - 1}`, e);
+          assemblyError = e;
+          assemblyRetries--;
+          
+          if (assemblyRetries > 0) {
+            setUploadStatus(`Retrying file assembly...`);
+            // Wait longer between assembly retries
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+      }
+      
+      if (!assemblySuccess) {
+        throw assemblyError || new Error('Failed to assemble file after multiple attempts');
+      }
+      
       setProgress(80);
-      setUploadStatus('All chunks uploaded. Verifying assembled file...');
+      setUploadStatus('Assembly complete. Now processing file...');
       
-      // Wait a bit longer to ensure all chunks are fully processed on the server
-      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-      
-      setProgress(90);
-      setUploadStatus('Upload complete. Processing file...');
-
       // --- Process the uploaded file ---
       console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
 

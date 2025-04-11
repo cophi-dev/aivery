@@ -17,44 +17,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const formData = await request.formData();
     
-    // Get chunk metadata
-    const chunkIndex = parseInt(formData.get('chunkIndex')?.toString() || '0');
-    const totalChunks = parseInt(formData.get('totalChunks')?.toString() || '0');
+    // Check if this is a "complete" request to assemble chunks
+    const completeUpload = formData.get('complete')?.toString() === 'true';
+    
+    // Get basic metadata in both cases
     const fileId = formData.get('fileId')?.toString();
     const fileName = formData.get('fileName')?.toString();
-    const chunk = formData.get('chunk') as Blob;
+    const blobPathBase = formData.get('blobPath')?.toString();
+    const totalChunks = parseInt(formData.get('totalChunks')?.toString() || '0');
     
-    if (!chunk || !fileId || !fileName) {
+    if (!fileId || !fileName) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
-    console.log(`Processing chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName}`);
-
     const userId = session.user.id;
     
-    // Create paths for storage
-    const safeFilename = fileName.replace(/[^a-zA-Z0-9._-]/g, '_'); // Sanitize filename
-    const timestamp = Date.now();
-    const blobPathBase = `strava-imports/${userId}/${timestamp}-${safeFilename}`;
-    
-    // For each chunk, save it with its index
-    const chunkPath = `${blobPathBase}.chunk${chunkIndex}`;
-    const chunkBlob = await put(chunkPath, chunk, {
-      access: 'public',
-      contentType: 'application/octet-stream', // Use generic binary format for chunks
-      addRandomSuffix: false,
-    });
-    
-    console.log(`Saved chunk ${chunkIndex + 1}/${totalChunks} to ${chunkPath}`);
-    
-    // For the last chunk, assemble the complete file
-    if (chunkIndex === totalChunks - 1) {
+    // CASE 1: This is a completion request that will assemble chunks
+    if (completeUpload) {
+      if (!blobPathBase) {
+        return NextResponse.json({ error: 'Missing blobPath for assembly' }, { status: 400 });
+      }
+      
+      console.log(`Received assembly request for ${totalChunks} chunks at base path ${blobPathBase}`);
+      
+      // Attempt to assemble chunks
       try {
-        console.log(`All chunks received. Assembling complete file from ${totalChunks} chunks...`);
+        console.log(`All chunks ready. Assembling complete file from ${totalChunks} chunks...`);
         
         // Get all chunks
         const arrayBuffers: ArrayBuffer[] = [];
-        let missingChunks = false;
+        let missingChunks: number[] = [];
         
         // First verify all chunks exist before attempting to read them
         for (let i = 0; i < totalChunks; i++) {
@@ -69,20 +61,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           
           if (!blobs.length) {
             console.error(`Missing chunk ${i + 1}/${totalChunks} at path ${currentChunkPath}`);
-            missingChunks = true;
-            
-            // Continue checking for all missing chunks rather than immediately failing
-            continue;
+            missingChunks.push(i + 1);
           }
         }
         
         // If any chunks are missing, fail early
-        if (missingChunks) {
-          throw new Error(`One or more chunks are missing. Please try uploading again.`);
+        if (missingChunks.length > 0) {
+          return NextResponse.json({ 
+            success: false,
+            error: `Chunks still missing: ${missingChunks.join(', ')}. Please ensure all chunks are uploaded.`,
+            missingChunks,
+            fileId,
+            blobPath: blobPathBase,
+            totalChunks,
+            isComplete: false
+          }, { status: 400 });
         }
         
         // Now collect all chunks
-        console.log(`All chunks verified. Collecting ${totalChunks} chunks...`);
+        console.log(`All ${totalChunks} chunks verified. Collecting...`);
         for (let i = 0; i < totalChunks; i++) {
           const currentChunkPath = `${blobPathBase}.chunk${i}`;
           console.log(`Fetching chunk ${i + 1}/${totalChunks} from ${currentChunkPath}`);
@@ -161,7 +158,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           fileId,
           blobPath: completedBlob.pathname,
           url: completedBlob.url,
-          chunkIndex,
           totalChunks,
           isComplete: true
         });
@@ -190,22 +186,63 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ 
           error: errorMessage,
           fileId,
-          chunkIndex,
+          blobPath: blobPathBase,
           totalChunks,
           isComplete: false
         }, { status: 500 });
       }
     }
     
-    // For first or intermediate chunks
-    return NextResponse.json({
-      success: true,
-      fileId,
-      blobPath: blobPathBase,
-      chunkIndex,
-      totalChunks,
-      isComplete: false
-    });
+    // CASE 2: This is a standard chunk upload
+    const chunkIndex = parseInt(formData.get('chunkIndex')?.toString() || '0');
+    const chunk = formData.get('chunk') as Blob;
+    
+    if (!chunk) {
+      return NextResponse.json({ error: 'Missing chunk' }, { status: 400 });
+    }
+
+    console.log(`Processing chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName}`);
+    
+    // Create or use the provided blob path
+    let blobPathToUse = blobPathBase;
+    if (!blobPathToUse) {
+      // Create paths for storage if it's the first chunk
+      const safeFilename = fileName.replace(/[^a-zA-Z0-9._-]/g, '_'); // Sanitize filename
+      const timestamp = Date.now();
+      blobPathToUse = `strava-imports/${userId}/${timestamp}-${safeFilename}`;
+      console.log(`Created new blob path base: ${blobPathToUse}`);
+    }
+    
+    // For each chunk, save it with its index
+    const chunkPath = `${blobPathToUse}.chunk${chunkIndex}`;
+    
+    try {
+      const chunkBlob = await put(chunkPath, chunk, {
+        access: 'public',
+        contentType: 'application/octet-stream', // Use generic binary format for chunks
+        addRandomSuffix: false,
+      });
+      
+      console.log(`Saved chunk ${chunkIndex + 1}/${totalChunks} to ${chunkPath}`);
+      
+      return NextResponse.json({
+        success: true,
+        fileId,
+        blobPath: blobPathToUse,
+        chunkIndex,
+        totalChunks,
+        isComplete: false
+      });
+    } catch (uploadError) {
+      console.error(`Error uploading chunk ${chunkIndex}:`, uploadError);
+      return NextResponse.json({ 
+        error: `Failed to upload chunk ${chunkIndex + 1}: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
+        fileId,
+        chunkIndex,
+        totalChunks, 
+        isComplete: false
+      }, { status: 500 });
+    }
     
   } catch (error) {
     console.error('Error handling chunked upload:', error);
