@@ -9,6 +9,7 @@ import AdmZip from 'adm-zip'
 import { gunzip as gunzipCb } from 'zlib'
 import { promisify } from 'util'
 import { transformStravaActivity } from "@/lib/services/stravaService"
+import { head, del } from '@vercel/blob'
 
 // Keep runtime (Node.js needed for AdmZip, zlib etc.)
 export const runtime = 'nodejs';
@@ -37,14 +38,13 @@ interface FitActivity {
 const gunzipAsync = promisify(gunzipCb)
 
 export async function POST(request: NextRequest) {
-  // Remove blobUrlToDelete
-  // let blobUrlToDelete: string | null = null;
+  let blobUrlToDelete: string | null = null;
 
   try {
-    console.log('=== Starting Strava import process (from FormData) ===');
+    console.log('=== Starting Strava import process (from Blob Storage) ===');
     console.log('Request method:', request.method);
     console.log('Request URL:', request.url);
-    // Content-Type should be multipart/form-data
+    // Content-Type should be application/json now
     console.log('Content-Type:', request.headers.get('content-type'));
 
     // Check authentication first
@@ -56,34 +56,63 @@ export async function POST(request: NextRequest) {
     const userId = session.user.id;
     console.log('User authenticated:', userId);
 
-    // 1. Get file from FormData
-    let file: File | null = null;
+    // 1. Get blob pathname from the request body
+    let blobPathname: string | undefined;
     let originalFilename: string | undefined;
-    let selectedWorkoutTypes: string[] = [];
     try {
-        const formData = await request.formData();
-        file = formData.get('file') as File;
-        // Extract workoutTypes if provided
-        selectedWorkoutTypes = formData.getAll('workoutTypes').map(String); 
-
-        if (!file) {
-            console.error('No file found in FormData');
-            return NextResponse.json({ success: false, error: "No file uploaded" }, { status: 400 });
-        }
-        originalFilename = file.name;
-        console.log('Received file:', originalFilename, `(${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        console.log('Selected workout types for import (if any):', selectedWorkoutTypes);
-
+        const body = await request.json();
+        blobPathname = body.blobPathname;
+        originalFilename = body.originalFilename;
     } catch (e) {
-        console.error('Failed to process FormData:', e);
-        return NextResponse.json({ success: false, error: "Invalid request format" }, { status: 400 });
+        console.error('Failed to parse request body:', e);
+        return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
     }
 
-    // 2. Convert file to buffer
-    console.log('Reading file content into buffer...');
-    const arrayBuffer = await file.arrayBuffer();
+    if (!blobPathname || typeof blobPathname !== 'string') {
+      console.error('No blobPathname provided in request body');
+      return NextResponse.json({ success: false, error: "Missing blobPathname" }, { status: 400 });
+    }
+    
+    // Optional: Validate if the blob path belongs to the authenticated user
+    if (!blobPathname.startsWith(`strava-imports/${userId}/`)) {
+        console.error('Blob path does not match authenticated user:', { userId, blobPathname });
+        return NextResponse.json({ success: false, error: "Unauthorized access to blob" }, { status: 403 });
+    }
+
+    console.log('Processing file from blob storage:', { blobPathname, originalFilename });
+
+    // 2. Fetch the file content from Vercel Blob
+    console.log('Fetching file metadata from Blob storage...');
+    const blobHead = await head(blobPathname); // Use head with pathname directly
+
+    if (!blobHead || !blobHead.url) {
+        console.error('Blob not found or URL missing:', blobPathname);
+        // Try deleting the placeholder if it exists
+        try { await del(blobPathname); } catch { /* Ignore delete error */ }
+        return NextResponse.json({ success: false, error: "Uploaded file not found in storage." }, { status: 404 });
+    }
+    
+    blobUrlToDelete = blobHead.url; // Store URL for potential deletion later
+    console.log('File metadata fetched:', { size: blobHead.size, contentType: blobHead.contentType });
+    
+    // Check if the size is just 1 (our placeholder)
+    if (blobHead.size === 1) {
+        console.error('Error: Blob size indicates placeholder was not overwritten by upload.');
+        try { await del(blobUrlToDelete); } catch { /* Ignore delete error */ }
+        return NextResponse.json({ success: false, error: "File upload seems to have failed. Please try again." }, { status: 400 });
+    }
+
+    console.log('Downloading file content from Blob storage URL:', blobHead.url);
+    const blobResponse = await fetch(blobHead.url);
+    if (!blobResponse.ok) {
+        console.error('Failed to download file from blob storage:', { status: blobResponse.status, url: blobHead.url });
+        // Don't delete blob here, might be temporary issue
+        return NextResponse.json({ success: false, error: `Failed to download file from storage (status ${blobResponse.status})` }, { status: 500 });
+    }
+    
+    const arrayBuffer = await blobResponse.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    console.log('File buffer size:', buffer.length);
+    console.log('File buffer size from blob:', buffer.length);
 
     // 3. Process the ZIP buffer (existing logic)
     console.log('Creating ZIP instance from buffer...');
@@ -108,16 +137,13 @@ export async function POST(request: NextRequest) {
       totalDuration: 0
     };
 
-    // Process each entry (existing logic, potentially filter by selectedWorkoutTypes)
+    // Process each entry (existing logic)
     for (const entry of entries) {
-      // Log every entry being considered
       console.log(`Checking entry: ${entry.entryName}, isDirectory: ${entry.isDirectory}`);
       const isActivityPath = entry.entryName.toLowerCase().includes('activities/');
       console.log(`  -> Checking path includes 'activities/' (case-insensitive): ${isActivityPath}`);
 
       if (!entry.isDirectory && isActivityPath) {
-        // TODO: Add filtering logic based on selectedWorkoutTypes if needed
-        // For now, process all found activities
         results.processed++;
         console.log(`Processing: ${entry.entryName}`);
         
@@ -178,7 +204,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // No need to delete from Blob storage
+    // 4. Delete the file from Blob storage after successful processing
+    try {
+        console.log('Deleting successfully processed file from Blob storage:', blobUrlToDelete);
+        if (blobUrlToDelete) {
+            await del(blobUrlToDelete); // Use del with the blob URL
+            console.log('Blob deleted successfully.');
+        } else {
+             console.warn('Could not delete blob, URL not available.');
+        }
+    } catch (deleteError) {
+        console.error('Failed to delete file from blob storage after processing:', deleteError);
+        // Log error but don't fail the entire request
+    }
 
     // Revalidate paths (existing logic)
     revalidatePath("/calendar");
@@ -202,12 +240,20 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error("Strava import error:", error)
+    console.error("Strava import error (Blob Storage):", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to process Strava archive.";
-    // Check for specific errors like file size limit
-    if (error instanceof Error && (error.message.includes('maxBodyLength') || error.message.includes('Payload Too Large'))) {
-      return NextResponse.json({ success: false, error: "File size exceeds limit. Please try a smaller export." }, { status: 413 });
+    
+    // Attempt to delete the blob if an error occurred during processing
+    if (blobUrlToDelete) {
+      try {
+        console.warn('Attempting to delete blob due to processing error:', blobUrlToDelete);
+        await del(blobUrlToDelete);
+        console.log('Blob deleted after error.');
+      } catch (deleteError) {
+        console.error('Failed to delete blob after error:', deleteError);
+      }
     }
+    
     return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
   }
 }

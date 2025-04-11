@@ -325,135 +325,158 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     setUploadStats(null);
     setUploadStatus('Preparing upload...');
 
-    // Create FormData directly
-    const formData = new FormData();
-    // Ensure file is not null before appending
-    if (!file) {
-      console.error('Attempted upload with null file');
-      toast({ title: "Error", description: "File became null before upload.", variant: "destructive" });
-      setIsLoading(false);
-      return;
-    }
-    formData.append('file', file);
-    // Append selected workout types if needed by the backend
-    if (selectedWorkoutTypes.length > 0) {
-      selectedWorkoutTypes.forEach(type => formData.append('workoutTypes', type));
-    }
-
-    console.log(`=== Starting direct server upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
+    console.log(`=== Starting presigned URL upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
+    
+    let blobPathname = ''; // Variable to hold the final pathname
 
     try {
-      // Directly POST FormData to the import endpoint
-      setUploadStatus('Sending file to server...');
-      setProgress(25); // Indicate sending started
-      console.log('Sending POST request with FormData to /api/strava/import');
+      // 1. Get presigned URL from our API route
+      setUploadStatus('Requesting secure upload link...');
+      setProgress(10);
+      const presignedResponse = await fetch('/api/strava/generate-upload-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filename: file.name }),
+      });
 
-      // Use XMLHttpRequest for progress tracking
+      if (!presignedResponse.ok) {
+        const errorData = await presignedResponse.json().catch(() => ({ error: 'Failed to get upload link. Server response not readable.'}));
+        throw new Error(errorData.error || `Failed to get upload link: Server responded with ${presignedResponse.status}`);
+      }
+
+      const { url, pathname: receivedPathname } = await presignedResponse.json();
+      blobPathname = receivedPathname; // Store the pathname for later
+      console.log('Received presigned PUT URL:', url);
+      console.log('File will be stored at path:', blobPathname);
+      setProgress(25);
+
+      // 2. Upload the file directly to Vercel Blob using XMLHttpRequest (PUT)
+      setUploadStatus(`Uploading file directly to storage...`);
+      
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/strava/import', true);
+        xhr.open('PUT', url, true);
+
+        // Set *only* the essential headers for Vercel Blob PUT
+        xhr.setRequestHeader('Content-Type', 'application/zip');
+        xhr.setRequestHeader('x-ms-blob-type', 'BlockBlob');
+        // DO NOT set Content-Length or x-content-length - let browser handle standard Content-Length
 
         // Track progress
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
-            // Progress calculation: 25% (sending started) + 50% (upload progress) = 75% total for upload phase
-            const currentProgress = 25 + Math.round((event.loaded / event.total) * 50);
+            // Progress: 25% (URL fetch) + 65% (Direct upload) = 90%
+            const currentProgress = 25 + Math.round((event.loaded / event.total) * 65);
             setProgress(currentProgress);
-            setUploadStatus(`Uploading to server... ${Math.round((event.loaded / event.total) * 100)}%`);
+            setUploadStatus(`Uploading directly to storage... ${Math.round((event.loaded / event.total) * 100)}%`);
           }
         };
 
-        xhr.onload = async () => {
-          // Upload itself is complete, now handle server response
-          setProgress(75); // Mark upload complete
-          setUploadStatus('Server processing file...');
-          console.log('Upload complete. Server response status:', xhr.status);
-
+        xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            const contentType = xhr.getResponseHeader("content-type");
-            if (contentType && contentType.includes("application/json")) {
-              const data = JSON.parse(xhr.responseText);
-              console.log('Processing API Response data:', data);
-
-              if (data.success) {
-                // --- Success handling logic ---
-                const processed = data.results?.processed ?? 0;
-                const imported = data.results?.imported ?? 0;
-                const errors = data.results?.errors ?? [];
-                const errorCount = errors.length;
-
-                const summaryStats: ImportStats = {
-                  count: imported,
-                  types: data.results?.activityTypesCount ?? {},
-                  earliestDate: data.results?.earliestDate ?? '',
-                  latestDate: data.results?.latestDate ?? '',
-                  totalDistance: data.results?.totalDistance ?? 0,
-                  totalDuration: data.results?.totalDuration ?? 0,
-                };
-                setUploadStats(summaryStats);
-
-                let description = `Processed ${processed} files, successfully imported ${imported} workouts.`;
-                if (errorCount > 0) {
-                  description += ` ${errorCount} file(s) could not be imported. Check browser console for details.`;
-                  console.error('Import errors - Failed files:', errors);
-                }
-
-                toast({
-                  title: "Import Complete",
-                  description: description,
-                  duration: 8000,
-                });
-
-                setUploadStatus('Import completed successfully.');
-                setProgress(100);
-                setFile(null);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-                if (onImportComplete) onImportComplete();
-                resolve();
-                // --- End of success handling ---
-              } else {
-                // API returned success: false
-                reject(new Error(data.error || data.details || 'Import failed: The API reported an issue during processing.'));
-              }
-            } else {
-              // Non-JSON response
-              console.error("Server error or non-JSON response during processing:", { status: xhr.status, contentType, body: xhr.responseText });
-              let errorMsg = `Processing failed: Server responded with status ${xhr.status}.`;
-              if (contentType && !contentType.includes("application/json")) {
-                errorMsg = `Server error: Expected JSON response, but received ${contentType}.`;
-              }
-              reject(new Error(errorMsg));
-            }
+            console.log('Direct upload to storage successful via XHR (PUT).');
+            setProgress(90); // Mark direct upload complete
+            resolve();
           } else {
-            // HTTP error status (4xx, 5xx)
-            let errorMsg = `Upload failed: Server responded with status ${xhr.status}.`;
+            console.error("Direct upload via XHR (PUT) failed:", { status: xhr.status, response: xhr.responseText });
+            // Try to parse error response from Blob storage
+            let errorMsg = `Direct file upload failed: Storage responded with status ${xhr.status}.`;
             try {
-                const errorData = JSON.parse(xhr.responseText);
-                errorMsg = errorData.error || errorMsg;
-            } catch (e) {
-                // Failed to parse JSON error, use status text or default
-                errorMsg = xhr.statusText || errorMsg;
-            }
-             console.error("Server error during upload:", { status: xhr.status, response: xhr.responseText });
+              const blobError = JSON.parse(xhr.responseText);
+              errorMsg = blobError.message || blobError.error || errorMsg;
+            } catch (e) {/* Ignore parsing error */}
             reject(new Error(errorMsg));
           }
         };
 
         xhr.onerror = () => {
-          console.error("Upload via XHR failed (Network Error)");
-          // Use reject to propagate the error
-          reject(new Error('Network error during file upload. Please check your connection.'));
+          console.error("Direct upload via XHR failed (Network Error)");
+          reject(new Error('Network error during direct file upload. Please check connection.'));
         };
 
-        // Send the FormData
-        xhr.send(formData);
+        // Send the file directly as the request body
+        xhr.send(file);
       });
 
+      // 3. Notify the backend API to process the file from Blob storage
+      setUploadStatus('Requesting server to process uploaded file...');
+      console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
+
+      const processResponse = await fetch('/api/strava/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            blobPathname: blobPathname, // Send the path received from generate-upload-url
+            originalFilename: file.name 
+        }), 
+      });
+
+      setProgress(95); // Indicate processing request sent
+
+      console.log('Processing Response received:', { status: processResponse.status, statusText: processResponse.statusText });
+
+      const contentType = processResponse.headers.get("content-type");
+      if (!processResponse.ok || !contentType || !contentType.includes("application/json")) {
+        const responseText = await processResponse.text().catch(() => "Could not read error response body.");
+        console.error("Server error or non-JSON response during processing:", { status: processResponse.status, contentType, body: responseText });
+        let errorMsg = `Processing failed: Server responded with status ${processResponse.status}.`;
+        if (contentType && !contentType.includes("application/json")) {
+          errorMsg = `Server error: Expected JSON response, but received ${contentType}.`;
+        } else if (processResponse.status >= 400 && processResponse.status < 500 && responseText) {
+          errorMsg = `Processing failed: ${responseText}`;
+        }
+        throw new Error(errorMsg);
+      }
+
+      const data = await processResponse.json();
+      console.log('Processing API Response data:', data);
+
+      if (data.success) {
+        // --- Success handling logic (same as before) ---
+        const processed = data.results?.processed ?? 0;
+        const imported = data.results?.imported ?? 0;
+        const errors = data.results?.errors ?? [];
+        const errorCount = errors.length;
+
+        const summaryStats: ImportStats = {
+          count: imported,
+          types: data.results?.activityTypesCount ?? {},
+          earliestDate: data.results?.earliestDate ?? '',
+          latestDate: data.results?.latestDate ?? '',
+          totalDistance: data.results?.totalDistance ?? 0,
+          totalDuration: data.results?.totalDuration ?? 0,
+        };
+        setUploadStats(summaryStats);
+
+        let description = `Processed ${processed} files, successfully imported ${imported} workouts.`;
+        if (errorCount > 0) {
+          description += ` ${errorCount} file(s) could not be imported. Check browser console for details.`;
+          console.error('Import errors - Failed files:', errors);
+        }
+
+        toast({
+          title: "Import Complete",
+          description: description,
+          duration: 8000,
+        });
+
+        setUploadStatus('Import completed successfully.');
+        setProgress(100);
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (onImportComplete) onImportComplete();
+        // --- End of success handling ---
+      } else {
+        throw new Error(data.error || data.details || 'Import failed: The API reported an issue during processing.');
+      }
     } catch (error) {
-      // --- Error handling ---
+      // --- Error handling (same as before) ---
       console.error('Upload process error:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred during the import process.';
-      // Re-introduce toast and state setters in the catch block
       toast({
         title: "Import Error",
         description: errorMessage,
@@ -464,10 +487,9 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       setProgress(0);
       // --- End of error handling ---
     } finally {
-      // Re-introduce setIsLoading in the finally block
       setIsLoading(false);
     }
-  }, [file, toast, onImportComplete, selectedWorkoutTypes, setIsLoading, setProgress, setError, setUploadStatus, setFile, fileInputRef]); // Add missing dependencies
+  }, [file, toast, onImportComplete, setIsLoading, setProgress, setError, setUploadStatus, setFile, fileInputRef, setUploadStats]); // Added setUploadStats to dependencies
 
   // Format date for display
   const formatDate = (date: string | Date | undefined | null) => {
