@@ -325,75 +325,92 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     setUploadStats(null);
     setUploadStatus('Preparing upload...');
 
-    console.log(`=== Starting server-relayed upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
+    console.log(`=== Starting client-side Blob upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
     
     let blobPathname = ''; // Variable to hold the final pathname
 
     try {
-      // 1. Upload the file to our server-side relay endpoint (/api/strava/upload-file)
-      setUploadStatus('Uploading file to server...');
-      setProgress(10);
+      // --- Step 1: Get the presigned URL from our backend ---
+      setUploadStatus('Getting upload destination...');
+      setProgress(5);
       
-      const formData = new FormData();
-      formData.append('file', file);
+      const generateUrlResponse = await fetch('/api/strava/generate-upload-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filename: file.name }),
+      });
+
+      if (!generateUrlResponse.ok) {
+        let errorMsg = 'Failed to get upload URL.';
+        try {
+          const errorData = await generateUrlResponse.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) { /* Ignore parsing error */ }
+        throw new Error(errorMsg);
+      }
+
+      const { url: presignedPutUrl, pathname } = await generateUrlResponse.json();
+      blobPathname = pathname; // Store the pathname for the import step
+
+      if (!presignedPutUrl || !blobPathname) {
+        throw new Error('Server did not provide a valid upload URL or pathname.');
+      }
+
+      console.log(`Received presigned URL: ${presignedPutUrl}`);
+      console.log(`Blob pathname: ${blobPathname}`);
+      setProgress(10); // Indicate URL received
+
+      // --- Step 2: Upload the file directly to Vercel Blob using the presigned URL ---
+      setUploadStatus('Uploading file directly to storage...');
       
-      // Use XMLHttpRequest to track upload progress to our backend relay
-      const uploadResponse = await new Promise<any>((resolve, reject) => {
+      // Use XMLHttpRequest to track upload progress directly to Blob storage
+      await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/strava/upload-file', true);
-        
-        // Track progress of upload TO THE SERVER relay endpoint
+        xhr.open('PUT', presignedPutUrl, true);
+        xhr.setRequestHeader('Content-Type', 'application/zip'); // Set correct content type for the blob
+
+        // Track progress of upload TO BLOB STORAGE
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
-            // Progress: 10% (start) + 80% (upload to server relay) = 90%
+            // Progress: 10% (URL fetch) + 80% (upload to blob) = 90%
             const currentProgress = 10 + Math.round((event.loaded / event.total) * 80);
             setProgress(currentProgress);
-            setUploadStatus(`Uploading to server... ${Math.round((event.loaded / event.total) * 100)}%`);
+            setUploadStatus(`Uploading to storage... ${Math.round((event.loaded / event.total) * 100)}%`);
           }
         };
         
         xhr.onload = () => {
-          setProgress(90); // Mark server relay upload complete
-          setUploadStatus('Server storing file...'); // Indicate relay is now uploading to blob
           if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              // Check if the relay endpoint itself reported success
-              if (data.success && data.pathname) {
-                resolve(data); // Resolve with the parsed JSON response { success: true, pathname: '...' }
-              } else {
-                 console.error('Relay endpoint reported failure:', data.error);
-                 reject(new Error(data.error || 'Server failed to store the file in Blob storage.'));
-              }
-            } catch (e) {
-              console.error('Failed to parse upload-file response:', xhr.responseText);
-              reject(new Error('Server relay response was not valid JSON.'));
-            }
+            console.log('File successfully uploaded directly to Vercel Blob.');
+            setProgress(90); // Mark direct upload complete
+            resolve();
           } else {
-            // Handle HTTP errors from the relay endpoint
-            console.error("Server upload relay failed:", { status: xhr.status, response: xhr.responseText });
-            let errorMsg = `File upload failed: Server responded with status ${xhr.status}.`;
-            try {
-              const errorData = JSON.parse(xhr.responseText);
-              errorMsg = errorData.error || errorMsg;
-            } catch (e) {/* Ignore parsing error */}
+            // Handle errors from Vercel Blob PUT request
+            console.error("Direct Blob upload failed:", { status: xhr.status, response: xhr.responseText });
+            // Vercel Blob might return XML error messages
+            let errorMsg = `File upload to storage failed: Status ${xhr.status}.`;
+            // Attempt to extract useful info if possible (might be XML)
+            if (xhr.responseText?.includes('<Message>')) {
+                try {
+                    const match = xhr.responseText.match(/<Message>(.*?)<\/Message>/);
+                    if (match && match[1]) errorMsg += ` Message: ${match[1]}`;
+                } catch (e) {/* ignore */}
+            }
             reject(new Error(errorMsg));
           }
         };
         
         xhr.onerror = () => {
-          console.error("Server upload relay failed (Network Error)");
-          reject(new Error('Network error during file upload. Please check connection.'));
+          console.error("Direct Blob upload failed (Network Error)");
+          reject(new Error('Network error during direct file upload. Please check connection.'));
         };
         
-        xhr.send(formData);
+        xhr.send(file); // Send the file directly
       });
-      
-      // Response from the upload-file endpoint should contain the pathname
-      blobPathname = uploadResponse.pathname;
-      console.log('File successfully relayed and stored. Blob pathname:', blobPathname);
 
-      // 2. Notify the main import API to process the file from Blob storage
+      // --- Step 3: Notify the main import API to process the file from Blob storage ---
       setUploadStatus('Requesting server to process stored file...');
       console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
 
@@ -420,7 +437,17 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         if (contentType && !contentType.includes("application/json")) {
           errorMsg = `Server error: Expected JSON response, but received ${contentType}.`;
         } else if (processResponse.status >= 400 && processResponse.status < 500 && responseText) {
-          errorMsg = `Processing failed: ${responseText}`;
+          // Try to parse JSON error from body if available
+          try {
+             const errorJson = JSON.parse(responseText);
+             errorMsg = `Processing failed: ${errorJson.error || errorJson.message || responseText}`;
+          } catch (e) {
+              errorMsg = `Processing failed: ${responseText}`;
+          }
+        } else if (processResponse.status === 413) {
+            errorMsg = 'Processing failed: Payload may be too large for the processing function.';
+        } else if (!processResponse.ok) {
+            errorMsg = `Processing failed: Server returned status ${processResponse.status}. ${responseText}`;
         }
         // Attempt to clean up the blob if processing fails after successful upload
         if (blobPathname) {
@@ -484,7 +511,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         throw new Error(data.error || data.details || 'Import failed: The API reported an issue during processing.');
       }
     } catch (error) {
-      // --- Error handling (catches errors from upload relay or processing request) ---
+      // --- Error handling (catches errors from all steps) ---
       console.error('Upload process error:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred during the import process.';
       toast({
@@ -494,7 +521,16 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       });
       setError(errorMessage);
       setUploadStatus(`Error: ${errorMessage}`);
-      setProgress(0);
+      setProgress(0); 
+      // Attempt cleanup if blobPathname was obtained but process failed
+      if (blobPathname) {
+          console.log("Attempting cleanup due to error in upload process...");
+          fetch('/api/strava/cleanup-blob', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pathname: blobPathname })
+          }).catch(err => console.error("Failed to trigger blob cleanup after overall process error:", err));
+        }
       // --- End of error handling ---
     } finally {
       setIsLoading(false);
