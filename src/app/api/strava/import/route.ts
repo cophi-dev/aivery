@@ -624,8 +624,8 @@ function extractActivityFromRecords(data: any): FitActivity | null {
   }
 }
 
-// Add these helper functions for processing different file types
-async function processFitFile(content: Buffer, fileName: string): Promise<any> {
+// Export these functions so they can be imported from other files
+export async function processFitFile(content: Buffer, fileName: string): Promise<any> {
   let fitParser: any; // Define parser instance variable
   try {
     console.log(`Processing FIT file: ${fileName}, size: ${content.length} bytes`);
@@ -844,7 +844,7 @@ async function processFitFile(content: Buffer, fileName: string): Promise<any> {
   }
 }
 
-async function processGpxFile(content: Buffer, fileName: string): Promise<any> {
+export async function processGpxFile(content: Buffer, fileName: string): Promise<any> {
   try {
     console.log(`Processing GPX file: ${fileName}, size: ${content.length} bytes`);
     
