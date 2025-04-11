@@ -134,6 +134,8 @@ export default function SettingsPage() {
     { id: 'flexibility', label: 'Flexibility' },
     { id: 'walking', label: 'Walking' },
     { id: 'hiking', label: 'Hiking' },
+    { id: 'yoga', label: 'Yoga' },
+    { id: 'pilates', label: 'Pilates' },
     { id: 'other', label: 'Other' }
   ]
 
@@ -1051,6 +1053,25 @@ export default function SettingsPage() {
                     <form onSubmit={handleDeleteWorkoutsSubmit} className="space-y-2">
                       <div className="grid gap-2">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          <div key="delete-all" className="flex items-center space-x-2 col-span-2 md:col-span-3 mb-2 border-b pb-2">
+                            <Checkbox 
+                              id="delete-all"
+                              checked={selectedWorkoutTypes.length === workoutTypes.length}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedWorkoutTypes(workoutTypes.map(type => type.id));
+                                } else {
+                                  setSelectedWorkoutTypes([]);
+                                }
+                              }}
+                            />
+                            <label 
+                              htmlFor="delete-all"
+                              className="text-sm font-medium cursor-pointer text-red-600 dark:text-red-400"
+                            >
+                              All
+                            </label>
+                          </div>
                           {workoutTypes.map(type => (
                             <div key={type.id} className="flex items-center space-x-2">
                               <Checkbox 

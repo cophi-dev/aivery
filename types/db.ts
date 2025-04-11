@@ -21,7 +21,7 @@ export interface WorkoutData {
   stravaLink?: string
 }
 
-export type WorkoutType = "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "other"
+export type WorkoutType = "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "walking" | "yoga" | "pilates" | "other"
 
 export interface Exercise {
   name: string

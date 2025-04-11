@@ -62,6 +62,29 @@ export interface WorkoutData {
       average?: number;
       max?: number;
     };
+    sportDetails?: {
+      sport?: string;
+      subSport?: string;
+    };
+    gearInfo?: {
+      id?: string;
+      name?: string;
+      distance?: number;
+    };
+    weather?: {
+      temperature?: number;
+      humidity?: number;
+      windSpeed?: number;
+      conditions?: string;
+    };
+    stravaSpecific?: {
+      segmentEfforts?: number;
+      achievementCount?: number;
+      kudosCount?: number;
+      athleteWeight?: number;
+      commute?: boolean;
+      deviceName?: string;
+    };
   };
   source?: string;
   sourceId?: string;

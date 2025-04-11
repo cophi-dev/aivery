@@ -387,7 +387,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
           try {
             // Upload this chunk
             const response = await fetch('/api/strava/chunked-upload', {
-              method: 'POST',
+        method: 'POST',
               body: formData
             });
             

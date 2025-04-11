@@ -11,35 +11,46 @@ const formatVolume = (volume: number | undefined | null): string | null => {
   return `${Math.round(volume).toLocaleString()} kg`;
 };
 
-// Format distance (assuming meters, convert to km)
+// Format distance (handling both meters and km appropriately)
 const formatDistance = (meters: number | undefined | null): string => {
   console.log('[ProgressCards] Formatting distance:', meters);
   
   // Handle undefined, null, or negative values
   if (meters === undefined || meters === null || meters <= 0) {
-    return "0.0 km"; // Only show 0 when it's actually 0, not for missing data
+    return "0 m"; // Show as meters for zero
   }
   
-  // Convert to km and format to 1 decimal place
+  // For small distances (less than 1000m), show in meters
+  if (meters < 1000) {
+    return `${Math.round(meters)} m`;
+  }
+  
+  // For larger distances, convert to km and format to 1 decimal place
   const km = meters / 1000;
   return `${km.toFixed(1)} km`;
 };
 
-// Format duration (assuming input is in minutes)
-const formatDuration = (minutes: number | undefined | null): string | null => {
-  if (minutes === undefined || minutes === null || minutes <= 0) return null;
-  const totalMinutes = Math.round(minutes);
+// Format duration (assuming input is in seconds)
+const formatDuration = (seconds: number | undefined | null): string | null => {
+  console.log('[ProgressCards] Formatting duration:', seconds, 'seconds');
+  
+  if (seconds === undefined || seconds === null || seconds <= 0) return null;
+  
+  // Convert seconds to hours and minutes
+  const totalMinutes = Math.floor(seconds / 60);
   const hours = Math.floor(totalMinutes / 60);
   const remainingMinutes = totalMinutes % 60;
+  
+  console.log('[ProgressCards] Duration converted to:', { hours, remainingMinutes });
   
   let formatted = "";
   if (hours > 0) {
     formatted += `${hours}h`;
   }
-  if (remainingMinutes > 0) {
-    formatted += ` ${remainingMinutes}m`;
+  if (remainingMinutes > 0 || hours === 0) {
+    formatted += `${hours > 0 ? ' ' : ''}${remainingMinutes}m`;
   }
-  return formatted.trim() || "0m"; // Return "0m" if total duration rounds to 0
+  return formatted.trim();
 };
 // -----------------------------------------
 
@@ -54,7 +65,8 @@ export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }
   const hasCardioDistance = cardioDistance !== undefined && cardioDistance !== null && cardioDistance > 0;
   
   // Debug values
-  console.log('[ProgressCards] Received cardioDistance:', cardioDistance);
+  console.log('[ProgressCards] Received props:', { strengthVolume, cardioDuration, cardioDistance });
+  console.log('[ProgressCards] Formatted duration:', formatDuration(cardioDuration));
   console.log('[ProgressCards] Formatted distance:', formatDistance(cardioDistance));
   console.log('[ProgressCards] Display distance:', hasCardioDistance);
   

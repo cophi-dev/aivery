@@ -28,6 +28,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
   const [workout, setWorkout] = useState<any | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   
   // Extract id directly since we're in a client component
   const { id } = params
@@ -44,10 +45,17 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
       try {
         const data = await fetchWorkout(id)
         console.log('>>> Fetched workout data (should be plain object):', data);
-        setWorkout(data)
+        if (data) {
+          setWorkout(data)
+          setError(null)
+        } else {
+          setWorkout(null)
+          setError("Workout not found. It may have been deleted or you don't have permission to view it.")
+        }
       } catch (error) {
         console.error(">>> ERROR fetching workout:", error);
         setWorkout(null); 
+        setError(error instanceof Error ? error.message : "Failed to load workout data")
       } finally {
         setIsLoading(false)
       }
@@ -58,6 +66,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
     } else {
         console.log('>>> CLIENT-SIDE: ID missing, skipping loadWorkout');
         setIsLoading(false); 
+        setError("No workout ID provided")
     }
   }, [id])
 
@@ -110,7 +119,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
         <div className="text-center">
           <h1 className="text-2xl font-bold">Activity not found</h1>
           <p className="mt-2 text-muted-foreground">
-            The activity you're looking for doesn't exist or has been deleted.
+            {error}
           </p>
           <Button asChild className="mt-4">
             <Link href="/planner">Back to Planner</Link>

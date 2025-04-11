@@ -63,7 +63,7 @@ export interface IWorkout extends Document {
   date: Date
   duration: number // Represents the *total* duration of the workout session
   intensity?: "Low" | "Medium" | "High"
-  type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "other" // Overall type, could be derived or set
+  type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "walking" | "yoga" | "pilates" | "other" // Overall type, could be derived or set
   // volume?: number // Volume might be better calculated on the fly from WorkoutExercises
   // distance?: number // Total distance might be better calculated on the fly from WorkoutExercises
   // calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
@@ -142,6 +142,41 @@ const CardioDetailsSchema = new Schema({
   sportDetails: {
     sport: { type: String },
     subSport: { type: String }
+  },
+  // Add gear information schema
+  gearInfo: {
+    id: { type: String },
+    name: { type: String },
+    distance: { type: Number }
+  },
+  // Add weather information schema
+  weather: {
+    temperature: { type: Number },
+    humidity: { type: Number },
+    windSpeed: { type: Number },
+    conditions: { type: String }
+  },
+  // Add Strava-specific additional data
+  stravaSpecific: {
+    segmentEfforts: { type: Number },
+    achievementCount: { type: Number },
+    kudosCount: { type: Number },
+    athleteWeight: { type: Number },
+    commute: { type: Boolean },
+    deviceName: { type: String },
+    segmentDetails: [{
+      id: { type: String },
+      name: { type: String },
+      distance: { type: Number },
+      elapsedTime: { type: Number },
+      startDate: { type: String },
+      average_heartrate: { type: Number },
+      max_heartrate: { type: Number },
+      prPowered: { type: Boolean },
+      komPowered: { type: Boolean },
+      startIndex: { type: Number },
+      endIndex: { type: Number }
+    }]
   }
 })
 
@@ -154,7 +189,7 @@ const WorkoutSchema: Schema = new Schema(
     intensity: { type: String, enum: ["Low", "Medium", "High"], required: false },
     type: {
       type: String,
-      enum: ["strength", "running", "swimming", "cycling", "hiit", "flexibility", "other"],
+      enum: ["strength", "running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"],
       required: true,
     },
     // REMOVED: volume: { type: Number },

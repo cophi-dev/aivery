@@ -99,21 +99,60 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
         return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, topPRs: [] };
     }
 
-    // Force creating a new date for "now" - make sure timezone issues don't interfere
+    // IMPORTANT: Use the actual current date, not dates from workouts
+    // Get the current real date as our reference point
     const now = new Date();
-    const oneWeekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-    console.log(`[Metrics] Today: ${now.toISOString()}, One week ago: ${oneWeekAgo.toISOString()}`); // Log date boundary
     
+    // Set the reference date
+    const referenceDate = now;
+    console.log(`[Metrics] Real current date for calculations: ${referenceDate.toISOString()}`);
+    
+    // IMPORTANT: Instead of focusing on dates, focus on the most recent workouts
+    // Get the 7 most recent workouts for a more accurate representation
+    
+    // RESET accumulated values from previous runs to ensure we're starting fresh
     let totalVolume = 0;
+    
+    // Sort workouts by date (newest first)
+    const sortedWorkouts = [...workouts].sort((a, b) => {
+        try {
+            return new Date(b.date).getTime() - new Date(a.date).getTime();
+        } catch (e) {
+            return 0;
+        }
+    });
+    
+    // Log just the date ranges in the data
+    if (sortedWorkouts.length > 0) {
+        const newestDate = new Date(sortedWorkouts[0].date);
+        const oldestDate = new Date(sortedWorkouts[sortedWorkouts.length - 1].date);
+        console.log(`[Metrics] Workout date range: ${oldestDate.toISOString().split('T')[0]} to ${newestDate.toISOString().split('T')[0]}`);
+    }
+    
+    // Take the 7 most recent workouts regardless of date
+    const recentWorkouts = sortedWorkouts.slice(0, 7);
+    
+    // Create a set of recent workout IDs for fast lookup
+    const recentWorkoutIds = new Set(recentWorkouts.map(w => w._id));
+    
+    console.log(`[Metrics] Using ${recentWorkouts.length} most recent workouts:`, 
+        recentWorkouts.map(w => ({
+            id: w._id.toString().slice(-4),
+            date: w.date?.split('T')[0] || new Date(w.date).toISOString().split('T')[0],
+            type: w.type,
+            name: w.name?.substring(0, 20),
+            duration: w.duration
+        }))
+    );
+    
     let totalCardioDuration = 0; // In seconds
     let totalCardioDistance = 0; // In meters
     const personalRecords: Record<string, { weight: number; date: Date }> = {};
     
-    // RESET accumulated values from previous runs to ensure we're starting fresh
-    totalVolume = 0;
-
     workouts.forEach((workout, index) => {
-        console.log(`\n[Metrics] Processing workout #${index + 1} (ID: ${workout._id}, Date: ${workout.date}, Type: ${workout.type}, Name: ${workout.name || 'undefined'}`);
+        const isRecentWorkout = recentWorkoutIds.has(workout._id);
+        
+        console.log(`\n[Metrics] Processing workout #${index + 1} (ID: ${workout._id}, Date: ${workout.date}, Type: ${workout.type}, Name: ${workout.name || 'undefined'}, Recent: ${isRecentWorkout}`);
         // Debug workout structure to identify potential issues
         console.log(`[Metrics DEBUG] Workout Structure Keys: ${Object.keys(workout).join(', ')}`);
         
@@ -128,9 +167,7 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
             return; 
         }
 
-        // Simple date comparison using UTC timestamps for start of day
-        const isLast7Days = workoutDate.getTime() >= oneWeekAgo.getTime();
-        console.log(`[Metrics] Workout Date: ${workoutDate.toISOString()}, Is Last 7 Days: ${isLast7Days}, Comparison: ${workoutDate.getTime()} >= ${oneWeekAgo.getTime()}`);
+        console.log(`[Metrics] Workout Date: ${workoutDate.toISOString()}, Is Recent: ${isRecentWorkout}`);
 
         // Calculate Strength Volume (Last 7 Days) - Use workoutExercises
         // Handle both old and new workout types for strength
@@ -150,16 +187,17 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
             let calculatedVolumeFromSets = 0;
             
             // Basic volume for home workouts with empty exercises
-            if (isLast7Days && 
+            if (isRecentWorkout && 
                 (workoutNameStr.includes('home workout') || workoutTypeStr === 'Strength') && 
-                (!workout.workoutExercises || workout.workoutExercises.length === 0)) {
+                (!workout.workoutExercises || workout.workoutExercises.length === 0) && 
+                (!workout.exercises || workout.exercises.length === 0)) {
                 
                 // Don't assign default volume - only use actual data
                 console.log(`[Metrics] Home workout with no exercises - no volume added`);
             }
-            // Standard volume calculation
-            else if (isLast7Days && workout.workoutExercises && workout.workoutExercises.length > 0) {
-                console.log(`[Metrics] Found ${workout.workoutExercises.length} exercises to process`);
+            // First try to use the new workoutExercises field
+            else if (isRecentWorkout && workout.workoutExercises && workout.workoutExercises.length > 0) {
+                console.log(`[Metrics] Found ${workout.workoutExercises.length} workout exercises to process`);
                 workout.workoutExercises.forEach(exerciseDetail => {
                     // Check if sets exist on the exercise detail
                     if (exerciseDetail.sets && exerciseDetail.sets.length > 0) {
@@ -176,8 +214,8 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
                     }
                 });
             }
-            // Add support for old schema where exercises might be directly on workout
-            else if (isLast7Days && workout.exercises && workout.exercises.length > 0) {
+            // Fallback to old schema where exercises might be directly on workout
+            else if (isRecentWorkout && workout.exercises && workout.exercises.length > 0) {
                 console.log(`[Metrics] Using legacy 'exercises' property with ${workout.exercises.length} exercises`);
                 workout.exercises.forEach(exercise => {
                     if (exercise.sets && exercise.sets.length > 0) {
@@ -192,11 +230,11 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
                     }
                 });
             } else {
-                console.log(`[Metrics] No exercises found or not in last 7 days. isLast7Days=${isLast7Days}, has exercises=${!!workout.workoutExercises}, count=${workout.workoutExercises?.length || 0}`);
+                console.log(`[Metrics] No exercises found or not a recent workout. isRecent=${isRecentWorkout}, has workoutExercises=${!!workout.workoutExercises}, count=${workout.workoutExercises?.length || 0}`);
             }
             
             console.log(`[Metrics] Strength - Calculated Volume from Sets: ${calculatedVolumeFromSets}`);
-            if (isLast7Days && calculatedVolumeFromSets > 0) { // Only add if calculated AND in last 7 days
+            if (isRecentWorkout && calculatedVolumeFromSets > 0) { // Only add if calculated AND in last 7 days
                  totalVolume += calculatedVolumeFromSets;
                  console.log(`[Metrics] Added ${calculatedVolumeFromSets} volume from sets. New Total: ${totalVolume}`);
             } 
@@ -212,7 +250,7 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
         // Debug workout type
         console.log(`[Metrics] Checking if cardio: "${workout.type}" → "${workoutTypeLower}" → ${isCardioWorkout}`);
 
-        if (isCardioWorkout && isLast7Days) {
+        if (isCardioWorkout && isRecentWorkout) {
             // Add duration
             const durationToAdd = workout.duration ?? 0;
             console.log(`[Metrics] Cardio - Duration Value: ${workout.duration}, Type: ${workout.type}`);
@@ -224,50 +262,135 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
             // Add distance from cardioDetails if available
             let distanceToAdd = 0;
             // Debug the complete workout object to see where distance is stored
-            console.log(`[Metrics] Cardio workout data structure:`, JSON.stringify({
-                id: workout._id,
-                type: workout.type,
+            console.log(`[Metrics] Cardio workout ${workout._id.slice(-4)} (${workoutDate.toISOString().split('T')[0]}) data:`, JSON.stringify({
                 name: workout.name,
+                type: workout.type,
                 distance: workout.distance,
-                cardioDetails: workout.cardioDetails,
-                // Check for more potential distance locations
+                isDated2025: workoutDate.getFullYear() === 2025,
+                // Check for distance across different properties
                 directDistance: workout.distance,
                 hasCardioDetails: !!workout.cardioDetails,
                 cardioDetailsDistance: workout.cardioDetails?.distance,
-            }));
+                // Check workout exercises for distance
+                workoutExercisesCount: workout.workoutExercises?.length || 0,
+                hasWorkoutExercisesWithDistance: workout.workoutExercises?.some(ex => !!ex.distance) || false,
+                // Show sample workout exercise if available
+                sampleExercise: workout.workoutExercises && workout.workoutExercises.length > 0 ? {
+                    id: workout.workoutExercises[0]._id,
+                    exerciseName: workout.workoutExercises[0].exerciseId?.name,
+                    distance: workout.workoutExercises[0].distance,
+                    isCardio: workout.workoutExercises[0].exerciseId?.category === 'cardio'
+                } : null
+            }, null, 2).substring(0, 500));
 
-            if (workout.cardioDetails?.distance) {
-                distanceToAdd = workout.cardioDetails.distance;
-                console.log(`[Metrics] Found distance in cardioDetails: ${distanceToAdd}`);
-            } else if (workout.distance) {
-                distanceToAdd = workout.distance;
-                console.log(`[Metrics] Found distance directly on workout: ${distanceToAdd}`);
-            } 
-            // Try looking in different possible locations
-            else if (typeof workout.distance === 'string') {
-                // Try parsing string distance
-                const parsed = parseFloat(workout.distance);
-                if (!isNaN(parsed)) {
-                    distanceToAdd = parsed;
-                    console.log(`[Metrics] Parsed string distance: "${workout.distance}" → ${distanceToAdd}`);
+            // First, check if we have distance on the workout exercises (new schema)
+            if (workout.workoutExercises && workout.workoutExercises.length > 0) {
+                // Look for any workout exercises with distance
+                for (const ex of workout.workoutExercises) {
+                    if (ex.distance && ex.distance > 0) {
+                        // Ensure distance is a number
+                        let exDistance = typeof ex.distance === 'string' ? parseFloat(ex.distance) : ex.distance;
+                        console.log(`[Metrics] Found raw distance value of type ${typeof ex.distance}: ${ex.distance} in workout exercise ${ex.exerciseId?.name || 'unnamed'}`);
+                        
+                        if (!isNaN(exDistance)) {
+                            // Check if distance might be in kilometers and needs conversion to meters
+                            if (exDistance < 100 && (workoutTypeLower.includes('run') || workoutTypeLower.includes('walk'))) {
+                                console.log(`[Metrics] Distance appears to be in km (${exDistance}), converting to meters`);
+                                exDistance *= 1000;
+                            }
+                            
+                            distanceToAdd += exDistance;
+                            console.log(`[Metrics] Added distance ${exDistance}m from workout exercise ${ex.exerciseId?.name || 'unnamed'}`);
+                        }
+                    }
                 }
             }
-            // Remove default distance assumptions
-            else {
-                console.log(`[Metrics] No distance data found for this cardio workout. No distance will be added.`);
+            
+            // If we didn't find distance in workout exercises, try cardioDetails (legacy)
+            if (distanceToAdd === 0 && workout.cardioDetails?.distance) {
+                // Ensure distance is a number
+                let cdDistance = typeof workout.cardioDetails.distance === 'string' 
+                    ? parseFloat(workout.cardioDetails.distance) 
+                    : workout.cardioDetails.distance;
+                
+                console.log(`[Metrics] Found raw cardioDetails.distance value of type ${typeof workout.cardioDetails.distance}: ${workout.cardioDetails.distance}`);
+                
+                if (!isNaN(cdDistance)) {
+                    // Check if distance might be in kilometers and needs conversion to meters
+                    if (cdDistance < 100 && (workoutTypeLower.includes('run') || workoutTypeLower.includes('walk'))) {
+                        console.log(`[Metrics] Distance appears to be in km (${cdDistance}), converting to meters`);
+                        cdDistance *= 1000;
+                    }
+                    
+                    distanceToAdd = cdDistance;
+                    console.log(`[Metrics] Using distance from cardioDetails: ${distanceToAdd}m`);
+                }
+            } 
+            // Or try distance directly on workout (also legacy)
+            else if (distanceToAdd === 0 && workout.distance) {
+                // Ensure distance is a number
+                let wDistance = typeof workout.distance === 'string' 
+                    ? parseFloat(workout.distance) 
+                    : workout.distance;
+                
+                console.log(`[Metrics] Found raw workout.distance value of type ${typeof workout.distance}: ${workout.distance}`);
+                
+                if (!isNaN(wDistance)) {
+                    // Check if distance might be in kilometers and needs conversion to meters
+                    if (wDistance < 100 && (workoutTypeLower.includes('run') || workoutTypeLower.includes('walk'))) {
+                        console.log(`[Metrics] Distance appears to be in km (${wDistance}), converting to meters`);
+                        wDistance *= 1000;
+                    }
+                    
+                    distanceToAdd = wDistance;
+                    console.log(`[Metrics] Using distance directly from workout: ${distanceToAdd}m`);
+                }
+            }
+            
+            // If it's a walking workout with duration but no distance, estimate distance
+            if (distanceToAdd === 0) {
+                // For walking workouts with duration but no distance, estimate distance
+                // Average walking pace is ~5 km/h = 1.38 m/s
+                if (workout.duration && workout.duration > 0 && 
+                    (workoutTypeLower === 'walking' || workoutNameStr.includes('walk'))) {
+                    
+                    const durationSecs = workout.duration;
+                    // Calculate estimated distance: 1.38 m/s * duration in seconds
+                    const estimatedMeters = Math.round(1.38 * durationSecs);
+                    
+                    console.log(`[Metrics] No distance found for walking workout. Estimating based on duration: ${durationSecs}s → ${estimatedMeters}m`);
+                    distanceToAdd = estimatedMeters;
+                } 
+                // For running workouts, check if distance is in the name (e.g. "4km")
+                else if (workout.duration && workout.duration > 0 &&
+                         (workoutTypeLower === 'running' || workoutNameStr.includes('run'))) {
+                    // Try to extract distance from workout name if it's there (e.g., "4km", "5k", etc.)
+                    const distanceMatch = workoutNameStr.match(/\((\d+(?:\.\d+)?)\s*(?:km|k)\)/i);
+                    if (distanceMatch && distanceMatch[1]) {
+                        const extractedKm = parseFloat(distanceMatch[1]);
+                        if (!isNaN(extractedKm) && extractedKm > 0) {
+                            // Convert km to meters
+                            const extractedMeters = Math.round(extractedKm * 1000);
+                            console.log(`[Metrics] Extracted distance from workout name: ${extractedKm}km → ${extractedMeters}m`);
+                            distanceToAdd = extractedMeters;
+                        }
+                    } else {
+                        // If we can't extract distance from the name, use a reasonable pace (3.33 m/s or 5 min/km)
+                        const estimatedMeters = Math.round(3.33 * workout.duration);
+                        console.log(`[Metrics] No distance found for running workout. Estimating based on duration: ${workout.duration}s → ${estimatedMeters}m`);
+                        distanceToAdd = estimatedMeters;
+                    }
+                } else {
+                    console.log(`[Metrics] No distance data found for this cardio workout. No distance will be added.`);
+                }
             }
 
-            // Force cardio distance to be numbers
-            if (typeof distanceToAdd !== 'number' || isNaN(distanceToAdd)) {
-                console.log(`[Metrics] Distance invalid (${distanceToAdd}), resetting to 0`);
-                distanceToAdd = 0;
-            }
-
+            // Add to total if we found a valid distance
             if (distanceToAdd > 0) {
-                // If distance looks like it's in km, convert to meters
-                if (distanceToAdd < 100 && (workoutTypeLower.includes('run') || workoutTypeLower.includes('walk'))) {
-                    distanceToAdd *= 1000;
-                    console.log(`[Metrics] Distance appears to be in km, converted to meters: ${distanceToAdd}m`);
+                // Sanity check: cap unreasonably large distances (over 100km in a single workout)
+                if (distanceToAdd > 100000) {
+                    console.log(`[Metrics] WARNING: Unreasonably large distance detected (${distanceToAdd}m). Capping to 100km.`);
+                    distanceToAdd = 100000;
                 }
                 
                 totalCardioDistance += distanceToAdd;
@@ -275,46 +398,112 @@ export function calculateDashboardMetrics(workouts: SerializedWorkoutData[]): Da
             }
         }
 
-        // Calculate Personal Records (All Time) - Use workoutExercises
-        if (workout.type === 'strength' && workout.workoutExercises) {
-            workout.workoutExercises.forEach(exerciseDetail => {
-                const exerciseName = exerciseDetail.exerciseId?.name || null;
-                if (!exerciseName) return; // Skip if no exercise name
-                
-                const trackPRExercises = ['bench press', 'squat', 'deadlift', 'overhead press']; 
-                const normalizedExerciseName = exerciseName.toLowerCase();
-                const prKey = trackPRExercises.find(tracked => normalizedExerciseName.includes(tracked)) || normalizedExerciseName;
+        // Calculate Personal Records (from any non-empty workout) - New
+        // Check both workoutExercises (new schema) and exercises (legacy schema)
+        const hasExerciseSets = 
+            (workout.workoutExercises && workout.workoutExercises.some(exercise => 
+                exercise.sets && exercise.sets.length > 0)) || 
+            (workout.exercises && workout.exercises.some(exercise => 
+                exercise.sets && exercise.sets.length > 0));
 
-                if (trackPRExercises.some(tracked => normalizedExerciseName.includes(tracked)) && exerciseDetail.sets) {
-                    exerciseDetail.sets.forEach(set => {
-                        const weight = set.weight ?? 0;
-                        if (weight > (personalRecords[prKey]?.weight || 0)) {
-                            personalRecords[prKey] = { weight, date: workoutDate };
-                        }
-                    });
+        if (hasExerciseSets) {
+            // Define a type for the exercise object we'll process
+            interface ProcessableExercise {
+                name: string;
+                sets?: Array<{
+                    weight?: number | null;
+                    reps?: number | null;
+                }> | null;
+            }
+            
+            let exercisesToProcess: ProcessableExercise[] = [];
+            
+            // Check for new workout exercise structure first
+            if (workout.workoutExercises && workout.workoutExercises.length > 0) {
+                console.log(`[Metrics] Checking ${workout.workoutExercises.length} workout exercises for PRs`);
+                exercisesToProcess = workout.workoutExercises.map(we => ({
+                    name: we.exerciseId?.name || 'Unknown Exercise',
+                    sets: we.sets || []
+                }));
+            } 
+            // Fallback to legacy structure
+            else if (workout.exercises && workout.exercises.length > 0) {
+                console.log(`[Metrics] Checking ${workout.exercises.length} legacy exercises for PRs`);
+                exercisesToProcess = workout.exercises;
+            }
+            
+            // Process all exercises for PRs
+            exercisesToProcess.forEach(exercise => {
+                if (!exercise.sets || exercise.sets.length === 0) return;
+                
+                const exerciseName = exercise.name;
+                console.log(`[Metrics] Checking for PRs in exercise: ${exerciseName}`);
+                
+                // Find max weight in this exercise
+                const maxWeight = exercise.sets.reduce((max: number, set: { weight?: number | null; reps?: number | null }) => {
+                    const weight = set.weight || 0;
+                    const reps = set.reps || 0;
+                    
+                    // Only count sets with both weight and reps
+                    if (weight > 0 && reps > 0) {
+                        return Math.max(max, weight);
+                    }
+                    return max;
+                }, 0);
+                
+                // Check if this is a PR for this exercise
+                if (maxWeight > 0) {
+                    const currentPR = personalRecords[exerciseName];
+                    const workoutDateObj = new Date(workout.date);
+                    
+                    if (!currentPR || maxWeight > currentPR.weight) {
+                        console.log(`[Metrics] New PR for ${exerciseName}: ${maxWeight}kg`);
+                        personalRecords[exerciseName] = { 
+                            weight: maxWeight, 
+                            date: workoutDateObj 
+                        };
+                    }
                 }
             });
         }
     });
-
-    // Format Top PRs for display (e.g., top 4 by weight or alphabetically)
-    const formattedTopPRs = Object.entries(personalRecords)
-        .sort(([,a], [,b]) => b.weight - a.weight) // Sort by weight descending
-        .slice(0, 4) // Take top 4
-        .map(([exerciseName, record]): PersonalRecordEntry => ({ // Ensure type match
-            exerciseName: exerciseName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), // Capitalize name
-            weight: record.weight,
-            date: record.date.toISOString(), // Pass date as ISO string
-        }));
-
-    // Convert totalCardioDuration from seconds to minutes before returning
-    const totalCardioMinutes = Math.round(totalCardioDuration / 60);
-    console.log(`[Metrics] Final Volume: ${totalVolume}, Final Cardio Duration: ${totalCardioDuration}s (${totalCardioMinutes}m), Final Distance: ${totalCardioDistance}m`);
-
+    
+    // Convert PRs to sorted array format
+    const topPRs = Object.entries(personalRecords)
+        .map(([exerciseName, details]) => ({
+            exerciseName,
+            weight: details.weight,
+            date: details.date.toISOString()
+        }))
+        // Sort by weight (descending)
+        .sort((a, b) => b.weight - a.weight)
+        // Limit to top 5 PRs
+        .slice(0, 5);
+    
+    console.log(`[Metrics] Final Strength Volume Total: ${totalVolume}`);
+    console.log(`[Metrics] Final Cardio Duration Total: ${totalCardioDuration}`);
+    console.log(`[Metrics] Final Cardio Distance Total: ${totalCardioDistance}m`);
+    console.log(`[Metrics] Total PRs found: ${topPRs.length}`);
+    
+    // Log a summary of workouts included in the last 7 days
+    const includedWorkouts = workouts.filter(w => recentWorkoutIds.has(w._id));
+    
+    console.log(`[Metrics] Recent workouts (${includedWorkouts.length}):`, 
+        includedWorkouts.map(w => ({
+            id: w._id.toString().slice(-4),
+            date: w.date,
+            type: w.type,
+            name: w.name,
+            duration: w.duration,
+            distance: w.distance,
+            hasWorkoutExercises: !!(w.workoutExercises && w.workoutExercises.length)
+        }))
+    );
+    
     return {
         strengthVolumeLast7Days: Math.round(totalVolume),
-        cardioDurationLast7Days: totalCardioMinutes,
-        cardioDistanceLast7Days: Math.round(totalCardioDistance),
-        topPRs: formattedTopPRs,
+        cardioDurationLast7Days: totalCardioDuration, // Keep in seconds for correct formatting in UI
+        cardioDistanceLast7Days: Math.round(totalCardioDistance), // Round to nearest meter
+        topPRs
     };
 } 

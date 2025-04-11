@@ -384,6 +384,9 @@ export default function PlanPage() {
                   <SelectItem value="cycling">Cycling</SelectItem>
                   <SelectItem value="hiit">HIIT</SelectItem>
                   <SelectItem value="flexibility">Flexibility</SelectItem>
+                  <SelectItem value="walking">Walking</SelectItem>
+                  <SelectItem value="yoga">Yoga</SelectItem>
+                  <SelectItem value="pilates">Pilates</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>

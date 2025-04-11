@@ -487,6 +487,31 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & { exerci
         console.log('No exercises provided in input data.');
     }
 
+    // If this is a walking workout with duration but no distance, estimate the distance
+    // Average walking pace is ~5 km/h = 1.38 m/s
+    const workoutTypeStr = (workoutData.type || '').toLowerCase();
+    const workoutNameStr = (workoutData.name || '').toLowerCase();
+    
+    if ((workoutTypeStr === 'walking' || workoutNameStr.includes('walk')) && 
+        workoutData.duration && 
+        workoutData.duration > 0 &&
+        (!workoutData.distance || workoutData.distance <= 0)) {
+      
+      const durationSecs = workoutData.duration;
+      // Calculate estimated distance: 1.38 m/s * duration in seconds
+      const estimatedMeters = Math.round(1.38 * durationSecs);
+      
+      console.log(`Auto-calculating distance for walking workout: ${durationSecs}s → ${estimatedMeters}m`);
+      workoutData.distance = estimatedMeters;
+      
+      // Also set cardioDetails if it exists
+      if (workoutData.cardioDetails) {
+        workoutData.cardioDetails.distance = estimatedMeters;
+      } else {
+        workoutData.cardioDetails = { distance: estimatedMeters };
+      }
+    }
+
     // --- Update User's Workout Array --- 
     console.log('Updating user workouts array...');
     const UserModel = (await import("@/lib/db/models/user")).default;
@@ -590,8 +615,23 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
         // 2. Separate payload into workout fields and exercises
         const { exercises: incomingExercises, ...workoutUpdateData } = payload;
         
+        // Simple walking distance estimation with minimal code changes
+        // Convert to any to avoid TypeScript errors with property access
+        const updateData = workoutUpdateData as any;
+        const workoutType = existingWorkout.type || '';
+        const workoutName = existingWorkout.name || '';
+        const isWalking = workoutType.toLowerCase() === 'walking' || workoutName.toLowerCase().includes('walk');
+        
+        // If it's a walking workout with duration but no distance
+        if (isWalking && existingWorkout.duration > 0 && !updateData.distance) {
+          // Estimate distance based on average walking pace (5 km/h = 1.38 m/s)
+          const estimatedMeters = Math.round(1.38 * existingWorkout.duration);
+          console.log(`Auto-calculating distance for walking workout: ${existingWorkout.duration}s → ${estimatedMeters}m`);
+          updateData.distance = estimatedMeters;
+        }
+        
         // Add updatedAt timestamp
-        (workoutUpdateData as any).updatedAt = new Date(); 
+        (workoutUpdateData as any).updatedAt = new Date();
 
         // 3. Update the main Workout document fields
         console.log("Updating main workout document:", workoutUpdateData);
@@ -960,7 +1000,16 @@ export async function createCardioWorkout(workoutData: Partial<WorkoutData>): Pr
   let savedWorkout: IWorkout | null = null;
   try {
     console.log('Starting cardio workout creation (new schema)...');
-    console.log('Input workout data:', JSON.stringify(workoutData, null, 2));
+    console.log('Input workout data:', JSON.stringify({
+      name: workoutData.name,
+      type: workoutData.type,
+      date: workoutData.date,
+      duration: workoutData.duration,
+      distance: workoutData.distance,
+      source: workoutData.source,
+      sourceId: workoutData.sourceId,
+      stravaLink: workoutData.stravaLink
+    }, null, 2));
 
     const user = await getCurrentUser();
     if (!user || !user.id) {

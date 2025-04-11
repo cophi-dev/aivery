@@ -50,8 +50,9 @@ function mapActivityType(stravaType: string): string | null {
     'Kayaking': 'strength',
     
     // Flexibility
-    'Yoga': 'flexibility',
+    'Yoga': 'yoga',
     'Stretching': 'flexibility',
+    'Pilates': 'pilates',
     
     // HIIT
     'Hiit': 'hiit',
@@ -85,8 +86,6 @@ function mapActivityType(stravaType: string): string | null {
     'Football': 'other',
     'Baseball': 'other',
     'Boxing': 'other',
-    'Pilates': 'other',
-    'Pickleball': 'other',
     'WaterSport': 'other'
   };
   

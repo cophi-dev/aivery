@@ -108,3 +108,8 @@ export default async function WorkoutPageServerWrapper({ params }: { params: { i
 
 // Remove comment about logic being moved
 
+export function WorkoutDetailRedirect({ params }: { params: { id: string } }) {
+  // Redirect to the correct URL format
+  redirect(`/workouts/${params.id}`);
+}
+

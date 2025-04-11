@@ -26,26 +26,76 @@ export const SUPPORTED_ACTIVITY_TYPES = [
 interface CardioDetails {
   distance: number;
   duration: number;
-  pace?: string;
-  speed?: string;
-  maxSpeed?: string;
+  pace?: number;
+  speed?: number;
+  maxSpeed?: number;
   elevationGain?: number;
   heartRate?: {
     average: number;
     max: number;
+    zones?: {
+      thresholds: {
+        easy: number;
+        moderate: number;
+        hard: number;
+        peak: number;
+      };
+      distribution: {
+        easy: number;
+        moderate: number;
+        hard: number;
+        peak: number;
+      };
+    };
   };
+  laps?: Array<{
+    number: number;
+    distance: number;
+    duration: number;
+    pace?: number;
+  }>;
   poolLength?: number;
   strokeType?: string;
-  laps?: Array<{
-    number?: number;
-    time?: number;
-    distance?: number;
-    pace?: number;
-    duration?: number;
-  }>;
+  bikeType?: string;
   power?: {
     average: number;
     max: number;
+  };
+  sportDetails?: {
+    sport: string;
+    subSport?: string;
+  };
+  gearInfo?: {
+    id: string;
+    name: string;
+    distance: number;
+  };
+  weather?: {
+    temperature: number;
+    humidity: number;
+    windSpeed: number;
+    conditions: string;
+  };
+  stravaSpecific?: {
+    segmentEfforts: number;
+    achievementCount: number;
+    kudosCount: number;
+    athleteWeight: number;
+    commute: boolean;
+    deviceName: string;
+    segmentDetails?: Array<{
+      id: string;
+      name: string;
+      distance: number;
+      elapsedTime: number;
+      startDate: string;
+      average_heartrate: number;
+      max_heartrate: number;
+      prPowered: boolean;
+      komPowered: boolean;
+      startIndex: number;
+      endIndex: number;
+    }>;
   };
 }
 
@@ -61,76 +111,223 @@ function mapStravaType(sport: string, subSport?: string): string {
 
   // Map common sport types
   switch (sportLower) {
+    // Running variants
     case 'running':
     case 'run':
     case 'trail_running':
+    case 'trail_run':
     case 'treadmill_running':
+    case 'treadmill':
+    case 'track':
+    case 'track_running':
+    case 'virtual_run':
+    case 'virtualrun':
       return 'running'
+      
+    // Cycling variants
     case 'cycling':
     case 'bike':
     case 'ride':
     case 'virtual_ride':
+    case 'virtualride':
     case 'indoor_cycling':
+    case 'mountainbikeride':
+    case 'mountain_bike_ride':
+    case 'mountain_biking':
+    case 'gravel_ride':
+    case 'gravel_cycling':
+    case 'gravelride':
+    case 'e_bike_ride':
+    case 'ebikeride':
       return 'cycling'
+      
+    // Swimming variants
     case 'swimming':
     case 'swim':
     case 'pool_swimming':
+    case 'poolswim':
     case 'open_water_swimming':
+    case 'openwaterswim':
+    case 'open_water':
       return 'swimming'
+      
+    // Walking variants
     case 'walking':
     case 'walk':
-      return 'walking'
+    case 'nordic_walking':
+      return 'other'
+      
+    // Hiking variants
     case 'hiking':
     case 'hike':
-      return 'hiking'
+    case 'mountain_hiking':
+      return 'other'
+      
+    // Strength training
     case 'training':
     case 'workout':
     case 'strength_training':
     case 'weight_training':
+    case 'weighttraining':
     case 'functional_strength':
+    case 'functionalstrength':
+    case 'strength':
+    case 'crossfit':
+    case 'stairstepper':
+    case 'elliptical':
+    case 'rowing':
+    case 'row':
       return 'strength'
+      
+    // Flexibility
     case 'yoga':
     case 'flexibility':
+    case 'stretching':
+    case 'pilates':
       return 'flexibility'
+      
+    // HIIT
     case 'hiit':
+    case 'high_intensity_interval_training':
+    case 'highintensityintervaltraining':
     case 'circuit_training':
-    case 'crossfit':
+    case 'circuittraining':
+    case 'interval_training':
+    case 'intervaltraining':
       return 'hiit'
+      
+    // Winter sports
+    case 'alpineski':
+    case 'backcountryski':
+    case 'nordicski':
+    case 'snowboard':
+    case 'snowshoe':
+    case 'iceskate':
+    case 'snowkite':
+      return 'other'
+      
+    // Water sports
+    case 'kayaking':
+    case 'canoeing':
+    case 'rowing':
+    case 'stand_up_paddling':
+    case 'standuppaddling':
+    case 'surfing':
+    case 'kitesurfing':
+    case 'windsurfing':
+    case 'sailing':
+    case 'sail':
+    case 'watersport':
+      return 'other'
+      
+    // Ball sports
+    case 'soccer':
+    case 'golf':
+    case 'volleyball':
+    case 'tennis':
+    case 'basketball':
+    case 'football':
+    case 'baseball':
+    case 'pickleball':
+      return 'other'
+      
+    // Other activities
+    case 'handcycle':
+    case 'inlineskate':
+    case 'skateboard':
+    case 'rockclimbing':
+    case 'boxing':
+      return 'other'
+      
     default:
       // Check sub_sport for additional context
-      if (subSportLower === 'strength_training' || subSportLower === 'weight_training') {
+      if (subSportLower === 'strength_training' || 
+          subSportLower === 'weight_training' || 
+          subSportLower === 'crossfit' ||
+          subSportLower === 'hiit' ||
+          subSportLower === 'circuit') {
         return 'strength'
+      } else if (subSportLower === 'yoga' || 
+                subSportLower === 'stretching' ||
+                subSportLower === 'pilates') {
+        return 'flexibility'
+      } else if (subSportLower === 'trail' || 
+                subSportLower === 'track' ||
+                subSportLower === 'treadmill') {
+        return 'running'
       }
       return 'other'
   }
 }
 
-// Helper function to calculate heart rate zones
+// Helper function to calculate intensity based on heart rate
 function calculateIntensity(activity: any): "Low" | "Medium" | "High" {
-  // Calculate intensity based on heartrate zones if available
-  if (activity.has_heartrate || activity.avg_heart_rate) {
-    const maxHr = activity.max_heartrate || activity.max_heart_rate || 0;
-    const avgHr = activity.average_heartrate || activity.avg_heart_rate || 0;
-    
-    if (avgHr > maxHr * 0.85) return "High";
-    if (avgHr > maxHr * 0.7) return "Medium";
+  const avgHeartRate = activity.average_heartrate || activity.avg_heart_rate || 0;
+  if (avgHeartRate > 160) {
+    return "High";
+  } else if (avgHeartRate > 130) {
+    return "Medium";
+  } else {
     return "Low";
   }
-  
-  // Fallback to perceived exertion based on relative speed
-  if ((activity.average_speed && activity.max_speed) || 
-      (activity.avg_speed && activity.enhanced_max_speed)) {
-    const avgSpeed = activity.average_speed || activity.avg_speed || 0;
-    const maxSpeed = activity.max_speed || activity.enhanced_max_speed || 0;
-    const relativeEffort = avgSpeed / maxSpeed;
-    
-    if (relativeEffort > 0.8) return "High";
-    if (relativeEffort > 0.6) return "Medium";
-    return "Low";
+}
+
+// Calculate heart rate zones from heart rate records
+function calculateHeartRateZones(records: any[], maxHeartRate: number = 185): any {
+  if (!records || records.length === 0) {
+    return null;
   }
-  
-  // Default to medium if no data available
-  return "Medium";
+
+  // Filter records with heart rate data
+  const hrRecords = records.filter(r => r.heart_rate && r.heart_rate > 0);
+  if (hrRecords.length === 0) {
+    return null;
+  }
+
+  // Define heart rate zones (using percentages of max HR)
+  const zoneThresholds = {
+    easy: Math.round(maxHeartRate * 0.6), // 60% of max HR
+    moderate: Math.round(maxHeartRate * 0.7), // 70% of max HR
+    hard: Math.round(maxHeartRate * 0.8), // 80% of max HR
+    peak: Math.round(maxHeartRate * 0.9) // 90% of max HR
+  };
+
+  // Count records in each zone
+  let zoneCounts = {
+    easy: 0,
+    moderate: 0,
+    hard: 0,
+    peak: 0
+  };
+
+  hrRecords.forEach(record => {
+    const hr = record.heart_rate;
+    if (hr < zoneThresholds.easy) {
+      zoneCounts.easy++;
+    } else if (hr < zoneThresholds.moderate) {
+      zoneCounts.moderate++;
+    } else if (hr < zoneThresholds.hard) {
+      zoneCounts.hard++;
+    } else if (hr < zoneThresholds.peak) {
+      zoneCounts.peak++;
+    } else {
+      zoneCounts.peak++;
+    }
+  });
+
+  // Calculate percentages
+  const totalRecords = hrRecords.length;
+  const zoneDistribution = {
+    easy: Math.round((zoneCounts.easy / totalRecords) * 100),
+    moderate: Math.round((zoneCounts.moderate / totalRecords) * 100),
+    hard: Math.round((zoneCounts.hard / totalRecords) * 100),
+    peak: Math.round((zoneCounts.peak / totalRecords) * 100)
+  };
+
+  return {
+    thresholds: zoneThresholds,
+    distribution: zoneDistribution
+  };
 }
 
 export async function connectStrava(userId: string, authCode: string) {
@@ -266,6 +463,78 @@ export function transformStravaActivity(activity: any) {
     const distanceValue = activity.distance || activity.total_distance || 0;
     const distanceInKm = distanceValue > 100 ? distanceValue / 1000 : distanceValue;
     
+    // Extract heart rate zones data if available
+    const heartRateZones = activity.zones?.heart_rate || activity.heartrate_zones;
+    let heartRateData: any = {
+      average: activity.average_heartrate || activity.avg_heart_rate || 0,
+      max: activity.max_heartrate || activity.max_heart_rate || 0,
+    };
+    
+    // Add heart rate zone distribution if available
+    if (heartRateZones) {
+      heartRateData.zones = {
+        thresholds: {
+          easy: heartRateZones.custom_zones ? heartRateZones.custom_zones[0] : 0,
+          moderate: heartRateZones.custom_zones ? heartRateZones.custom_zones[1] : 0,
+          hard: heartRateZones.custom_zones ? heartRateZones.custom_zones[2] : 0,
+          peak: heartRateZones.custom_zones ? heartRateZones.custom_zones[3] : 0
+        },
+        distribution: {
+          easy: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[0] : 0,
+          moderate: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[1] : 0,
+          hard: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[2] : 0,
+          peak: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[3] : 0
+        }
+      };
+    } else if (activity.records && activity.records.length > 0) {
+      // Calculate heart rate zones from records if available
+      const maxHR = heartRateData.max || 185; // Use max HR from data or default to 185
+      const calculatedZones = calculateHeartRateZones(activity.records, maxHR);
+      if (calculatedZones) {
+        heartRateData.zones = calculatedZones;
+      }
+    }
+    
+    // Extract lap data if available
+    const laps = activity.splits_metric || activity.laps || [];
+    const formattedLaps = laps.map((lap: any, index: number) => ({
+      number: index + 1,
+      distance: lap.distance || 0,
+      duration: lap.elapsed_time || lap.moving_time || 0,
+      pace: lap.average_speed ? (1000 / lap.average_speed) / 60 : 0
+    }));
+    
+    // Extract gear information if available
+    const gearInfo = activity.gear ? {
+      id: activity.gear.id,
+      name: activity.gear.name,
+      distance: activity.gear.distance
+    } : undefined;
+    
+    // Extract weather data if available
+    const weatherData = activity.weather ? {
+      temperature: activity.weather.temperature,
+      humidity: activity.weather.humidity,
+      windSpeed: activity.weather.wind_speed,
+      conditions: activity.weather.conditions
+    } : undefined;
+    
+    // Extract segment efforts if available
+    const segmentEfforts = activity.segment_efforts || [];
+    const formattedSegmentEfforts = segmentEfforts.map((segment: any) => ({
+      id: segment.id,
+      name: segment.name,
+      distance: segment.distance,
+      elapsedTime: segment.elapsed_time,
+      startDate: segment.start_date,
+      average_heartrate: segment.average_heartrate,
+      max_heartrate: segment.max_heartrate,
+      prPowered: segment.pr_rank === 1,
+      komPowered: segment.kom_rank === 1,
+      startIndex: segment.start_index,
+      endIndex: segment.end_index
+    }));
+    
     const transformed = {
       name: activity.name || `${activity.type} Activity`,
       date: new Date(activity.start_date || activity.timestamp),
@@ -283,6 +552,38 @@ export function transformStravaActivity(activity: any) {
       maxPower: activity.max_watts || activity.max_power || 0,
       averageSpeed: activity.average_speed || activity.avg_speed || 0,
       maxSpeed: activity.max_speed || activity.enhanced_max_speed || 0,
+      cardioDetails: {
+        distance: parseFloat(distanceInKm.toFixed(3)),
+        duration: activity.elapsed_time || activity.total_elapsed_time || 0,
+        pace: activity.average_speed ? ((1000 / activity.average_speed) / 60) : 0,
+        speed: activity.average_speed || activity.avg_speed || 0,
+        maxSpeed: activity.max_speed || activity.enhanced_max_speed || 0,
+        elevationGain: activity.total_elevation_gain || activity.total_ascent || 0,
+        heartRate: heartRateData,
+        laps: formattedLaps.length > 0 ? formattedLaps : undefined,
+        power: (activity.average_watts || activity.avg_power) ? {
+          average: activity.average_watts || activity.avg_power || 0,
+          max: activity.max_watts || activity.max_power || 0
+        } : undefined,
+        sportDetails: {
+          sport: activity.sport || activity.type || 'other',
+          subSport: activity.sub_sport || undefined
+        },
+        // Add gear information if available
+        gearInfo: gearInfo,
+        // Add weather information if available
+        weather: weatherData,
+        // Add additional Strava-specific data
+        stravaSpecific: {
+          segmentEfforts: activity.segment_efforts ? activity.segment_efforts.length : 0,
+          achievementCount: activity.achievement_count || 0,
+          kudosCount: activity.kudos_count || 0,
+          athleteWeight: activity.athlete_weight || 0,
+          commute: activity.commute || false,
+          deviceName: activity.device_name || '',
+          segmentDetails: formattedSegmentEfforts.length > 0 ? formattedSegmentEfforts : undefined
+        }
+      }
     };
 
     console.log('Transformed activity:', transformed);

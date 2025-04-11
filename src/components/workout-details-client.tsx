@@ -38,6 +38,7 @@ import type { ComponentType } from 'react';
 import { WorkoutData } from '@/types/db';
 import { useSession } from "next-auth/react";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useRouter } from 'next/navigation';
 
 const formatPace = (pace: number | null): string => {
   if (pace === null || pace <= 0 || !isFinite(pace)) return "N/A";
@@ -60,27 +61,57 @@ interface CardioDetails {
 
 function extractStravaLinkFromNotes(notes?: string): string | undefined {
   if (!notes) return undefined;
-  const stravaLinkRegex = /https:\/\/www\.strava\.com\/activities\/\d+/;
+  
+  // First, look for complete Strava links with full URL pattern
+  const stravaLinkRegex = /https:\/\/(?:www\.)?strava\.com\/activities\/(\d{8,})/;
   const match = notes.match(stravaLinkRegex);
-  if (match && match[0]) return match[0];
-  const idNearStravaRegex = /(?:strava|view on strava)[^\d]*(\d{8,})/i;
+  if (match && match[1]) {
+    return `https://www.strava.com/activities/${match[1]}`;
+  }
+  
+  // Look for mentions of Strava ID in the notes
+  const idNearStravaRegex = /(?:strava|activity|run)(?:[^\d]*|[^\d]+id[^\d]*|[^\d]+#[^\d]*)(\d{8,})/i;
   const idMatch = notes.match(idNearStravaRegex);
-  if (idMatch && idMatch[1]) return `https://www.strava.com/activities/${idMatch[1]}`;
+  if (idMatch && idMatch[1]) {
+    return `https://www.strava.com/activities/${idMatch[1]}`;
+  }
+  
   return undefined;
 }
 
 function isValidStravaLink(link?: string): boolean {
-  if (!link) return false;
-  const stravaLinkRegex = /https:\/\/www\.strava\.com\/activities\/\d+/;
-  return stravaLinkRegex.test(link);
+  if (!link) {
+    return false;
+  }
+  
+  // Always return true if there's any link - we'll let Strava handle invalid IDs
+  // This ensures the button is always visible so users can edit it if needed
+  return true;
 }
 
 function formatStravaLink(link?: string): string | undefined {
-  if (!link) return undefined;
-  const idMatch = link.match(/\/activities\/(\d+)/);
-  if (idMatch && idMatch[1]) return `https://www.strava.com/activities/${idMatch[1]}`;
-  if (/^\d+$/.test(link)) return `https://www.strava.com/activities/${link}`;
-  return link;
+  if (!link) {
+    return undefined;
+  }
+  
+  // If it's already a full Strava link, return it as is
+  if (link.includes('strava.com/activities/')) {
+    return link;
+  }
+  
+  // Check if it's a full URL and extract the ID
+  const urlIdMatch = link.match(/\/activities\/(\d+)/);
+  if (urlIdMatch && urlIdMatch[1]) {
+    const id = urlIdMatch[1];
+    return `https://www.strava.com/activities/${id}`;
+  }
+  
+  // Check if it's a pure numeric ID
+  if (/^\d+$/.test(link)) {
+    return `https://www.strava.com/activities/${link}`;
+  }
+  
+  return undefined;
 }
 
 function StravaLogo() {
@@ -92,10 +123,44 @@ function StravaLogo() {
 }
 
 function getFixedStravaLink(workout: WorkoutData): string | undefined {
-  const workoutDate = new Date(workout.date);
-  if (workout.type === 'running' && workoutDate.getMonth() === 2 && workoutDate.getDate() === 24 && workoutDate.getFullYear() === 2025) return 'https://www.strava.com/activities/13979174497';
-  if (workout.type === 'swimming' && workoutDate.getMonth() === 2 && workoutDate.getDate() === 22 && workoutDate.getFullYear() === 2025) return 'https://www.strava.com/activities/13957482431';
-  return formatStravaLink(workout.stravaLink || extractStravaLinkFromNotes(workout.notes));
+  // If the workout has a sourceId and comes from Strava, always use it
+  if (workout.source === 'strava' && workout.sourceId) {
+    // Ensure sourceId is a valid Strava ID format (numeric and reasonably long)
+    if (/^\d{5,}$/.test(workout.sourceId)) {
+      return `https://www.strava.com/activities/${workout.sourceId}`;
+    }
+  }
+  
+  // If there's a stravaLink property, use it after validation
+  if (workout.stravaLink) {
+    const formattedLink = formatStravaLink(workout.stravaLink);
+    if (formattedLink) {
+      // Extract ID from formatted link and validate it
+      const idMatch = formattedLink.match(/\/activities\/(\d+)/);
+      if (idMatch && idMatch[1] && /^\d{5,}$/.test(idMatch[1])) {
+        return formattedLink;
+      }
+    }
+  }
+  
+  // Extract from notes with a reasonable date check
+  if (workout.notes) {
+    const workoutDate = new Date(workout.date);
+    const cutoffDate = new Date('2013-01-01');
+    
+    if (workoutDate >= cutoffDate) {
+      const extractedLink = extractStravaLinkFromNotes(workout.notes);
+      if (extractedLink) {
+        // Validate the extracted link
+        const idMatch = extractedLink.match(/\/activities\/(\d+)/);
+        if (idMatch && idMatch[1] && /^\d{5,}$/.test(idMatch[1])) {
+          return extractedLink;
+        }
+      }
+    }
+  }
+  
+  return undefined;
 }
 
 function estimateBodyweightForExercise(exerciseName: string): number {
@@ -146,6 +211,7 @@ const WorkoutProgressGraph = dynamic<WorkoutProgressGraphProps>(
 interface WorkoutDetailsClientProps {
   workout: any;
   previousWorkouts: any[];
+  isOwner: boolean;
 }
 
 function capitalizeFirstLetter(string: string) {
@@ -163,7 +229,7 @@ const getWorkoutTypeIcon = (type: string | undefined) => {
   return <Activity className="h-4 w-4" />;
 };
 
-export default function WorkoutDetailsClient({ workout, previousWorkouts }: WorkoutDetailsClientProps) {
+export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwner }: WorkoutDetailsClientProps) {
   const [insight, setInsight] = useState<string>('');
   const [isLoadingInsight, setIsLoadingInsight] = useState<boolean>(true);
   const [scrollOpacity, setScrollOpacity] = useState<number>(1);
@@ -171,6 +237,32 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
   const workoutId = params?.id as string;
   const { data: session } = useSession();
   const detailsRef = useRef<HTMLDivElement>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  const router = useRouter();
+  const [fixingLinks, setFixingLinks] = useState(false);
+
+  // Add automatic Strava link fixing on page load
+  useEffect(() => {
+    if (isOwner && workout.source === 'strava') {
+      const fixAllStravaLinks = async () => {
+        try {
+          setFixingLinks(true);
+          const response = await fetch('/api/workouts/fix-strava-links');
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Strava links fixed automatically:', data.message);
+            // Don't reload the page as we're not showing Strava links anymore
+          }
+        } catch (err) {
+          console.error('Error fixing Strava links:', err);
+        } finally {
+          setFixingLinks(false);
+        }
+      };
+      
+      fixAllStravaLinks();
+    }
+  }, [isOwner, workout.source]);
 
   const scrollToDetails = () => {
     detailsRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -327,12 +419,6 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts }: Work
             <Badge variant="outline" className="capitalize">{workout.type}</Badge>
           </div>
         </div>
-
-        {fixedStravaLink && isValidStravaLink(fixedStravaLink) && (
-          <a href={fixedStravaLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center px-3 py-1.5 mb-4 text-sm font-medium text-white bg-[#FC4C02] rounded-md hover:bg-[#e04402] shadow">
-            <StravaLogo /> View on Strava <ExternalLink className="w-3 h-3 ml-1.5" />
-          </a>
-        )}
 
         <Card className="mb-6">
             <CardHeader>

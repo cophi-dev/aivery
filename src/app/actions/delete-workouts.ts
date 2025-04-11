@@ -69,6 +69,8 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
       'other': 'other',
       'walking': 'walking',
       'hiking': 'hiking',
+      'yoga': 'yoga',
+      'pilates': 'pilates',
       
       // Common variations (case-insensitive handled by .toLowerCase() later)
       'run': 'running',
@@ -80,7 +82,11 @@ export async function deleteWorkoutsByTypes(workoutTypes: string[]) {
       'weight_training': 'strength',
       'functional_strength': 'strength',
       'stretch': 'flexibility',
-      'yoga': 'flexibility',
+      'yoga_flow': 'yoga',
+      'vinyasa': 'yoga',
+      'hatha': 'yoga',
+      'pilates_reformer': 'pilates',
+      'mat_pilates': 'pilates',
       'trail_running': 'running',
       'treadmill_running': 'running',
       'virtual_ride': 'cycling',

@@ -45,6 +45,7 @@ module.exports = {
         border: "var(--border)",
         input: "var(--input)",
         ring: "var(--ring)",
+        strava: "#FC4C02",
       },
       borderRadius: {
         sm: "calc(var(--radius) - 4px)",

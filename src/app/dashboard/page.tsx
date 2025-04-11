@@ -111,9 +111,9 @@ export default async function DashboardPage() {
         metrics = calculateDashboardMetrics(workouts);
         console.log("[Dashboard Page] Calculated metrics:", JSON.stringify(metrics, null, 2));
 
-        // More detailed logging for cardio distance
-        console.log(`[Dashboard Page] Cardio distance from metrics: ${metrics?.cardioDistanceLast7Days}`);
-        console.log(`[Dashboard Page] Cardio distance type: ${typeof metrics?.cardioDistanceLast7Days}`);
+        // More detailed logging for cardio metrics
+        console.log(`[Dashboard Page] Cardio metrics - Duration: ${metrics?.cardioDurationLast7Days} seconds, Distance: ${metrics?.cardioDistanceLast7Days} meters`);
+        console.log(`[Dashboard Page] Cardio duration type: ${typeof metrics?.cardioDurationLast7Days}, Distance type: ${typeof metrics?.cardioDistanceLast7Days}`);
     } catch (error) {
         console.error("[Dashboard Page] Failed to fetch server-side data or calculate metrics:", error);
         // Basic error display
