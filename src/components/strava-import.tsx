@@ -340,7 +340,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       console.log(`Uploading file in ${totalChunks} chunks of ${CHUNK_SIZE / (1024 * 1024)}MB each`);
       setUploadStatus(`Preparing to upload in ${totalChunks} chunks...`);
       
-      // Upload each chunk
+      // Upload each chunk SEQUENTIALLY (not in parallel)
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
         // Calculate the start and end bytes for this chunk
         const start = chunkIndex * CHUNK_SIZE;
@@ -362,38 +362,61 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         formData.append('fileId', fileId);
         formData.append('fileName', file.name);
         
-        // If this is not the first chunk, include the blobPath from previous chunk responses
-        if (blobPathname && chunkIndex > 0) {
+        // Include the blobPath from previous chunk responses after the first chunk
+        if (blobPathname) {
           formData.append('blobPath', blobPathname);
         }
         
-        // Upload this chunk
-        const response = await fetch('/api/strava/chunked-upload', {
-          method: 'POST',
-          body: formData
-        });
+        // Try uploading this chunk with retries
+        let retries = 3;
+        let success = false;
+        let lastError = null;
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Error uploading chunk ${chunkIndex}:`, errorText);
-          throw new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks}: ${response.status}`);
+        while (retries > 0 && !success) {
+          try {
+            // Upload this chunk
+            const response = await fetch('/api/strava/chunked-upload', {
+              method: 'POST',
+              body: formData
+            });
+            
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`Error uploading chunk ${chunkIndex}:`, errorText);
+              throw new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks}: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+              throw new Error(result.error || `Failed to process chunk ${chunkIndex + 1}/${totalChunks}`);
+            }
+            
+            // Store the blobPath for all chunks (it should be consistent for all chunks)
+            blobPathname = result.blobPath;
+            
+            // Mark as successful
+            success = true;
+            
+            // If this is the last chunk, we'll have the final blobPathname
+            if (result.isComplete) {
+              console.log(`File upload complete. Blob path: ${blobPathname}`);
+            }
+          } catch (e) {
+            console.error(`Error uploading chunk ${chunkIndex + 1}/${totalChunks}, retries left: ${retries - 1}`, e);
+            lastError = e;
+            retries--;
+            // If retries left, wait a bit before trying again
+            if (retries > 0) {
+              setUploadStatus(`Retrying chunk ${chunkIndex + 1}/${totalChunks}...`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
         }
         
-        const result = await response.json();
-        
-        if (!result.success) {
-          throw new Error(result.error || `Failed to process chunk ${chunkIndex + 1}/${totalChunks}`);
-        }
-        
-        // The first chunk response includes the blobPath we'll use for all chunks
-        if (chunkIndex === 0) {
-          blobPathname = result.blobPath;
-        }
-        
-        // If this is the last chunk, we'll have the final blobPathname
-        if (result.isComplete) {
-          blobPathname = result.blobPath;
-          console.log(`File upload complete. Blob path: ${blobPathname}`);
+        // If all retries failed for this chunk, throw the last error
+        if (!success) {
+          throw lastError || new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks} after multiple attempts`);
         }
       }
       
