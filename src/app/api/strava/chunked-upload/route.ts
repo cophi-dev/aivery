@@ -50,14 +50,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // For the last chunk, assemble the complete file
     if (chunkIndex === totalChunks - 1) {
       try {
-        console.log(`All chunks received. Assembling complete file...`);
+        console.log(`All chunks received. Assembling complete file from ${totalChunks} chunks...`);
         
         // Get all chunks
         const arrayBuffers: ArrayBuffer[] = [];
+        let missingChunks = false;
         
+        // First verify all chunks exist before attempting to read them
         for (let i = 0; i < totalChunks; i++) {
           const currentChunkPath = `${blobPathBase}.chunk${i}`;
-          console.log(`Fetching chunk ${i + 1}/${totalChunks} from ${currentChunkPath}`);
+          console.log(`Verifying chunk ${i + 1}/${totalChunks} at ${currentChunkPath}`);
           
           // List to verify chunk exists
           const { blobs } = await list({
@@ -66,43 +68,83 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
           
           if (!blobs.length) {
-            throw new Error(`Missing chunk ${i + 1}/${totalChunks}`);
+            console.error(`Missing chunk ${i + 1}/${totalChunks} at path ${currentChunkPath}`);
+            missingChunks = true;
+            
+            // Continue checking for all missing chunks rather than immediately failing
+            continue;
           }
+        }
+        
+        // If any chunks are missing, fail early
+        if (missingChunks) {
+          throw new Error(`One or more chunks are missing. Please try uploading again.`);
+        }
+        
+        // Now collect all chunks
+        console.log(`All chunks verified. Collecting ${totalChunks} chunks...`);
+        for (let i = 0; i < totalChunks; i++) {
+          const currentChunkPath = `${blobPathBase}.chunk${i}`;
+          console.log(`Fetching chunk ${i + 1}/${totalChunks} from ${currentChunkPath}`);
           
-          // Fetch the chunk
+          const { blobs } = await list({
+            prefix: currentChunkPath,
+            limit: 1
+          });
+          
+          // Fetch the chunk (we already verified it exists)
           const chunkResponse = await fetch(blobs[0].url);
           if (!chunkResponse.ok) {
             throw new Error(`Failed to download chunk ${i + 1}: ${chunkResponse.status}`);
           }
           
+          // Get the array buffer and log its size to debug
+          const chunkBuffer = await chunkResponse.arrayBuffer();
+          console.log(`Chunk ${i + 1}/${totalChunks} size: ${chunkBuffer.byteLength} bytes`);
+          
           // Add to our array of chunks
-          arrayBuffers.push(await chunkResponse.arrayBuffer());
+          arrayBuffers.push(chunkBuffer);
         }
         
         // Combine all chunks into a single ArrayBuffer
+        console.log(`Combining ${arrayBuffers.length} chunks into complete file...`);
         let totalLength = 0;
         for (const buffer of arrayBuffers) {
           totalLength += buffer.byteLength;
         }
         
-        const completeFile = new Uint8Array(totalLength);
-        let offset = 0;
+        console.log(`Total combined size will be: ${totalLength} bytes`);
         
-        for (const buffer of arrayBuffers) {
-          completeFile.set(new Uint8Array(buffer), offset);
-          offset += buffer.byteLength;
+        // Create a variable to hold the blob reference outside the inner try block
+        let completedBlob;
+        
+        try {
+          const completeFile = new Uint8Array(totalLength);
+          let offset = 0;
+          
+          for (let i = 0; i < arrayBuffers.length; i++) {
+            const buffer = arrayBuffers[i];
+            console.log(`Setting chunk ${i + 1} at offset ${offset}, size ${buffer.byteLength} bytes`);
+            completeFile.set(new Uint8Array(buffer), offset);
+            offset += buffer.byteLength;
+          }
+          
+          // Upload the complete file
+          console.log(`Uploading complete assembled file (${totalLength} bytes) to ${blobPathBase}`);
+          completedBlob = await put(blobPathBase, Buffer.from(completeFile), {
+            access: 'public',
+            contentType: 'application/zip',
+            addRandomSuffix: false,
+          });
+          
+          console.log(`Completed upload. Final size: ${totalLength} bytes. Path: ${completedBlob.url}`);
+        } catch (assembleError) {
+          console.error('Error during final file assembly:', assembleError);
+          throw new Error(`Failed to assemble file: ${assembleError instanceof Error ? assembleError.message : 'Unknown error'}`);
         }
         
-        // Upload the complete file
-        const blob = await put(blobPathBase, Buffer.from(completeFile), {
-          access: 'public',
-          contentType: 'application/zip',
-          addRandomSuffix: false,
-        });
-        
-        console.log(`Completed upload. Final size: ${totalLength} bytes. Path: ${blob.url}`);
-        
         // Clean up chunk files
+        console.log(`Cleaning up ${totalChunks} chunk files...`);
         for (let i = 0; i < totalChunks; i++) {
           const chunkToDelete = `${blobPathBase}.chunk${i}`;
           try {
@@ -117,8 +159,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({
           success: true,
           fileId,
-          blobPath: blob.pathname,
-          url: blob.url,
+          blobPath: completedBlob.pathname,
+          url: completedBlob.url,
           chunkIndex,
           totalChunks,
           isComplete: true
@@ -128,6 +170,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const errorMessage = assemblyError instanceof Error 
           ? assemblyError.message 
           : 'Failed to assemble file from chunks';
+          
+        // In case of assembly error, try to clean up chunks to avoid leaving orphaned chunks
+        try {
+          console.log(`Attempting cleanup after assembly error for path base: ${blobPathBase}`);
+          for (let i = 0; i < totalChunks; i++) {
+            const chunkToDelete = `${blobPathBase}.chunk${i}`;
+            try {
+              await del(chunkToDelete);
+              console.log(`Cleaned up chunk ${i + 1}: ${chunkToDelete} after error`);
+            } catch (e) {
+              // Ignore deletion errors during cleanup
+            }
+          }
+        } catch (cleanupError) {
+          console.error('Failed to clean up chunks after assembly error:', cleanupError);
+        }
           
         return NextResponse.json({ 
           error: errorMessage,
