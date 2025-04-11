@@ -100,16 +100,12 @@ export default async function WorkoutPageServerWrapper({ params }: { params: { i
      // Proceed with empty array if fetch/serialization fails
   }
 
+  // Check if the current user is the owner of the workout
+  const isOwner = workoutData.userId === session.user.id;
+
   // Pass the fetched & serialized data as props to the client component
   console.log("SERVER WRAPPER: Rendering WorkoutDetailsClient...");
   // Pass props directly, client component will handle types
-  return <WorkoutDetailsClient workout={workoutData} previousWorkouts={previousWorkoutsData} />;
-}
-
-// Remove comment about logic being moved
-
-export function WorkoutDetailRedirect({ params }: { params: { id: string } }) {
-  // Redirect to the correct URL format
-  redirect(`/workouts/${params.id}`);
+  return <WorkoutDetailsClient workout={workoutData} previousWorkouts={previousWorkoutsData} isOwner={isOwner} />;
 }
 
