@@ -340,8 +340,17 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       console.log(`Uploading file in ${totalChunks} chunks of ${CHUNK_SIZE / (1024 * 1024)}MB each`);
       setUploadStatus(`Preparing to upload in ${totalChunks} chunks...`);
       
-      // Upload each chunk SEQUENTIALLY (not in parallel)
+      // Track which chunks have been successfully uploaded
+      const uploadedChunks = new Set<number>();
+      
+      // Upload each chunk SEQUENTIALLY with delays between chunks
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        // Add a small delay between chunks to avoid race conditions
+        if (chunkIndex > 0) {
+          setUploadStatus(`Waiting before sending next chunk...`);
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between chunks
+        }
+        
         // Calculate the start and end bytes for this chunk
         const start = chunkIndex * CHUNK_SIZE;
         const end = Math.min(file.size, start + CHUNK_SIZE);
@@ -350,7 +359,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         const chunk = file.slice(start, end);
         
         // Update progress and status
-        const chunkProgress = Math.round((chunkIndex / totalChunks) * 80);
+        const chunkProgress = Math.round((chunkIndex / totalChunks) * 70);
         setProgress(10 + chunkProgress);
         setUploadStatus(`Uploading chunk ${chunkIndex + 1}/${totalChunks}...`);
         
@@ -395,8 +404,9 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             // Store the blobPath for all chunks (it should be consistent for all chunks)
             blobPathname = result.blobPath;
             
-            // Mark as successful
+            // Mark as successful and record this chunk as uploaded
             success = true;
+            uploadedChunks.add(chunkIndex);
             
             // If this is the last chunk, we'll have the final blobPathname
             if (result.isComplete) {
@@ -419,6 +429,24 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
           throw lastError || new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks} after multiple attempts`);
         }
       }
+      
+      // Verify all chunks were uploaded before proceeding
+      const missingChunks = [];
+      for (let i = 0; i < totalChunks; i++) {
+        if (!uploadedChunks.has(i)) {
+          missingChunks.push(i + 1); // 1-based index for messages
+        }
+      }
+      
+      if (missingChunks.length > 0) {
+        throw new Error(`Upload incomplete. Missing chunks: ${missingChunks.join(', ')}`);
+      }
+      
+      setProgress(80);
+      setUploadStatus('All chunks uploaded. Verifying assembled file...');
+      
+      // Wait a bit longer to ensure all chunks are fully processed on the server
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
       
       setProgress(90);
       setUploadStatus('Upload complete. Processing file...');
