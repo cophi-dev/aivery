@@ -13,7 +13,7 @@ import { transformStravaActivity } from "@/lib/services/stravaService"
 // Keep runtime (Node.js needed for AdmZip, zlib etc.)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 180; // Increase max duration for large file processing (180 seconds)
+export const maxDuration = 60; // Set max duration to 60s (Hobby plan limit)
 
 // Define FitActivity interface
 interface FitActivity {
