@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getToken } from "next-auth/jwt"; // Use getToken for Edge
 import { put } from '@vercel/blob';
 import { Ratelimit } from "@upstash/ratelimit";
 import { kv } from "@vercel/kv";
@@ -18,10 +17,12 @@ export const runtime = 'edge';
 // No maxDuration needed for Edge (defaults are usually sufficient)
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const session = await getServerSession(authOptions);
-  const userId = session?.user?.id;
+  // Get JWT token directly (Edge compatible)
+  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const userId = token?.id as string | undefined; // Extract user ID from token
 
   if (!userId) {
+    console.log('Unauthorized access attempt to upload-file (Edge): No valid token found');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
