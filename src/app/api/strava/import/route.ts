@@ -156,116 +156,149 @@ export async function POST(request: NextRequest) {
     };
 
     // Use yauzl to open the ZIP file
-    const zipfile = await openZipFromBuffer(buffer);
-    
-    // Process each entry
-    zipfile.readEntry();
-    
-    await new Promise<void>((resolve, reject) => {
-      // Counter to track when all entries have been processed
-      let entryCount = 0;
-      let processedCount = 0;
+    try {
+      const zipfile = await openZipFromBuffer(buffer);
       
-      zipfile.on('entry', async (entry) => {
-        entryCount++;
-        const entryName = entry.fileName;
-        console.log(`Found entry: ${entryName}, isDirectory: ${entryName.endsWith('/')}`);
+      // Process each entry
+      zipfile.readEntry();
+      
+      await new Promise<void>((resolve, reject) => {
+        // Counter to track when all entries have been processed
+        let entryCount = 0;
+        let processedCount = 0;
+        let isErrored = false;
         
-        const isActivityPath = entryName.toLowerCase().includes('activities/');
-        console.log(`  -> Checking path includes 'activities/' (case-insensitive): ${isActivityPath}`);
-        
-        if (!entryName.endsWith('/') && isActivityPath) {
-          results.processed++;
-          console.log(`Processing: ${entryName}`);
+        zipfile.on('entry', async (entry) => {
+          entryCount++;
+          const entryName = entry.fileName;
+          console.log(`Found entry: ${entryName}, isDirectory: ${entryName.endsWith('/')}`);
           
-          try {
-            if (entry.uncompressedSize === 0) {
-              console.log(`Empty file, skipping: ${entryName}`);
-              zipfile.readEntry();
-              processedCount++;
-              if (processedCount === entryCount) resolve();
-              return;
-            }
+          const isActivityPath = entryName.toLowerCase().includes('activities/');
+          console.log(`  -> Checking path includes 'activities/' (case-insensitive): ${isActivityPath}`);
+          
+          if (!entryName.endsWith('/') && isActivityPath) {
+            results.processed++;
+            console.log(`Processing: ${entryName}`);
             
-            // Read the entry data
-            const content = await readEntryAsync(zipfile, entry);
-            
-            let workout = null;
-            let workoutTimestamp: number | null = null;
-            let workoutDistance = 0;
-            let workoutDuration = 0;
-            let workoutActivityType = 'unknown';
-            
-            if (entryName.endsWith('.fit.gz')) {
-              const unzippedContent = await gunzipAsync(content);
-              workout = await processFitFile(unzippedContent, entryName);
-            } else if (entryName.endsWith('.gpx')) {
-              workout = await processGpxFile(content, entryName);
-            } else if (entryName.endsWith('.fit')) {
-              workout = await processFitFile(content, entryName);
-            }
-
-            if (workout) {
-              const transformedWorkout = transformStravaActivity(workout);
-              
-              const workoutToSave = {
-                ...transformedWorkout,
-                distance: transformedWorkout.distance,
-                duration: transformedWorkout.duration || 0,
-                userId: session.user.id,
-                source: "strava",
-                sourceId: extractStravaIdFromFilename(originalFilename || entryName)
-              };
-              
-              workoutActivityType = workoutToSave.type || 'unknown';
-              workoutTimestamp = new Date(workoutToSave.date).getTime();
-              workoutDuration = workoutToSave.duration;
-              workoutDistance = workoutToSave.distance || 0;
-
-              results.activityTypesCount[workoutActivityType] = (results.activityTypesCount[workoutActivityType] || 0) + 1;
-              if (!isNaN(workoutTimestamp)) {
-                  results.earliestTimestamp = Math.min(results.earliestTimestamp, workoutTimestamp);
-                  results.latestTimestamp = Math.max(results.latestTimestamp, workoutTimestamp);
+            try {
+              if (entry.uncompressedSize === 0) {
+                console.log(`Empty file, skipping: ${entryName}`);
+                zipfile.readEntry();
+                processedCount++;
+                if (processedCount === entryCount && !isErrored) resolve();
+                return;
               }
-              results.totalDistance += workoutDistance;
-              results.totalDuration += workoutDuration;
+              
+              // Read the entry data
+              const content = await readEntryAsync(zipfile, entry);
+              
+              let workout = null;
+              let workoutTimestamp: number | null = null;
+              let workoutDistance = 0;
+              let workoutDuration = 0;
+              let workoutActivityType = 'unknown';
+              
+              if (entryName.endsWith('.fit.gz')) {
+                const unzippedContent = await gunzipAsync(content);
+                workout = await processFitFile(unzippedContent, entryName);
+              } else if (entryName.endsWith('.gpx')) {
+                workout = await processGpxFile(content, entryName);
+              } else if (entryName.endsWith('.fit')) {
+                workout = await processFitFile(content, entryName);
+              }
 
-              await createCardioWorkout(workoutToSave);
-              results.imported++;
-            } else {
-              console.log(`No workout data extracted from ${entryName}, skipping import.`);
+              if (workout) {
+                const transformedWorkout = transformStravaActivity(workout);
+                
+                const workoutToSave = {
+                  ...transformedWorkout,
+                  distance: transformedWorkout.distance,
+                  duration: transformedWorkout.duration || 0,
+                  userId: session.user.id,
+                  source: "strava",
+                  sourceId: extractStravaIdFromFilename(originalFilename || entryName)
+                };
+                
+                workoutActivityType = workoutToSave.type || 'unknown';
+                workoutTimestamp = new Date(workoutToSave.date).getTime();
+                workoutDuration = workoutToSave.duration;
+                workoutDistance = workoutToSave.distance || 0;
+
+                results.activityTypesCount[workoutActivityType] = (results.activityTypesCount[workoutActivityType] || 0) + 1;
+                if (!isNaN(workoutTimestamp)) {
+                    results.earliestTimestamp = Math.min(results.earliestTimestamp, workoutTimestamp);
+                    results.latestTimestamp = Math.max(results.latestTimestamp, workoutTimestamp);
+                }
+                results.totalDistance += workoutDistance;
+                results.totalDuration += workoutDuration;
+
+                await createCardioWorkout(workoutToSave);
+                results.imported++;
+              } else {
+                console.log(`No workout data extracted from ${entryName}, skipping import.`);
+              }
+            } catch (error) {
+              console.error(`Error processing ${entryName}:`, error);
+              results.errors.push(entryName);
             }
-          } catch (error) {
-            console.error(`Error processing ${entryName}:`, error);
-            results.errors.push(entryName);
           }
-        }
+          
+          // Continue to the next entry if the zipfile is still open
+          if (zipfile.isOpen) {
+            zipfile.readEntry();
+          }
+          processedCount++;
+          
+          // Check if all entries have been processed
+          if (processedCount === entryCount && !isErrored) {
+            resolve();
+          }
+        });
         
-        // Continue to the next entry
-        zipfile.readEntry();
-        processedCount++;
+        zipfile.on('end', () => {
+          console.log('ZIP reading complete');
+          if (processedCount === entryCount && !isErrored) {
+            resolve();
+          }
+        });
         
-        // Check if all entries have been processed
-        if (processedCount === entryCount && !zipfile.isOpen) {
+        zipfile.on('error', (err) => {
+          isErrored = true;
+          console.error('ZIP error:', err);
+          
+          // If we processed some entries, consider it a partial success
+          if (processedCount > 0) {
+            console.log(`Processed ${processedCount} entries before error. Continuing with partial results.`);
+            resolve();  // Continue despite error
+          } else {
+            reject(err);  // Reject if no entries were processed
+          }
+        });
+        
+        // Set a timeout to resolve the promise even if the ZIP processing gets stuck
+        setTimeout(() => {
+          console.warn('ZIP processing timeout (30s) reached. Resolving with partial results.');
           resolve();
-        }
+        }, 30000); // 30 second timeout
       });
       
-      zipfile.on('end', () => {
-        console.log('ZIP reading complete');
-        if (processedCount === entryCount) {
-          resolve();
-        }
-      });
+      console.log('ZIP processing complete');
+    } catch (zipError) {
+      console.error('Failed to process ZIP file:', zipError);
       
-      zipfile.on('error', (err) => {
-        console.error('ZIP error:', err);
-        reject(err);
-      });
-    });
+      // If the error is "unexpected EOF", provide a more helpful message
+      if (zipError instanceof Error && zipError.message && zipError.message.includes('EOF')) {
+        return NextResponse.json({
+          success: false,
+          error: "The ZIP file appears to be corrupted or incomplete. Please try downloading the archive from Strava again.",
+          details: zipError.message
+        }, { status: 400 });
+      }
+      
+      // For other errors, throw to be caught by the outer catch block
+      throw zipError;
+    }
     
-    console.log('ZIP processing complete');
-
     // 4. Delete the file from Blob storage after successful processing
     try {
         console.log('Deleting successfully processed file from Blob storage:', blobUrlToDelete);
