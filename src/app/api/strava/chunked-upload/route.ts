@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { put } from '@vercel/blob';
+import { put, del, list } from '@vercel/blob';
 import { v4 as uuidv4 } from 'uuid';
 
 // Set dynamic to force-dynamic to prevent caching
@@ -32,57 +32,118 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const userId = session.user.id;
     
-    // For the first chunk, we need to create a placeholder in Blob storage
-    if (chunkIndex === 0) {
-      // Create a unique path including user ID and timestamp to prevent collisions
-      const safeFilename = fileName.replace(/[^a-zA-Z0-9._-]/g, '_'); // Sanitize filename
-      const blobPath = `strava-imports/${userId}/${Date.now()}-${safeFilename}`;
-      
-      // Save this information to return it along with the chunk response
-      return NextResponse.json({
-        success: true,
-        fileId,
-        blobPath,
-        chunkIndex,
-        totalChunks,
-        isComplete: chunkIndex === totalChunks - 1
-      });
-    }
+    // Create paths for storage
+    const safeFilename = fileName.replace(/[^a-zA-Z0-9._-]/g, '_'); // Sanitize filename
+    const timestamp = Date.now();
+    const blobPathBase = `strava-imports/${userId}/${timestamp}-${safeFilename}`;
     
-    // For the last chunk
+    // For each chunk, save it with its index
+    const chunkPath = `${blobPathBase}.chunk${chunkIndex}`;
+    const chunkBlob = await put(chunkPath, chunk, {
+      access: 'public',
+      contentType: 'application/octet-stream', // Use generic binary format for chunks
+      addRandomSuffix: false,
+    });
+    
+    console.log(`Saved chunk ${chunkIndex + 1}/${totalChunks} to ${chunkPath}`);
+    
+    // For the last chunk, assemble the complete file
     if (chunkIndex === totalChunks - 1) {
-      // Get the blob path from the request
-      const blobPath = formData.get('blobPath')?.toString();
-      if (!blobPath) {
-        return NextResponse.json({ error: 'Missing blobPath for final chunk' }, { status: 400 });
+      try {
+        console.log(`All chunks received. Assembling complete file...`);
+        
+        // Get all chunks
+        const arrayBuffers: ArrayBuffer[] = [];
+        
+        for (let i = 0; i < totalChunks; i++) {
+          const currentChunkPath = `${blobPathBase}.chunk${i}`;
+          console.log(`Fetching chunk ${i + 1}/${totalChunks} from ${currentChunkPath}`);
+          
+          // List to verify chunk exists
+          const { blobs } = await list({
+            prefix: currentChunkPath,
+            limit: 1
+          });
+          
+          if (!blobs.length) {
+            throw new Error(`Missing chunk ${i + 1}/${totalChunks}`);
+          }
+          
+          // Fetch the chunk
+          const chunkResponse = await fetch(blobs[0].url);
+          if (!chunkResponse.ok) {
+            throw new Error(`Failed to download chunk ${i + 1}: ${chunkResponse.status}`);
+          }
+          
+          // Add to our array of chunks
+          arrayBuffers.push(await chunkResponse.arrayBuffer());
+        }
+        
+        // Combine all chunks into a single ArrayBuffer
+        let totalLength = 0;
+        for (const buffer of arrayBuffers) {
+          totalLength += buffer.byteLength;
+        }
+        
+        const completeFile = new Uint8Array(totalLength);
+        let offset = 0;
+        
+        for (const buffer of arrayBuffers) {
+          completeFile.set(new Uint8Array(buffer), offset);
+          offset += buffer.byteLength;
+        }
+        
+        // Upload the complete file
+        const blob = await put(blobPathBase, Buffer.from(completeFile), {
+          access: 'public',
+          contentType: 'application/zip',
+          addRandomSuffix: false,
+        });
+        
+        console.log(`Completed upload. Final size: ${totalLength} bytes. Path: ${blob.url}`);
+        
+        // Clean up chunk files
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkToDelete = `${blobPathBase}.chunk${i}`;
+          try {
+            await del(chunkToDelete);
+            console.log(`Deleted chunk ${i + 1}: ${chunkToDelete}`);
+          } catch (deleteError) {
+            console.warn(`Failed to delete chunk ${i + 1}: ${chunkToDelete}`, deleteError);
+            // Continue despite deletion errors
+          }
+        }
+        
+        return NextResponse.json({
+          success: true,
+          fileId,
+          blobPath: blob.pathname,
+          url: blob.url,
+          chunkIndex,
+          totalChunks,
+          isComplete: true
+        });
+      } catch (assemblyError) {
+        console.error('Error assembling file from chunks:', assemblyError);
+        const errorMessage = assemblyError instanceof Error 
+          ? assemblyError.message 
+          : 'Failed to assemble file from chunks';
+          
+        return NextResponse.json({ 
+          error: errorMessage,
+          fileId,
+          chunkIndex,
+          totalChunks,
+          isComplete: false
+        }, { status: 500 });
       }
-      
-      // For the last chunk, we upload the file to Blob storage
-      // In a real implementation, you would assemble all chunks, then upload
-      // But for simplicity, we're just using the last chunk
-      const blob = await put(blobPath, chunk, {
-        access: 'public',
-        contentType: 'application/zip',
-        addRandomSuffix: false,
-      });
-      
-      console.log(`Completed upload. Final path: ${blob.url}`);
-      
-      return NextResponse.json({
-        success: true,
-        fileId,
-        blobPath: blob.pathname,
-        url: blob.url,
-        chunkIndex,
-        totalChunks,
-        isComplete: true
-      });
     }
     
-    // For intermediate chunks (neither first nor last)
+    // For first or intermediate chunks
     return NextResponse.json({
       success: true,
       fileId,
+      blobPath: blobPathBase,
       chunkIndex,
       totalChunks,
       isComplete: false
