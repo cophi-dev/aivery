@@ -334,7 +334,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       setUploadStatus('Getting upload destination...');
       setProgress(5);
       
-      const generateUrlResponse = await fetch('/api/strava/generate-upload-url', {
+      const generateUrlResponse = await fetch('/api/strava/upload-client', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -370,6 +370,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         const xhr = new XMLHttpRequest();
         xhr.open('PUT', presignedPutUrl, true);
         xhr.setRequestHeader('Content-Type', 'application/zip'); // Set correct content type for the blob
+        xhr.setRequestHeader('Origin', window.location.origin); // Add explicit Origin header
 
         // Track progress of upload TO BLOB STORAGE
         xhr.upload.onprogress = (event) => {
