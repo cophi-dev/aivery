@@ -15,7 +15,7 @@ import { Readable } from 'stream'
 // Keep runtime (Node.js needed for streaming and ZIP handling)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120; // Increase max duration to 120s for large ZIP files
+export const maxDuration = 60; // Set max duration to 60s (Hobby plan limit)
 
 // Define FitActivity interface
 interface FitActivity {
