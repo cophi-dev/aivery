@@ -183,107 +183,136 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
     console.log('File buffer size from blob:', buffer.length);
 
-    // 3. Process the ZIP buffer
-    console.log('Processing ZIP file...');
+    // 3. Extract the ZIP file to a temporary directory but don't process files yet
+    console.log('Initializing ZIP extraction process...');
     
-    // First, save the file to a temporary location for the new method
-    const tempFilePath = path.join(os.tmpdir(), `strava-import-${uuidv4()}.zip`);
+    // Generate a unique processing ID
+    const processingId = uuidv4();
+    
+    // Create a temporary directory for extraction
+    const tempDir = path.join(os.tmpdir(), `strava-import-${processingId}`);
+    console.log(`Creating temp directory for extraction: ${tempDir}`);
+    await fs.mkdir(tempDir, { recursive: true });
+    
+    // First, save the file to a temporary location
+    const tempFilePath = path.join(os.tmpdir(), `strava-import-${processingId}.zip`);
     await fs.writeFile(tempFilePath, buffer);
     console.log(`Saved ZIP file to temp location: ${tempFilePath}`);
     
     try {
-        // Use the better extraction method that handles nested directories
-        const results = await processZipFileMoreReliably(tempFilePath, originalFilename || null);
+        // Start the extraction process
+        console.log(`Extracting ZIP file to: ${tempDir}`);
+        await extract(tempFilePath, { dir: tempDir });
+        console.log('ZIP extraction complete');
         
-        // 4. Delete the file from Blob storage after successful processing
-        try {
-            console.log('Deleting successfully processed file from Blob storage:', blobUrlToDelete);
-            if (blobUrlToDelete) {
-                await del(blobUrlToDelete); // Use del with the blob URL
-                console.log('Blob deleted successfully.');
-            } else {
-                console.warn('Could not delete blob, URL not available.');
+        // Get list of all files
+        const allFiles = await getFilesRecursively(tempDir);
+        console.log(`Found ${allFiles.length} total files in extracted ZIP`);
+        
+        // Filter activity files - only include workout files, exclude media
+        const activityFiles = allFiles.filter(file => {
+            const lowerFile = file.toLowerCase();
+            
+            // Only include these specific workout file types
+            if (lowerFile.endsWith('.gpx') || 
+                lowerFile.endsWith('.fit') || 
+                lowerFile.endsWith('.fit.gz') || 
+                lowerFile.endsWith('.tcx')) {
+                return true;
             }
-        } catch (deleteError) {
-            console.error('Failed to delete file from blob storage after processing:', deleteError);
-            // Log error but don't fail the entire request
-        }
-
-        // Revalidate paths
-        revalidatePath("/calendar");
-        revalidatePath("/activity");
-        revalidatePath("/dashboard");
-
-        // Format results
-        const finalResults = {
-            ...results,
-            earliestDate: results.earliestTimestamp === Infinity ? null : new Date(results.earliestTimestamp).toISOString(),
-            latestDate: results.latestTimestamp === -Infinity ? null : new Date(results.latestTimestamp).toISOString(),
-            totalDuration: Math.round(results.totalDuration / 60), // Convert seconds to minutes for display
-            // Add file statistics in a more readable format
-            fileStats: {
-              activitiesFound: results.activitiesFound,
-              gpxFiles: results.gpxFilesFound,
-              fitFiles: results.fitFilesFound,
-              fitGzFiles: results.fitGzFilesFound,
-              totalFound: results.activitiesFound,
-              processed: results.processed,
-              imported: results.imported,
-              skipped: results.activitiesFound - results.processed,
-              failed: results.processed - results.imported
-            },
-            // Add the first few errors for easier debugging
-            debugErrors: results.errors.slice(0, 5),
-            hasMoreErrors: results.errors.length > 5,
-            totalErrors: results.errors.length
-        };
-        delete (finalResults as any).earliestTimestamp;
-        delete (finalResults as any).latestTimestamp;
-        delete (finalResults as any).activitiesFound;
-        delete (finalResults as any).gpxFilesFound;
-        delete (finalResults as any).fitFilesFound;
-        delete (finalResults as any).fitGzFilesFound;
-
-        console.log('Final import results:', finalResults);
-        return NextResponse.json({
-          success: true,
-          results: finalResults,
-        });
-    } catch (zipError) {
-        console.error('Failed to process ZIP file:', zipError);
+            
+            // Skip all media files and other non-workout files
+            if (lowerFile.endsWith('.jpg') || 
+                lowerFile.endsWith('.jpeg') || 
+                lowerFile.endsWith('.png') || 
+                lowerFile.endsWith('.gif') || 
+                lowerFile.endsWith('.mp4') || 
+                lowerFile.endsWith('.mov') ||
+                lowerFile.endsWith('.mp3') ||
+                lowerFile.endsWith('.pdf') ||
+                lowerFile.includes('photo') ||
+                lowerFile.includes('image')) {
+                return false;
+            }
+            
+            // Skip any other files that aren't workout data
+            return false;
+        }).map(file => file.replace(tempDir, '').replace(/\\/g, '/')); // Store relative paths
         
-        // Clean up temp file
+        console.log(`Found ${activityFiles.length} potential activity files (skipped ${allFiles.length - activityFiles.length} non-workout files)`);
+        
+        // Count file types for statistics
+        const gpxFilesCount = activityFiles.filter(f => f.toLowerCase().endsWith('.gpx')).length;
+        const fitFilesCount = activityFiles.filter(f => f.toLowerCase().endsWith('.fit')).length;
+        const fitGzFilesCount = activityFiles.filter(f => f.toLowerCase().endsWith('.fit.gz')).length;
+        
+        // Store processing state in a temporary file
+        const processingStatePath = path.join(tempDir, 'processing-state.json');
+        await fs.writeFile(processingStatePath, JSON.stringify({
+            userId,
+            processingId,
+            originalFilename,
+            timestamp: new Date().toISOString(),
+            allFilesCount: allFiles.length, 
+            activityFiles,
+            gpxFilesCount,
+            fitFilesCount,
+            fitGzFilesCount,
+            processedFiles: [],
+            importedFiles: [],
+            errorFiles: [],
+            status: 'ready'
+        }));
+        
+        // Delete the original ZIP file since we don't need it anymore
+        await fs.unlink(tempFilePath);
+        
+        // 4. Return the processing ID and file count for the client to start batch processing
+        return NextResponse.json({
+            success: true,
+            processingId,
+            extractedDir: tempDir,
+            totalFiles: activityFiles.length,
+            batchSize: 10, // Recommended batch size
+            fileStats: {
+                total: activityFiles.length,
+                gpx: gpxFilesCount,
+                fit: fitFilesCount,
+                fitGz: fitGzFilesCount
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error during ZIP extraction:', error);
+        
+        // Clean up temp files
         try {
             await fs.unlink(tempFilePath);
+            await fs.rm(tempDir, { recursive: true, force: true });
         } catch (cleanupError) {
-            console.error('Failed to clean up temp file:', cleanupError);
+            console.error('Failed to clean up temp files:', cleanupError);
         }
         
         // If the error is "unexpected EOF", provide a more helpful message
-        if (zipError instanceof Error && zipError.message && zipError.message.includes('EOF')) {
+        if (error instanceof Error && error.message && error.message.includes('EOF')) {
             return NextResponse.json({
-              success: false,
-              error: "The ZIP file appears to be corrupted or incomplete. Please try downloading the archive from Strava again.",
-              details: zipError.message
+                success: false,
+                error: "The ZIP file appears to be corrupted or incomplete. Please try downloading the archive from Strava again.",
+                details: error.message
             }, { status: 400 });
         }
         
-        // For other errors, throw to be caught by the outer catch block
-        throw zipError;
-    } finally {
-        // Clean up temp file
-        try {
-            await fs.unlink(tempFilePath);
-        } catch (cleanupError) {
-            console.error('Failed to clean up temp file:', cleanupError);
-        }
+        return NextResponse.json({
+            success: false,
+            error: `Error during ZIP extraction: ${error instanceof Error ? error.message : String(error)}`
+        }, { status: 500 });
     }
 
   } catch (error) {
-    console.error("Strava import error (Blob Storage):", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to process Strava archive.";
+    console.error("Strava import initialization error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to initialize Strava import process.";
     
-    // Attempt to delete the blob if an error occurred during processing
+    // Attempt to delete the blob if an error occurred
     if (blobUrlToDelete) {
       try {
         console.warn('Attempting to delete blob due to processing error:', blobUrlToDelete);
