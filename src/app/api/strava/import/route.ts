@@ -106,6 +106,16 @@ export async function POST(request: NextRequest) {
     // Content-Type should be application/json now
     console.log('Content-Type:', request.headers.get('content-type'));
 
+    // Verify content-type is application/json
+    const contentType = request.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.error('Invalid Content-Type:', contentType);
+      return NextResponse.json(
+        { success: false, error: "Invalid Content-Type. Expected application/json" }, 
+        { status: 400 }
+      );
+    }
+
     // Check authentication first
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {

@@ -114,6 +114,10 @@ export default async function DashboardPage() {
         // More detailed logging for cardio metrics
         console.log(`[Dashboard Page] Cardio metrics - Duration: ${metrics?.cardioDurationLast7Days} seconds, Distance: ${metrics?.cardioDistanceLast7Days} meters`);
         console.log(`[Dashboard Page] Cardio duration type: ${typeof metrics?.cardioDurationLast7Days}, Distance type: ${typeof metrics?.cardioDistanceLast7Days}`);
+        
+        // Test km conversion logic here to verify it works
+        const distanceKm = (metrics?.cardioDistanceLast7Days || 0) / 1000;
+        console.log(`[Dashboard Page] Distance in km (calculated here): ${distanceKm.toFixed(1)} km`);
     } catch (error) {
         console.error("[Dashboard Page] Failed to fetch server-side data or calculate metrics:", error);
         // Basic error display

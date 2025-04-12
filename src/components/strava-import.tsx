@@ -518,101 +518,123 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       // --- Process the uploaded file ---
       console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
 
-      const processResponse = await fetch('/api/strava/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-            blobPathname: blobPathname,
-            originalFilename: file.name 
-        }), 
-      });
+      // Create a controller to timeout the request if needed
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 55000); // 55 seconds timeout (just under the 60s server limit)
 
-      setProgress(95); // Indicate processing request sent
-
-      console.log('Processing Response received:', { status: processResponse.status, statusText: processResponse.statusText });
-
-      const contentType = processResponse.headers.get("content-type");
-      if (!processResponse.ok || !contentType || !contentType.includes("application/json")) {
-        const responseText = await processResponse.text().catch(() => "Could not read error response body.");
-        console.error("Server error or non-JSON response during processing:", { status: processResponse.status, contentType, body: responseText });
-        let errorMsg = `Processing failed: Server responded with status ${processResponse.status}.`;
-        if (contentType && !contentType.includes("application/json")) {
-          errorMsg = `Server error: Expected JSON response, but received ${contentType}.`;
-        } else if (processResponse.status >= 400 && processResponse.status < 500 && responseText) {
-          // Try to parse JSON error from body if available
-          try {
-             const errorJson = JSON.parse(responseText);
-             errorMsg = `Processing failed: ${errorJson.error || errorJson.message || responseText}`;
-          } catch (e) {
-              errorMsg = `Processing failed: ${responseText}`;
-          }
-        } else if (processResponse.status === 413) {
-            errorMsg = 'Processing failed: Payload may be too large for the processing function.';
-        } else if (!processResponse.ok) {
-            errorMsg = `Processing failed: Server returned status ${processResponse.status}. ${responseText}`;
-        }
-        // Attempt to clean up the blob if processing fails after successful upload
-        if (blobPathname) {
-          fetch('/api/strava/cleanup-blob', { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pathname: blobPathname })
-          }).catch(err => console.error("Failed to trigger blob cleanup after processing error:", err));
-        }
-        throw new Error(errorMsg);
-      }
-
-      const data = await processResponse.json();
-      console.log('Processing API Response data:', data);
-
-      if (data.success) {
-        // --- Success handling logic (remains the same) ---
-        const processed = data.results?.processed ?? 0;
-        const imported = data.results?.imported ?? 0;
-        const errors = data.results?.errors ?? [];
-        const errorCount = errors.length;
-
-        const summaryStats: ImportStats = {
-          count: imported,
-          types: data.results?.activityTypesCount ?? {},
-          earliestDate: data.results?.earliestDate ?? '',
-          latestDate: data.results?.latestDate ?? '',
-          totalDistance: data.results?.totalDistance ?? 0,
-          totalDuration: data.results?.totalDuration ?? 0,
-        };
-        setUploadStats(summaryStats);
-
-        let description = `Processed ${processed} files, successfully imported ${imported} workouts.`;
-        if (errorCount > 0) {
-          description += ` ${errorCount} file(s) could not be imported. Check browser console for details.`;
-          console.error('Import errors - Failed files:', errors);
-        }
-
-        toast({
-          title: "Import Complete",
-          description: description,
-          duration: 8000,
+      try {
+        const processResponse = await fetch('/api/strava/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+              blobPathname: blobPathname,
+              originalFilename: file.name 
+          }),
+          signal: controller.signal
         });
 
-        setUploadStatus('Import completed successfully.');
-        setProgress(100);
-        setFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        if (onImportComplete) onImportComplete();
-        // --- End of success handling ---
-      } else {
-        // The import API itself reported an error (e.g., during ZIP processing)
-        // Attempt to clean up the blob
-        if (blobPathname) {
-          fetch('/api/strava/cleanup-blob', { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pathname: blobPathname })
-          }).catch(err => console.error("Failed to trigger blob cleanup after import API error:", err));
+        clearTimeout(timeoutId); // Clear timeout if response received
+        setProgress(95); // Indicate processing request sent
+
+        console.log('Processing Response received:', { status: processResponse.status, statusText: processResponse.statusText });
+
+        // Check for auth issues first
+        if (processResponse.status === 401) {
+          throw new Error("Authentication error. Please log in again and retry.");
         }
-        throw new Error(data.error || data.details || 'Import failed: The API reported an issue during processing.');
+
+        const contentType = processResponse.headers.get("content-type");
+        if (!processResponse.ok || !contentType || !contentType.includes("application/json")) {
+          const responseText = await processResponse.text().catch(() => "Could not read error response body.");
+          console.error("Server error or non-JSON response during processing:", { status: processResponse.status, contentType, body: responseText });
+          let errorMsg = `Processing failed: Server responded with status ${processResponse.status}.`;
+          if (contentType && !contentType.includes("application/json")) {
+            errorMsg = `Server error: Expected JSON response, but received ${contentType}.`;
+          } else if (processResponse.status >= 400 && processResponse.status < 500 && responseText) {
+            // Try to parse JSON error from body if available
+            try {
+               const errorJson = JSON.parse(responseText);
+               errorMsg = `Processing failed: ${errorJson.error || errorJson.message || responseText}`;
+            } catch (e) {
+                errorMsg = `Processing failed: ${responseText}`;
+            }
+          } else if (processResponse.status === 413) {
+              errorMsg = 'Processing failed: Payload may be too large for the processing function.';
+          } else if (!processResponse.ok) {
+              errorMsg = `Processing failed: Server returned status ${processResponse.status}. ${responseText}`;
+          }
+          // Attempt to clean up the blob if processing fails after successful upload
+          if (blobPathname) {
+            fetch('/api/strava/cleanup-blob', { 
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pathname: blobPathname })
+            }).catch(err => console.error("Failed to trigger blob cleanup after processing error:", err));
+          }
+          throw new Error(errorMsg);
+        }
+
+        const data = await processResponse.json();
+        console.log('Processing API Response data:', data);
+
+        if (data.success) {
+          // --- Success handling logic (remains the same) ---
+          const processed = data.results?.processed ?? 0;
+          const imported = data.results?.imported ?? 0;
+          const errors = data.results?.errors ?? [];
+          const errorCount = errors.length;
+
+          const summaryStats: ImportStats = {
+            count: imported,
+            types: data.results?.activityTypesCount ?? {},
+            earliestDate: data.results?.earliestDate ?? '',
+            latestDate: data.results?.latestDate ?? '',
+            totalDistance: data.results?.totalDistance ?? 0,
+            totalDuration: data.results?.totalDuration ?? 0,
+          };
+          setUploadStats(summaryStats);
+
+          let description = `Processed ${processed} files, successfully imported ${imported} workouts.`;
+          if (errorCount > 0) {
+            description += ` ${errorCount} file(s) could not be imported. Check browser console for details.`;
+            console.error('Import errors - Failed files:', errors);
+          }
+
+          toast({
+            title: "Import Complete",
+            description: description,
+            duration: 8000,
+          });
+
+          setUploadStatus('Import completed successfully.');
+          setProgress(100);
+          setFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          if (onImportComplete) onImportComplete();
+          // --- End of success handling ---
+        } else {
+          // The import API itself reported an error (e.g., during ZIP processing)
+          // Attempt to clean up the blob
+          if (blobPathname) {
+            fetch('/api/strava/cleanup-blob', { 
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pathname: blobPathname })
+            }).catch(err => console.error("Failed to trigger blob cleanup after import API error:", err));
+          }
+          throw new Error(data.error || data.details || 'Import failed: The API reported an issue during processing.');
+        }
+      } catch (error: any) {
+        // Handle timeout errors specially
+        if (error && error.name === 'AbortError') {
+          console.error('Processing request timed out after 55 seconds');
+          throw new Error('Processing timed out. The file may be too large or the server is busy. Please try again later or with a smaller file.');
+        }
+        throw error; // Re-throw for the outer catch block
       }
     } catch (error) {
       // --- Error handling (catches errors from all steps) ---

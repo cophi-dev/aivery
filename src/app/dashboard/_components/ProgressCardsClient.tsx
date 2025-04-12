@@ -27,6 +27,10 @@ const formatDistance = (meters: number | undefined | null): string => {
   
   // For larger distances, convert to km and format to 1 decimal place
   const km = meters / 1000;
+  
+  // Log to verify the conversion is happening correctly
+  console.log(`[ProgressCards] Converting ${meters}m to ${km.toFixed(1)}km`);
+  
   return `${km.toFixed(1)} km`;
 };
 
@@ -66,9 +70,15 @@ export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }
   
   // Debug values
   console.log('[ProgressCards] Received props:', { strengthVolume, cardioDuration, cardioDistance });
+  console.log('[ProgressCards] Raw cardioDistance:', cardioDistance);
+  console.log('[ProgressCards] Kilometers (raw / 1000):', (cardioDistance || 0) / 1000);
   console.log('[ProgressCards] Formatted duration:', formatDuration(cardioDuration));
   console.log('[ProgressCards] Formatted distance:', formatDistance(cardioDistance));
   console.log('[ProgressCards] Display distance:', hasCardioDistance);
+  
+  // For testing, calculate a raw km value
+  const distanceInKm = (cardioDistance || 0) / 1000;
+  const formattedKm = `${distanceInKm.toFixed(1)} km`;
   
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -101,7 +111,7 @@ export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }
           {/* Always show the distance element */}
           <p className="text-md text-muted-foreground mt-1 flex items-center justify-center">
             <Route className="h-4 w-4 mr-1" />
-            {formatDistance(cardioDistance)}
+            {formattedKm}
           </p>
         </CardContent>
       </Card>

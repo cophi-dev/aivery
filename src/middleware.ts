@@ -4,7 +4,7 @@ import { getToken } from 'next-auth/jwt'
 import { VERSION } from '@/app/version'
 
 // Paths that are considered public (accessible without authentication)
-const publicPaths = ['/', '/login', '/register', '/api/auth', '/api/stripe/webhook'];
+const publicPaths = ['/', '/login', '/register', '/api/auth/', '/api/stripe/webhook'];
 
 // Paths that authenticated users should be redirected AWAY from
 const authProtectedPaths = ['/login', '/register'];
@@ -154,6 +154,7 @@ export const config = {
      * - icons/ (app icons)
      * - images/ (public images)
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/stripe/webhook|api/auth|icons/|images/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/stripe/webhook|icons/|images/).*)',
+    '/(api/(?!auth/).*)'
   ],
 } 
