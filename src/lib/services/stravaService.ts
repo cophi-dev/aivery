@@ -2,12 +2,55 @@ import { getCollection } from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { mockIntegrations } from "../db/mock-data"
 import { exchangeCodeForToken, refreshToken } from "../strava/config"
+import { getClient, readCollectionItems, saveDocument, readDocument } from "../mongo"
+import { Response, isEmpty } from "../../lib"
+import axios from "axios"
 
 // Define in this file directly instead of importing from the route
 const DB_NAME = "aivery"
 const INTEGRATIONS_COLLECTION = "integrations"
 const WORKOUTS_COLLECTION = "workouts"
 const PREFERENCES_COLLECTION = "preferences"
+const EXERCISES_COLLECTION = "exercises"
+const WORKOUT_EXERCISES_COLLECTION = "workoutExercises"
+
+// Type definitions for Strava activities
+interface StravaActivity {
+  id?: number | string;
+  name?: string;
+  description?: string;
+  type?: string;
+  distance?: number;
+  moving_time?: number;
+  elapsed_time?: number;
+  start_date?: string;
+  calories?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_speed?: number;
+  max_speed?: number;
+  total_elevation_gain?: number;
+  sport_type?: string;
+}
+
+interface ImportActivity {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  distance: number;
+  duration: number;
+  date: Date;
+  calories: number;
+  averageHeartRate: number;
+  maxHeartRate: number;
+  averageSpeed: number;
+  maxSpeed: number;
+  totalElevationGain: number;
+  sportType: string;
+  source: string;
+  sourceData: any;
+}
 
 // Default supported activity types if no preferences are set
 const DEFAULT_ACTIVITY_TYPES = ['run', 'swim'];
@@ -19,7 +62,7 @@ export const SUPPORTED_ACTIVITY_TYPES = [
   { id: 'ride', label: 'Cycling', enabled: false },
   { id: 'walk', label: 'Walking', enabled: false },
   { id: 'hike', label: 'Hiking', enabled: false },
-  { id: 'workout', label: 'Strength Training', enabled: false, disabled: true }
+  { id: 'workout', label: 'Strength Training', enabled: false }
 ];
 
 // Define a more complete interface for cardioDetails
@@ -102,162 +145,87 @@ interface CardioDetails {
 // Mock user ID for demo purposes
 const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
 
-// Map Strava sport types to our workout types
-function mapStravaType(sport: string, subSport?: string): string {
-  if (!sport) return 'other'
-  
-  const sportLower = sport.toLowerCase()
-  const subSportLower = subSport?.toLowerCase()
-
-  // Map common sport types
-  switch (sportLower) {
-    // Running variants
-    case 'running':
-    case 'run':
-    case 'trail_running':
-    case 'trail_run':
-    case 'treadmill_running':
-    case 'treadmill':
-    case 'track':
-    case 'track_running':
-    case 'virtual_run':
-    case 'virtualrun':
-      return 'running'
-      
-    // Cycling variants
-    case 'cycling':
-    case 'bike':
-    case 'ride':
-    case 'virtual_ride':
-    case 'virtualride':
-    case 'indoor_cycling':
-    case 'mountainbikeride':
-    case 'mountain_bike_ride':
-    case 'mountain_biking':
-    case 'gravel_ride':
-    case 'gravel_cycling':
-    case 'gravelride':
-    case 'e_bike_ride':
-    case 'ebikeride':
-      return 'cycling'
-      
-    // Swimming variants
-    case 'swimming':
-    case 'swim':
-    case 'pool_swimming':
-    case 'poolswim':
-    case 'open_water_swimming':
-    case 'openwaterswim':
-    case 'open_water':
-      return 'swimming'
-      
-    // Walking variants
-    case 'walking':
-    case 'walk':
-    case 'nordic_walking':
-      return 'other'
-      
-    // Hiking variants
-    case 'hiking':
-    case 'hike':
-    case 'mountain_hiking':
-      return 'other'
-      
-    // Strength training
-    case 'training':
-    case 'workout':
-    case 'strength_training':
-    case 'weight_training':
-    case 'weighttraining':
-    case 'functional_strength':
-    case 'functionalstrength':
-    case 'strength':
-    case 'crossfit':
-    case 'stairstepper':
-    case 'elliptical':
-    case 'rowing':
-    case 'row':
-      return 'strength'
-      
-    // Flexibility
-    case 'yoga':
-    case 'flexibility':
-    case 'stretching':
-    case 'pilates':
-      return 'flexibility'
-      
-    // HIIT
-    case 'hiit':
-    case 'high_intensity_interval_training':
-    case 'highintensityintervaltraining':
-    case 'circuit_training':
-    case 'circuittraining':
-    case 'interval_training':
-    case 'intervaltraining':
-      return 'hiit'
-      
-    // Winter sports
-    case 'alpineski':
-    case 'backcountryski':
-    case 'nordicski':
-    case 'snowboard':
-    case 'snowshoe':
-    case 'iceskate':
-    case 'snowkite':
-      return 'other'
-      
-    // Water sports
-    case 'kayaking':
-    case 'canoeing':
-    case 'rowing':
-    case 'stand_up_paddling':
-    case 'standuppaddling':
-    case 'surfing':
-    case 'kitesurfing':
-    case 'windsurfing':
-    case 'sailing':
-    case 'sail':
-    case 'watersport':
-      return 'other'
-      
-    // Ball sports
-    case 'soccer':
-    case 'golf':
-    case 'volleyball':
-    case 'tennis':
-    case 'basketball':
-    case 'football':
-    case 'baseball':
-    case 'pickleball':
-      return 'other'
-      
-    // Other activities
-    case 'handcycle':
-    case 'inlineskate':
-    case 'skateboard':
-    case 'rockclimbing':
-    case 'boxing':
-      return 'other'
-      
-    default:
-      // Check sub_sport for additional context
-      if (subSportLower === 'strength_training' || 
-          subSportLower === 'weight_training' || 
-          subSportLower === 'crossfit' ||
-          subSportLower === 'hiit' ||
-          subSportLower === 'circuit') {
-        return 'strength'
-      } else if (subSportLower === 'yoga' || 
-                subSportLower === 'stretching' ||
-                subSportLower === 'pilates') {
-        return 'flexibility'
-      } else if (subSportLower === 'trail' || 
-                subSportLower === 'track' ||
-                subSportLower === 'treadmill') {
-        return 'running'
-      }
-      return 'other'
+// Maps Strava activity type to our application's workout type
+export function mapStravaType(activityType: string, sportType?: string): string {
+  // Handle cases where both activity type and sport type are undefined
+  if (!activityType && !sportType) {
+    return 'other';
   }
+  
+  const lowerActivity = activityType?.toLowerCase() || '';
+  const lowerSport = sportType?.toLowerCase() || '';
+  
+  // Check if either contains a keyword and map accordingly
+  if (lowerActivity.includes('run') || lowerSport.includes('run') || 
+      lowerActivity.includes('treadmill') || lowerSport.includes('treadmill')) {
+    return 'running';
+  }
+  
+  if (lowerActivity.includes('ride') || lowerActivity.includes('cycl') || 
+      lowerActivity.includes('bike') || lowerSport.includes('cycl') || 
+      lowerSport.includes('bike') || lowerSport.includes('ride')) {
+    return 'cycling';
+  }
+  
+  if (lowerActivity.includes('swim') || lowerSport.includes('swim')) {
+    return 'swimming';
+  }
+  
+  if (lowerActivity.includes('walk') || lowerSport.includes('walk')) {
+    return 'walking';
+  }
+  
+  if (lowerActivity.includes('hike') || lowerSport.includes('hike')) {
+    return 'hiking';
+  }
+  
+  if (lowerActivity.includes('weight') || lowerActivity.includes('strength') || 
+      lowerActivity.includes('gym') || lowerActivity.includes('workout') ||
+      lowerSport.includes('weight') || lowerSport.includes('strength') || 
+      lowerSport.includes('gym') || lowerSport.includes('workout')) {
+    return 'strength';
+  }
+  
+  if (lowerActivity.includes('yoga') || lowerActivity.includes('meditation') ||
+      lowerSport.includes('yoga') || lowerSport.includes('meditation')) {
+    return 'yoga';
+  }
+  
+  if (lowerActivity.includes('pilates') || lowerSport.includes('pilates')) {
+    return 'pilates';
+  }
+  
+  if (lowerActivity.includes('hiit') || lowerActivity.includes('circuit') || 
+      lowerActivity.includes('crossfit') || lowerSport.includes('hiit') || 
+      lowerSport.includes('circuit') || lowerSport.includes('crossfit')) {
+    return 'hiit';
+  }
+  
+  if (lowerActivity.includes('stretch') || lowerActivity.includes('flexibility') ||
+      lowerSport.includes('stretch') || lowerSport.includes('flexibility')) {
+    return 'flexibility';
+  }
+
+  if (lowerActivity.includes('row') || lowerSport.includes('row')) {
+    return 'rowing';
+  }
+
+  if (lowerActivity.includes('ski') || lowerSport.includes('ski')) {
+    return 'skiing';
+  }
+
+  if (lowerActivity.includes('cardio') || lowerActivity.includes('elliptical') || 
+      lowerActivity.includes('stair') || lowerSport.includes('cardio') || 
+      lowerSport.includes('elliptical') || lowerSport.includes('stair')) {
+    return 'cardio';
+  }
+  
+  // If we reach here and have unmapped types, log for future improvement
+  if (activityType || sportType) {
+    console.log(`Unmapped Strava activity type: ${activityType}, sport type: ${sportType}`);
+  }
+  
+  return 'other';
 }
 
 // Helper function to calculate intensity based on heart rate
@@ -328,6 +296,44 @@ function calculateHeartRateZones(records: any[], maxHeartRate: number = 185): an
     thresholds: zoneThresholds,
     distribution: zoneDistribution
   };
+}
+
+// Add type definitions at the top of the file
+interface StravaActivity {
+  id?: number | string;
+  name?: string;
+  description?: string;
+  type?: string;
+  distance?: number;
+  moving_time?: number;
+  elapsed_time?: number;
+  start_date?: string;
+  calories?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_speed?: number;
+  max_speed?: number;
+  total_elevation_gain?: number;
+  sport_type?: string;
+}
+
+interface ImportActivity {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  distance: number;
+  duration: number;
+  date: Date;
+  calories: number;
+  averageHeartRate: number;
+  maxHeartRate: number;
+  averageSpeed: number;
+  maxSpeed: number;
+  totalElevationGain: number;
+  sportType: string;
+  source: string;
+  sourceData: any;
 }
 
 export async function connectStrava(userId: string, authCode: string) {
@@ -448,171 +454,133 @@ export async function getValidAccessToken(userId: string) {
   return integration.accessToken;
 }
 
-// Function to transform Strava activity to our workout format
-export function transformStravaActivity(activity: any) {
-  console.log('Starting Strava activity transformation:', activity);
+/**
+ * Transform a Strava activity to our workout format
+ */
+export const transformStravaActivity = (activity: StravaActivity): ImportActivity => {
+  // Map activity type using our comprehensive mapping function
+  const mappedType = mapStravaType(activity.type || '', activity.sport_type);
   
-  if (!activity) {
-    console.error('No activity data provided to transform');
-    throw new Error('No activity data provided to transform');
+  // Ensure we have valid distance and duration values
+  // Convert meters to kilometers, ensure it's a number and positive
+  let distance = 0;
+  
+  // Handle distance - typically comes in meters from Strava API
+  if (typeof activity.distance === 'number') {
+    if (activity.distance > 0) {
+      // Check if the distance seems reasonable - FIXED to properly handle all distances
+      if (activity.distance >= 100) {
+        // Normal case: Convert meters to kilometers
+        distance = activity.distance / 1000;
+        console.log(`Converting distance from ${activity.distance}m to ${distance}km`);
+      } else {
+        // Small distance, likely already in meters
+        distance = activity.distance / 1000; // Always convert from meters to km
+        console.log(`Converting small distance ${activity.distance}m to ${distance}km`);
+      }
+    }
   }
+  
+  // Use moving_time if available, otherwise use elapsed_time
+  // Duration should be in minutes for our app's format
+  // We receive seconds from Strava API, so divide by 60
+  let duration = 0;
+  if (typeof activity.moving_time === 'number' && activity.moving_time > 0) {
+    duration = activity.moving_time / 60; // Convert seconds to minutes
+  } else if (typeof activity.elapsed_time === 'number' && activity.elapsed_time > 0) {
+    duration = activity.elapsed_time / 60; // Convert seconds to minutes
+  }
+  
+  // Sanity check for extremely long durations (more than 24 hours)
+  if (duration > 1440) { // 24 hours in minutes
+    console.warn(`Unusually long duration detected: ${duration} minutes. Check if units are correct.`);
+    // See if it might be seconds instead of minutes
+    if (duration > 3600) { // More than 60 hours is almost certainly seconds
+      console.log(`Converting suspected seconds (${duration}) to minutes: ${duration / 60}`);
+      duration = duration / 60;
+    }
+  }
+  
+  // If we have duration but no distance, estimate distance
+  if (duration > 0 && distance <= 0) {
+    // Estimate distance based on activity type and duration
+    let speedKmPerHour;
+    switch(mappedType) {
+      case 'running':
+        speedKmPerHour = 10; // 10 km/h average running pace
+        break;
+      case 'cycling':
+        speedKmPerHour = 20; // 20 km/h average cycling speed
+        break;
+      case 'swimming':
+        speedKmPerHour = 3; // 3 km/h average swimming speed
+        break;
+      case 'walking':
+        speedKmPerHour = 5; // 5 km/h average walking pace
+        break;
+      case 'hiking':
+        speedKmPerHour = 4; // 4 km/h average hiking pace
+        break;
+      default:
+        speedKmPerHour = 8; // Default estimation
+    }
+    
+    // Calculate distance in km based on duration in minutes
+    distance = (duration / 60) * speedKmPerHour;
+    console.log(`Estimated distance from duration (${duration} min): ${distance.toFixed(2)}km`);
+  }
+  
+  console.log(`Processing Strava activity: ${activity.name}, Type: ${activity.type} -> ${mappedType}, Distance: ${distance}km, Duration: ${duration}min`);
+  
+  return {
+    id: activity.id?.toString() || '',
+    title: activity.name || 'Untitled Activity',
+    description: activity.description || '',
+    type: mappedType,
+    distance: distance,
+    duration: duration,
+    date: parseStravaDate(activity.start_date),
+    calories: activity.calories || 0,
+    averageHeartRate: activity.average_heartrate || 0,
+    maxHeartRate: activity.max_heartrate || 0,
+    averageSpeed: activity.average_speed || 0,
+    maxSpeed: activity.max_speed || 0,
+    totalElevationGain: activity.total_elevation_gain || 0,
+    sportType: activity.sport_type || '',
+    source: 'strava',
+    sourceData: activity
+  };
+};
 
+/**
+ * Parses a Strava date string and ensures it's valid
+ * Falls back to current date if unable to parse
+ */
+function parseStravaDate(dateString?: string): Date {
+  if (!dateString) {
+    return new Date(); // Default to current date if no date provided
+  }
+  
   try {
-    // Check if distance is already in km (likely < 100) or in meters (likely > 100)
-    // Strava's API returns distance in meters, but our imported activities might already be in km
-    const distanceValue = activity.distance || activity.total_distance || 0;
-    const distanceInKm = distanceValue > 100 ? distanceValue / 1000 : distanceValue;
+    const parsedDate = new Date(dateString);
     
-    // Extract heart rate zones data if available
-    const heartRateZones = activity.zones?.heart_rate || activity.heartrate_zones;
-    let heartRateData: any = {
-      average: activity.average_heartrate || activity.avg_heart_rate || 0,
-      max: activity.max_heartrate || activity.max_heart_rate || 0,
-    };
-    
-    // Add heart rate zone distribution if available
-    if (heartRateZones) {
-      heartRateData.zones = {
-        thresholds: {
-          easy: heartRateZones.custom_zones ? heartRateZones.custom_zones[0] : 0,
-          moderate: heartRateZones.custom_zones ? heartRateZones.custom_zones[1] : 0,
-          hard: heartRateZones.custom_zones ? heartRateZones.custom_zones[2] : 0,
-          peak: heartRateZones.custom_zones ? heartRateZones.custom_zones[3] : 0
-        },
-        distribution: {
-          easy: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[0] : 0,
-          moderate: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[1] : 0,
-          hard: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[2] : 0,
-          peak: heartRateZones.distribution_buckets ? heartRateZones.distribution_buckets[3] : 0
-        }
-      };
-    } else if (activity.records && activity.records.length > 0) {
-      // Calculate heart rate zones from records if available
-      const maxHR = heartRateData.max || 185; // Use max HR from data or default to 185
-      const calculatedZones = calculateHeartRateZones(activity.records, maxHR);
-      if (calculatedZones) {
-        heartRateData.zones = calculatedZones;
-      }
+    // Check if date is valid and not in the future
+    if (isNaN(parsedDate.getTime())) {
+      console.warn(`Invalid Strava date: ${dateString}, using current date`);
+      return new Date();
     }
     
-    // Extract lap data if available
-    const laps = activity.splits_metric || activity.laps || [];
-    const formattedLaps = laps.map((lap: any, index: number) => ({
-      number: index + 1,
-      distance: lap.distance || 0,
-      duration: lap.elapsed_time || lap.moving_time || 0,
-      pace: lap.average_speed ? (1000 / lap.average_speed) / 60 : 0
-    }));
-    
-    // Extract gear information if available
-    const gearInfo = activity.gear ? {
-      id: activity.gear.id,
-      name: activity.gear.name,
-      distance: activity.gear.distance
-    } : undefined;
-    
-    // Extract weather data if available
-    const weatherData = activity.weather ? {
-      temperature: activity.weather.temperature,
-      humidity: activity.weather.humidity,
-      windSpeed: activity.weather.wind_speed,
-      conditions: activity.weather.conditions
-    } : undefined;
-    
-    // Extract segment efforts if available
-    const segmentEfforts = activity.segment_efforts || [];
-    const formattedSegmentEfforts = segmentEfforts.map((segment: any) => ({
-      id: segment.id,
-      name: segment.name,
-      distance: segment.distance,
-      elapsedTime: segment.elapsed_time,
-      startDate: segment.start_date,
-      average_heartrate: segment.average_heartrate,
-      max_heartrate: segment.max_heartrate,
-      prPowered: segment.pr_rank === 1,
-      komPowered: segment.kom_rank === 1,
-      startIndex: segment.start_index,
-      endIndex: segment.end_index
-    }));
-    
-    // Properly handle date - this was causing Invalid Date issues
-    let activityDate: Date;
-    try {
-      activityDate = new Date(activity.start_date || activity.timestamp);
-      
-      // Check if date is valid and handle future dates
-      const now = new Date();
-      if (isNaN(activityDate.getTime()) || activityDate > now) {
-        console.log(`Invalid or future date detected: ${activity.start_date || activity.timestamp}, using safe date`);
-        // Use a date within last month
-        activityDate = new Date(now.getTime() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
-      }
-    } catch (e) {
-      console.log(`Error parsing date, using safe default: ${e}`);
-      // Use a safe date if we can't parse the original
-      activityDate = new Date(Date.now() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
+    const now = new Date();
+    if (parsedDate > now) {
+      console.warn(`Future Strava date detected: ${dateString}, using current date`);
+      return now;
     }
     
-    // Properly handle duration - ensure we don't lose it
-    const duration = activity.elapsed_time || activity.total_elapsed_time || 0;
-    console.log(`Duration value: ${duration} (from elapsed_time: ${activity.elapsed_time}, total_elapsed_time: ${activity.total_elapsed_time})`);
-    
-    const transformed = {
-      name: activity.name || `${activity.type} Activity`,
-      date: activityDate,
-      duration: duration,
-      distance: parseFloat(distanceInKm.toFixed(3)),
-      type: activity.type || mapStravaType(activity.sport, activity.sub_sport),
-      notes: activity.description || '',
-      intensity: calculateIntensity(activity),
-      source: 'strava',
-      sourceId: activity.id,
-      elevationGain: activity.total_elevation_gain || activity.total_ascent || 0,
-      averageHeartRate: activity.average_heartrate || activity.avg_heart_rate || 0,
-      maxHeartRate: activity.max_heartrate || activity.max_heart_rate || 0,
-      averagePower: activity.average_watts || activity.avg_power || 0,
-      maxPower: activity.max_watts || activity.max_power || 0,
-      averageSpeed: activity.average_speed || activity.avg_speed || 0,
-      maxSpeed: activity.max_speed || activity.enhanced_max_speed || 0,
-      cardioDetails: {
-        distance: parseFloat(distanceInKm.toFixed(3)),
-        duration: duration,
-        pace: activity.average_speed ? ((1000 / activity.average_speed) / 60) : 0,
-        speed: activity.average_speed || activity.avg_speed || 0,
-        maxSpeed: activity.max_speed || activity.enhanced_max_speed || 0,
-        elevationGain: activity.total_elevation_gain || activity.total_ascent || 0,
-        heartRate: heartRateData,
-        laps: formattedLaps.length > 0 ? formattedLaps : undefined,
-        power: (activity.average_watts || activity.avg_power) ? {
-          average: activity.average_watts || activity.avg_power || 0,
-          max: activity.max_watts || activity.max_power || 0
-        } : undefined,
-        sportDetails: {
-          sport: activity.sport || activity.type || 'other',
-          subSport: activity.sub_sport || undefined
-        },
-        // Add gear information if available
-        gearInfo: gearInfo,
-        // Add weather information if available
-        weather: weatherData,
-        // Add additional Strava-specific data
-        stravaSpecific: {
-          segmentEfforts: activity.segment_efforts ? activity.segment_efforts.length : 0,
-          achievementCount: activity.achievement_count || 0,
-          kudosCount: activity.kudos_count || 0,
-          athleteWeight: activity.athlete_weight || 0,
-          commute: activity.commute || false,
-          deviceName: activity.device_name || '',
-          segmentDetails: formattedSegmentEfforts.length > 0 ? formattedSegmentEfforts : undefined
-        }
-      }
-    };
-
-    console.log('Transformed activity:', transformed);
-    return transformed;
+    console.log(`Parsed Strava date: ${parsedDate.toISOString()} from ${dateString}`);
+    return parsedDate;
   } catch (error) {
-    console.error('Error transforming Strava activity:', error);
-    throw error;
+    console.error(`Error parsing Strava date: ${dateString}`, error);
+    return new Date();
   }
 }
 
@@ -698,40 +666,87 @@ export async function syncStravaActivity(userId: string, activityId: string) {
       throw new Error(`No activity found with ID ${activityId}`);
     }
 
-    const workout = transformStravaActivity(activity);
+    const transformedWorkoutData = transformStravaActivity(activity); // Renamed for clarity
     
-    // Get the workouts collection
+    // 1. Upsert the main workout document
     const workoutsCollection = await getCollection(WORKOUTS_COLLECTION);
-    
-    // Check if workout already exists
-    const existingWorkout = await workoutsCollection.findOne({
+    const workoutUpsertResult = await workoutsCollection.updateOne(
+      { 
+        userId: new ObjectId(userId),
+        sourceId: activityId,
+        source: "strava"
+      },
+      { 
+        $set: {
+          ...transformedWorkoutData,
+          userId: new ObjectId(userId),
+          updatedAt: new Date() 
+        },
+        $setOnInsert: { 
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+
+    // Determine if the operation resulted in an insert or an update
+    const action = workoutUpsertResult.upsertedId ? "created" : (workoutUpsertResult.modifiedCount > 0 ? "updated" : "no_change");
+    console.log(`Workout ${activityId} action: ${action}`);
+
+    // 2. Fetch the workout document we just saved/updated to get its _id and final data
+    const savedWorkout = await workoutsCollection.findOne({
       userId: new ObjectId(userId),
       sourceId: activityId,
       source: "strava"
     });
 
-    if (existingWorkout) {
-      // Update existing workout
-      await workoutsCollection.updateOne(
-        { _id: existingWorkout._id },
-        { 
-          $set: {
-            ...workout,
-            updatedAt: new Date()
-          }
-        }
-      );
-      return { success: true, action: "updated" };
-    } else {
-      // Insert new workout
-      await workoutsCollection.insertOne({
-        ...workout,
-        userId: new ObjectId(userId),
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-      return { success: true, action: "created" };
+    if (!savedWorkout) {
+      console.error(`Error: Could not find workout ${activityId} immediately after upsert for user ${userId}. Skipping WorkoutExercise creation.`);
+      // Return success based on the main workout upsert, but log the inconsistency.
+      return { success: true, action: action, warning: "WorkoutExercise link failed" };
     }
+    
+    // 3. Find the corresponding exercise definition ID
+    const exercisesCollection = await getCollection(EXERCISES_COLLECTION);
+    // Use the type from the savedWorkout, which should be the mapped type (e.g., 'running')
+    const exerciseDefinition = await exercisesCollection.findOne({ type: savedWorkout.type }); 
+
+    if (!exerciseDefinition) {
+      console.warn(`Warning: No exercise definition found for type '${savedWorkout.type}' (Workout ID: ${savedWorkout._id}). Cannot create WorkoutExercise link.`);
+      // Proceed, but log the warning
+      return { success: true, action: action, warning: `Missing exercise definition for type ${savedWorkout.type}` };
+    }
+
+    const exerciseId = exerciseDefinition._id;
+
+    // 4. Upsert the WorkoutExercise link
+    const workoutExercisesCollection = await getCollection(WORKOUT_EXERCISES_COLLECTION);
+    await workoutExercisesCollection.updateOne(
+      {
+        workoutId: savedWorkout._id, // Link to the workout
+        exerciseId: exerciseId      // Link to the exercise definition
+        // Note: Assuming workoutId + exerciseId is unique enough for upsert filter for runs
+      },
+      {
+        $set: {
+          userId: savedWorkout.userId,
+          duration: savedWorkout.duration, // Use duration from the saved workout (should be seconds)
+          distance: savedWorkout.distance, // Use distance from the saved workout (should be km)
+          notes: savedWorkout.notes || transformedWorkoutData.description || '', // Use notes from workout if available, else description
+          order: 0, // Runs are typically single-exercise
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+    
+    console.log(`Successfully upserted WorkoutExercise link for Workout ID: ${savedWorkout._id} and Exercise ID: ${exerciseId}`);
+
+    return { success: true, action: action }; // Report overall success
+
   } catch (error) {
     console.error(`Error syncing Strava activity ${activityId}:`, error);
     throw error;
