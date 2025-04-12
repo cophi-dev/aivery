@@ -518,183 +518,233 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       // --- Process the uploaded file ---
       console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
 
-      // Create a controller to timeout the request if needed
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, 55000); // 55 seconds timeout (just under the 60s server limit)
+      // Step 1: Send the blob path to the extraction endpoint
+      setUploadStatus('Starting file extraction...');
+      const processResponse = await fetch('/api/strava/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ blobPathname, originalFilename: file.name })
+      });
+      
+      if (!processResponse.ok) {
+        const responseText = await processResponse.text();
+        console.error(`Import API failed with status ${processResponse.status}:`, responseText);
+        
+        let errorMsg = `Processing failed: Server responded with status ${processResponse.status}.`;
+        try {
+          const errorJson = JSON.parse(responseText);
+          errorMsg = `Processing failed: ${errorJson.error || errorJson.message || responseText}`;
+        } catch {
+          errorMsg = `Processing failed: ${responseText}`;
+        }
+        throw new Error(errorMsg);
+      }
 
+      const extractionData = await processResponse.json();
+      console.log('Extraction API Response:', extractionData);
+
+      if (!extractionData.success) {
+        throw new Error(extractionData.error || "Failed to extract files from archive");
+      }
+      
+      setProgress(40);
+      setUploadStatus('File extraction complete. Starting batch processing...');
+      
+      // Step 2: Process files in batches
+      const { processingId, totalFiles, batchSize = 10 } = extractionData;
+      
+      if (!processingId) {
+        throw new Error("Missing processing ID from server response");
+      }
+      
+      // Show the batch progress
+      setUploadStatus(`Processing ${totalFiles} files in batches...`);
+      
+      let batchIndex = 0;
+      let totalProcessed = 0;
+      let totalImported = 0;
+      let totalErrors = 0;
+      const activityTypesCounts: Record<string, number> = {};
+      let consecutiveErrors = 0;
+      
+      // Process batches until we're done or hit an error
+      let isComplete = false;
+      
+      // Add a safety timeout to prevent infinite loops
+      const startTime = Date.now();
+      const MAX_PROCESSING_TIME = 10 * 60 * 1000; // 10 minutes max total processing time
+      
+      while (!isComplete && (Date.now() - startTime) < MAX_PROCESSING_TIME) {
+        try {
+          setUploadStatus(`Processing batch ${batchIndex + 1}: ${Math.min(batchIndex * batchSize + batchSize, totalFiles)} of ${totalFiles} files...`);
+          setProgress(40 + Math.round((batchIndex * batchSize) / totalFiles * 50));
+          
+          // Use a timeout for each batch request to avoid long-running requests
+          const batchPromise = fetch('/api/strava/process-batch', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              processingId,
+              batchIndex,
+              batchSize 
+            })
+          });
+          
+          // Set a timeout of 55 seconds for each batch
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Batch processing timed out after 55 seconds")), 55000);
+          });
+          
+          // Race the batch request against the timeout
+          const batchResponse = await Promise.race([batchPromise, timeoutPromise]) as Response;
+          
+          if (!batchResponse.ok) {
+            throw new Error(`Batch ${batchIndex} processing failed: ${batchResponse.status}`);
+          }
+          
+          const batchData = await batchResponse.json();
+          console.log(`Batch ${batchIndex} completed:`, batchData);
+          
+          if (!batchData.success) {
+            throw new Error(batchData.error || `Failed to process batch ${batchIndex}`);
+          }
+          
+          // Reset consecutive errors counter on success
+          consecutiveErrors = 0;
+          
+          // Update counters
+          totalProcessed += batchData.processed || 0;
+          totalImported += batchData.imported || 0;
+          totalErrors += batchData.errors || 0;
+          
+          // Update activity type counts
+          if (batchData.activityTypes) {
+            Object.entries(batchData.activityTypes).forEach(([type, count]) => {
+              activityTypesCounts[type] = (activityTypesCounts[type] || 0) + (count as number);
+            });
+          }
+          
+          // Check if we have more batches
+          if (batchData.nextBatch !== null) {
+            batchIndex = batchData.nextBatch;
+          } else {
+            isComplete = true;
+          }
+          
+          // Show progress
+          const progress = batchData.progress;
+          if (progress) {
+            setUploadStatus(`Processed ${progress.processed} of ${progress.total} files (${progress.imported} imported, ${progress.errors} errors)`);
+          }
+        } catch (batchError: any) {
+          console.error('Error processing batch:', batchError);
+          
+          // Increment consecutive errors counter
+          consecutiveErrors++;
+          
+          // Check if we have an authentication error
+          if (batchError.message?.includes('Authentication') || batchError.message?.includes('Unauthorized')) {
+            throw new Error("Authentication error during processing. Please try again.");
+          }
+          
+          // Handle timeout specifically
+          if (batchError.message?.includes('timed out')) {
+            console.warn(`Batch ${batchIndex} timed out. Moving to next batch...`);
+            // Don't count all files as errors, we'll check progress on the next batch
+            batchIndex++; // Move to next batch
+            continue;
+          }
+          
+          // For other errors, we can try to continue with the next batch
+          totalErrors += 1; // Only increment by 1 for the batch error, not all files
+          batchIndex++; // Move to next batch
+          
+          // But if we've had 3 consecutive batch failures, stop
+          if (consecutiveErrors >= 3) {
+            throw new Error(`Multiple batch processing errors (${consecutiveErrors} consecutive failures). Last error: ${batchError.message}`);
+          }
+          
+          // Show warning about errors but continue
+          toast({
+            title: "Processing Warning",
+            description: `Encountered an error in batch ${batchIndex}, but continuing with remaining batches.`,
+            variant: "destructive",
+            duration: 5000,
+          });
+        }
+      }
+      
+      // Check if we timed out on the overall process
+      if (!isComplete && (Date.now() - startTime) >= MAX_PROCESSING_TIME) {
+        throw new Error(`Overall processing timed out after ${MAX_PROCESSING_TIME/60000} minutes. Some files may not have been imported.`);
+      }
+      
+      setProgress(95);
+      setUploadStatus('Processing complete. Finalizing results...');
+      
+      // Get final status
       try {
-        // Step 1: Initialize the processing job
-        const processResponse = await fetch('/api/strava/import', {
-          method: 'POST',
+        const finalStatusResponse = await fetch(`/api/strava/batch-status?processingId=${processingId}`, {
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-              blobPathname: blobPathname,
-              originalFilename: file.name 
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId); // Clear timeout if response received
-        
-        // Check for auth issues first
-        if (processResponse.status === 401) {
-          throw new Error("Authentication error. Please log in again and retry.");
-        }
-
-        if (!processResponse.ok) {
-          const responseText = await processResponse.text().catch(() => "Could not read error response body.");
-          let errorMsg = `Processing failed: Server responded with status ${processResponse.status}.`;
-          try {
-            const errorJson = JSON.parse(responseText);
-            errorMsg = `Processing failed: ${errorJson.error || errorJson.message || responseText}`;
-          } catch {
-            errorMsg = `Processing failed: ${responseText}`;
           }
-          throw new Error(errorMsg);
-        }
-
-        const extractionData = await processResponse.json();
-        console.log('Extraction API Response:', extractionData);
-
-        if (!extractionData.success) {
-          throw new Error(extractionData.error || "Failed to extract files from archive");
-        }
+        });
         
-        setProgress(40);
-        setUploadStatus('File extraction complete. Starting batch processing...');
-        
-        // Step 2: Process files in batches
-        const { processingId, totalFiles, batchSize = 10 } = extractionData;
-        
-        if (!processingId) {
-          throw new Error("Missing processing ID from server response");
-        }
-        
-        // Show the batch progress
-        setUploadStatus(`Processing ${totalFiles} files in batches...`);
-        
-        let batchIndex = 0;
-        let totalProcessed = 0;
-        let totalImported = 0;
-        let totalErrors = 0;
-        const activityTypesCounts: Record<string, number> = {};
-        
-        // Process batches until we're done or hit an error
-        let isComplete = false;
-        while (!isComplete) {
-          try {
-            setUploadStatus(`Processing batch ${batchIndex + 1}: ${Math.min(batchIndex * batchSize + batchSize, totalFiles)} of ${totalFiles} files...`);
-            setProgress(40 + Math.round((batchIndex * batchSize) / totalFiles * 50));
+        if (finalStatusResponse.ok) {
+          const finalStatus = await finalStatusResponse.json();
+          console.log('Final import status:', finalStatus);
+          
+          if (finalStatus.success && finalStatus.stats) {
+            // Update with accurate stats if available
+            totalProcessed = finalStatus.stats.processed || totalProcessed;
+            totalImported = finalStatus.stats.imported || totalImported;
+            totalErrors = finalStatus.stats.errors || totalErrors;
             
-            const batchResponse = await fetch('/api/strava/process-batch', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ 
-                processingId,
-                batchIndex,
-                batchSize 
-              })
-            });
-            
-            if (!batchResponse.ok) {
-              throw new Error(`Batch ${batchIndex} processing failed: ${batchResponse.status}`);
-            }
-            
-            const batchData = await batchResponse.json();
-            console.log(`Batch ${batchIndex} completed:`, batchData);
-            
-            if (!batchData.success) {
-              throw new Error(batchData.error || `Failed to process batch ${batchIndex}`);
-            }
-            
-            // Update counters
-            totalProcessed += batchData.processed || 0;
-            totalImported += batchData.imported || 0;
-            totalErrors += batchData.errors || 0;
-            
-            // Update activity type counts
-            if (batchData.activityTypes) {
-              Object.entries(batchData.activityTypes).forEach(([type, count]) => {
-                activityTypesCounts[type] = (activityTypesCounts[type] || 0) + (count as number);
+            if (finalStatus.stats.activityTypes) {
+              Object.entries(finalStatus.stats.activityTypes).forEach(([type, count]) => {
+                activityTypesCounts[type] = count as number;
               });
             }
-            
-            // Check if we have more batches
-            if (batchData.nextBatch !== null) {
-              batchIndex = batchData.nextBatch;
-            } else {
-              isComplete = true;
-            }
-            
-            // Show progress
-            const progress = batchData.progress;
-            if (progress) {
-              setUploadStatus(`Processed ${progress.processed} of ${progress.total} files (${progress.imported} imported, ${progress.errors} errors)`);
-            }
-          } catch (batchError: any) {
-            console.error('Error processing batch:', batchError);
-            
-            // Check if we have an authentication error
-            if (batchError.message?.includes('Authentication') || batchError.message?.includes('Unauthorized')) {
-              throw new Error("Authentication error during processing. Please try again.");
-            }
-            
-            // For other errors, we can try to continue with the next batch
-            totalErrors += batchSize; // Assume all files in this batch failed
-            batchIndex++; // Move to next batch
-            
-            // But if we've had 3 consecutive batch failures, stop
-            if (batchIndex >= 3 && totalImported === 0) {
-              throw new Error(`Multiple batch processing errors. Last error: ${batchError.message}`);
-            }
           }
         }
-        
-        setProgress(95);
-        setUploadStatus('Processing complete. Finalizing results...');
-        
-        // Final completion
-        const summaryStats: ImportStats = {
-          count: totalImported,
-          types: activityTypesCounts,
-          earliestDate: '', // We don't have this info from batch processing
-          latestDate: '',
-          totalDistance: 0,
-          totalDuration: 0,
-        };
-        setUploadStats(summaryStats);
-        
-        let description = `Processed ${totalProcessed} files, successfully imported ${totalImported} workouts.`;
-        if (totalErrors > 0) {
-          description += ` ${totalErrors} file(s) could not be imported. Check browser console for details.`;
-        }
-        
-        toast({
-          title: "Import Complete",
-          description: description,
-          duration: 8000,
-        });
-        
-        setUploadStatus('Import completed successfully.');
-        setProgress(100);
-        setFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        if (onImportComplete) onImportComplete();
-
-      } catch (error: any) {
-        // Handle timeout errors specially
-        if (error && error.name === 'AbortError') {
-          console.error('Processing request timed out after 55 seconds');
-          throw new Error('Processing timed out. The file may be too large or the server is busy. Please try again later or with a smaller file.');
-        }
-        throw error; // Re-throw for the outer catch block
+      } catch (error) {
+        console.error('Error getting final status:', error);
+        // Continue with the stats we have
       }
+      
+      // Final completion
+      const summaryStats: ImportStats = {
+        count: totalImported,
+        types: activityTypesCounts,
+        earliestDate: '', // We don't have this info from batch processing
+        latestDate: '',
+        totalDistance: 0,
+        totalDuration: 0,
+      };
+      setUploadStats(summaryStats);
+      
+      let description = `Processed ${totalProcessed} files, successfully imported ${totalImported} workouts.`;
+      if (totalErrors > 0) {
+        description += ` ${totalErrors} file(s) could not be imported. Check logs for details.`;
+      }
+      
+      toast({
+        title: "Import Complete",
+        description: description,
+        duration: 8000,
+      });
+      
+      setUploadStatus('Import completed successfully.');
+      setProgress(100);
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (onImportComplete) onImportComplete();
+
     } catch (error) {
       // --- Error handling (catches errors from all steps) ---
       console.error('Upload process error:', error);
