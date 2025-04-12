@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
         
         // Store processing state in a temporary file
         const processingStatePath = path.join(tempDir, 'processing-state.json');
-        await fs.writeFile(processingStatePath, JSON.stringify({
+        const processingState = {
             userId,
             processingId,
             originalFilename,
@@ -262,7 +262,24 @@ export async function POST(request: NextRequest) {
             importedFiles: [],
             errorFiles: [],
             status: 'ready'
-        }));
+        };
+        
+        // Store the processing state both in the filesystem and in MongoDB for persistence
+        await fs.writeFile(processingStatePath, JSON.stringify(processingState));
+        
+        // Also store in MongoDB for persistence across function calls
+        try {
+            const db = await getDatabase();
+            await db.collection('strava_import_state').updateOne(
+                { processingId },
+                { $set: processingState },
+                { upsert: true }
+            );
+            console.log('Processing state stored in MongoDB');
+        } catch (dbError) {
+            console.error('Error storing processing state in database:', dbError);
+            // Continue even if DB storage fails - we'll still have the file
+        }
         
         // Delete the original ZIP file since we don't need it anymore
         await fs.unlink(tempFilePath);

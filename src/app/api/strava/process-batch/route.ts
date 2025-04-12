@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { gunzip as gunzipCb } from 'zlib'
 import { promisify } from 'util'
 import { promises as fs } from 'fs'
+import * as fsSync from 'fs'
 import path from 'path'
 import os from 'os'
 
@@ -176,17 +177,46 @@ export async function POST(request: NextRequest) {
     const tempDir = path.join(process.env.TMPDIR || os.tmpdir(), `strava-import-${processingId}`)
     const processingStatePath = path.join(tempDir, 'processing-state.json')
     
-    // Check if the processing state file exists
+    // Try to get state from MongoDB first (more reliable across function calls)
+    let state;
     try {
-      await fs.access(processingStatePath)
-    } catch (error) {
-      console.error('Processing state file not found:', processingStatePath)
-      return NextResponse.json({ success: false, error: "Processing state not found. Import may have expired." }, { status: 404 })
+      // Get from MongoDB
+      const db = await (await import('@/lib/db/mongodb')).getDatabase()
+      const dbState = await db.collection('strava_import_state').findOne({ processingId })
+      
+      if (dbState) {
+        console.log('Found processing state in MongoDB')
+        state = dbState
+      } else {
+        // Fall back to local file if not in MongoDB
+        console.log('Processing state not found in MongoDB, trying local file')
+        
+        // Check if the processing state file exists
+        try {
+          await fs.access(processingStatePath)
+          // Load from file
+          const stateContent = await fs.readFile(processingStatePath, 'utf-8')
+          state = JSON.parse(stateContent)
+          console.log('Found processing state in local file')
+        } catch (fileError) {
+          console.error('Processing state file not found:', processingStatePath)
+          return NextResponse.json({ success: false, error: "Processing state not found. Import may have expired." }, { status: 404 })
+        }
+      }
+    } catch (dbError) {
+      console.error('Error fetching processing state from database:', dbError)
+      
+      // Fall back to local file
+      try {
+        await fs.access(processingStatePath)
+        const stateContent = await fs.readFile(processingStatePath, 'utf-8')
+        state = JSON.parse(stateContent)
+        console.log('Fell back to local file for processing state')
+      } catch (fileError) {
+        console.error('Processing state file not found after database error:', processingStatePath)
+        return NextResponse.json({ success: false, error: "Processing state not found in database or filesystem. Import may have expired." }, { status: 404 })
+      }
     }
-    
-    // Load the processing state
-    const stateContent = await fs.readFile(processingStatePath, 'utf-8')
-    const state = JSON.parse(stateContent)
     
     // Verify this is the user's import
     if (state.userId !== userId) {
@@ -479,7 +509,34 @@ export async function POST(request: NextRequest) {
     
     // Update the processing state
     state.status = endIndex >= activityFiles.length ? 'completed' : 'processing'
-    await fs.writeFile(processingStatePath, JSON.stringify(state))
+    
+    // Save state back to both file system (if available) and MongoDB
+    try {
+      await fs.writeFile(processingStatePath, JSON.stringify(state))
+      console.log('Updated state in filesystem')
+    } catch (fsError) {
+      console.error('Could not update state file:', fsError)
+      // Continue - we'll save to MongoDB anyway
+    }
+    
+    // Always update MongoDB state as the reliable source
+    try {
+      const db = await (await import('@/lib/db/mongodb')).getDatabase()
+      await db.collection('strava_import_state').updateOne(
+        { processingId },
+        { $set: state }
+      )
+      console.log('Updated state in MongoDB')
+    } catch (dbError) {
+      console.error('Error updating state in MongoDB:', dbError)
+      // If we also failed to update the file, this is a serious error
+      if (!fsSync.existsSync(processingStatePath)) {
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to save processing state to both filesystem and database'
+        }, { status: 500 })
+      }
+    }
     
     // Check if all batches are complete
     const isComplete = endIndex >= activityFiles.length
@@ -541,17 +598,46 @@ export async function GET(request: NextRequest) {
     const tempDir = path.join(process.env.TMPDIR || os.tmpdir(), `strava-import-${processingId}`)
     const processingStatePath = path.join(tempDir, 'processing-state.json')
     
-    // Check if the processing state file exists
+    // Try to get state from MongoDB first
+    let state;
     try {
-      await fs.access(processingStatePath)
-    } catch (error) {
-      console.error('Processing state file not found:', processingStatePath)
-      return NextResponse.json({ success: false, error: "Processing state not found. Import may have expired." }, { status: 404 })
+      // Get from MongoDB
+      const db = await (await import('@/lib/db/mongodb')).getDatabase()
+      const dbState = await db.collection('strava_import_state').findOne({ processingId })
+      
+      if (dbState) {
+        console.log('Found processing state in MongoDB')
+        state = dbState
+      } else {
+        // Fall back to local file if not in MongoDB
+        console.log('Processing state not found in MongoDB, trying local file')
+        
+        // Check if the processing state file exists
+        try {
+          await fs.access(processingStatePath)
+          // Load from file
+          const stateContent = await fs.readFile(processingStatePath, 'utf-8')
+          state = JSON.parse(stateContent)
+          console.log('Found processing state in local file')
+        } catch (fileError) {
+          console.error('Processing state file not found:', processingStatePath)
+          return NextResponse.json({ success: false, error: "Processing state not found. Import may have expired." }, { status: 404 })
+        }
+      }
+    } catch (dbError) {
+      console.error('Error fetching processing state from database:', dbError)
+      
+      // Fall back to local file
+      try {
+        await fs.access(processingStatePath)
+        const stateContent = await fs.readFile(processingStatePath, 'utf-8')
+        state = JSON.parse(stateContent)
+        console.log('Fell back to local file for processing state')
+      } catch (fileError) {
+        console.error('Processing state file not found after database error:', processingStatePath)
+        return NextResponse.json({ success: false, error: "Processing state not found in database or filesystem. Import may have expired." }, { status: 404 })
+      }
     }
-    
-    // Load the processing state
-    const stateContent = await fs.readFile(processingStatePath, 'utf-8')
-    const state = JSON.parse(stateContent)
     
     // Verify this is the user's import
     if (state.userId !== userId) {
