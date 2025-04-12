@@ -331,7 +331,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
 
     try {
       // Generate a unique ID for this upload
-      const fileId = uuidv4();
+      const timestamp = Date.now();
+      const fileId = `${timestamp}-${uuidv4()}`;
       
       // Determine chunk size - 2MB per chunk to stay well under the 4.5MB limit
       const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks

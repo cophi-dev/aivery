@@ -38,7 +38,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const blob = await put(blobPath, ' ', { // Use a single space as minimal placeholder content
       access: 'public', // Required for client-side PUT URL generation
       contentType: 'application/zip',
-      addRandomSuffix: false
+      addRandomSuffix: false,
+      allowOverwrite: true
     });
 
     console.log('Generated blob storage URL:', blob.url);

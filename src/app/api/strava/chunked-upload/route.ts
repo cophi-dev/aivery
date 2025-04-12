@@ -132,6 +132,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             access: 'public',
             contentType: 'application/zip',
             addRandomSuffix: false,
+            allowOverwrite: true,
           });
           
           console.log(`Completed upload. Final size: ${totalLength} bytes. Path: ${completedBlob.url}`);
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         access: 'public',
         contentType: 'application/octet-stream', // Use generic binary format for chunks
         addRandomSuffix: false,
+        allowOverwrite: true,
       });
       
       console.log(`Saved chunk ${chunkIndex + 1}/${totalChunks} to ${chunkPath}`);
