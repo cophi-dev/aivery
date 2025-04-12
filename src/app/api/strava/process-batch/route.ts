@@ -18,167 +18,199 @@ export const maxDuration = 60 // Set max duration to 60s (Hobby plan limit)
 
 const gunzipAsync = promisify(gunzipCb)
 
-// Simple implementation of processFitFile
+// Implementation of processFitFile that worked in previous commit
 async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
   try {
-    console.log(`Processing FIT file: ${fileName} (${buffer.length} bytes)`);
+    console.log(`Processing FIT file: ${fileName}, size: ${buffer.length} bytes`);
     
-    // For FIT files, parse actual binary content instead of using defaults
-    // Very basic parser to extract key data fields
+    // For decompressed FIT files (if already decompressed)
+    // Note this function might be called after gunzip if the file was .fit.gz
     
-    // Initial binary pattern recognition for FIT file structures
-    // Look for common patterns in FIT file's binary data
+    // First, try to extract a rudimentary timestamp from the FIT file headers
+    // FIT files usually have a header timestamp field near the start of the file
     
-    let timestamp = null;
-    let duration = null;
-    let distance = null;
-    let activityType = 'unknown';
+    // Very basic header check - we're looking for the FIT signature
+    const isFitFile = buffer.length > 12 && 
+                      buffer.readUInt8(8) === 0x2E && // '.'
+                      buffer.readUInt8(9) === 0x46 && // 'F'
+                      buffer.readUInt8(10) === 0x49 && // 'I'
+                      buffer.readUInt8(11) === 0x54; // 'T'
     
-    // Scan for timestamp record (typically near the beginning of the file)
-    const timestampPattern = Buffer.from([0x10, 0x44]); // Common FIT timestamp pattern
-    const timestampIndex = buffer.indexOf(timestampPattern);
-    if (timestampIndex > 0 && timestampIndex + 8 < buffer.length) {
-      // Extract Unix timestamp (4 bytes after pattern in many FIT files)
-      const timeSecs = buffer.readUInt32LE(timestampIndex + 4);
-      if (timeSecs > 1000000000 && timeSecs < 2000000000) { // Sanity check: timestamp between 2001-2033
-        timestamp = new Date(timeSecs * 1000);
-        console.log(`Found timestamp in FIT binary: ${timestamp.toISOString()}`);
-      }
+    if (!isFitFile) {
+      console.warn(`File does not appear to be a valid FIT file: ${fileName}`);
     }
     
-    // Look for activity type in the file (often stored as enum value)
-    // Common sport type enums in FIT files: 1=running, 2=cycling, 5=swimming
-    const sportTypePattern = Buffer.from([0x12, 0x00]); // Sport field identifier
-    const sportTypeIndex = buffer.indexOf(sportTypePattern);
-    if (sportTypeIndex > 0 && sportTypeIndex + 3 < buffer.length) {
-      const sportType = buffer[sportTypeIndex + 3];
-      if (sportType === 1) {
-        activityType = 'running';
-      } else if (sportType === 2) {
-        activityType = 'cycling';
-      } else if (sportType === 5) {
-        activityType = 'swimming';
-      } else if (sportType === 11) {
-        activityType = 'walking';
-      }
-      console.log(`Found activity type in FIT binary: ${activityType} (enum: ${sportType})`);
+    // Create default workout data that gets overridden by extraction
+    const workout: any = {
+      date: new Date(),
+      duration: 0,
+      distance: 0,
+      type: 'other',
+      title: `Activity imported from ${fileName}`,
+      sport: 'other',
+      sub_sport: undefined
+    };
+    
+    // Try to extract activity type from filename if not found in file
+    const fileNameLower = fileName.toLowerCase();
+    if (fileNameLower.includes('run')) {
+      workout.type = 'running';
+      workout.sport = 'running';
+    } else if (fileNameLower.includes('ride') || fileNameLower.includes('cycling')) {
+      workout.type = 'cycling';
+      workout.sport = 'cycling';
+    } else if (fileNameLower.includes('swim')) {
+      workout.type = 'swimming';
+      workout.sport = 'swimming';
+    } else if (fileNameLower.includes('walk')) {
+      workout.type = 'walking';
+      workout.sport = 'walking';
+    } else if (fileNameLower.includes('hike')) {
+      workout.type = 'hiking';
+      workout.sport = 'hiking';
     }
     
-    // If not found in binary, try filename
-    if (activityType === 'unknown') {
-      if (fileName.toLowerCase().includes('run')) {
-        activityType = 'running';
-      } else if (fileName.toLowerCase().includes('ride') || fileName.toLowerCase().includes('cycling')) {
-        activityType = 'cycling';
-      } else if (fileName.toLowerCase().includes('swim')) {
-        activityType = 'swimming';
-      } else if (fileName.toLowerCase().includes('hike') || fileName.toLowerCase().includes('walk')) {
-        activityType = 'walking';
-      } else if (fileName.toLowerCase().includes('weight') || fileName.toLowerCase().includes('strength')) {
-        activityType = 'strength';
-      }
-      console.log(`Determined activity type from filename: ${activityType}`);
+    // Extract Strava ID from filename to help with deduplication
+    const idMatch = fileName.match(/(\d{5,})/);
+    if (idMatch) {
+      workout.id = idMatch[1];
     }
     
-    // Look for duration field (total elapsed time)
-    // Several patterns to try since FIT format can vary
-    const durationPatterns = [
-      Buffer.from([0x13, 0x00, 0x04]), // Common duration pattern v1
-      Buffer.from([0x08, 0x04, 0x86])  // Common duration pattern v2
-    ];
+    // Simple approach to find standard record fields in FIT files
+    // This will be hit or miss without a proper FIT parser but can catch some common formats
     
-    for (const pattern of durationPatterns) {
-      const durIndex = buffer.indexOf(pattern);
-      if (durIndex > 0 && durIndex + 6 < buffer.length) {
-        // Try to extract duration in seconds (usually stored as uint32)
-        const durValue = buffer.readUInt32LE(durIndex + 3);
-        if (durValue > 0 && durValue < 86400) { // Sanity check: 0-24 hours
-          duration = durValue;
-          console.log(`Found duration in FIT binary: ${duration} seconds`);
-          break;
+    // Look for timestamps (UNIX timestamps are often stored as 4-byte uint32s)
+    for (let i = 0; i < buffer.length - 8; i++) {
+      // Look for records with a timestamp field (typical encoding in FIT)
+      if (buffer[i] === 0x00 && buffer[i+1] === 0x01) {
+        try {
+          const timestamp = buffer.readUInt32LE(i+2);
+          // Simple validation - timestamps should be between 2010-2030
+          if (timestamp > 1262304000 && timestamp < 1900000000) {
+            workout.date = new Date(timestamp * 1000);
+            console.log(`Found timestamp: ${workout.date.toISOString()}`);
+            break;
+          }
+        } catch (e) {
+          // Ignore read errors
         }
       }
     }
     
-    // Look for distance field
-    const distancePatterns = [
-      Buffer.from([0x05, 0x00, 0x84]), // Common distance pattern
-      Buffer.from([0x07, 0x84])        // Alternate distance pattern
-    ];
-    
-    for (const pattern of distancePatterns) {
-      const distIndex = buffer.indexOf(pattern);
-      if (distIndex > 0 && distIndex + 6 < buffer.length) {
-        // Try to extract distance in meters (usually stored as uint32)
-        const distValue = buffer.readUInt32LE(distIndex + pattern.length);
-        if (distValue > 0 && distValue < 1000000) { // Sanity check: 0-1000km
-          distance = distValue;
-          console.log(`Found distance in FIT binary: ${distance} meters`);
-          break;
+    // Look for activity duration (often 4-byte float or uint32)
+    for (let i = 0; i < buffer.length - 8; i++) {
+      // Common pattern for duration fields
+      if ((buffer[i] === 0x00 && buffer[i+1] === 0x02) || 
+          (buffer[i] === 0x12 && buffer[i+1] === 0x00)) {
+        try {
+          const duration = buffer.readUInt32LE(i+2);
+          // Simple validation - between 1 minute and 24 hours
+          if (duration > 60 && duration < 86400) {
+            workout.duration = duration;
+            console.log(`Found duration: ${duration} seconds`);
+            break;
+          }
+        } catch (e) {
+          // Ignore read errors
         }
       }
     }
     
-    // Check if we have the essential fields, otherwise don't extract from filename
-    if (!timestamp) {
-      // If no timestamp in binary, try extract from filename as last resort
+    // Look for distance field (often 4-byte float)
+    for (let i = 0; i < buffer.length - 8; i++) {
+      // Common pattern for distance fields
+      if ((buffer[i] === 0x00 && buffer[i+1] === 0x03) || 
+          (buffer[i] === 0x07 && buffer[i+1] === 0x00)) {
+        try {
+          const distance = buffer.readFloatLE(i+2);
+          // Simple validation - reasonable distance (0-500 km)
+          if (distance > 0 && distance < 500000) {
+            workout.distance = distance;
+            console.log(`Found distance: ${distance} meters`);
+            break;
+          }
+        } catch (e) {
+          // Ignore read errors
+        }
+      }
+    }
+    
+    // Final validation - if we have timestamp and duration, that's enough
+    // Otherwise extract timestamp from the filename
+    if (!workout.date || workout.date.toString() === "Invalid Date") {
+      // Try to extract date from filename
       const dateMatch = fileName.match(/(\d{4}-\d{2}-\d{2})|(\d{8})/);
       if (dateMatch) {
         const dateStr = dateMatch[0];
         if (dateStr.includes('-')) {
-          timestamp = new Date(dateStr);
+          workout.date = new Date(dateStr);
         } else {
           // Format like 20220315
           const year = parseInt(dateStr.substring(0, 4));
           const month = parseInt(dateStr.substring(4, 6)) - 1;
           const day = parseInt(dateStr.substring(6, 8));
-          timestamp = new Date(year, month, day);
+          workout.date = new Date(year, month, day);
         }
-        console.log(`Extracted date from filename: ${timestamp.toISOString()}`);
-      } else {
-        // Extract Strava ID from filename and generate a date from it
-        const idMatch = fileName.match(/(\d{5,})/);
-        if (idMatch) {
-          const id = parseInt(idMatch[1]);
-          // Only if ID looks like a valid timestamp (>2010)
-          if (id > 1262304000) { // Unix timestamp for 2010-01-01
-            timestamp = new Date(id * 1000);
-            if (timestamp > new Date()) {
-              // If future date, adjust to a past date
-              timestamp = new Date(Date.now() - 86400000 * (id % 30)); // 1-30 days ago
-            }
-            console.log(`Generated date from Strava ID: ${timestamp.toISOString()}`);
-          } else {
-            // If not timestamp-like, do not set a timestamp
-            console.log(`No valid timestamp found and couldn't extract from filename`);
-          }
-        }
+        console.log(`Extracted date from filename: ${workout.date.toISOString()}`);
       }
     }
     
-    // Stop here if we're still missing key data
-    if (!timestamp || !duration) {
-      console.error(`FIT file missing required data: timestamp=${!!timestamp}, duration=${!!duration}`);
-      throw new Error(`Strava FIT file is missing required data: timestamp=${!!timestamp}, duration=${!!duration}`);
+    // If we still don't have a valid date, use the Strava ID if it looks like a timestamp
+    if ((!workout.date || workout.date.toString() === "Invalid Date") && workout.id) {
+      const id = parseInt(workout.id);
+      if (id > 1262304000) { // After 2010-01-01
+        workout.date = new Date(id * 1000);
+        console.log(`Derived date from Strava ID: ${workout.date.toISOString()}`);
+      }
     }
     
-    // Create a workout with extracted values
-    return {
-      type: activityType,
-      date: timestamp,
-      duration: duration,
-      distance: distance,
-      calories: duration ? Math.round(duration / 60 * 10) : undefined, // Only if we have duration
-      average_speed: (distance && duration) ? (distance / duration) : undefined, // Only if we have both
-      max_speed: (distance && duration) ? (distance / duration) * 1.5 : undefined, // Only if we have both
-      avg_heart_rate: undefined, // Don't set unless found in data
-      max_heart_rate: undefined, // Don't set unless found in data
-      title: timestamp ? `Activity from ${timestamp.toISOString().split('T')[0]}` : undefined,
-      description: `Imported from ${fileName}`,
-      total_elevation_gain: undefined, // Don't set unless found in data
-      workout_type: null,
-      sport_type: activityType
+    // If we couldn't extract duration, use a reasonable estimate based on distance
+    if (!workout.duration && workout.distance) {
+      // Estimate pace based on activity type
+      let paceSecPerKm = 0;
+      if (workout.type === 'running') {
+        paceSecPerKm = 300; // 5:00 min/km
+      } else if (workout.type === 'cycling') {
+        paceSecPerKm = 120; // 2:00 min/km (30 km/h)
+      } else if (workout.type === 'swimming') {
+        paceSecPerKm = 1000; // 16:40 min/km
+      } else if (workout.type === 'walking' || workout.type === 'hiking') {
+        paceSecPerKm = 720; // 12:00 min/km
+      } else {
+        paceSecPerKm = 360; // 6:00 min/km default
+      }
+      
+      workout.duration = Math.round((workout.distance / 1000) * paceSecPerKm);
+      console.log(`Estimated duration from distance: ${workout.duration} seconds`);
+    }
+    
+    // Create a more comprehensive workout object
+    const result = {
+      type: workout.type,
+      date: workout.date,
+      duration: workout.duration,
+      distance: workout.distance,
+      calories: workout.duration ? Math.round(workout.duration / 60 * 10) : 300, // 10 cal per minute estimate
+      average_speed: (workout.distance && workout.duration) ? workout.distance / workout.duration : 0,
+      max_speed: (workout.distance && workout.duration) ? (workout.distance / workout.duration) * 1.3 : 0, // +30% estimate
+      avg_heart_rate: workout.avg_heart_rate || 0,
+      max_heart_rate: workout.max_heart_rate || 0,
+      title: workout.title || `Activity on ${workout.date.toISOString().split('T')[0]}`,
+      description: workout.description || `Imported from ${fileName}`,
+      total_elevation_gain: workout.total_elevation_gain || 0,
+      sport_type: workout.sport,
+      workout_type: null
     };
+    
+    console.log('Successfully extracted FIT data:', {
+      type: result.type,
+      date: result.date,
+      duration: result.duration,
+      distance: result.distance
+    });
+    
+    return result;
+    
   } catch (error) {
     console.error(`Error processing FIT file ${fileName}:`, error);
     throw new Error(`Failed to process FIT file: ${error instanceof Error ? error.message : String(error)}`);
@@ -190,343 +222,236 @@ async function processGpxFile(buffer: Buffer, fileName: string): Promise<any> {
   try {
     console.log(`Processing GPX file: ${fileName} (${buffer.length} bytes)`);
     
-    // Try to parse some basic info from the GPX XML
-    let timestamp = new Date();
-    let activityType = 'unknown';
-    let duration = 0; // Start with 0 and try to calculate from data
-    let distance = 0; // Start with 0 and try to calculate from data
+    // Use xml2js instead of gpxparser (which has browser dependencies)
+    const xml2js = await import('xml2js');
+    const parser = new xml2js.Parser({ explicitArray: false });
     
-    // Try to extract the timestamp and type from XML
+    // Parse the GPX data
     try {
-      const gpxStr = buffer.toString('utf-8');
+      const gpxData = await parser.parseStringPromise(buffer.toString('utf-8'));
+      console.log('Successfully parsed GPX data');
       
-      // Log basic info for debugging
-      console.log(`GPX file content length: ${gpxStr.length} bytes`);
+      if (!gpxData.gpx || !gpxData.gpx.trk) {
+        console.warn(`No track data found in GPX file: ${fileName}`);
+        return null;
+      }
       
-      // Extract timestamp - try multiple approaches
-      // 1. First try to get from metadata (most reliable)
-      const metadataTimeMatch = gpxStr.match(/<metadata[^>]*>[\s\S]*?<time>(.*?)<\/time>[\s\S]*?<\/metadata>/i);
-      if (metadataTimeMatch && metadataTimeMatch[1]) {
+      // Extract track data
+      const track = gpxData.gpx.trk;
+      const trackName = track.name || '';
+      
+      // Handle different track point structures
+      let trackPoints = track.trkseg && track.trkseg.trkpt ? 
+                       (Array.isArray(track.trkseg.trkpt) ? track.trkseg.trkpt : [track.trkseg.trkpt]) : 
+                       [];
+      
+      // Handle case where there might be multiple track segments
+      if (track.trkseg && Array.isArray(track.trkseg)) {
+        trackPoints = track.trkseg.reduce((points: any[], seg: any) => {
+          if (seg.trkpt) {
+            const segPoints = Array.isArray(seg.trkpt) ? seg.trkpt : [seg.trkpt];
+            return points.concat(segPoints);
+          }
+          return points;
+        }, []);
+      }
+      
+      console.log(`Found ${trackPoints.length} track points in GPX file`);
+      
+      if (trackPoints.length === 0) {
+        console.warn(`No track points found in GPX file: ${fileName}`);
+        return null;
+      }
+      
+      // Try to get start and end times
+      const currentTime = new Date();
+      // Using a fallback date based on filename if needed
+      let fallbackDate = new Date();
+      const idMatch = fileName.match(/(\d+)/);
+      if (idMatch) {
+        // Try to derive a date from the filename number
+        const numericValue = parseInt(idMatch[1]);
+        if (!isNaN(numericValue) && numericValue > 1000000000) {
+          // Looks like a unix timestamp or big number
+          fallbackDate = new Date(numericValue * 1000);
+          if (fallbackDate > currentTime || fallbackDate < new Date('2005-01-01')) {
+            fallbackDate = new Date(); // Reset if clearly invalid
+          }
+        }
+      }
+      
+      // Check if any track points have valid time
+      const hasValidTimes = trackPoints.some((p: any) => {
         try {
-          const parsedTime = new Date(metadataTimeMatch[1]);
-          if (!isNaN(parsedTime.getTime())) {
-            timestamp = parsedTime;
-            console.log(`Found timestamp in metadata: ${timestamp.toISOString()}`);
-          }
-        } catch (e) {
-          console.warn(`Failed to parse metadata timestamp: ${metadataTimeMatch[1]}`);
+          return p.time && !isNaN(new Date(p.time).getTime());
+        } catch {
+          return false;
         }
-      }
+      });
       
-      // 2. If metadata time not found, try first track time
-      if (isNaN(timestamp.getTime())) {
-        const timeMatch = gpxStr.match(/<time>(.*?)<\/time>/i);
-        if (timeMatch && timeMatch[1]) {
-          try {
-            const parsedTime = new Date(timeMatch[1]);
-            if (!isNaN(parsedTime.getTime())) {
-              timestamp = parsedTime;
-              console.log(`Found timestamp in first time tag: ${timestamp.toISOString()}`);
-            }
-          } catch (e) {
-            console.warn(`Failed to parse first time tag: ${timeMatch[1]}`);
-          }
-        }
-      }
+      let startTime: Date = fallbackDate;
+      let endTime: Date = new Date(fallbackDate.getTime() + 3600000); // 1 hour later
       
-      // 3. If all else fails, try to extract from filename
-      if (isNaN(timestamp.getTime())) {
-        const dateMatch = fileName.match(/(\d{4}[-_]?\d{2}[-_]?\d{2})|(\d{8})/);
-        if (dateMatch) {
+      if (hasValidTimes) {
+        // Find first valid time point
+        for (const point of trackPoints) {
           try {
-            const dateStr = dateMatch[0].replace(/[-_]/g, '');
-            if (dateStr.length >= 8) {
-              const year = parseInt(dateStr.substring(0, 4));
-              const month = parseInt(dateStr.substring(4, 6)) - 1;
-              const day = parseInt(dateStr.substring(6, 8));
-              
-              if (year >= 2010 && year <= 2030 && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
-                timestamp = new Date(year, month, day);
-                console.log(`Extracted date from filename: ${timestamp.toISOString()}`);
+            if (point.time) {
+              const pointTime = new Date(point.time);
+              if (!isNaN(pointTime.getTime())) {
+                startTime = pointTime;
+                break;
               }
             }
-          } catch (e) {
-            console.warn(`Failed to parse date from filename: ${fileName}`);
-          }
-        }
-      }
-      
-      // Try to determine activity type from multiple sources
-      // 1. Check for activity type in the GPX data
-      const activityTypeMatch = gpxStr.match(/<type>(.*?)<\/type>/i) || 
-                               gpxStr.match(/activity-type="([^"]+)"/i) ||
-                               gpxStr.match(/activityType="([^"]+)"/i);
-                               
-      if (activityTypeMatch && activityTypeMatch[1]) {
-        const extractedType = activityTypeMatch[1].toLowerCase();
-        if (extractedType.includes('run')) {
-          activityType = 'running';
-        } else if (extractedType.includes('ride') || extractedType.includes('cycl') || extractedType.includes('bike')) {
-          activityType = 'cycling';
-        } else if (extractedType.includes('swim')) {
-          activityType = 'swimming';
-        } else if (extractedType.includes('hike')) {
-          activityType = 'hiking';
-        } else if (extractedType.includes('walk')) {
-          activityType = 'walking';
-        }
-        console.log(`Found activity type in GPX data: ${activityType}`);
-      }
-      
-      // 2. If not found in data, check filename
-      if (activityType === 'unknown') {
-        const fileNameLower = fileName.toLowerCase();
-        if (fileNameLower.includes('run')) {
-          activityType = 'running';
-        } else if (fileNameLower.includes('ride') || fileNameLower.includes('cycling') || fileNameLower.includes('bike')) {
-          activityType = 'cycling';
-        } else if (fileNameLower.includes('swim')) {
-          activityType = 'swimming';
-        } else if (fileNameLower.includes('hike')) {
-          activityType = 'hiking';
-        } else if (fileNameLower.includes('walk')) {
-          activityType = 'walking';
-        } else if (fileNameLower.includes('weight') || fileNameLower.includes('strength')) {
-          activityType = 'strength';
-        }
-        console.log(`Determined activity type from filename: ${activityType}`);
-      }
-      
-      // EXTRACT DURATION - Try multiple approaches
-      // 1. Look for explicit duration metadata
-      const durationMatch = gpxStr.match(/<duration>([\d\.]+)<\/duration>/i) || 
-                           gpxStr.match(/duration="([\d\.]+)"/i) ||
-                           gpxStr.match(/totalTimeSeconds="([\d\.]+)"/i);
-                           
-      if (durationMatch && durationMatch[1]) {
-        try {
-          const parsedDuration = parseFloat(durationMatch[1]);
-          if (!isNaN(parsedDuration) && parsedDuration > 0) {
-            duration = parsedDuration;
-            console.log(`Found explicit duration in GPX: ${duration} seconds`);
-          }
-        } catch (e) {
-          console.warn(`Failed to parse explicit duration: ${durationMatch[1]}`);
-        }
-      }
-      
-      // 2. Calculate from time tags if explicit duration not found
-      if (duration <= 0) {
-        // Extract all time tags
-        const timeRegex = /<time>(.*?)<\/time>/g;
-        const times: Date[] = [];
-        let match;
-        
-        while ((match = timeRegex.exec(gpxStr)) !== null) {
-          try {
-            const timeStr = match[1];
-            const parsedTime = new Date(timeStr);
-            if (!isNaN(parsedTime.getTime())) {
-              times.push(parsedTime);
-            }
-          } catch (e) {
+          } catch {
             // Ignore invalid times
           }
         }
         
-        // Sort times chronologically
-        times.sort((a, b) => a.getTime() - b.getTime());
-        
-        // Calculate duration if we have at least 2 times
-        if (times.length >= 2) {
-          const firstTime = times[0];
-          const lastTime = times[times.length - 1];
-          const calculatedDuration = (lastTime.getTime() - firstTime.getTime()) / 1000; // in seconds
-          
-          // Sanity check: duration should be positive and reasonable (less than 24 hours)
-          if (calculatedDuration > 0 && calculatedDuration < 86400) {
-            duration = calculatedDuration;
-            console.log(`Calculated duration from ${times.length} timestamps: ${duration} seconds`);
-          } else {
-            console.warn(`Calculated unreasonable duration (${calculatedDuration}s), will try other methods`);
-          }
-        }
-      }
-      
-      // 3. Estimate from track points if timestamps didn't work
-      if (duration <= 0) {
-        const trackpoints = gpxStr.match(/<trkpt/g);
-        if (trackpoints && trackpoints.length > 0) {
-          // Estimate based on activity type and number of points
-          // For running: ~1s per point, cycling: ~0.5s per point
-          const pointsMultiplier = activityType === 'cycling' ? 0.5 : 
-                                  activityType === 'running' ? 1 :
-                                  activityType === 'swimming' ? 2 : 1.5;
-                                  
-          const estimatedDuration = trackpoints.length * pointsMultiplier;
-          
-          // Apply only if it seems reasonable (between 1 minute and 8 hours)
-          if (estimatedDuration >= 60 && estimatedDuration <= 28800) {
-            duration = estimatedDuration;
-            console.log(`Estimated duration from ${trackpoints.length} trackpoints: ${duration} seconds`);
-          }
-        }
-      }
-      
-      // CALCULATE DISTANCE - Try multiple approaches
-      // 1. Look for explicit distance metadata
-      const distanceMatch = gpxStr.match(/<distance>([\d\.]+)<\/distance>/i) ||
-                           gpxStr.match(/distance="([\d\.]+)"/i) || 
-                           gpxStr.match(/distanceMeters="([\d\.]+)"/i);
-                           
-      if (distanceMatch && distanceMatch[1]) {
-        try {
-          const parsedDistance = parseFloat(distanceMatch[1]);
-          if (!isNaN(parsedDistance) && parsedDistance > 0) {
-            distance = parsedDistance;
-            console.log(`Found explicit distance in GPX: ${distance} meters`);
-          }
-        } catch (e) {
-          console.warn(`Failed to parse explicit distance: ${distanceMatch[1]}`);
-        }
-      }
-      
-      // 2. Calculate from trackpoints if explicit distance not found
-      if (distance <= 0) {
-        const trackpoints = [];
-        const trkptRegex = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"[^>]*>/g;
-        let tpMatch;
-        
-        while ((tpMatch = trkptRegex.exec(gpxStr)) !== null) {
+        // Find last valid time point
+        for (let i = trackPoints.length - 1; i >= 0; i--) {
           try {
-            const lat = parseFloat(tpMatch[1]);
-            const lon = parseFloat(tpMatch[2]);
-            if (!isNaN(lat) && !isNaN(lon)) {
-              trackpoints.push({ lat, lon });
+            if (trackPoints[i].time) {
+              const pointTime = new Date(trackPoints[i].time);
+              if (!isNaN(pointTime.getTime())) {
+                endTime = pointTime;
+                break;
+              }
             }
-          } catch (e) {
-            // Ignore invalid trackpoints
-          }
-        }
-        
-        // Calculate distance using Haversine formula between consecutive points
-        if (trackpoints.length >= 2) {
-          let totalDist = 0;
-          for (let i = 1; i < trackpoints.length; i++) {
-            const p1 = trackpoints[i-1];
-            const p2 = trackpoints[i];
-            
-            // Haversine formula
-            const R = 6371e3; // Earth radius in meters
-            const φ1 = p1.lat * Math.PI / 180;
-            const φ2 = p2.lat * Math.PI / 180;
-            const Δφ = (p2.lat - p1.lat) * Math.PI / 180;
-            const Δλ = (p2.lon - p1.lon) * Math.PI / 180;
-            
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                     Math.cos(φ1) * Math.cos(φ2) *
-                     Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            
-            const segmentDist = R * c;
-            
-            // Only count reasonable segments (less than 1km jumps)
-            if (segmentDist < 1000) {
-              totalDist += segmentDist;
-            }
-          }
-          
-          if (totalDist > 0) {
-            distance = totalDist;
-            console.log(`Calculated distance from trackpoints: ${distance} meters`);
+          } catch {
+            // Ignore invalid times
           }
         }
       }
       
-      // 3. If no distance calculated, estimate from duration (if available)
-      if (distance <= 0 && duration > 0) {
-        // Estimate based on activity type
-        let speedMps = 0;
-        if (activityType === 'running') {
-          speedMps = 2.8; // ~10 km/h
-        } else if (activityType === 'cycling') {
-          speedMps = 5.5; // ~20 km/h
-        } else if (activityType === 'swimming') {
-          speedMps = 1.0; // ~3.6 km/h
-        } else if (activityType === 'walking' || activityType === 'hiking') {
-          speedMps = 1.4; // ~5 km/h
-        } else {
-          speedMps = 2.0; // default
+      let totalDistance = 0;
+      let totalElevationGain = 0;
+      let sport = 'other';
+      let heartRates: number[] = [];
+      
+      // Function to calculate distance between two points using Haversine formula
+      const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+        const R = 6371e3; // Earth radius in meters
+        const φ1 = (lat1 * Math.PI) / 180;
+        const φ2 = (lat2 * Math.PI) / 180;
+        const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+        const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+        
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                  Math.cos(φ1) * Math.cos(φ2) *
+                  Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        
+        return R * c; // Distance in meters
+      };
+      
+      // Calculate distance and elevation gain from track points
+      if (trackPoints.length > 0) {
+        // Calculate distance by summing distances between consecutive points
+        for (let i = 1; i < trackPoints.length; i++) {
+          const prevPoint = trackPoints[i-1];
+          const currPoint = trackPoints[i];
+          
+          if (prevPoint.$ && currPoint.$ && 
+              prevPoint.$.lat && prevPoint.$.lon && 
+              currPoint.$.lat && currPoint.$.lon) {
+            totalDistance += calculateDistance(
+              parseFloat(prevPoint.$.lat), 
+              parseFloat(prevPoint.$.lon),
+              parseFloat(currPoint.$.lat), 
+              parseFloat(currPoint.$.lon)
+            );
+          }
+          
+          // Calculate elevation gain (only positive changes)
+          if (prevPoint.ele && currPoint.ele) {
+            const prevEle = parseFloat(prevPoint.ele);
+            const currEle = parseFloat(currPoint.ele);
+            if (!isNaN(prevEle) && !isNaN(currEle) && currEle > prevEle) {
+              totalElevationGain += (currEle - prevEle);
+            }
+          }
+          
+          // Extract heart rate data from extensions
+          if (currPoint.extensions) {
+            const extensionsData = currPoint.extensions;
+            let hr: number | undefined;
+            
+            // Try different extension formats
+            if (extensionsData.TrackPointExtension && extensionsData.TrackPointExtension.hr) {
+              hr = parseInt(extensionsData.TrackPointExtension.hr, 10);
+            } else if (extensionsData['gpxtpx:TrackPointExtension'] && extensionsData['gpxtpx:TrackPointExtension']['gpxtpx:hr']) {
+              hr = parseInt(extensionsData['gpxtpx:TrackPointExtension']['gpxtpx:hr'], 10);
+            } else if (extensionsData.heart_rate) {
+              hr = parseInt(extensionsData.heart_rate, 10);
+            }
+            
+            if (hr && !isNaN(hr)) {
+              heartRates.push(hr);
+            }
+          }
         }
         
-        distance = duration * speedMps;
-        console.log(`Estimated distance from duration: ${distance} meters`);
+        // Try to determine sport type from filename or track name
+        const checkName = (fileName + ' ' + trackName).toLowerCase();
+        if (checkName.includes('run')) {
+          sport = 'running';
+        } else if (checkName.includes('ride') || checkName.includes('cycling')) {
+          sport = 'cycling';
+        } else if (checkName.includes('swim')) {
+          sport = 'swimming';
+        } else if (checkName.includes('walk')) {
+          sport = 'walking';
+        } else if (checkName.includes('hike')) {
+          sport = 'hiking';
+        }
       }
+      
+      // Calculate duration in seconds
+      const totalElapsedTime = (endTime.getTime() - startTime.getTime()) / 1000;
+      
+      // Calculate average and max heart rate if available
+      let avgHeartRate: number | undefined;
+      let maxHeartRate: number | undefined;
+      
+      if (heartRates.length > 0) {
+        avgHeartRate = Math.round(heartRates.reduce((sum, hr) => sum + hr, 0) / heartRates.length);
+        maxHeartRate = Math.max(...heartRates);
+      }
+      
+      // Create activity object
+      const activity = {
+        type: sport,
+        date: startTime,
+        duration: totalElapsedTime,
+        distance: totalDistance,
+        calories: Math.round(totalElapsedTime / 60 * 10), // rough estimate: 10 calories per minute
+        average_speed: totalDistance / totalElapsedTime, // m/s
+        max_speed: (totalDistance / totalElapsedTime) * 1.5, // a bit faster than average as estimate
+        avg_heart_rate: avgHeartRate,
+        max_heart_rate: maxHeartRate,
+        title: track.name || `${sport.charAt(0).toUpperCase() + sport.slice(1)} on ${startTime.toISOString().split('T')[0]}`,
+        description: track.desc || `Imported from ${fileName}`,
+        total_elevation_gain: totalElevationGain,
+        sport_type: sport
+      };
+      
+      console.log('Successfully extracted GPX data:', {
+        type: activity.type,
+        date: activity.date,
+        duration: activity.duration,
+        distance: activity.distance
+      });
+      
+      return activity;
+      
     } catch (xmlError) {
-      console.warn(`Could not parse GPX details, will use defaults:`, xmlError);
+      console.error('Error parsing GPX XML:', xmlError);
+      return null;
     }
-    
-    // Fallbacks for essential data that couldn't be extracted
-    if (isNaN(timestamp.getTime())) {
-      console.warn(`No valid timestamp found in ${fileName}, using current date`);
-      timestamp = new Date();
-    }
-    
-    if (duration <= 0) {
-      // Last resort: use smarter default based on activity type
-      if (activityType === 'running') {
-        duration = 2700; // 45 mins
-      } else if (activityType === 'cycling') {
-        duration = 3600; // 60 mins
-      } else if (activityType === 'swimming') {
-        duration = 1800; // 30 mins
-      } else if (activityType === 'walking' || activityType === 'hiking') {
-        duration = 3600; // 60 mins
-      } else {
-        duration = 1800; // 30 mins default
-      }
-      console.warn(`No valid duration found in ${fileName}, using default for ${activityType}: ${duration} seconds`);
-    }
-    
-    if (distance <= 0) {
-      // Last resort: use reasonable distance for the activity type and duration
-      const speedMps = activityType === 'running' ? 2.8 : 
-                      activityType === 'cycling' ? 5.5 :
-                      activityType === 'swimming' ? 1.0 :
-                      activityType === 'walking' || activityType === 'hiking' ? 1.4 : 2.0;
-                      
-      distance = duration * speedMps;
-      console.warn(`No valid distance found in ${fileName}, estimated ${distance} meters`);
-    }
-    
-    // Create a workout with parsed values
-    return {
-      type: activityType,
-      date: timestamp,
-      duration: duration,
-      distance: distance,
-      calories: Math.round(duration / 60 * 10), // rough estimate: 10 calories per minute
-      average_speed: distance / duration, // m/s
-      max_speed: (distance / duration) * 1.5, // a bit faster than average
-      avg_heart_rate: 145,
-      max_heart_rate: 170,
-      title: `Activity from ${timestamp.toISOString().split('T')[0]}`,
-      description: `Imported from ${fileName}`,
-      total_elevation_gain: 50, // default 50m elevation gain
-      workout_type: null,
-      sport_type: activityType
-    };
   } catch (error) {
     console.error(`Error processing GPX file ${fileName}:`, error);
-    // Instead of throwing, return a reasonable default workout
-    return {
-      type: 'other',
-      date: new Date(),
-      duration: 1800, // 30 minutes default as absolute fallback
-      distance: 5000, // 5km default
-      title: `Recovered activity from ${fileName}`,
-      description: `This activity was recovered from a problematic GPX file. Original data may be incomplete.`
-    };
+    throw new Error(`Failed to process GPX file: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
