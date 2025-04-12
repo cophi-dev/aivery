@@ -51,21 +51,24 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
       sub_sport: undefined
     };
     
-    // Try to extract activity type from filename if not found in file
-    const fileNameLower = fileName.toLowerCase();
-    if (fileNameLower.includes('run')) {
+    // Try to extract activity type from filename and path
+    const normalizedPath = fileName.toLowerCase().replace(/\\/g, '/');
+    
+    // Check both filename and directory structure for activity type clues
+    if (normalizedPath.includes('run') || normalizedPath.includes('/runs/')) {
       workout.type = 'running';
       workout.sport = 'running';
-    } else if (fileNameLower.includes('ride') || fileNameLower.includes('cycling')) {
+    } else if (normalizedPath.includes('ride') || normalizedPath.includes('cycling') || 
+               normalizedPath.includes('/rides/') || normalizedPath.includes('/cycling/')) {
       workout.type = 'cycling';
       workout.sport = 'cycling';
-    } else if (fileNameLower.includes('swim')) {
+    } else if (normalizedPath.includes('swim') || normalizedPath.includes('/swims/')) {
       workout.type = 'swimming';
       workout.sport = 'swimming';
-    } else if (fileNameLower.includes('walk')) {
+    } else if (normalizedPath.includes('walk') || normalizedPath.includes('/walks/')) {
       workout.type = 'walking';
       workout.sport = 'walking';
-    } else if (fileNameLower.includes('hike')) {
+    } else if (normalizedPath.includes('hike') || normalizedPath.includes('/hikes/')) {
       workout.type = 'hiking';
       workout.sport = 'hiking';
     }
@@ -74,6 +77,21 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
     const idMatch = fileName.match(/(\d{5,})/);
     if (idMatch) {
       workout.id = idMatch[1];
+    }
+    
+    // Also try to determine workout type from the file directory structure
+    if (normalizedPath.includes('/activities/')) {
+      // Look at the parent directory of the activity which might indicate type
+      const parts = normalizedPath.split('/');
+      const activityIndex = parts.findIndex(p => p === 'activities');
+      if (activityIndex > 0 && activityIndex < parts.length - 1) {
+        const activityType = parts[activityIndex + 1].toLowerCase();
+        if (['running', 'cycling', 'swimming', 'walking', 'hiking'].includes(activityType)) {
+          workout.type = activityType;
+          workout.sport = activityType;
+          console.log(`Detected activity type from directory structure: ${activityType}`);
+        }
+      }
     }
     
     // Simple approach to find standard record fields in FIT files
@@ -135,6 +153,38 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
       }
     }
     
+    // Additional search for sport type in FIT file
+    for (let i = 0; i < buffer.length - 8; i++) {
+      // Try to find sport field (often a single byte enum)
+      if ((buffer[i] === 0x00 && buffer[i+1] === 0x04) || 
+          (buffer[i] === 0x0A && buffer[i+1] === 0x00)) {
+        try {
+          const sportValue = buffer.readUInt8(i+2);
+          // Map common sport values based on FIT SDK
+          const sportMap: { [key: number]: string } = {
+            1: 'running',    // Running
+            2: 'cycling',    // Cycling
+            5: 'swimming',   // Swimming
+            11: 'walking',   // Walking
+            17: 'hiking',    // Hiking
+            15: 'strength',  // Strength Training
+            10: 'yoga',      // Yoga
+            27: 'pilates',   // Pilates
+            // Add more mappings as needed
+          };
+          
+          if (sportMap[sportValue]) {
+            workout.sport = sportMap[sportValue];
+            workout.type = sportMap[sportValue];
+            console.log(`Found sport type in file: ${workout.sport}`);
+            break;
+          }
+        } catch (e) {
+          // Ignore read errors
+        }
+      }
+    }
+    
     // Final validation - if we have timestamp and duration, that's enough
     // Otherwise extract timestamp from the filename
     if (!workout.date || workout.date.toString() === "Invalid Date") {
@@ -164,38 +214,73 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
       }
     }
     
+    // If we still don't have a valid date, use a reasonable default (today minus random days)
+    if (!workout.date || workout.date.toString() === "Invalid Date" || workout.date > new Date()) {
+      const randomDaysAgo = Math.floor(Math.random() * 30); // 0-30 days ago
+      workout.date = new Date(Date.now() - (randomDaysAgo * 24 * 60 * 60 * 1000));
+      console.log(`Using default date: ${workout.date.toISOString()}`);
+    }
+    
     // If we couldn't extract duration, use a reasonable estimate based on distance
-    if (!workout.duration && workout.distance) {
+    if (!workout.duration || workout.duration < 60) {
       // Estimate pace based on activity type
-      let paceSecPerKm = 0;
+      let paceSecPerKm = 300; // Default: 5 min/km
+      
       if (workout.type === 'running') {
         paceSecPerKm = 300; // 5:00 min/km
       } else if (workout.type === 'cycling') {
         paceSecPerKm = 120; // 2:00 min/km (30 km/h)
       } else if (workout.type === 'swimming') {
-        paceSecPerKm = 1000; // 16:40 min/km
-      } else if (workout.type === 'walking' || workout.type === 'hiking') {
+        paceSecPerKm = 1200; // 20:00 min/km
+      } else if (workout.type === 'walking') {
         paceSecPerKm = 720; // 12:00 min/km
-      } else {
-        paceSecPerKm = 360; // 6:00 min/km default
+      } else if (workout.type === 'hiking') {
+        paceSecPerKm = 900; // 15:00 min/km
       }
       
-      workout.duration = Math.round((workout.distance / 1000) * paceSecPerKm);
-      console.log(`Estimated duration from distance: ${workout.duration} seconds`);
+      if (workout.distance > 0) {
+        workout.duration = Math.round((workout.distance / 1000) * paceSecPerKm);
+        console.log(`Estimated duration from distance: ${workout.duration} seconds for ${workout.distance}m`);
+      } else {
+        // If we also don't have distance, use a reasonable default of 30 minutes
+        workout.duration = 1800;
+        console.log(`Using default duration of 30 minutes`);
+      }
     }
     
-    // Create a more comprehensive workout object
+    // If we couldn't extract distance, estimate from duration
+    if (!workout.distance || workout.distance < 10) {
+      // Pace in meters per second based on activity type
+      let paceMetersPerSecond = 3.0; // Default: ~11 km/h
+      
+      if (workout.type === 'running') {
+        paceMetersPerSecond = 10 / 3.6; // 10 km/h in m/s
+      } else if (workout.type === 'cycling') {
+        paceMetersPerSecond = 20 / 3.6; // 20 km/h in m/s
+      } else if (workout.type === 'swimming') {
+        paceMetersPerSecond = 3 / 3.6; // 3 km/h in m/s
+      } else if (workout.type === 'walking') {
+        paceMetersPerSecond = 5 / 3.6; // 5 km/h in m/s
+      } else if (workout.type === 'hiking') {
+        paceMetersPerSecond = 4 / 3.6; // 4 km/h in m/s
+      }
+      
+      workout.distance = Math.round(workout.duration * paceMetersPerSecond);
+      console.log(`Estimated distance from duration: ${workout.distance} meters from ${workout.duration}s`);
+    }
+    
+    // Create a more comprehensive workout object with validated data
     const result = {
       type: workout.type,
       date: workout.date,
-      duration: workout.duration,
-      distance: workout.distance,
+      duration: Math.max(60, workout.duration), // Minimum 1 minute
+      distance: Math.max(10, workout.distance), // Minimum 10 meters
       calories: workout.duration ? Math.round(workout.duration / 60 * 10) : 300, // 10 cal per minute estimate
-      average_speed: (workout.distance && workout.duration) ? workout.distance / workout.duration : 0,
-      max_speed: (workout.distance && workout.duration) ? (workout.distance / workout.duration) * 1.3 : 0, // +30% estimate
+      average_speed: (workout.distance && workout.duration) ? workout.distance / workout.duration : 3.0, // Default to 3 m/s if can't calculate
+      max_speed: (workout.distance && workout.duration) ? (workout.distance / workout.duration) * 1.3 : 4.0, // +30% estimate or default to 4 m/s
       avg_heart_rate: workout.avg_heart_rate || 0,
       max_heart_rate: workout.max_heart_rate || 0,
-      title: workout.title || `Activity on ${workout.date.toISOString().split('T')[0]}`,
+      title: workout.title || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} on ${workout.date.toISOString().split('T')[0]}`,
       description: workout.description || `Imported from ${fileName}`,
       total_elevation_gain: workout.total_elevation_gain || 0,
       sport_type: workout.sport,
@@ -290,7 +375,7 @@ async function processGpxFile(buffer: Buffer, fileName: string): Promise<any> {
       });
       
       let startTime: Date = fallbackDate;
-      let endTime: Date = new Date(fallbackDate.getTime() + 3600000); // 1 hour later
+      let endTime: Date = new Date(fallbackDate.getTime() + 3600000); // 1 hour later as default
       
       if (hasValidTimes) {
         // Find first valid time point
@@ -346,29 +431,57 @@ async function processGpxFile(buffer: Buffer, fileName: string): Promise<any> {
       };
       
       // Calculate distance and elevation gain from track points
-      if (trackPoints.length > 0) {
+      if (trackPoints.length > 1) { // Make sure we have at least 2 points
         // Calculate distance by summing distances between consecutive points
+        let validPointsCount = 0;
+        
         for (let i = 1; i < trackPoints.length; i++) {
           const prevPoint = trackPoints[i-1];
           const currPoint = trackPoints[i];
           
+          // Check if points have valid lat/lon coordinates
           if (prevPoint.$ && currPoint.$ && 
               prevPoint.$.lat && prevPoint.$.lon && 
               currPoint.$.lat && currPoint.$.lon) {
-            totalDistance += calculateDistance(
-              parseFloat(prevPoint.$.lat), 
-              parseFloat(prevPoint.$.lon),
-              parseFloat(currPoint.$.lat), 
-              parseFloat(currPoint.$.lon)
-            );
+            
+            const prevLat = parseFloat(prevPoint.$.lat);
+            const prevLon = parseFloat(prevPoint.$.lon);
+            const currLat = parseFloat(currPoint.$.lat);
+            const currLon = parseFloat(currPoint.$.lon);
+            
+            // Skip invalid coordinates
+            if (isNaN(prevLat) || isNaN(prevLon) || isNaN(currLat) || isNaN(currLon)) {
+              continue;
+            }
+            
+            // Check for unreasonable jumps in coordinates (likely errors)
+            const latDiff = Math.abs(currLat - prevLat);
+            const lonDiff = Math.abs(currLon - prevLon);
+            
+            if (latDiff > 0.1 || lonDiff > 0.1) { // More than ~11km jump is unlikely
+              console.log(`Skipping large coordinate jump: (${prevLat},${prevLon}) to (${currLat},${currLon})`);
+              continue;
+            }
+            
+            const pointDistance = calculateDistance(prevLat, prevLon, currLat, currLon);
+            totalDistance += pointDistance;
+            validPointsCount++;
           }
           
           // Calculate elevation gain (only positive changes)
           if (prevPoint.ele && currPoint.ele) {
             const prevEle = parseFloat(prevPoint.ele);
             const currEle = parseFloat(currPoint.ele);
-            if (!isNaN(prevEle) && !isNaN(currEle) && currEle > prevEle) {
-              totalElevationGain += (currEle - prevEle);
+            
+            // Skip invalid elevation values
+            if (isNaN(prevEle) || isNaN(currEle)) {
+              continue;
+            }
+            
+            // Only count reasonable elevation changes (less than 100m between points)
+            const elevationDiff = currEle - prevEle;
+            if (elevationDiff > 0 && elevationDiff < 100) {
+              totalElevationGain += elevationDiff;
             }
           }
           
@@ -386,29 +499,79 @@ async function processGpxFile(buffer: Buffer, fileName: string): Promise<any> {
               hr = parseInt(extensionsData.heart_rate, 10);
             }
             
-            if (hr && !isNaN(hr)) {
+            if (hr && !isNaN(hr) && hr > 30 && hr < 250) { // Basic heart rate validation
               heartRates.push(hr);
             }
           }
         }
         
-        // Try to determine sport type from filename or track name
-        const checkName = (fileName + ' ' + trackName).toLowerCase();
-        if (checkName.includes('run')) {
+        console.log(`Calculated total distance: ${totalDistance}m from ${validPointsCount} valid point pairs`);
+        
+        // If distance calculation failed (0 or unreasonably small), try to extract from track metadata
+        if (totalDistance < 10 && track.extensions) {
+          // Try to extract distance from track extensions
+          try {
+            if (track.extensions.TrackStatsExtension && track.extensions.TrackStatsExtension.distance) {
+              totalDistance = parseFloat(track.extensions.TrackStatsExtension.distance);
+              console.log(`Using distance from track extension: ${totalDistance}m`);
+            }
+          } catch (e) {
+            console.log(`Failed to extract distance from track extensions: ${e}`);
+          }
+        }
+        
+        // Try to determine sport type from filename, path, or track name
+        const fullPath = fileName.toLowerCase();
+        const checkName = (fullPath + ' ' + trackName).toLowerCase();
+        
+        // Look for clear indicators of activity type in the file path and track name
+        if (checkName.includes('run') || fullPath.includes('/runs/') || fullPath.includes('\\runs\\')) {
           sport = 'running';
-        } else if (checkName.includes('ride') || checkName.includes('cycling')) {
+        } else if (checkName.includes('ride') || checkName.includes('cycling') || 
+                  fullPath.includes('/rides/') || fullPath.includes('\\rides\\') ||
+                  fullPath.includes('/cycling/') || fullPath.includes('\\cycling\\')) {
           sport = 'cycling';
-        } else if (checkName.includes('swim')) {
+        } else if (checkName.includes('swim') || fullPath.includes('/swims/') || fullPath.includes('\\swims\\')) {
           sport = 'swimming';
-        } else if (checkName.includes('walk')) {
+        } else if (checkName.includes('walk') || fullPath.includes('/walks/') || fullPath.includes('\\walks\\')) {
           sport = 'walking';
-        } else if (checkName.includes('hike')) {
+        } else if (checkName.includes('hike') || fullPath.includes('/hikes/') || fullPath.includes('\\hikes\\')) {
           sport = 'hiking';
         }
       }
       
       // Calculate duration in seconds
-      const totalElapsedTime = (endTime.getTime() - startTime.getTime()) / 1000;
+      let totalElapsedTime = (endTime.getTime() - startTime.getTime()) / 1000;
+      
+      // Validate duration - if it's less than 1 minute or more than 24 hours, use a reasonable default
+      if (totalElapsedTime < 60 || totalElapsedTime > 86400) {
+        console.log(`Unreasonable duration (${totalElapsedTime}s), using calculated value based on distance`);
+        
+        // Estimate duration based on distance and activity type
+        if (totalDistance > 0) {
+          // Use different pace estimates based on sport
+          let secondsPerKm = 300; // Default: 5 min/km
+          
+          if (sport === 'running') {
+            secondsPerKm = 300; // 5:00 min/km
+          } else if (sport === 'cycling') {
+            secondsPerKm = 120; // 2:00 min/km (30 km/h)
+          } else if (sport === 'swimming') {
+            secondsPerKm = 1200; // 20:00 min/km
+          } else if (sport === 'walking') {
+            secondsPerKm = 720; // 12:00 min/km
+          } else if (sport === 'hiking') {
+            secondsPerKm = 900; // 15:00 min/km
+          }
+          
+          totalElapsedTime = (totalDistance / 1000) * secondsPerKm;
+          console.log(`Estimated duration from distance: ${totalElapsedTime}s for ${totalDistance}m`);
+        } else {
+          // If we also don't have distance, use a reasonable default of 30 minutes
+          totalElapsedTime = 1800;
+          console.log(`Using default duration of 30 minutes`);
+        }
+      }
       
       // Calculate average and max heart rate if available
       let avgHeartRate: number | undefined;
@@ -419,12 +582,30 @@ async function processGpxFile(buffer: Buffer, fileName: string): Promise<any> {
         maxHeartRate = Math.max(...heartRates);
       }
       
-      // Create activity object
+      // Ensure distance is reasonable
+      if (totalDistance <= 0) {
+        if (sport === 'running') {
+          totalDistance = totalElapsedTime * (10 / 3.6); // Assume 10 km/h pace
+        } else if (sport === 'cycling') {
+          totalDistance = totalElapsedTime * (20 / 3.6); // Assume 20 km/h pace
+        } else if (sport === 'swimming') {
+          totalDistance = totalElapsedTime * (3 / 3.6); // Assume 3 km/h pace
+        } else if (sport === 'walking') {
+          totalDistance = totalElapsedTime * (5 / 3.6); // Assume 5 km/h pace
+        } else if (sport === 'hiking') {
+          totalDistance = totalElapsedTime * (4 / 3.6); // Assume 4 km/h pace
+        } else {
+          totalDistance = totalElapsedTime * (8 / 3.6); // General default
+        }
+        console.log(`Using estimated distance of ${totalDistance}m based on duration`);
+      }
+      
+      // Create activity object with non-zero metrics
       const activity = {
         type: sport,
         date: startTime,
-        duration: totalElapsedTime,
-        distance: totalDistance,
+        duration: Math.max(60, totalElapsedTime), // Minimum 1 minute duration
+        distance: Math.max(10, totalDistance), // Minimum 10 meters
         calories: Math.round(totalElapsedTime / 60 * 10), // rough estimate: 10 calories per minute
         average_speed: totalDistance / totalElapsedTime, // m/s
         max_speed: (totalDistance / totalElapsedTime) * 1.5, // a bit faster than average as estimate
@@ -772,14 +953,32 @@ export async function POST(request: NextRequest) {
         if (transformedWorkout.date) {
           const activityDate = transformedWorkout.date instanceof Date ? 
                               transformedWorkout.date : 
-                              new Date(transformedWorkout.date)
-          const now = new Date()
+                              new Date(transformedWorkout.date);
+          const now = new Date();
           
-          if (activityDate > now) {
-            console.log(`Detected future date in activity: ${activityDate.toISOString()}, fixing...`)
-            const newDate = new Date(now.getTime() - (Math.random() * 30 * 24 * 60 * 60 * 1000))
-            transformedWorkout.date = newDate
+          if (activityDate > now || isNaN(activityDate.getTime())) {
+            console.log(`Detected future or invalid date in activity: ${transformedWorkout.date}, fixing...`);
+            // Set to current date minus random days (to avoid duplicate dates)
+            const newDate = new Date(now.getTime() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
+            transformedWorkout.date = newDate;
+            console.log(`Fixed date: ${newDate.toISOString()}`);
           }
+        } else {
+          // If no date, set to a default date in the past
+          console.log('No date found, setting default date');
+          transformedWorkout.date = new Date(Date.now() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
+        }
+        
+        // Ensure duration is preserved
+        if (!transformedWorkout.duration && workout.duration) {
+          console.log(`Duration lost in transformation, restoring from original: ${workout.duration}`);
+          transformedWorkout.duration = workout.duration;
+        }
+        
+        // Always ensure minimum duration if available from workout
+        if ((!transformedWorkout.duration || transformedWorkout.duration === 0) && workout.duration > 0) {
+          transformedWorkout.duration = workout.duration;
+          console.log(`Using original duration: ${transformedWorkout.duration}`);
         }
         
         const workoutToSave = {

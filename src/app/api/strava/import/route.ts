@@ -1234,25 +1234,41 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       gpxFilesFound: 0,
       fitFilesFound: 0,
       fitGzFilesFound: 0,
-      processingId: processingId, // Add processing ID to results
+      tcxFilesFound: 0,
+      processingId: processingId,
       totalFiles: 0,
-      batchSize: 10 // Default batch size
+      batchSize: 10
     };
     
     // First, get a recursive list of all files
     const allFiles: string[] = await getFilesRecursively(tempDir);
     console.log(`Found ${allFiles.length} total files in extracted ZIP`);
     
-    // Count activity files by type
+    // Count activity files by type and filter out non-activity files
     const activityFiles = allFiles.filter(file => {
       const lowerFile = file.toLowerCase();
-      return lowerFile.endsWith('.gpx') || 
-             lowerFile.endsWith('.fit') || 
-             lowerFile.endsWith('.fit.gz') || 
-             lowerFile.endsWith('.tcx');
+      const normalizedPath = lowerFile.replace(/\\/g, '/');
+      
+      // Exclude files from the routes directory
+      if (normalizedPath.includes('/routes/') || normalizedPath.includes('\\routes\\')) {
+        console.log(`Skipping file in routes directory: ${file}`);
+        return false;
+      }
+      
+      // Include only files that are in the activities directory or have an activity file extension
+      const isActivityFile = 
+        (normalizedPath.includes('/activities/') || normalizedPath.includes('\\activities\\')) &&
+        (lowerFile.endsWith('.gpx') || lowerFile.endsWith('.fit') || lowerFile.endsWith('.fit.gz') || lowerFile.endsWith('.tcx'));
+      
+      // If not in activities directory, check if it has the right extension and is in the root
+      const isRootActivityFile = 
+        !normalizedPath.includes('/') && 
+        (lowerFile.endsWith('.gpx') || lowerFile.endsWith('.fit') || lowerFile.endsWith('.fit.gz') || lowerFile.endsWith('.tcx'));
+      
+      return isActivityFile || isRootActivityFile;
     });
     
-    console.log(`Found ${activityFiles.length} potential activity files`);
+    console.log(`Found ${activityFiles.length} potential activity files after filtering`);
     results.activitiesFound = activityFiles.length;
     results.totalFiles = activityFiles.length;
     
@@ -1262,6 +1278,7 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       if (lowerFile.endsWith('.gpx')) results.gpxFilesFound++;
       else if (lowerFile.endsWith('.fit.gz')) results.fitGzFilesFound++;
       else if (lowerFile.endsWith('.fit')) results.fitFilesFound++;
+      else if (lowerFile.endsWith('.tcx')) results.tcxFilesFound++;
     });
     
     // Get the current session for user ID
@@ -1282,6 +1299,10 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       importedFiles: [] as string[],
       errorFiles: [] as string[],
       totalFiles: activityFiles.length,
+      gpxFilesCount: results.gpxFilesFound,
+      fitFilesCount: results.fitFilesFound,
+      fitGzFilesCount: results.fitGzFilesFound,
+      tcxFilesCount: results.tcxFilesFound,
       originalFilename: originalFilename || 'strava-export.zip'
     };
     
