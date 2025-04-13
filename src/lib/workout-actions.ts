@@ -535,46 +535,43 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & { exerci
             continue;
         }
 
-        // --- Create WorkoutExercise (without embedded sets) --- 
+        // --- Prepare sets data for embedding --- 
+        let setsToEmbed: any[] = []; // Define as any[] for simplicity, could use a Mongoose subdocument type
+        if (exerciseInput.sets && exerciseInput.sets.length > 0) {
+           setsToEmbed = exerciseInput.sets.map((set: InputSetData, setIndex: number) => {
+              const setData = {
+                // workoutExerciseId: savedWorkoutExercise._id, // No longer needed for embedding
+                order: set.order ?? setIndex, 
+                weight: set.weight,
+                reps: set.reps,
+                duration: set.duration,
+                distance: set.distance,
+                notes: set.notes,
+              };
+              // Filter out undefined fields
+              Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
+              return setData;
+           });
+           console.log(`Prepared ${setsToEmbed.length} sets for embedding in WorkoutExercise ${exerciseOrderIndex}`);
+        }
+
+        // --- Create WorkoutExercise (WITH embedded sets) --- 
         const workoutExerciseData = {
             userId: userId,
             workoutId: workoutId,
             exerciseId: exerciseId,
             order: exerciseOrderIndex, 
             notes: exerciseInput.notes, 
-            // sets: [], // REMOVED: Sets are handled separately
+            sets: setsToEmbed, // <-- Embed the sets array directly
             // Keep duration/distance if relevant for non-set based exercises
             duration: (exerciseInput as any).duration, 
             distance: (exerciseInput as any).distance,
         };
-        console.log(`Formatted WorkoutExercise ${exerciseOrderIndex}:`, JSON.stringify(workoutExerciseData, null, 2));
+        console.log(`Formatted WorkoutExercise ${exerciseOrderIndex} with embedded sets:`, JSON.stringify(workoutExerciseData, null, 2));
         const workoutExercise = new WorkoutExerciseModel(workoutExerciseData);
         const savedWorkoutExercise = await workoutExercise.save();
         createdWorkoutExerciseIds.push(savedWorkoutExercise._id);
         console.log(`Saved WorkoutExercise ${exerciseOrderIndex} with ID: ${savedWorkoutExercise._id}`);
-
-        // --- Create Associated Set Documents --- 
-        if (exerciseInput.sets && exerciseInput.sets.length > 0) {
-          console.log(`Creating ${exerciseInput.sets.length} sets for WorkoutExercise ${savedWorkoutExercise._id}...`);
-          const setCreationPromises = exerciseInput.sets.map((set: InputSetData, setIndex: number) => {
-            const setData = {
-              workoutExerciseId: savedWorkoutExercise._id,
-              order: set.order ?? setIndex, // Use provided order or index
-              weight: set.weight,
-              reps: set.reps,
-              duration: set.duration,
-              distance: set.distance,
-              notes: set.notes,
-            };
-            // Filter out undefined fields to avoid saving nulls unless explicitly intended
-            Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
-            return SetModel.create(setData); // Use create for efficiency
-          });
-          
-          // Wait for all sets for this WorkoutExercise to be created
-          const createdSets = await Promise.all(setCreationPromises);
-          console.log(`Successfully created ${createdSets.length} sets for WorkoutExercise ${savedWorkoutExercise._id}`);
-        }
 
         exerciseOrderIndex++; // Increment order for the next exercise
       }
@@ -602,14 +599,9 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & { exerci
         console.warn(`Attempting to cleanup ${createdWorkoutExerciseIds.length} created WorkoutExercise documents due to error.`);
         // Include cleanup for created Sets as well if possible/necessary
         try {
-            // First delete Sets associated with the failed WorkoutExercises
-            // Explicitly cast to any[] to potentially satisfy linter for $in operator
-            await SetModel.deleteMany({ workoutExerciseId: { $in: createdWorkoutExerciseIds as any[] } }); 
-            console.log('Cleaned up potentially created Set documents.');
-            // Then delete the WorkoutExercises themselves
-            // Explicitly cast to any[] to potentially satisfy linter for $in operator
+            // Delete the WorkoutExercises themselves
             await WorkoutExerciseModel.deleteMany({ _id: { $in: createdWorkoutExerciseIds as any[] } }); 
-            console.log('Cleaned up WorkoutExercise documents.');
+            console.log('Cleaned up WorkoutExercise documents (including embedded sets).');
         } catch (cleanupExerciseError) {
             console.error('Failed to cleanup WorkoutExercise/Set documents:', cleanupExerciseError);
         }
@@ -720,12 +712,12 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
                 .map(ex => ex._id);
             
             if (exercisesToDelete.length > 0) {
-                console.log(`Deleting ${exercisesToDelete.length} WorkoutExercises and their Sets:`, exercisesToDelete);
+                console.log(`Deleting ${exercisesToDelete.length} WorkoutExercises (including embedded Sets):`, exercisesToDelete);
                 
-                // --- ADDED: Delete associated Sets FIRST ---
-                await SetModel.deleteMany({ workoutExerciseId: { $in: exercisesToDelete as any[] } });
-                console.log(`Deleted Sets associated with ${exercisesToDelete.length} WorkoutExercises.`);
-                // --- END ADDED ---
+                // --- REMOVED: Delete associated Sets FIRST (they are embedded) ---
+                // await SetModel.deleteMany({ workoutExerciseId: { $in: exercisesToDelete as any[] } });
+                // console.log(`Deleted Sets associated with ${exercisesToDelete.length} WorkoutExercises.`);
+                // --- END REMOVED ---
                 
                 // Now prepare deletion for WorkoutExercises themselves
                 operations.push({ 
@@ -757,7 +749,24 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
                      continue; 
                 }
                 
-                // Prepare data for WorkoutExercise document (without sets)
+                // --- Prepare sets data for embedding --- 
+                let setsToEmbed: any[] = []; 
+                if (incomingEx.sets && incomingEx.sets.length > 0) {
+                   setsToEmbed = incomingEx.sets.map((set: InputSetData, setIndex: number) => {
+                      const setData = {
+                        order: set.order ?? setIndex, 
+                        weight: set.weight,
+                        reps: set.reps,
+                        duration: set.duration,
+                        distance: set.distance,
+                        notes: set.notes,
+                      };
+                      Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
+                      return setData;
+                   });
+                }
+                
+                // Prepare data for WorkoutExercise document (WITH sets)
                 const workoutExerciseData = { 
                     userId: userId,
                     workoutId: new Types.ObjectId(workoutId),
@@ -766,6 +775,7 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
                     notes: incomingEx.notes,
                     duration: incomingEx.duration, // Keep other relevant fields
                     distance: incomingEx.distance,
+                    sets: setsToEmbed // <-- Embed sets here
                 };
 
                 if (incomingEx._id) { // Update logic
@@ -798,47 +808,11 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
                 console.log("No WorkoutExercise add/update/delete operations needed.");
             }
             
-            // --- ADDED: Handle Set updates/creations AFTER WorkoutExercises are synced --- 
-            console.log("Processing Set updates/creations...");
-            // 1. Fetch the current state of WorkoutExercises for this workout
-            const finalWorkoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutId });
-            
-            // 2. Prepare incoming sets data mapped by WorkoutExercise ID (if available) or maybe exercise name/order as a fallback key?
-            // Note: Handling newly created WorkoutExercises requires matching them back to the input somehow. 
-            // This example assumes incomingExercises have _id for updates, and we need a way to link new ones.
-            // For simplicity here, we'll primarily handle updates where incomingEx._id exists.
-            // A more complex implementation might use the bulkResult to get new IDs, or re-query based on order/exerciseId.
-            
-            for (const we of finalWorkoutExercises) {
-                const workoutExerciseId = we._id;
-                // Find the corresponding input data for this workout exercise
-                const incomingExData = incomingExercises.find(ex => ex._id === workoutExerciseId.toString());
-                
-                // 3. Delete existing sets for this WorkoutExercise
-                await SetModel.deleteMany({ workoutExerciseId: workoutExerciseId });
-                
-                // 4. Create new sets if provided in the input
-                if (incomingExData && incomingExData.sets && incomingExData.sets.length > 0) {
-                  console.log(`Creating ${incomingExData.sets.length} sets for WorkoutExercise ${workoutExerciseId}...`);
-                  const setCreationPromises = incomingExData.sets.map((set: InputSetData, setIndex: number) => {
-                    const setData = {
-                      workoutExerciseId: workoutExerciseId,
-                      order: set.order ?? setIndex,
-                      weight: set.weight,
-                      reps: set.reps,
-                      duration: set.duration,
-                      distance: set.distance,
-                      notes: set.notes,
-                    };
-                    Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
-                    return SetModel.create(setData);
-                  });
-                  await Promise.all(setCreationPromises);
-                  console.log(`Successfully created sets for WorkoutExercise ${workoutExerciseId}`);
-                }
-            }
-            console.log("Set updates/creations finished.");
-            // --- END ADDED ---
+            // --- REMOVED: Handle Set updates/creations separately --- 
+            // console.log("Processing Set updates/creations...");
+            // ... entire loop from lines 798-831 removed ...
+            // console.log("Set updates/creations finished.");
+            // --- END REMOVED ---
             
         } else {
              console.log("No 'exercises' array provided in payload, skipping exercise updates.");

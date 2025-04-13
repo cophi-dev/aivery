@@ -2,9 +2,11 @@ import { getCollection } from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
 import { mockIntegrations } from "../db/mock-data"
 import { exchangeCodeForToken, refreshToken } from "../strava/config"
-import { getClient, readCollectionItems, saveDocument, readDocument } from "../mongo"
-import { Response, isEmpty } from "../../lib"
 import axios from "axios"
+import mongoose from 'mongoose'; // Import mongoose
+import WorkoutModel from '../db/models/workout'; // Import Workout model
+import ExerciseModel from '../db/models/exercise'; // Import Exercise model
+import WorkoutExerciseModel from '../db/models/workoutExercise'; // Import WorkoutExercise model
 
 // Define in this file directly instead of importing from the route
 const DB_NAME = "aivery"
@@ -658,98 +660,130 @@ export async function updateStravaSyncPreferences(userId: string, activityTypes:
 
 // Function to handle single activity sync (used by webhook)
 export async function syncStravaActivity(userId: string, activityId: string) {
+  console.log(`Syncing Strava activity ${activityId} for user ${userId}...`);
+  let accessToken = "";
   try {
-    const accessToken = await getValidAccessToken(userId);
+    accessToken = await getValidAccessToken(userId);
+  } catch (tokenError) {
+     console.error(`Failed to get valid Strava token for user ${userId}:`, tokenError);
+     throw new Error(`Strava token error for user ${userId}`); 
+  }
+
+  try {
+    // Fetch activity details from Strava API
     const activity = await fetchStravaActivity(accessToken, activityId);
     
-    if (!activity) {
-      throw new Error(`No activity found with ID ${activityId}`);
+    // Ensure activity object exists
+    if (!activity || typeof activity !== 'object') {
+      throw new Error(`Invalid activity data received from Strava for activity ID ${activityId}`);
     }
 
-    const transformedWorkoutData = transformStravaActivity(activity); // Renamed for clarity
-    
-    // 1. Upsert the main workout document
-    const workoutsCollection = await getCollection(WORKOUTS_COLLECTION);
-    const workoutUpsertResult = await workoutsCollection.updateOne(
-      { 
-        userId: new ObjectId(userId),
-        sourceId: activityId,
-        source: "strava"
-      },
-      { 
-        $set: {
-          ...transformedWorkoutData,
-          userId: new ObjectId(userId),
-          updatedAt: new Date() 
-        },
-        $setOnInsert: { 
-          createdAt: new Date()
-        }
-      },
-      { upsert: true }
-    );
+    console.log(`Fetched Strava activity ${activityId} details. Type: ${activity.type}, Sport Type: ${activity.sport_type}`);
 
-    // Determine if the operation resulted in an insert or an update
-    const action = workoutUpsertResult.upsertedId ? "created" : (workoutUpsertResult.modifiedCount > 0 ? "updated" : "no_change");
-    console.log(`Workout ${activityId} action: ${action}`);
+    // Map Strava activity type to our internal type
+    const mappedType = mapStravaType(activity.type, activity.sport_type);
+    console.log(`Mapped Strava type '${activity.type}/${activity.sport_type}' to internal type '${mappedType}'`);
 
-    // 2. Fetch the workout document we just saved/updated to get its _id and final data
-    const savedWorkout = await workoutsCollection.findOne({
-      userId: new ObjectId(userId),
+    // Prepare workout data for saving (existing logic)
+    const workoutData: any = {
+      userId: new mongoose.Types.ObjectId(userId),
+      source: "strava",
       sourceId: activityId,
-      source: "strava"
-    });
-
-    if (!savedWorkout) {
-      console.error(`Error: Could not find workout ${activityId} immediately after upsert for user ${userId}. Skipping WorkoutExercise creation.`);
-      // Return success based on the main workout upsert, but log the inconsistency.
-      return { success: true, action: action, warning: "WorkoutExercise link failed" };
-    }
-    
-    // 3. Find the corresponding exercise definition ID
-    const exercisesCollection = await getCollection(EXERCISES_COLLECTION);
-    // Use the type from the savedWorkout, which should be the mapped type (e.g., 'running')
-    const exerciseDefinition = await exercisesCollection.findOne({ type: savedWorkout.type }); 
-
-    if (!exerciseDefinition) {
-      console.warn(`Warning: No exercise definition found for type '${savedWorkout.type}' (Workout ID: ${savedWorkout._id}). Cannot create WorkoutExercise link.`);
-      // Proceed, but log the warning
-      return { success: true, action: action, warning: `Missing exercise definition for type ${savedWorkout.type}` };
-    }
-
-    const exerciseId = exerciseDefinition._id;
-
-    // 4. Upsert the WorkoutExercise link
-    const workoutExercisesCollection = await getCollection(WORKOUT_EXERCISES_COLLECTION);
-    await workoutExercisesCollection.updateOne(
-      {
-        workoutId: savedWorkout._id, // Link to the workout
-        exerciseId: exerciseId      // Link to the exercise definition
-        // Note: Assuming workoutId + exerciseId is unique enough for upsert filter for runs
-      },
-      {
-        $set: {
-          userId: savedWorkout.userId,
-          duration: savedWorkout.duration, // Use duration from the saved workout (should be seconds)
-          distance: savedWorkout.distance, // Use distance from the saved workout (should be km)
-          notes: savedWorkout.notes || transformedWorkoutData.description || '', // Use notes from workout if available, else description
-          order: 0, // Runs are typically single-exercise
-          updatedAt: new Date()
+      name: activity.name || `Strava ${mappedType}`, 
+      date: parseStravaDate(activity.start_date),
+      type: mappedType,
+      duration: activity.elapsed_time || 0, // Use elapsed_time for total duration
+      intensity: calculateIntensity(activity),
+      notes: activity.description || "",
+      stravaLink: `https://www.strava.com/activities/${activityId}`,
+      // Add initial cardioDetails structure if applicable
+      cardioDetails: { 
+        distance: (activity.distance || 0) / 1000, // Convert meters to km
+        duration: activity.moving_time || 0, // Use moving_time for active duration
+        pace: activity.average_speed && activity.average_speed > 0 ? (1000 / activity.average_speed) / 60 : undefined, // Calculate pace min/km
+        speed: activity.average_speed ? activity.average_speed * 3.6 : undefined, // Convert m/s to km/h
+        maxSpeed: activity.max_speed ? activity.max_speed * 3.6 : undefined,
+        elevationGain: activity.total_elevation_gain,
+        heartRate: {
+          average: activity.average_heartrate,
+          max: activity.max_heartrate
         },
-        $setOnInsert: {
-          createdAt: new Date()
-        }
+        // power: activity.average_watts ? { average: activity.average_watts, max: activity.max_watts } : undefined,
+        // Laps/Sets need separate processing later
       },
-      { upsert: true }
-    );
+      // Ensure top-level distance matches cardioDetails distance (in km)
+      distance: (activity.distance || 0) / 1000, // Convert meters to km
+    };
     
-    console.log(`Successfully upserted WorkoutExercise link for Workout ID: ${savedWorkout._id} and Exercise ID: ${exerciseId}`);
+    // Remove undefined heart rate values
+    if (!workoutData.cardioDetails.heartRate.average) delete workoutData.cardioDetails.heartRate.average;
+    if (!workoutData.cardioDetails.heartRate.max) delete workoutData.cardioDetails.heartRate.max;
+    if (Object.keys(workoutData.cardioDetails.heartRate).length === 0) delete workoutData.cardioDetails.heartRate;
+    
+    // Remove cardioDetails if no significant data
+    if (!workoutData.cardioDetails.distance && !workoutData.cardioDetails.duration) {
+        delete workoutData.cardioDetails;
+    }
 
-    return { success: true, action: action }; // Report overall success
+    console.log(`Prepared workout data for activity ${activityId}:`, JSON.stringify(workoutData).substring(0, 500) + "...");
+
+    // --- Upsert Workout Document --- (Keep existing logic)
+    const savedWorkout = await WorkoutModel.findOneAndUpdate(
+      { userId: workoutData.userId, source: "strava", sourceId: activityId },
+      { $set: workoutData },
+      { new: true, upsert: true, runValidators: true }
+    );
+    console.log(`Upserted Workout document ${savedWorkout._id} for Strava activity ${activityId}`);
+
+    // --- ADDED: Create/Update WorkoutExercise --- 
+    // 1. Find the canonical Exercise document based on mappedType
+    let exercise = await ExerciseModel.findOne({ 
+      // Try matching common variations for the mapped type
+      name: { $regex: new RegExp(`^${mappedType}$`, 'i') } 
+    }).lean() as any;
+    
+    if (!exercise) {
+        // Basic fallback: If type is 'running', find 'Running'. If 'cycling', find 'Cycling', etc.
+        const capitalizedType = mappedType.charAt(0).toUpperCase() + mappedType.slice(1);
+        console.log(`Exercise for type '${mappedType}' not found by regex, trying capitalized: '${capitalizedType}'`);
+        exercise = await ExerciseModel.findOne({ name: capitalizedType }).lean() as any;
+    }
+    
+    // If still not found, maybe create a basic one? Or log error?
+    if (!exercise) {
+        console.error(`Canonical Exercise document not found for mapped type: ${mappedType}. Cannot create WorkoutExercise.`);
+        // Optionally, create a basic exercise entry here if desired
+        // exercise = await ExerciseModel.create({ name: mappedType.charAt(0).toUpperCase() + mappedType.slice(1), category: 'cardio' }); // Example creation
+        // if (!exercise) throw new Error(`Failed to find or create Exercise for type ${mappedType}`);
+         throw new Error(`Canonical Exercise not found for type ${mappedType}`); // Fail for now
+    }
+    console.log(`Found canonical Exercise ${exercise._id} (${exercise.name}) for type ${mappedType}`);
+
+    // 2. Prepare WorkoutExercise data (basic for now, sets added later)
+    const workoutExerciseData = {
+      userId: savedWorkout.userId,
+      workoutId: savedWorkout._id,
+      exerciseId: exercise._id, 
+      order: 0, // Assuming only one exercise entry per Strava activity for now
+      sets: [], // Placeholder - Laps/intervals processing needed here
+      // Add duration/distance if applicable (maybe from cardioDetails?)
+      duration: workoutData.cardioDetails?.duration, // Duration in seconds
+      distance: workoutData.cardioDetails?.distance ? workoutData.cardioDetails.distance * 1000 : undefined, // Distance in meters
+    };
+
+    // 3. Upsert WorkoutExercise document
+    const savedWorkoutExercise = await WorkoutExerciseModel.findOneAndUpdate(
+      { workoutId: savedWorkout._id, exerciseId: exercise._id }, // Find based on workout and exercise link
+      { $set: workoutExerciseData },
+      { new: true, upsert: true, runValidators: true }
+    );
+    console.log(`Upserted WorkoutExercise document ${savedWorkoutExercise._id} linking workout ${savedWorkout._id} to exercise ${exercise._id}`);
+
+    // --- END ADDED SECTION --- 
 
   } catch (error) {
-    console.error(`Error syncing Strava activity ${activityId}:`, error);
-    throw error;
+    console.error(`Error syncing Strava activity ${activityId} for user ${userId}:`, error);
+    throw error; // Re-throw error to be caught by the webhook handler
   }
 }
 
