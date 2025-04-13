@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, markWorkoutComplete } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
-import type { WorkoutData, Exercise } from "@/types/db"
+import type { WorkoutData, ExerciseData, Set, WorkoutExerciseData } from "@/types/db"
 import { Label } from "@/components/ui/label"
 import { toast } from "react-hot-toast"
 
@@ -45,7 +45,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
           setWorkout(data)
           // Initialize all exercises as not completed
           const initialCompletedState: Record<number, boolean> = {}
-          data.exercises?.forEach((exercise: Exercise, index: number) => {
+          data.workoutExercises?.forEach((exercise: WorkoutExerciseData, index: number) => {
             initialCompletedState[index] = false
           })
           setCompletedExercises(initialCompletedState)
@@ -98,8 +98,8 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
 
   // Calculate progress
   const calculateProgress = () => {
-    if (!workout?.exercises) return 0
-    const totalExercises = workout.exercises.length
+    if (!workout?.workoutExercises) return 0
+    const totalExercises = workout.workoutExercises.length
     if (totalExercises === 0) return 0
     const completedCount = Object.values(completedExercises).filter(Boolean).length
     return (completedCount / totalExercises) * 100
@@ -238,7 +238,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
                 <CardDescription>Check off exercises as you complete them</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {(workout.exercises || []).map((exercise, index) => (
+                {(workout.workoutExercises || []).map((exercise: WorkoutExerciseData, index: number) => (
                   <div key={index} className="space-y-4 p-4 border rounded-lg">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -248,7 +248,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
                           onCheckedChange={() => toggleExerciseCompletion(index)}
                         />
                         <Label htmlFor={`exercise-${index}`} className="text-lg">
-                          {exercise.name}
+                          {exercise.exerciseId.name}
                         </Label>
                       </div>
                       <Badge variant={completedExercises[index] ? "default" : "secondary"}>
@@ -257,15 +257,15 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
                     </div>
 
                     <div className="space-y-2">
-                      {(exercise.sets || []).map((set, setIndex) => (
+                      {(exercise.sets || []).map((set: Set, setIndex: number) => (
                         <div key={setIndex} className="flex items-center gap-4">
                           <div className="flex-1">
                             <Label>Weight (kg)</Label>
-                            <div className="text-lg font-medium">{set.weight}</div>
+                            <div className="text-lg font-medium">{set.weight ?? 'N/A'}</div>
                           </div>
                           <div className="flex-1">
                             <Label>Reps</Label>
-                            <div className="text-lg font-medium">{set.reps}</div>
+                            <div className="text-lg font-medium">{set.reps ?? 'N/A'}</div>
                           </div>
                           <div className="flex items-center gap-2">
                             {completedExercises[index] ? (
