@@ -14,7 +14,10 @@
     "lint": "next lint",
     "clean-vercel": "rm -rf .next && rm -rf .vercel/output",
     "deploy:force": "npm run clean-vercel && NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs vercel --prod",
-    "deploy:clear-cache": "npm run clean-vercel && VERCEL_FORCE_NO_BUILD_CACHE=1 NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs NEXT_DISABLE_CACHE=1 vercel --prod --force"
+    "deploy:clear-cache": "npm run clean-vercel && VERCEL_FORCE_NO_BUILD_CACHE=1 NEXT_DISABLE_STATIC_GENERATION=true NEXT_FORCE_DYNAMIC=true NEXT_RUNTIME=nodejs NEXT_DISABLE_CACHE=1 vercel --prod --force",
+    "db:clear-exercises": "dotenv -e .env.local -- tsx scripts/clear_exercises.ts",
+    "db:clear-workouts": "dotenv -e .env.local -- tsx scripts/clear_workouts.ts",
+    "db:clear-all-demo": "dotenv -e .env.local -- tsx scripts/clear_all_demo_data.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.2.7",
@@ -41,7 +44,6 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@stripe/stripe-js": "^7.0.0",
     "@types/adm-zip": "^0.5.7",
-    "@types/bcryptjs": "^2.4.6",
     "@types/uuid": "^10.0.0",
     "@types/xml2js": "^0.4.14",
     "@upstash/ratelimit": "^2.0.5",
@@ -50,7 +52,6 @@
     "adm-zip": "^0.5.16",
     "ai": "^4.1.64",
     "autoprefixer": "^10.0.1",
-    "bcryptjs": "^3.0.2",
     "body-parser": "^1.20.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -94,15 +95,23 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/typography": "^0.5.16",
     "@types/bcrypt": "^5.0.2",
+    "@types/bcryptjs": "^2.4.6",
     "@types/next": "^8.0.7",
     "@types/node": "^20",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/yauzl": "^2.10.3",
+    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.2",
+    "dotenv-cli": "^8.0.0",
     "eslint": "^8.56.0",
     "eslint-config-next": "14.1.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.19.3",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "dotenv -e .env.local -- tsx prisma/seed.ts"
   }
 }

@@ -15,32 +15,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+import { Label } from "@/components/ui/label"
 import { 
   createWorkout as createWorkoutAction, 
   updateWorkoutAction,
-  type WorkoutUpdatePayload
+  type WorkoutUpdatePayload,
+  type InputSetData
 } from "@/lib/workout-actions"
 import { fetchExercises } from "@/lib/exercise-actions"
-import type { ExerciseData, WorkoutData, Exercise } from "@/types/db"
+import type { ExerciseData, WorkoutData, WorkoutExerciseData, Set } from "@/types/db"
 import { IWorkout } from "@/lib/db/models/workout"
 import { estimateBodyweightForExercise } from "@/lib/utils"
 
-// Define the shape of exercises within this component's state
-type JournalExercise = {
-  id: number | string
-  name: string
-  weight: string
-  reps: string
-  sets: string
+// Type guard to filter out nulls
+function isDefined<T>(value: T | null | undefined): value is T {
+    return value !== null && value !== undefined;
 }
 
-// Add 'home_strength' to the type
-type WorkoutTense = "past" | "present" | "future"
-type WorkoutTypeOption = "gym" | "home_strength" | "run" | "swim" | "cycle" | "hike" | "other"
-type WorkoutTypeForDb = WorkoutData['type']
+// --- NEW State Types --- 
+// Represents a single set in the form state
+type SetState = {
+  id: number | string; // Temporary ID for form state (e.g., `set-temp-${Date.now()}`)
+  order?: number; // Optional: Order for submission, managed by position in array mostly
+  weight?: string; 
+  reps?: string; 
+  duration?: string; // In seconds
+  distance?: string; // In preferred unit (e.g., meters)
+  notes?: string;
+}
 
-// Define the specific workout types allowed by the schema
+// Represents a single exercise in the form state, containing multiple sets
+type ExerciseState = {
+  id: number | string; // Temporary ID for form state (e.g., `ex-temp-${Date.now()}`)
+  exerciseId?: string; // ID of the canonical Exercise (if known/selected)
+  name: string; // Name of the canonical Exercise
+  notes?: string; // Notes specific to this exercise in this workout
+  sets: SetState[]; // Array of sets for this exercise
+  // Add other fields if needed (e.g., duration/distance for non-set exercises)
+}
+// --- END NEW State Types ---
+
+// Define the allowed *schema* types from IWorkout
 type AllowedWorkoutType = IWorkout['type']
+
+// Define the types used for *options* in the Select dropdown.
+// Include all schema types plus frontend-specific ones.
+type WorkoutTypeOption = AllowedWorkoutType | "gym" | "home_strength"; 
+
+type WorkoutTense = "past" | "present" | "future"
 
 // Estimate weight for common bodyweight exercises
 // Moved to src/lib/utils.ts
@@ -59,7 +81,7 @@ export default function NewWorkoutPage() {
   const [workoutName, setWorkoutName] = useState<string>("")
   const [distance, setDistance] = useState<string>("")
   const [duration, setDuration] = useState<string>("")
-  const [exercises, setExercises] = useState<JournalExercise[]>([])
+  const [exercises, setExercises] = useState<ExerciseState[]>([])
   const [dbExercises, setDbExercises] = useState<ExerciseData[]>([])
   const [dbExercisesMap, setDbExercisesMap] = useState<Map<string, ExerciseData>>(new Map()); // Store exercises by name for lookup
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -68,14 +90,20 @@ export default function NewWorkoutPage() {
 
   const isEditing = !!editingWorkoutId
 
-  // Map of workout values to display names for easy lookup
+  // Map of workout *option* values to display names.
+  // Ensure keys match the WorkoutTypeOption definition.
   const workoutTypeDisplayNames: Record<WorkoutTypeOption, string> = {
       gym: "Gym Workout",
       home_strength: "Home Workout",
-      run: "Run",
-      swim: "Swim",
-      cycle: "Cycling Session",
-      hike: "Hike",
+      running: "Run",
+      swimming: "Swim",
+      cycling: "Cycling Session",
+      walking: "Walk / Hike",
+      strength: "Strength (Other)", // Might hide this option later
+      hiit: "HIIT",
+      flexibility: "Flexibility / Stretch",
+      yoga: "Yoga",
+      pilates: "Pilates",
       other: "Other Activity"
   }
 
@@ -111,38 +139,46 @@ export default function NewWorkoutPage() {
         try {
           const response = await fetch(`/api/workouts/${workoutIdToLoad}`);
           if (!response.ok) {
-            const errorData = await response.json().catch(() => ({})); // Try to get error details
+            const errorData = await response.json().catch(() => ({})); 
             throw new Error(`Failed to fetch workout data (${response.status}): ${errorData.error || response.statusText}`);
           }
-          const data: WorkoutData = await response.json();
+          const data: WorkoutData = await response.json(); 
           
           // --- Pre-populate form state ---
-          // Ensure date is treated as string before parsing
           const dateString = typeof data.date === 'string' ? data.date : String(data.date);
           setDate(parseISO(dateString)); 
           
-          const formTypeOption: WorkoutTypeOption = 
-              data.type === 'strength' ? 'gym' : data.type as WorkoutTypeOption;
+          const formTypeOption: WorkoutTypeOption = data.type as WorkoutTypeOption; // Use actual type now
           setWorkoutType(formTypeOption); 
           setWorkoutName(data.name || "");
-          setDistance(data.distance?.toString() || "");
-          setDuration(data.duration?.toString() || "");
+          // Pre-fill overall distance/duration if applicable (e.g., for pure cardio workouts)
+          setDistance(data.cardioDetails?.distance?.toString() || data.distance?.toString() || ""); 
+          setDuration(data.duration?.toString() || ""); 
 
-          // Map DB exercises (type Exercise) to JournalExercise format
-          if (data.exercises && data.type === 'strength') {
-            const mappedExercises = data.exercises.map((ex: Exercise, index) => { 
-              const firstSet = ex.sets?.[0]; 
+          // Map DB WorkoutExercises (with Sets) to the new ExerciseState format
+          if (data.workoutExercises && data.workoutExercises.length > 0) {
+            const mappedExercises: ExerciseState[] = data.workoutExercises.map((ex: WorkoutExerciseData): ExerciseState => { 
+              // Ensure ex.sets is an array before mapping
+              const setsArray = Array.isArray(ex.sets) ? ex.sets : [];
               return {
-                id: `loaded-${index}-${Date.now()}`, 
-                name: ex.name, 
-                weight: firstSet?.weight?.toString() || "", 
-                reps: firstSet?.reps?.toString() || "",
-                sets: ex.sets?.length.toString() || "1" 
+                id: ex._id || `loaded-${Date.now()}`, // Simplified temp ID generation
+                exerciseId: ex.exerciseId?._id?.toString(),
+                name: ex.exerciseId?.name || 'Unknown Exercise', 
+                notes: ex.notes || undefined,
+                sets: setsArray.map((set: Set, setIndex: number): SetState => ({ 
+                  id: set._id || `loaded-set-${setIndex}-${Date.now()}`, 
+                  order: set.order ?? setIndex,
+                  weight: set.weight?.toString() || "",
+                  reps: set.reps?.toString() || "",
+                  duration: set.duration?.toString() || "",
+                  distance: set.distance?.toString() || "",
+                  notes: set.notes || undefined,
+                }))
               };
             });
             setExercises(mappedExercises);
           } else {
-            setExercises([]);
+            setExercises([]); 
           }
           
           console.log("Loaded workout data for edit/duplicate:", data);
@@ -156,7 +192,6 @@ export default function NewWorkoutPage() {
       };
       fetchWorkoutData();
     }
-    // Removed router dependency, only depend on the IDs
   }, [editingWorkoutId, duplicateWorkoutId]); 
 
   // Set tense based on date
@@ -164,22 +199,28 @@ export default function NewWorkoutPage() {
     updateTenseBasedOnDate(date)
   }, [date])
 
-  // Reset form fields when workout type changes (unless loading data)
+  // Reset form fields when workout type changes
   useEffect(() => {
-    if (isLoadingData) return; // Don't reset while loading
-    
+    if (isLoadingData) return; 
     setError(null); 
-    // Add check for undefined workoutType
-    if (workoutType === "gym" || workoutType === "home_strength") { 
+
+    // Determine if the selected type is strength-related based on our options
+    const isStrengthType = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
+    
+    if (isStrengthType) { 
       // Only add initial exercise if NOT editing/duplicating AND exercises are empty
       if (!isEditing && !duplicateWorkoutId && exercises.length === 0) { 
-          addExercise(); 
+          addExercise(); // addExercise will now add an ExerciseState with one SetState
       }
-      setDistance(""); setDuration("");
-    } else if (workoutType) { // Only clear if it's defined and not strength
+      // Clear overall distance/duration if switching TO strength?
+      // setDistance(""); 
+      // setDuration(""); 
+    } else if (workoutType) { // Clear exercises if switching to a non-strength type
       setExercises([]); 
+      // Maybe prefill overall distance/duration based on type?
     }
-  }, [workoutType, isLoadingData, isEditing, duplicateWorkoutId]) // Add dependencies
+    // Add dependencies correctly
+  }, [workoutType, isLoadingData, isEditing, duplicateWorkoutId, exercises.length]); 
 
   // Update tense when date changes
   const updateTenseBasedOnDate = (selectedDate: Date) => {
@@ -194,28 +235,90 @@ export default function NewWorkoutPage() {
 
   const addExercise = () => {
     setError(null);
-    const newId = `temp-${Date.now()}-${Math.random()}`; // Use temporary string ID
-    setExercises([...exercises, { id: newId, name: "", weight: "", reps: "", sets: "" }])
-  }
+    const newExerciseId = `ex-temp-${Date.now()}-${Math.random()}`;
+    const newSetId = `set-temp-${Date.now()}-${Math.random()}`;
+    // Add a new exercise with one default empty set
+    setExercises([...exercises, { 
+        id: newExerciseId, 
+        name: "", 
+        sets: [{ id: newSetId, weight: "", reps: "" }] // Start with one empty set
+    }]);
+  };
 
-  const updateExercise = (id: number | string, field: keyof JournalExercise, value: string) => {
+  // Renamed and updated: Handles changes to Exercise properties (name, notes)
+  const updateExerciseField = (exerciseId: number | string, field: 'name' | 'notes', value: string) => {
     setError(null);
-    setExercises(exercises.map((exercise) => (exercise.id === id ? { ...exercise, [field]: value } : exercise)))
-  }
+    setExercises(exercises.map((exercise) => {
+      if (exercise.id === exerciseId) {
+        // If changing name, potentially update exerciseId if a match is found in dbExercisesMap
+        let updatedExerciseId = exercise.exerciseId;
+        if (field === 'name') {
+            const matchedDbExercise = dbExercisesMap.get(value);
+            updatedExerciseId = matchedDbExercise?._id;
+        }
+        return { ...exercise, [field]: value, exerciseId: updatedExerciseId };
+      } 
+      return exercise;
+    }));
+  };
   
+  // Remains the same logically, just operates on ExerciseState[]
   const removeExercise = (id: number | string) => {
     setError(null);
     setExercises(exercises.filter(exercise => exercise.id !== id));
-  }
+  };
+
+  // --- Need new functions for Sets ---
+  const addSet = (exerciseId: number | string) => {
+    setError(null);
+    const newSetId = `set-temp-${Date.now()}-${Math.random()}`;
+    setExercises(exercises.map(ex => {
+      if (ex.id === exerciseId) {
+        return { 
+          ...ex, 
+          sets: [...ex.sets, { id: newSetId, weight: "", reps: "" }] // Add a new empty set
+        };
+      }
+      return ex;
+    }));
+  };
+  
+  const updateSetField = (exerciseId: number | string, setId: number | string, field: keyof SetState, value: string) => {
+    setError(null);
+    setExercises(exercises.map(ex => {
+      if (ex.id === exerciseId) {
+        return { 
+          ...ex, 
+          sets: ex.sets.map(set => set.id === setId ? { ...set, [field]: value } : set)
+        };
+      }
+      return ex;
+    }));
+  };
+
+  const removeSet = (exerciseId: number | string, setId: number | string) => {
+    setError(null);
+    setExercises(exercises.map(ex => {
+      if (ex.id === exerciseId) {
+        // Ensure at least one set remains if this is the last one? Or handle in UI.
+        return { ...ex, sets: ex.sets.filter(set => set.id !== setId) };
+      }
+      return ex;
+    }));
+  };
+  // --- END Set functions ---
 
   // Filter out empty/invalid exercises before processing
   const validExercises = useMemo(() => {
-    return exercises.filter(ex => 
-        ex.name && ex.name !== 'Other' && // Ensure 'Other' isn't saved directly if not typed
-        (Number.parseInt(ex.reps) > 0) && 
-        (Number.parseInt(ex.sets) > 0)
-        // Weight can be 0 (bodyweight)
-    );
+    return exercises.filter(ex => {
+        // Exercise must have a name
+        if (!ex.name || ex.name === 'Other') return false;
+        // Exercise must have at least one set
+        if (!ex.sets || ex.sets.length === 0) return false;
+        // At least one set must have a rep count > 0
+        return ex.sets.some(set => (Number.parseInt(set.reps || '0') || 0) > 0);
+        // Weight can be 0 (bodyweight), so we don't strictly need a weight validation here
+    });
   }, [exercises]);
 
   // Use updated verbs
@@ -230,20 +333,27 @@ export default function NewWorkoutPage() {
   // Calculate workout summary
   const workoutSummary = useMemo(() => {
     if (!workoutType) return null;
-    if (workoutType === "gym" || workoutType === "home_strength") { 
+    // Check if it's a strength type based on the WorkoutTypeOption
+    const isStrengthType = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
+
+    if (isStrengthType) { 
       let totalVolume = 0; 
       let totalReps = 0;
       let validExerciseCount = 0;
 
       validExercises.forEach((exercise) => {
-        const reps = Number.parseInt(exercise.reps) || 0;
-        const sets = Number.parseInt(exercise.sets) || 0;
-        const weight = Number.parseFloat(exercise.weight) || 0; 
-
-        if (reps > 0 && sets > 0) {
-          const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exercise.name);
-          totalVolume += estimatedWeight * reps * sets;
-          totalReps += reps * sets;
+        let exerciseHasValidSets = false;
+        exercise.sets.forEach(set => {
+            const reps = Number.parseInt(set.reps || '0') || 0;
+            const weight = Number.parseFloat(set.weight || '0') || 0; 
+            if (reps > 0) {
+                const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exercise.name);
+                totalVolume += estimatedWeight * reps;
+                totalReps += reps;
+                exerciseHasValidSets = true;
+            }
+        });
+        if (exerciseHasValidSets) {
           validExerciseCount++;
         }
       });
@@ -251,7 +361,7 @@ export default function NewWorkoutPage() {
       if (validExerciseCount === 0) return null;
 
       return { totalVolume: Math.round(totalVolume), totalReps }; 
-    } else if (["run", "swim", "cycle", "hike", "other"].includes(workoutType)) { 
+    } else if (["running", "swimming", "cycling", "walking", "other"].includes(workoutType)) { // Use WorkoutTypeOption check
       const dist = Number.parseFloat(distance) || 0;
       const dur = Number.parseFloat(duration) || 0;
       if (dist > 0 && dur > 0) {
@@ -260,7 +370,7 @@ export default function NewWorkoutPage() {
       }
     }
     return null;
-  }, [workoutType, validExercises, distance, duration]);
+  }, [workoutType, validExercises, distance, duration]); // Keep dependencies
 
   // Update summary text generation
    const getSummaryText = () => {
@@ -270,7 +380,7 @@ export default function NewWorkoutPage() {
       const intensityText = workoutSummary.totalVolume > 10000 ? "heavy" : workoutSummary.totalVolume > 3000 ? "moderate" : "light";
       const verb = getVerbTenseText(); 
       return `${verb} a total volume of ${workoutSummary.totalVolume} kg over ${workoutSummary.totalReps} reps. This was a ${intensityText} workout.`
-    } else if (["run", "swim", "cycle", "hike"].includes(workoutType)) { 
+    } else if (["running", "swimming", "cycling", "walking"].includes(workoutType)) { 
       if (workoutSummary.distance === undefined || workoutSummary.pace === undefined) return null;
       const paceText = workoutSummary.pace < 5 ? "quite fast" : workoutSummary.pace < 7 ? "a good pace" : "a comfortable pace";
        const verb = getVerbTenseText();
@@ -290,139 +400,138 @@ export default function NewWorkoutPage() {
         setError("You must be logged in to save a workout.");
         return;
     }
-    // Validation checks... (remain mostly the same)
-    if ((workoutType === 'gym' || workoutType === 'home_strength') && validExercises.length === 0) {
-        setError("Please add at least one valid exercise (name, reps, sets).");
+    // Use the updated validExercises memo
+    const exercisesToSubmit = validExercises;
+    
+    // Updated Validation checks
+    const isStrengthType = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
+    if (isStrengthType && exercisesToSubmit.length === 0) {
+      setError("Please add at least one exercise with valid sets (reps > 0).");
       return;
     }
-    if (workoutType !== 'gym' && workoutType !== 'home_strength' && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
-        setError("Please enter a valid distance and duration.");
-        return;
+    if (!isStrengthType && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
+      setError("Please enter a valid distance and duration for this activity type.");
+      return;
     }
 
     setError(null);
     setIsSubmitting(true);
 
-    // Determine DB type
-    const workoutTypeForDb = 
-        (workoutType === "gym" || workoutType === "home_strength") ? "strength" : workoutType;
+    // --- Determine the correct WorkoutType for the database ---
+    let finalWorkoutTypeForPayload: AllowedWorkoutType;
+    if (isStrengthType) {
+      finalWorkoutTypeForPayload = "strength";
+    } else if (["running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(workoutType)) {
+      finalWorkoutTypeForPayload = workoutType as AllowedWorkoutType;
+    } else {
+      console.error("Invalid workoutType selected:", workoutType);
+      setError("Invalid activity type selected.");
+      setIsSubmitting(false);
+      return;
+    }
     
-    // Explicitly cast to the allowed types for the payload
-    const finalWorkoutTypeForPayload = workoutTypeForDb as AllowedWorkoutType;
-
     const defaultWorkoutName = workoutTypeDisplayNames[workoutType] || "Workout";
-    const finalWorkoutName = workoutName.trim() || defaultWorkoutName; // Use provided name or default
+    const finalWorkoutName = workoutName.trim() || defaultWorkoutName;
 
-    let exercisesPayload: any[] = []; // Initialize for WorkoutExercise structure
+    // --- Map form state (ExerciseState[]) to payload structure --- 
+    let exercisesPayload: WorkoutUpdatePayload['exercises'] = []; 
 
-    if (workoutTypeForDb === 'strength') {
-      if (validExercises.length === 0) {
-        // Existing validation for strength workouts needing exercises
-        setError("Please add at least one valid exercise (name, reps, sets).");
-        setIsSubmitting(false);
-        return;
-      }
-      
-      // Map form state (JournalExercise) to the structure needed by backend actions
-      exercisesPayload = validExercises.map((ex, index) => {
-          // Find the canonical exercise ID from the map created earlier
-          const canonicalExercise = dbExercisesMap.get(ex.name);
-          if (!canonicalExercise) {
-              console.warn(`Could not find canonical exercise ID for: ${ex.name}. Skipping in payload.`);
-              // Optionally throw error or handle differently
-              return null; 
-          }
+    if (finalWorkoutTypeForPayload === 'strength') {
+      const mappedExercises = exercisesToSubmit
+        .map((exState, index): WorkoutUpdatePayload['exercises'][0] | null => {
+          const canonicalExerciseId = exState.exerciseId || dbExercisesMap.get(exState.name)?._id;
+          if (!canonicalExerciseId) return null;
+          const exerciseSetsPayload: InputSetData[] = exState.sets
+            .map((setState, setIndex): InputSetData | null => {
+              const reps = Number.parseInt(setState.reps || '0');
+              if (reps > 0) {
+                return {
+                  weight: Number.parseFloat(setState.weight || '0') || 0,
+                  reps: reps,
+                  duration: setState.duration ? Number.parseInt(setState.duration) : undefined,
+                  distance: setState.distance ? Number.parseFloat(setState.distance) : undefined,
+                  notes: setState.notes || undefined,
+                  order: setIndex 
+                };
+              } 
+              return null;
+            })
+            .filter(isDefined);
           
-          // Create the sets array based on form input
-          const numSets = Number.parseInt(ex.sets) || 1;
-          const exerciseSets = Array.from({ length: numSets }).map((_, setIndex) => ({
-              weight: Number.parseFloat(ex.weight) || 0, 
-              reps: Number.parseInt(ex.reps) || 0,
-              // Add duration/distance/notes per set if your form captures them
-              order: setIndex
-          }));
-
-          return {
-              // _id: Might need this when *editing* existing WorkoutExercises
-              // If ex.id relates to an existing WorkoutExercise._id, pass it here
-              // For simplicity now, we assume create/update handles based on presence/absence
-              // but a robust edit needs to track original WorkoutExercise IDs.
-              exerciseId: canonicalExercise._id, // Use the looked-up ID
-              name: ex.name, // Send name too, might help backend if ID lookup fails? Redundant?
+          if (exerciseSetsPayload.length > 0) {
+            return {
+              _id: typeof exState.id === 'string' && exState.id.startsWith('loaded-') ? exState.id.replace('loaded-', '') : undefined,
+              exerciseId: canonicalExerciseId,
+              name: exState.name, 
               order: index,
-              sets: exerciseSets,
-              // notes: ex.notes, // If form captures notes per exercise
-          };
-      }).filter(Boolean); // Remove any skipped null entries
+              sets: exerciseSetsPayload,
+              notes: exState.notes || undefined, 
+            };
+          } 
+          return null; 
+        });
+        
+      // @ts-ignore - Linter seems unable to correctly infer type after filter
+      exercisesPayload = mappedExercises.filter(isDefined);
       
-      if (exercisesPayload.length === 0 && validExercises.length > 0) {
-         // This happens if all exercises entered were invalid or couldn't be found
-         setError("Could not match provided exercises to known exercises. Please check names.");
+      if (exercisesPayload.length === 0 && exercisesToSubmit.length > 0) {
+         setError("Could not map any exercises to a valid format. Ensure reps > 0.");
          setIsSubmitting(false);
          return;
       }
 
-    } else { 
-      // Handle Cardio Types - Create a single WorkoutExercise entry
+    } else { // Handle Cardio/Other Types
       const parsedDuration = Number.parseFloat(duration);
       const parsedDistance = Number.parseFloat(distance);
-      if (Number.isNaN(parsedDuration) || parsedDuration <= 0 || Number.isNaN(parsedDistance) || parsedDistance <= 0) {
-          setError("Please enter a valid positive distance and duration for cardio.");
+      const cardioExerciseName = finalWorkoutTypeForPayload.charAt(0).toUpperCase() + finalWorkoutTypeForPayload.slice(1);
+      let canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName);
+      
+      if (!canonicalCardioExercise) {
+          // Try with "ing" suffix (e.g., "Running" instead of "Run")
+          const alternativeName = cardioExerciseName + (cardioExerciseName.endsWith('e') ? '' : 'ing');
+          canonicalCardioExercise = dbExercisesMap.get(alternativeName);
+          if (!canonicalCardioExercise) {
+            canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName.toLowerCase()) || dbExercisesMap.get(alternativeName.toLowerCase());
+          }
+       }
+
+      if (!canonicalCardioExercise) {
+          console.error(`Could not find canonical exercise for type: ${finalWorkoutTypeForPayload}. Tried: ${cardioExerciseName}`);
+          // Decide how to handle - maybe create a placeholder exercise? For now, we might error.
+          setError(`Could not find a matching exercise definition for type: ${finalWorkoutTypeForPayload}.`);
           setIsSubmitting(false);
-          return;
-      }
-
-      // Find the canonical exercise ID for the cardio type (e.g., "Running")
-      const cardioExerciseName = workoutType.charAt(0).toUpperCase() + workoutType.slice(1);
-      
-      // Try multiple variations of the exercise name
-      let canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName); // First try e.g. "Run"
-      
-      if (!canonicalCardioExercise) {
-        // Try with "ing" suffix (e.g., "Running" instead of "Run")
-        const alternativeName = cardioExerciseName + (cardioExerciseName.endsWith('e') ? '' : 'ing');
-        canonicalCardioExercise = dbExercisesMap.get(alternativeName);
-        
-        // Try lowercase variations
-        if (!canonicalCardioExercise) {
-          canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName.toLowerCase()) || 
-                                  dbExercisesMap.get(alternativeName.toLowerCase());
-        }
-      }
-
-      if (!canonicalCardioExercise) {
-          console.error(`Could not find cardio exercise. Tried: ${cardioExerciseName} and ${cardioExerciseName}ing`);
-          console.log("Available exercises:", Array.from(dbExercisesMap.keys()));
-          
-          // Create a temporary entry for form submission with name only
-          exercisesPayload.push({
-              name: cardioExerciseName,
-              order: 0,
-              duration: parsedDuration * 60, // Assuming form duration is in minutes, convert to seconds
-              distance: parsedDistance * 1000, // Assuming form distance is in km, convert to meters
-              sets: [], // Cardio doesn't have sets in this structure
-          });
+          return; 
       } else {
-          exercisesPayload.push({
+          // Create a single WorkoutExercise entry for the cardio activity
+          exercisesPayload = [{
               exerciseId: canonicalCardioExercise._id,
               name: canonicalCardioExercise.name,
               order: 0,
-              duration: parsedDuration * 60, // Assuming form duration is in minutes, convert to seconds
-              distance: parsedDistance * 1000, // Assuming form distance is in km, convert to meters
-              sets: [], // Cardio doesn't have sets in this structure
-          });
+              // Store duration/distance on the WorkoutExercise level for cardio
+              duration: parsedDuration * 60, // Convert form minutes to seconds
+              distance: parsedDistance * 1000, // Convert form km to meters?
+              sets: [], // Cardio doesn't have sets in this model
+          }];
       }
     }
 
-    // Construct final WorkoutData payload
-    const workoutPayload = {
+    // --- Construct final WorkoutUpdatePayload --- 
+    let cardioDetailsPayload: WorkoutUpdatePayload['cardioDetails'] = undefined;
+    const parsedCardioDistance = distance ? Number.parseFloat(distance) * 1000 : undefined; // meters
+    const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined; // seconds
+
+    if (!isStrengthType) {
+        cardioDetailsPayload = { distance: parsedCardioDistance ?? 0, duration: parsedCardioDuration ?? 0 };
+    }
+    
+    const workoutPayload: Omit<WorkoutUpdatePayload, 'userId'> = {
       date: date, 
-      name: finalWorkoutName, 
-      type: finalWorkoutTypeForPayload, 
+      name: finalWorkoutName,
+      type: finalWorkoutTypeForPayload,
       notes: getSummaryText() || "", 
-      duration: (finalWorkoutTypeForPayload !== 'strength' && duration) ? Number.parseFloat(duration) : undefined,
+      duration: isStrengthType ? undefined : (parsedCardioDuration || 0),
       exercises: exercisesPayload, 
-      // Add other fields compatible with both create and update payloads if needed
+      cardioDetails: cardioDetailsPayload,
     };
 
     console.log("Submitting workout payload (NEW STRUCTURE):", JSON.stringify(workoutPayload, null, 2));
@@ -432,17 +541,16 @@ export default function NewWorkoutPage() {
       let savedWorkout;
       if (isEditing && editingWorkoutId) {
         console.log(`Attempting to update workout ID: ${editingWorkoutId}`);
-        // Ensure the payload passed matches WorkoutUpdatePayload type expected by updateWorkoutAction
-        savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload as Omit<WorkoutUpdatePayload, 'userId'>);
+        savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload);
         toast.success('Workout updated successfully!');
       } else {
         console.log("Attempting to create new workout");
-        // createWorkoutAction uses 'as any' for now, so less strict typing needed here
+        // Type assertion needed as createWorkout expects userId, but Omit removed it.
         const createPayload = {
             ...workoutPayload,
             userId: session!.user!.id, 
-        };
-        savedWorkout = await createWorkoutAction(createPayload as any); 
+        } as any; // Use `as any` or define a specific CreatePayload type
+        savedWorkout = await createWorkoutAction(createPayload); 
         toast.success('Workout created successfully!');
       }
       
@@ -500,12 +608,9 @@ export default function NewWorkoutPage() {
                 On{" "}
                 <Popover>
                   <PopoverTrigger asChild>
-                          <Button 
-                      variant="link"
-                      className={inlineButtonStyle}
-                    >
-                      {format(date, "MMMM d, yyyy")}
-                      <CalendarIcon className="ml-1.5 h-4 w-4 inline-block" />
+                          <Button variant="link" className={inlineButtonStyle}>
+                              {format(date, "MMMM d, yyyy")}
+                              <CalendarIcon className="ml-1.5 h-4 w-4 inline-block" />
                           </Button>
                   </PopoverTrigger>
                   <PopoverContent style={{ backgroundColor: 'hsl(var(--card))' }} className="w-auto p-0" align="start">
@@ -515,26 +620,19 @@ export default function NewWorkoutPage() {
                 {getVerbTenseText()}{" "}
                 a{" "} 
                 <Select value={workoutType || ""} onValueChange={(value) => setWorkoutType(value as WorkoutTypeOption)}>
-                  <SelectTrigger className={cn(
-                      inlineSelectStyle, 
-                      !workoutType && "text-lg font-semibold text-muted-foreground"
-                     )}>
+                  <SelectTrigger className={cn(inlineSelectStyle, !workoutType && "text-lg font-semibold text-muted-foreground")}>
                      {workoutType ? workoutTypeDisplayNames[workoutType] : "Select activity..."} 
                   </SelectTrigger>
-                  <SelectContent style={{ backgroundColor: 'hsl(var(--card))' }}> 
-                    <SelectItem value="gym">Gym Workout</SelectItem>
-                    <SelectItem value="home_strength">Home Workout</SelectItem> 
-                    <SelectItem value="run">Run</SelectItem>
-                    <SelectItem value="swim">Swim</SelectItem>
-                    <SelectItem value="cycle">Cycling Session</SelectItem>
-                    <SelectItem value="hike">Hike</SelectItem>
-                    <SelectItem value="other">Other Activity</SelectItem>
+                  <SelectContent style={{ backgroundColor: 'hsl(var(--card))' }}>
+                    {Object.entries(workoutTypeDisplayNames).filter(([key]) => key !== 'strength').map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </p>
 
-              {/* Cardio workout details - ensure medium weight */} 
-              {workoutType && workoutType !== "gym" && workoutType !== "home_strength" && workoutType !== "other" && (
+              {/* Cardio workout details - check against WorkoutTypeOption */}
+              {workoutType && !["gym", "home_strength", "strength"].includes(workoutType) && workoutType !== "other" && (
                 <p className="text-base font-medium">
                   {getVerbTenseText()}{" "} 
                   <Input
@@ -565,89 +663,117 @@ export default function NewWorkoutPage() {
                   </p>
                )}
 
-              {/* Gym workout details */}
+              {/* Gym workout details - check against WorkoutTypeOption */}
               {workoutType && (workoutType === "gym" || workoutType === "home_strength") && (
-                <div className="space-y-10">
-                  {exercises.map((exercise, index) => (
-                    <div key={exercise.id} className="space-y-2 relative group">
-                      <div className="flex items-center">
-                        <div className="w-auto mr-5 flex-shrink-0 text-foreground flex items-center justify-center text-3xl font-bold">
-                          {index + 1}
-                    </div>
-                        <div className="flex-1 space-y-1">
-                          <div className="flex items-baseline justify-center gap-2 flex-wrap text-base font-medium"> 
-                            <span>{getVerbTenseText()}</span>
+                <div className="space-y-10 text-left">
+                  {exercises.map((exercise, exerciseIndex) => (
+                    <div key={exercise.id} className="space-y-4 p-4 border rounded-lg relative group bg-muted/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold mr-1">{exerciseIndex + 1}.</span>
                             <Select
                               value={exercise.name}
-                              onValueChange={(value) => updateExercise(exercise.id, "name", value)}
+                              onValueChange={(value) => updateExerciseField(exercise.id, "name", value)}
                             >
-                              <SelectTrigger className={cn(inlineSelectStyle, "min-w-[140px] justify-start")}> 
-                                <SelectValue placeholder="select exercise" />
+                              <SelectTrigger className="h-auto p-1 border-b border-input text-base w-auto min-w-[150px]">
+                                <SelectValue placeholder="Select exercise" />
                               </SelectTrigger>
-                              <SelectContent style={{ backgroundColor: 'hsl(var(--card))' }}> 
+                              <SelectContent style={{ backgroundColor: 'hsl(var(--card))' }}>
                                 {strengthExercises.length > 0 ? strengthExercises.map((option) => (
-                                  <SelectItem key={option._id} value={option.name}>
-                                    {option.name}
-                                  </SelectItem>
+                                  <SelectItem key={option._id} value={option.name}>{option.name}</SelectItem>
                                 )) : <SelectItem value="" disabled>Loading...</SelectItem>}
-                                 <SelectItem value="Other">Other (Type below)</SelectItem>
+                                <SelectItem value="Other">Other (Type name)</SelectItem>
                               </SelectContent>
                             </Select>
                             {exercise.name === 'Other' && (
-                      <Input
-                                    type="text"
-                                    value={exercise.name === 'Other' ? '' : exercise.name} 
-                                    onChange={(e) => updateExercise(exercise.id, "name", e.target.value)}
-                                    className={cn(inlineInputStyle, "w-40")}
-                                    placeholder="Type exercise name"
-                                />
-                    )}
-                  </div>
-                  
-                          <div className="flex items-baseline justify-center gap-2 ml-0 flex-wrap text-base font-medium"> 
-                            <span>with</span>
-                        <Input 
-                          type="number" 
-                              value={exercise.weight}
-                              onChange={(e) => updateExercise(exercise.id, "weight", e.target.value)}
-                              className={cn(inlineInputStyle, !exercise.weight && "text-muted-foreground")}
-                               step="0.5"
-                               min="0"
-                            />
-                            <span>kg for</span>
-                                      <Input
-                                        type="number"
-                              value={exercise.reps}
-                              onChange={(e) => updateExercise(exercise.id, "reps", e.target.value)}
-                              className={cn(inlineInputStyle, !exercise.reps && "text-muted-foreground")}
-                              min="1"
-                            />
-                            <span>reps ×</span>
-                                      <Input
-                                        type="number"
-                              value={exercise.sets}
-                              onChange={(e) => updateExercise(exercise.id, "sets", e.target.value)}
-                              className={cn(inlineInputStyle, !exercise.sets && "text-muted-foreground")}
-                               min="1"
-                            />
-                            <span>sets</span>
-                                    </div>
-                                  </div>
-                                  </div>
-                                </div>
-                              ))}
-                  <div className="flex justify-center pt-4"> 
-                              <Button
-                                type="button"
-                      variant="ghost"
-                                size="sm"
-                      onClick={addExercise}
-                      className="text-muted-foreground hover:text-primary"
-                              >
-                        <LucidePlus className="h-4 w-4 mr-1.5"/> Add exercise
-                              </Button>
-                              </div>
+                              <Input
+                                type="text"
+                                value={exercise.name === 'Other' ? '' : exercise.name}
+                                onChange={(e) => updateExerciseField(exercise.id, "name", e.target.value)}
+                                className="h-auto p-1 border-b border-input text-base w-40 bg-transparent"
+                                placeholder="Type exercise name"
+                                autoFocus
+                              />
+                            )}
+                         </div>
+                         <Button 
+                           type="button" 
+                           variant="ghost" 
+                           size="icon" 
+                           className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-50 group-hover:opacity-100 transition-opacity"
+                           onClick={() => removeExercise(exercise.id)} 
+                           aria-label="Remove exercise"
+                          >
+                            <LucideX className="h-4 w-4" />
+                          </Button>
+                      </div>
+
+                      <div className="space-y-2 pl-4">
+                        <Label className="text-xs font-semibold text-muted-foreground block mb-1">Sets:</Label>
+                        {exercise.sets.map((set, setIndex) => (
+                          <div key={set.id} className="flex items-center gap-3 flex-wrap relative group/set ml-2"> 
+                            <span className="font-medium text-sm w-10 text-right text-muted-foreground">{setIndex + 1}.</span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="sr-only">Weight</Label>
+                                <Input id={`weight-${exercise.id}-${set.id}`} type="number" value={set.weight || ''} onChange={(e) => updateSetField(exercise.id, set.id, "weight", e.target.value)} className="h-8 w-20 text-sm" placeholder="Weight" step="0.5" min="0" /> 
+                                <span className="text-sm text-muted-foreground">kg</span>
+                                
+                                <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="sr-only">Reps</Label>
+                                <Input id={`reps-${exercise.id}-${set.id}`} type="number" value={set.reps || ''} onChange={(e) => updateSetField(exercise.id, set.id, "reps", e.target.value)} className="h-8 w-16 text-sm" placeholder="Reps" min="1" />
+                                <span className="text-sm text-muted-foreground">reps</span>
+                                
+                                <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="sr-only">Set Notes</Label>
+                                <Input id={`set-notes-${exercise.id}-${set.id}`} type="text" value={set.notes || ''} onChange={(e) => updateSetField(exercise.id, set.id, "notes", e.target.value)} className="h-8 text-sm flex-grow min-w-[100px]" placeholder="Set notes (optional)" />
                             </div>
+                             <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-muted-foreground hover:text-destructive h-6 w-6 opacity-0 group-hover/set:opacity-100 transition-opacity absolute -right-2 top-1/2 -translate-y-1/2" 
+                                onClick={() => removeSet(exercise.id, set.id)} 
+                                aria-label="Remove set"
+                              >
+                                <LucideX className="h-3.5 w-3.5" />
+                              </Button>
+                          </div>
+                        ))}
+                         <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          className="mt-2 h-8 text-xs"
+                          onClick={() => addSet(exercise.id)}
+                        >
+                          <LucidePlus className="h-3 w-3 mr-1"/> Add Set
+                        </Button>
+                      </div>
+                      
+                       <div className="pl-4 pt-2">
+                           <Label htmlFor={`notes-${exercise.id}`} className="text-xs text-muted-foreground">Exercise Notes (Optional)</Label>
+                           <Input 
+                              id={`notes-${exercise.id}`}
+                              type="text" 
+                              value={exercise.notes || ''} 
+                              onChange={(e) => updateExerciseField(exercise.id, "notes", e.target.value)} 
+                              className="h-8 text-sm mt-1 w-full"
+                              placeholder="e.g., warm-up/cool-down, technique focus..." 
+                            />
+                        </div>
+
+                    </div>
+                  ))}
+                  <div className="flex justify-center pt-4"> 
+                     <Button
+                       type="button"
+                       variant="ghost"
+                       size="sm"
+                       onClick={addExercise}
+                       className="text-muted-foreground hover:text-primary"
+                     >
+                       <LucidePlus className="h-4 w-4 mr-1.5"/> Add exercise
+                     </Button>
+                  </div>
+                </div>
               )}
 
               {/* Workout summary - keep text-sm */} 

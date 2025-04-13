@@ -18,6 +18,88 @@ export const maxDuration = 60 // Set max duration to 60s (Hobby plan limit)
 
 const gunzipAsync = promisify(gunzipCb)
 
+// Helper function to determine a more specific type from filename and path
+function determineActivityTypeFromFilePath(filePath: string): string {
+  const lowerPath = filePath.toLowerCase();
+  
+  // Check activity/workout type from filename and path
+  if (lowerPath.includes('run') || lowerPath.includes('running')) return 'running';
+  if (lowerPath.includes('ride') || lowerPath.includes('cycling') || lowerPath.includes('bike')) return 'cycling';
+  if (lowerPath.includes('swim') || lowerPath.includes('swimming')) return 'swimming';
+  if (lowerPath.includes('walk') || lowerPath.includes('walking')) return 'walking';
+  if (lowerPath.includes('hike') || lowerPath.includes('hiking')) return 'hiking';
+  
+  return ''; // Return empty if can't determine
+}
+
+// This mapping addresses standard FIT file sport types and maps them to our application types
+function mapSportTypeToActivityType(sportType: string): string {
+  if (!sportType) return 'other';
+  
+  const lowerSport = sportType.toLowerCase();
+  
+  // Map common sport types to our application's activity types
+  // Running activities
+  if (lowerSport.includes('run') || 
+      lowerSport.includes('treadmill') || 
+      lowerSport.includes('trail')) return 'running';
+  
+  // Cycling activities
+  if (lowerSport.includes('cycl') || 
+      lowerSport.includes('bike') || 
+      lowerSport.includes('ride') ||
+      lowerSport.includes('virtual_ride') ||
+      lowerSport.includes('indoor_cycling')) return 'cycling';
+  
+  // Swimming activities  
+  if (lowerSport.includes('swim') || 
+      lowerSport.includes('pool') || 
+      lowerSport.includes('open_water')) return 'swimming';
+  
+  // Walking activities
+  if (lowerSport.includes('walk')) return 'walking';
+  
+  // Hiking activities
+  if (lowerSport.includes('hike')) return 'hiking';
+  
+  // Strength activities
+  if (lowerSport.includes('weight') || 
+      lowerSport.includes('strength') || 
+      lowerSport.includes('gym') || 
+      lowerSport.includes('workout') ||
+      lowerSport.includes('functional_strength')) return 'strength';
+  
+  // Yoga activities
+  if (lowerSport.includes('yoga') || 
+      lowerSport.includes('meditation')) return 'yoga';
+  
+  // Pilates activities
+  if (lowerSport.includes('pilates')) return 'pilates';
+  
+  // Rowing activities
+  if (lowerSport.includes('row')) return 'rowing';
+  
+  // Skiing activities
+  if (lowerSport.includes('ski')) return 'skiing';
+  
+  // Cardio activities
+  if (lowerSport.includes('cardio') || 
+      lowerSport.includes('elliptical') || 
+      lowerSport.includes('stair')) return 'cardio';
+  
+  // HIIT activities
+  if (lowerSport.includes('hiit') || 
+      lowerSport.includes('circuit') || 
+      lowerSport.includes('crossfit')) return 'hiit';
+  
+  // Flexibility activities
+  if (lowerSport.includes('stretch') || 
+      lowerSport.includes('flexibility')) return 'flexibility';
+  
+  console.log(`Unmapped sport type: ${sportType}, defaulting to 'other'`);
+  return 'other'; // Default to other if no match found
+}
+
 // Implementation of processFitFile that worked in previous commit
 async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
   try {
@@ -141,11 +223,20 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
           (buffer[i] === 0x07 && buffer[i+1] === 0x00)) {
         try {
           const distance = buffer.readFloatLE(i+2);
-          // Simple validation - reasonable distance (0-500 km)
-          if (distance > 0 && distance < 500000) {
+          console.log(`Found potential distance value: ${distance} meters`);
+          // More rigorous validation - reasonable distance (0.1-500 km)
+          if (distance >= 100 && distance < 500000) {
+            // Value is reasonable (100m to 500km), use it
             workout.distance = distance;
-            console.log(`Found distance: ${distance} meters`);
+            console.log(`Using distance: ${distance} meters`);
             break;
+          } else if (distance > 0 && distance < 100) {
+            // Very small distance - could be correct for very short activities
+            // but more likely is a garbled value, log but keep searching
+            console.log(`Found suspiciously small distance: ${distance} meters - ignoring`);
+          } else if (distance < 0.01 && distance > 0) {
+            // Extremely small distance, definitely a data error
+            console.log(`Found invalid tiny distance: ${distance} meters - ignoring`);
           }
         } catch (e) {
           // Ignore read errors
@@ -250,23 +341,16 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
     
     // If we couldn't extract distance, estimate from duration
     if (!workout.distance || workout.distance < 10) {
-      // Pace in meters per second based on activity type
-      let paceMetersPerSecond = 3.0; // Default: ~11 km/h
+      // NOTE: We're REMOVING the estimation logic and instead using a small default distance
+      // that won't create misleading workout stats but will allow the workout to be created
+      // This ensures only actual data from the FIT/GPX files is used
       
-      if (workout.type === 'running') {
-        paceMetersPerSecond = 10 / 3.6; // 10 km/h in m/s
-      } else if (workout.type === 'cycling') {
-        paceMetersPerSecond = 20 / 3.6; // 20 km/h in m/s
-      } else if (workout.type === 'swimming') {
-        paceMetersPerSecond = 3 / 3.6; // 3 km/h in m/s
-      } else if (workout.type === 'walking') {
-        paceMetersPerSecond = 5 / 3.6; // 5 km/h in m/s
-      } else if (workout.type === 'hiking') {
-        paceMetersPerSecond = 4 / 3.6; // 4 km/h in m/s
-      }
+      // REMOVED: Pace in meters per second based on activity type
+      // REMOVED: Estimation calculation
       
-      workout.distance = Math.round(workout.duration * paceMetersPerSecond);
-      console.log(`Estimated distance from duration: ${workout.distance} meters from ${workout.duration}s`);
+      // Instead of estimating, just log that we couldn't extract distance
+      console.log(`No valid distance found in file. Using minimum value.`);
+      workout.distance = 10; // Use minimum valid distance (10 meters)
     }
     
     // Create a more comprehensive workout object with validated data
@@ -274,13 +358,13 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
       type: workout.type,
       date: workout.date,
       duration: Math.max(60, workout.duration), // Minimum 1 minute
-      distance: Math.max(10, workout.distance), // Minimum 10 meters
+      distance: workout.distance, // Use the exact value we found - removed Math.max(10, workout.distance)
       calories: workout.duration ? Math.round(workout.duration / 60 * 10) : 300, // 10 cal per minute estimate
       average_speed: (workout.distance && workout.duration) ? workout.distance / workout.duration : 3.0, // Default to 3 m/s if can't calculate
       max_speed: (workout.distance && workout.duration) ? (workout.distance / workout.duration) * 1.3 : 4.0, // +30% estimate or default to 4 m/s
       avg_heart_rate: workout.avg_heart_rate || 0,
       max_heart_rate: workout.max_heart_rate || 0,
-      title: workout.title || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} on ${workout.date.toISOString().split('T')[0]}`,
+      title: workout.title || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} on ${workout.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
       description: workout.description || `Imported from ${fileName}`,
       total_elevation_gain: workout.total_elevation_gain || 0,
       sport_type: workout.sport,
@@ -294,7 +378,24 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
       distance: result.distance
     });
     
-    return result;
+    // Convert units for createCardioWorkout to avoid display issues
+    // createCardioWorkout expects:
+    // - distance in km (not meters)
+    // - duration in minutes (not seconds)
+    const workoutToSave = {
+      ...result,
+      duration: Math.ceil(result.duration / 60),   // Convert from seconds to minutes
+      distance: result.distance / 1000,            // Convert from meters to kilometers
+    };
+    
+    console.log('Workout data prepared for saving:', {
+      type: workoutToSave.type,
+      date: workoutToSave.date,
+      duration: workoutToSave.duration + ' minutes',  // Now in minutes
+      distance: workoutToSave.distance + ' km'        // Now in kilometers
+    });
+    
+    return workoutToSave;
     
   } catch (error) {
     console.error(`Error processing FIT file ${fileName}:`, error);
@@ -952,39 +1053,96 @@ export async function POST(request: NextRequest) {
         // Fix future dates
         if (transformedWorkout.date) {
           const activityDate = transformedWorkout.date instanceof Date ? 
-                              transformedWorkout.date : 
-                              new Date(transformedWorkout.date);
+                               transformedWorkout.date : 
+                               new Date(transformedWorkout.date);
           const now = new Date();
           
           if (activityDate > now || isNaN(activityDate.getTime())) {
-            console.log(`Detected future or invalid date in activity: ${transformedWorkout.date}, fixing...`);
-            // Set to current date minus random days (to avoid duplicate dates)
-            const newDate = new Date(now.getTime() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
-            transformedWorkout.date = newDate;
-            console.log(`Fixed date: ${newDate.toISOString()}`);
+            console.log(`Detected future or invalid date in activity: ${activityDate}, fixing...`);
+            // Use today's date instead of a random past date to preserve the actual workout timing
+            transformedWorkout.date = new Date();
+            console.log(`Fixed date to current date: ${transformedWorkout.date.toISOString()}`);
           }
         } else {
-          // If no date, set to a default date in the past
-          console.log('No date found, setting default date');
-          transformedWorkout.date = new Date(Date.now() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
+          // If no date, set to today
+          console.log('No date found, setting to today');
+          transformedWorkout.date = new Date();
         }
         
-        // Ensure duration is preserved
+        // Generate a more descriptive workout name with correct date
+        if (!transformedWorkout.title || transformedWorkout.title === 'Untitled Activity') {
+          const dateStr = transformedWorkout.date.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          });
+          const typeCapitalized = transformedWorkout.type.charAt(0).toUpperCase() + transformedWorkout.type.slice(1);
+          transformedWorkout.title = `${typeCapitalized} on ${dateStr}`;
+          console.log(`Generated descriptive name: ${transformedWorkout.title}`);
+        }
+        
+        // Ensure duration and distance are preserved and correctly formatted
+        // Duration in our app is stored in minutes
         if (!transformedWorkout.duration && workout.duration) {
-          console.log(`Duration lost in transformation, restoring from original: ${workout.duration}`);
-          transformedWorkout.duration = workout.duration;
+          // Check if workout.duration is in seconds or minutes
+          if (workout.duration > 3600) { // If more than 60 minutes, likely in seconds
+            console.log(`Duration appears to be in seconds: ${workout.duration}, converting to minutes`);
+            transformedWorkout.duration = workout.duration / 60; 
+          } else {
+            console.log(`Using original duration: ${workout.duration} minutes`);
+            transformedWorkout.duration = workout.duration;
+          }
         }
         
-        // Always ensure minimum duration if available from workout
-        if ((!transformedWorkout.duration || transformedWorkout.duration === 0) && workout.duration > 0) {
-          transformedWorkout.duration = workout.duration;
-          console.log(`Using original duration: ${transformedWorkout.duration}`);
+        // Ensure duration is reasonable (maximum 24 hours in minutes)
+        if (transformedWorkout.duration > 1440) {
+          console.log(`Duration too long (${transformedWorkout.duration} minutes), capping at 24 hours`);
+          transformedWorkout.duration = 1440; // Cap at 24 hours
+        }
+        
+        // Minimum duration of 1 minute
+        if (!transformedWorkout.duration || transformedWorkout.duration < 1) {
+          console.log(`Setting minimum duration of 1 minute`);
+          transformedWorkout.duration = 1;
+        }
+        
+        // Ensure distance is in kilometers and reasonable
+        if (transformedWorkout.distance > 0) {
+          // If distance is extremely large, it might be in meters
+          if (transformedWorkout.distance > 1000) { // More than 1000 km is unusual
+            console.log(`Distance appears to be in meters: ${transformedWorkout.distance}, converting to km`);
+            transformedWorkout.distance = transformedWorkout.distance / 1000;
+          }
+          console.log(`Distance: ${transformedWorkout.distance} km`);
+        } else if (workout.distance) {
+          // If original workout has distance but transformed doesn't
+          // Always assume workout.distance is in meters as that's what our extraction produces
+          if (workout.distance > 0) {
+            const distanceInKm = workout.distance / 1000;
+            console.log(`Using original workout.distance: ${workout.distance}m converted to ${distanceInKm} km`);
+            transformedWorkout.distance = distanceInKm;
+          }
+        }
+        
+        // Generate a more descriptive workout name
+        if (transformedWorkout.distance > 0 && !transformedWorkout.title.includes('km') && !transformedWorkout.title.includes('m')) {
+          // Add distance to title for cardio workouts if not already present
+          let distanceStr;
+          
+          if (transformedWorkout.distance < 0.1) {
+            // For very small distances (less than 100m), show in meters for clarity
+            distanceStr = `${Math.round(transformedWorkout.distance * 1000)}m`;
+          } else {
+            // For normal distances, show in km with 2 decimal places
+            distanceStr = `${transformedWorkout.distance.toFixed(2)}km`;
+          }
+          
+          transformedWorkout.title = `${transformedWorkout.title || 'Untitled Activity'} (${distanceStr})`;
+          console.log(`Updated workout name with distance: ${transformedWorkout.title}`);
         }
         
         const workoutToSave = {
           ...transformedWorkout,
-          distance: transformedWorkout.distance,
-          duration: transformedWorkout.duration || 0,
           userId: userId,
           source: "strava",
           sourceId: (() => {
@@ -1038,6 +1196,9 @@ export async function POST(request: NextRequest) {
         
         // Save the workout
         try {
+          // Detailed logging to verify data
+          console.log(`Creating cardio workout with: name=${workoutToSave.title}, type=${workoutToSave.type}, duration=${workoutToSave.duration} minutes, distance=${workoutToSave.distance}km`);
+          
           await createCardioWorkout(workoutToSave)
           console.log(`Successfully imported workout from ${normalizedFilePath}`)
           batchResults.imported++

@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getStravaAccessToken, getRefreshedAccessToken } from '@/lib/strava/auth';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getRecentStravaActivities, refreshStravaToken } from '@/lib/strava';
@@ -8,96 +9,88 @@ import dbConnect from '@/lib/db/mongodb';
 import { WorkoutData } from '@/types/db'; // Type for workout data structure
 import { Types } from 'mongoose'; // Import Types
 import { getValidAccessToken } from "@/lib/services/stravaService"; // Add this import
+import { WorkoutType } from '@/types/db';
 
 // Helper function to map Strava activity types to our system's workout types
-function mapActivityType(stravaType: string): string | null {
-  // Log the incoming type for debugging
-  console.log(`Mapping Strava activity type: "${stravaType}"`);
-  
-  // Expanded mapping with more activity types
-  const typeMap: Record<string, string> = {
-    // Running
-    'Run': 'running',
-    'VirtualRun': 'running',
-    'TrailRun': 'running',
-    'Treadmill': 'running',
-    'Track': 'running',
-    
-    // Swimming
-    'Swim': 'swimming',
-    'OpenWaterSwim': 'swimming',
-    'PoolSwim': 'swimming',
-    
-    // Cycling
-    'Ride': 'cycling',
-    'VirtualRide': 'cycling',
-    'MountainBikeRide': 'cycling',
-    'GravelRide': 'cycling',
-    'EBikeRide': 'cycling',
-    'IndoorCycling': 'cycling',
-    'VeloMobile': 'cycling',
-    
-    // Strength
-    'WeightTraining': 'strength',
-    'Workout': 'strength',
-    'Crossfit': 'strength',
-    'Strength': 'strength',
-    'FunctionalStrength': 'strength',
-    'StairStepper': 'strength',
-    'Elliptical': 'strength',
-    'RockClimbing': 'strength',
-    'Canoeing': 'strength',
-    'Kayaking': 'strength',
-    
-    // Flexibility
-    'Yoga': 'yoga',
-    'Stretching': 'flexibility',
-    'Pilates': 'pilates',
-    
-    // HIIT
-    'Hiit': 'hiit',
-    'HighIntensityIntervalTraining': 'hiit',
-    'IntervalTraining': 'hiit',
-    'CircuitTraining': 'hiit',
-    
-    // Other activities 
-    'Walk': 'other',
-    'Hike': 'other',
-    'AlpineSki': 'other',
-    'BackcountrySki': 'other',
-    'NordicSki': 'other',
-    'Snowboard': 'other',
-    'Snowshoe': 'other',
-    'Handcycle': 'other',
-    'IceSkate': 'other',
-    'InlineSkate': 'other',
-    'Kitesurf': 'other',
-    'Rowing': 'other',
-    'Sail': 'other',
-    'Skateboard': 'other',
-    'Snowkite': 'other',
-    'Soccer': 'other',
-    'StandUpPaddling': 'other',
-    'Surfing': 'other',
-    'Golf': 'other',
-    'Volleyball': 'other',
-    'Tennis': 'other',
-    'Basketball': 'other',
-    'Football': 'other',
-    'Baseball': 'other',
-    'Boxing': 'other',
-    'WaterSport': 'other'
-  };
-  
+function mapActivityType(stravaType: string | undefined): WorkoutType {
   if (!stravaType) {
-    console.log('Warning: Empty Strava activity type, defaulting to "other"');
+    console.log('No Strava activity type provided, defaulting to "other"');
     return 'other';
   }
+
+  // Normalize the input type (lowercase, trim)
+  const normalizedType = stravaType.trim().toLowerCase();
+  console.log(`Mapping Strava activity type: '${stravaType}' (normalized: '${normalizedType}')`);
+
+  // Map Strava activity types to our workout types
+  const typeMap: Record<string, WorkoutType> = {
+    'run': 'running',
+    'runs': 'running',
+    'running': 'running',
+    'trail run': 'running',
+    'treadmill': 'running',
+    
+    'ride': 'cycling',
+    'rides': 'cycling',
+    'cycling': 'cycling',
+    'bike': 'cycling',
+    'biking': 'cycling',
+    'virtual ride': 'cycling',
+    'e-bike ride': 'cycling',
+    
+    'swim': 'swimming',
+    'swims': 'swimming',
+    'swimming': 'swimming',
+    'open water swim': 'swimming',
+    'pool swim': 'swimming',
+    
+    'walk': 'walking',
+    'walks': 'walking',
+    'walking': 'walking',
+    'hike': 'walking',
+    'hiking': 'walking',
+    
+    'weight training': 'strength',
+    'workout': 'strength',
+    'weightlifting': 'strength',
+    'strength training': 'strength',
+    'strength': 'strength',
+    'weight': 'strength',
+    'weights': 'strength',
+    
+    'yoga': 'yoga',
+    'meditation': 'yoga',
+    
+    'rowing': 'rowing',
+    'row': 'rowing',
+    
+    'elliptical': 'cardio',
+    'stairmaster': 'cardio',
+    'crossfit': 'cardio',
+    'circuit': 'cardio',
+    'hiit': 'cardio',
+    'cardio': 'cardio'
+  };
+
+  // Try to find the workout type in our map
+  const mappedType = typeMap[normalizedType];
   
-  const mappedType = typeMap[stravaType] || 'other';
-  console.log(`Mapped "${stravaType}" to "${mappedType}"`);
+  if (mappedType) {
+    console.log(`Successfully mapped Strava type '${stravaType}' to workout type '${mappedType}'`);
+    return mappedType;
+  }
   
-  return mappedType;
+  // If we can't find an exact match, try a partial match
+  for (const [stravaKeyword, workoutType] of Object.entries(typeMap)) {
+    if (normalizedType.includes(stravaKeyword)) {
+      console.log(`Partial match: Strava type '${stravaType}' contains '${stravaKeyword}', mapping to '${workoutType}'`);
+      return workoutType;
+    }
+  }
+
+  // If no match found, default to 'other'
+  console.log(`No mapping found for Strava type '${stravaType}', defaulting to 'other'`);
+  return 'other';
 }
 
 // Helper function to transform Strava activity to WorkoutData format
@@ -236,12 +229,12 @@ function transformStravaActivity(activity: any, userId: string): Partial<Workout
     name: activity.name || `${activity.type} Activity`,
     type: workoutType || 'other', // Use helper function to map Strava types to our types
     date: new Date(activity.start_date),
-    duration: durationSeconds, // seconds
+    duration: durationSeconds, // Store duration in seconds, which is what our formatDuration function expects
     distance: distanceInKm, // Store distance in KM
     intensity: activity.average_heartrate ? 'Medium' : 'Low',
     cardioDetails: {
       distance: distanceInKm, // Use KM here too for consistency if needed by frontend
-      duration: durationSeconds,
+      duration: durationSeconds, // Store duration in seconds here as well
       pace: paceMinPerKm, // Store correct pace in min/km
       speed: activity.average_speed, // m/s
       maxSpeed: activity.max_speed,

@@ -28,7 +28,7 @@ interface IHeartRateData {
   }
 }
 
-interface ICardioDetails {
+export interface ICardioDetails {
   distance: number
   duration: number
   pace?: number
@@ -65,7 +65,7 @@ export interface IWorkout extends Document {
   intensity?: "Low" | "Medium" | "High"
   type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "walking" | "yoga" | "pilates" | "other" // Overall type, could be derived or set
   // volume?: number // Volume might be better calculated on the fly from WorkoutExercises
-  // distance?: number // Total distance might be better calculated on the fly from WorkoutExercises
+  distance: number // <-- Uncomment this line
   // calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
   // REMOVED: exercises?: IExercise[] // This is now handled by WorkoutExercise collection
   cardioDetails?: ICardioDetails // Keep for potentially storing *overall* cardio summary if needed, distinct from individual exercise performance
@@ -193,7 +193,7 @@ const WorkoutSchema: Schema = new Schema(
       required: true,
     },
     // REMOVED: volume: { type: Number },
-    // REMOVED: distance: { type: Number },
+    distance: { type: Number }, // <-- Uncomment this line
     // REMOVED: calories: { type: Number },
     // REMOVED: exercises: [ExerciseSchema], // Removed embedded exercises
     cardioDetails: { type: CardioDetailsSchema }, // Keep overall details if needed

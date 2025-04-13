@@ -176,6 +176,9 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   // Get workout distance safely
   const getWorkoutDistance = useCallback((workout: WorkoutData): number => {
     try {
+      // Debugging: Log the type and value of workout.distance
+      console.log(`Workout ID: ${workout._id}, Distance Value: ${workout.distance}, Distance Type: ${typeof workout.distance}`);
+      
       if (typeof workout.distance === 'number') {
         return workout.distance;
       }

@@ -81,6 +81,9 @@ export default async function WorkoutPageServerWrapper({ params }: { params: { i
     notFound(); 
   }
 
+  // Log the fetched data before passing it to the client
+  console.log("SERVER WRAPPER: Raw workoutData fetched:", JSON.stringify(workoutData, null, 2));
+
   // --- Fetch and serialize previous workouts --- 
   let previousWorkoutsData: any[] = []; // Use any type for serialized data
   try {

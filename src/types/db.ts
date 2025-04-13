@@ -1,12 +1,11 @@
 export interface Set {
-  weight: number;
-  reps: number;
-  notes?: string;
-}
-
-export interface Exercise {
-  name: string;
-  sets: Set[];
+  _id?: string;
+  workoutExerciseId?: string;
+  order?: number;
+  weight?: number;
+  reps?: number;
+  duration?: number;
+  distance?: number;
   notes?: string;
 }
 
@@ -15,14 +14,13 @@ export interface WorkoutData {
   userId: string;
   type: string;
   name?: string;
-  date: Date;
+  date: Date | string;
   duration: number;
   distance?: number;
   calories?: number;
   notes?: string;
   intensity?: string;
-  volume?: number;
-  exercises?: Exercise[];
+  workoutExercises?: WorkoutExerciseData[];
   cardioDetails?: {
     distance?: number;
     duration?: number;
@@ -150,10 +148,16 @@ export interface ExerciseData {
 export interface WorkoutExerciseData {
   _id: string;
   workoutId: string;
-  exerciseId: string;
-  exercise?: ExerciseData;
+  exerciseId: {
+    _id: string;
+    name: string;
+    category?: string;
+  };
   sets: Set[];
   notes?: string;
+  order?: number;
+  duration?: number;
+  distance?: number;
   createdAt: string;
   updatedAt: string;
 } 

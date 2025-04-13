@@ -678,7 +678,7 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
         elapsed: totalElapsedTime
       });
       
-      // Calculate summary stats from session or records
+      // Extract summary stats from session or records
       let totalDistance = 0; // meters
       let sport = 'other';
       let subSport: string | undefined = undefined;
@@ -695,6 +695,7 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
       if (sessions.length > 0) {
         const session = sessions[0];
         totalDistance = session.total_distance || 0; // Assume meters
+        console.log(`Using distance from session: ${totalDistance} meters`);
         sport = session.sport || 'other';
         subSport = session.sub_sport;
         totalElevationGain = session.total_ascent || 0;
@@ -709,10 +710,22 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
         console.log('Using session data:', { totalDistance, sport, totalElevationGain, avgHeartRate, maxHeartRate, avgSpeed, maxSpeed });
       } else {
         // Calculate from records if no session data
-        totalDistance = rawRecords.reduce((sum: number, record: any) => 
-          sum + (record.distance || 0), 0); // Assume meters
+        const distancesFromRecords = rawRecords
+          .filter((record: any) => record.distance !== undefined && record.distance !== null && !isNaN(record.distance) && record.distance > 0)
+          .map((record: any) => record.distance);
+        
+        if (distancesFromRecords.length > 0) {
+          // Use the maximum distance value from records, which should be cumulative
+          totalDistance = Math.max(...distancesFromRecords);
+          console.log(`Using distance from records (max value): ${totalDistance} meters`);
+        } else {
+          console.log('No valid distance values found in records, using 0');
+          totalDistance = 0;
+        }
+        
         sport = firstRecord.sport || 'other';
         
+        // Rest of the calculation logic for other metrics remains the same
         // Elevation Gain from records (handle potential null/undefined)
         const altitudes = rawRecords.map((r: any) => r.altitude).filter((a: any): a is number => a !== undefined && a !== null);
         if (altitudes.length > 1) {
@@ -757,8 +770,19 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
         console.log('Calculated from records:', { totalDistance, sport, totalElevationGain, avgHeartRate, maxHeartRate, avgSpeed, maxSpeed });
       }
       
+      // Map sport type early
       const mappedType = mapStravaType(sport, subSport);
       
+      // Validate and correct dates early to prevent future dates
+      const currentDate = new Date();
+      const activityStartDate = new Date(startTime.toISOString());
+      let adjustedStartTime = startTime;
+      if (activityStartDate > currentDate) {
+        console.log(`Correcting future start date from ${activityStartDate.toISOString()} to current date`);
+        adjustedStartTime = currentDate;
+        console.log(`Adjusted start date to: ${adjustedStartTime.toISOString()}`);
+      }
+
       // Extract detailed records for storage
       const detailedRecords = rawRecords.map((rec: any) => ({
         timestamp: new Date(rec.timestamp),
@@ -773,14 +797,14 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
         // Filter out undefined values before saving? Maybe not, keep sparse data
       }));
       
-      // Create the activity object including the records
+      // Create the activity object with raw data
       const stravaId = extractStravaIdFromFilename(fileName);
       const transformedActivity = {
         id: id,
-        name: generateActivityName({ total_distance: totalDistance / 1000, total_elapsed_time: totalElapsedTime, sport, sub_sport: subSport }, startTime, mappedType) + 
+        name: generateActivityName({ total_distance: totalDistance / 1000, total_elapsed_time: totalElapsedTime, sport, sub_sport: subSport }, adjustedStartTime, mappedType) + 
               (stravaId ? ` (Strava: ${stravaId})` : ''),
         type: mappedType,
-        start_date: startTime.toISOString(),
+        start_date: adjustedStartTime.toISOString(),
         elapsed_time: totalElapsedTime, // seconds
         distance: totalDistance, // meters
         total_elevation_gain: totalElevationGain, // meters
@@ -794,13 +818,67 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
         average_power: avgPower,
         max_power: maxPower,
         records: detailedRecords, // Add the detailed records here
-        notes: generateActivityNotes({}, startTime, fileName) // Pass empty object if session description isn't used
+        notes: generateActivityNotes({}, adjustedStartTime, fileName) // Pass empty object if session description isn't used
       };
       
       console.log('Created transformed activity with records:', transformedActivity.id, `(${transformedActivity.records.length} records)`);
       
       // Clear data to free memory
       // data = null; // data is already scoped locally to the promise result
+      
+      // Store ORIGINAL distance data as received from the FIT/GPX file for logging
+      console.log(`Original distance from FIT/GPX file: ${transformedActivity.distance}m`);
+
+      // Convert distance from meters to kilometers FOR DISPLAY only, not changing the source data
+      const distanceInKm = transformedActivity.distance / 1000;
+      console.log(`Distance in km (for display): ${distanceInKm}km`);
+
+      // Store ORIGINAL duration data as received for logging
+      const durationSeconds = transformedActivity.elapsed_time;
+      console.log(`Original duration from FIT/GPX file: ${durationSeconds}s`);
+
+      // Convert duration from seconds to minutes for createCardioWorkout
+      // We need to pass this in minutes because createCardioWorkout expects minutes
+      const durationMinutes = Math.ceil(durationSeconds / 60);
+      console.log(`Duration in minutes (for createCardioWorkout): ${durationMinutes} minutes`);
+
+      // Validate and correct dates again to ensure no overrides
+      const activityDateAfter = new Date(transformedActivity.start_date);
+      if (activityDateAfter > currentDate) {
+        console.log(`Correcting future date after transformation from ${activityDateAfter.toISOString()} to current date`);
+        transformedActivity.start_date = currentDate.toISOString();
+        console.log(`Adjusted date after transformation to: ${transformedActivity.start_date}`);
+      }
+
+      // Improve activity naming for better user experience and to prevent override in createCardioWorkout
+      const activityTypeCapitalized = transformedActivity.type.charAt(0).toUpperCase() + transformedActivity.type.slice(1);
+      const activityDateStr = new Date(transformedActivity.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const customActivityName = `${activityTypeCapitalized} on ${activityDateStr}`;
+
+      // Add distance to name if it's valid (not too small or unrealistically large)
+      if (distanceInKm >= 0.1 && distanceInKm <= 100) {
+        transformedActivity.name = `${customActivityName} (${Math.round(distanceInKm * 10) / 10}km)`;
+      } else {
+        transformedActivity.name = customActivityName;
+      }
+      console.log(`Final activity name set to: ${transformedActivity.name}`);
+
+      // Add logging for workout ID creation to debug 404 error
+      console.log(`Processing activity with ID: ${transformedActivity.id} for user: [USER_ID_PLACEHOLDER]`);
+
+      // Detailed logging of data passed to createCardioWorkout
+      console.log(`Data passed to createCardioWorkout:`, {
+        title: transformedActivity.name,
+        type: transformedActivity.type,
+        date: transformedActivity.start_date,
+        duration: durationMinutes, // in minutes as expected by createCardioWorkout
+        distance: distanceInKm, // in km as expected by createCardioWorkout
+        elevation: transformedActivity.total_elevation_gain,
+        notes: transformedActivity.notes
+      });
+      
+      // TODO: Ensure database consistency by creating WorkoutExercise records
+      // This will be implemented once the necessary functions and variables are defined
       
       return transformedActivity; // Return the processed activity
 

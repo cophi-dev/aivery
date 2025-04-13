@@ -5,6 +5,7 @@ import { compare } from "bcryptjs"
 import dbConnect from "@/lib/db/mongodb"
 import UserModel from "@/lib/db/models/user"
 import { serializeMongoDoc } from "@/lib/db/utils"
+import mongoose from 'mongoose'
 
 // Add debug info about cookie domain
 const cookieDomain = process.env.COOKIE_DOMAIN;
@@ -173,19 +174,27 @@ export const authOptions: NextAuthOptions = {
           }
 
           // Verify user still exists in database and get latest image and nickname
+          console.log(`[SESSION CALLBACK] Attempting dbConnect for user ID: ${session.user.id}`);
           await dbConnect();
-          const userDoc = await UserModel.findOne({ _id: session.user.id }).select("image nickname").lean();
+          console.log(`[SESSION CALLBACK] dbConnect finished. Querying UserModel for _id: ${session.user.id}`);
+          const userDoc = await UserModel.findOne({ _id: new mongoose.Types.ObjectId(session.user.id) }); 
           
           if (!userDoc) {
-            console.error("User no longer exists in database:", session.user.id);
+            console.error("[SIMPLIFIED QUERY] User no longer exists in database:", session.user.id);
             return { ...session, user: { id: '', email: '', name: '' } };
           }
+          console.log("[SIMPLIFIED QUERY] Found userDoc:", userDoc._id.toString()); // Log success
           
-          // Properly serialize MongoDB document to prevent buffer warnings
-          const user = serializeMongoDoc(userDoc);
+          // Manually extract needed fields from the full document
+          const user = {
+            _id: userDoc._id,
+            image: userDoc.image,
+            nickname: userDoc.nickname
+            // Add other fields if needed, accessing them directly from userDoc
+          };
           
           // Update session with latest image and nickname from database
-          if (user) {
+          if (user) { // This check might be redundant now but safe
             if (user.image) {
               session.user.image = user.image;
             }

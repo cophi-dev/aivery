@@ -57,27 +57,26 @@ export function formatDuration(totalSeconds: number | undefined | null): string 
   return formatted.trim(); // Remove trailing space if seconds is 0
 }
 
-// Format distance with units (assuming km)
-export function formatDistance(distance: number): string {
-  if (isNaN(distance) || distance < 0) {
+// Format distance with units (accepts meters, displays km)
+export function formatDistance(distanceInMeters: number): string {
+  if (isNaN(distanceInMeters) || distanceInMeters < 0) {
     return "0.00 km";
   }
+
+  // Convert meters to kilometers
+  const distanceInKm = distanceInMeters / 1000;
   
-  // Handle unreasonably large values (likely data errors)
-  if (distance > 1000) {
-    console.warn(`Unreasonably large distance value detected: ${distance}km. Limiting display.`);
-    
-    // If it's truly massive (>10,000), it's almost certainly an error
-    if (distance > 10000) {
+  // Handle unreasonably large values (post-conversion)
+  if (distanceInKm > 1000) { // e.g., > 1,000,000 meters
+    console.warn(`Unreasonably large distance value detected: ${distanceInKm}km. Limiting display.`);
+    if (distanceInKm > 10000) {
       return "Error: Invalid distance";
     }
-    
-    // For large but potentially valid values, show without decimals
-    return `${Math.round(distance)} km`;
+    return `${Math.round(distanceInKm)} km`;
   }
   
   // Normal handling for reasonable values
-  return `${distance.toFixed(2)} km`;
+  return `${distanceInKm.toFixed(2)} km`;
 }
 
 // Format date nicely
@@ -155,3 +154,11 @@ export const estimateBodyweightForExercise = (exerciseName: string): number => {
   // If no specific match is found
   return 0;
 }
+
+// Format pace (minutes per km)
+export function formatPace(pace: number | null): string {
+  if (pace === null || pace <= 0 || !isFinite(pace)) return "N/A";
+  const minutes = Math.floor(pace);
+  const seconds = Math.round((pace - minutes) * 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')} min/km`;
+};
