@@ -6,13 +6,9 @@ async function main() {
   console.log('Starting to clear ALL seedable data (Users, Exercises, Workouts, Sets)...');
 
   // Delete dependent records first (in correct order)
-  console.log('Clearing Set records...');
-  const { count: setCount } = await prisma.set.deleteMany({});
-  console.log(`Deleted ${setCount} Set records.`);
-  
   console.log('Clearing WorkoutExercise records...');
-  const { count: weCount } = await prisma.workoutExercise.deleteMany({});
-  console.log(`Deleted ${weCount} WorkoutExercise records.`);
+  const { count: workoutExerciseCount } = await prisma.workoutExercise.deleteMany({});
+  console.log(`Deleted ${workoutExerciseCount} WorkoutExercise records.`);
   
   console.log('Clearing Workout records...');
   const { count: wCount } = await prisma.workout.deleteMany({});
