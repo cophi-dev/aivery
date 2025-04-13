@@ -25,6 +25,17 @@ import type { WorkoutData } from "@/types/db"
 import { EditWorkoutForm } from "@/components/forms/edit-workout-form"
 import { format } from "date-fns"
 import { Pencil } from "lucide-react"
+import { IWorkout } from "@/lib/db/models/workout"
+
+// Define the expected exercise input structure based on createWorkout signature
+type ExerciseInput = {
+  name: string;
+  notes?: string;
+  // Assuming InputSetData is defined elsewhere or can be simplified for this context
+  sets?: any[]; // Use 'any[]' or a more specific type if InputSetData is available
+  duration?: number;
+  distance?: number;
+};
 
 export default function WorkoutPlannerPage() {
   const router = useRouter()
@@ -71,7 +82,7 @@ export default function WorkoutPlannerPage() {
     try {
       setIsLoading(true)
 
-      const newWorkout: Partial<WorkoutData> = {
+      const newWorkout: Partial<WorkoutData> & { exercises?: ExerciseInput[] } = {
         name: workoutName,
         date: selectedDate,
         duration: Number.parseInt(workoutDuration),
@@ -81,7 +92,7 @@ export default function WorkoutPlannerPage() {
         exercises: [],
       }
 
-      const createdWorkout = await createWorkout(newWorkout)
+      const createdWorkout: IWorkout = await createWorkout(newWorkout)
       
       // Convert the IWorkout to a WorkoutData type
       const workoutDataToAdd: WorkoutData = {
@@ -90,9 +101,13 @@ export default function WorkoutPlannerPage() {
         name: createdWorkout.name,
         date: createdWorkout.date,
         duration: createdWorkout.duration,
-        intensity: createdWorkout.intensity,
-        type: createdWorkout.type,
+        intensity: createdWorkout.intensity as WorkoutData['intensity'],
+        type: createdWorkout.type as WorkoutData['type'],
         notes: createdWorkout.notes,
+        cardioDetails: createdWorkout.cardioDetails ? {
+          distance: createdWorkout.cardioDetails.distance,
+        } : undefined,
+        calculatedVolume: createdWorkout.calculatedVolume,
         createdAt: createdWorkout.createdAt ? createdWorkout.createdAt.toISOString() : new Date().toISOString(),
         updatedAt: createdWorkout.updatedAt ? createdWorkout.updatedAt.toISOString() : new Date().toISOString(),
       }
