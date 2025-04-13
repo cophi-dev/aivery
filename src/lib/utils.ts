@@ -29,13 +29,13 @@ export function getTextFromResponse(content: any): string | undefined {
 }
 
 /**
- * Formats a duration given in seconds into a string like "Xh Ym Zs".
- * Omits hours or minutes if they are zero.
- * Rounds seconds to the nearest whole number.
+ * Formats a duration given in seconds into a string like "HH:MM:SS" or "MM:SS".
+ * Shows hours only if duration is >= 1 hour.
+ * Always shows minutes and seconds with two digits.
  */
 export function formatDuration(totalSeconds: number | undefined | null): string {
   if (totalSeconds === undefined || totalSeconds === null || totalSeconds < 0 || !isFinite(totalSeconds)) {
-    return "0s";
+    return "00:00";
   }
 
   const secondsInt = Math.round(totalSeconds);
@@ -43,18 +43,17 @@ export function formatDuration(totalSeconds: number | undefined | null): string 
   const minutes = Math.floor((secondsInt % 3600) / 60);
   const seconds = secondsInt % 60;
 
-  let formatted = "";
-  if (hours > 0) {
-    formatted += `${hours}h `;
-  }
-  if (minutes > 0) {
-    formatted += `${minutes}m `;
-  }
-  if (seconds > 0 || formatted === "") { // Always show seconds if hours/minutes are 0, or if seconds > 0
-    formatted += `${seconds}s`;
-  }
+  // Pad with zeros for consistent formatting
+  const paddedMinutes = minutes.toString().padStart(2, '0');
+  const paddedSeconds = seconds.toString().padStart(2, '0');
 
-  return formatted.trim(); // Remove trailing space if seconds is 0
+  if (hours > 0) {
+    // Format: "H:MM:SS" or "HH:MM:SS"
+    return `${hours}:${paddedMinutes}:${paddedSeconds}`;
+  } else {
+    // Format: "MM:SS"
+    return `${paddedMinutes}:${paddedSeconds}`;
+  }
 }
 
 // Format distance with units (accepts meters, displays km)
@@ -75,8 +74,8 @@ export function formatDistance(distanceInMeters: number): string {
     return `${Math.round(distanceInKm)} km`;
   }
   
-  // Normal handling for reasonable values
-  return `${distanceInKm.toFixed(2)} km`;
+  // Normal handling for reasonable values - use 3 decimal places for more precision
+  return `${distanceInKm.toFixed(3)} km`;
 }
 
 // Format date nicely

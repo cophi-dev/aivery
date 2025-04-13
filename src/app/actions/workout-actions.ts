@@ -28,8 +28,8 @@ export async function fetchUserWorkoutSummary() {
       userId: new Types.ObjectId(userId)
     }).lean();
     
-    // Calculate total time in minutes
-    const totalTimeInMinutes = workouts.reduce((total, workout) => {
+    // Calculate total time in seconds (not minutes)
+    const totalTimeInSeconds = workouts.reduce((total, workout) => {
       return total + (workout.duration || 0);
     }, 0);
     
@@ -108,7 +108,7 @@ export async function fetchUserWorkoutSummary() {
     
     return {
       totalWorkouts: workouts.length,
-      totalTimeInMinutes,
+      totalTimeInSeconds,
       totalDistanceInKm,
       favoriteType
     };
@@ -116,7 +116,7 @@ export async function fetchUserWorkoutSummary() {
     console.error('Error fetching workout summary:', error);
     return {
       totalWorkouts: 0,
-      totalTimeInMinutes: 0,
+      totalTimeInSeconds: 0,
       totalDistanceInKm: 0,
       favoriteType: 'None'
     };

@@ -16,34 +16,51 @@ import { getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutReposito
 import mongoose from 'mongoose';
 
 // Define the manual serialization function again if it was removed
-// Helper function to deeply serialize Mongoose docs/objects
-function deepSerialize(obj: any): any {
+// Helper function to deeply serialize Mongoose docs/objects with circular reference handling
+function deepSerialize(obj: any, seen = new WeakSet()): any {
+  // Handle null, undefined, and primitives
   if (obj === null || typeof obj !== 'object') {
     return obj;
   }
+
+  // Handle circular references
+  if (seen.has(obj)) {
+    return null; // or some other sentinel value
+  }
+  seen.add(obj);
+
+  // Handle ObjectId
   if (obj instanceof mongoose.Types.ObjectId) {
     return obj.toString();
   }
-  if (typeof obj._id === 'object' && obj._id instanceof mongoose.Types.ObjectId) {
-     obj._id = obj._id.toString();
-  }
+
+  // Handle Date
   if (obj instanceof Date) {
     return obj.toISOString();
   }
+
+  // Handle Array
   if (Array.isArray(obj)) {
-    return obj.map(item => deepSerialize(item));
+    return obj.map(item => deepSerialize(item, seen));
   }
+
+  // Handle Mongoose document
   if (typeof obj.toObject === 'function') {
     obj = obj.toObject();
   }
+
+  // Handle plain object
   const serializedObj: { [key: string]: any } = {};
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        if (key === '_id' && obj[key] instanceof mongoose.Types.ObjectId) {
-            serializedObj[key] = obj[key].toString();
-        } else {
-            serializedObj[key] = deepSerialize(obj[key]);
-        }
+      // Skip internal Mongoose properties
+      if (key === '__v' || key === '$__' || key === '$init') continue;
+      
+      if (key === '_id' && obj[key] instanceof mongoose.Types.ObjectId) {
+        serializedObj[key] = obj[key].toString();
+      } else {
+        serializedObj[key] = deepSerialize(obj[key], seen);
+      }
     }
   }
   return serializedObj;
@@ -85,30 +102,30 @@ export default async function WorkoutPageServerWrapper({ params }: { params: { i
   console.log("SERVER WRAPPER: Raw workoutData fetched:", JSON.stringify(workoutData, null, 2));
 
   // --- Fetch and serialize previous workouts --- 
-  let previousWorkoutsData: any[] = []; // Use any type for serialized data
+  let previousWorkoutsData: any[] = [];
   try {
-     console.log(`SERVER WRAPPER: Fetching previous workouts for user ${session!.user!.id}, type ${workoutData.type}`);
-     // Fetch previous workouts (might need refactoring later if structure changed)
-     const previousWorkoutsDocs = await getPreviousWorkoutsByType(
-       session!.user!.id, 
-       workoutData.type, 
-       new Date(workoutData.date), 
-       10 
-     );
-     // Serialize the fetched previous workouts
-     previousWorkoutsData = deepSerialize(previousWorkoutsDocs);
-     console.log(`SERVER WRAPPER: Found and serialized ${previousWorkoutsData.length} previous workouts.`);
+    console.log(`SERVER WRAPPER: Fetching previous workouts for user ${session!.user!.id}, type ${workoutData.type}`);
+    // Fetch previous workouts with minimal data
+    previousWorkoutsData = await getPreviousWorkoutsByType(
+      session!.user!.id, 
+      workoutData.type, 
+      new Date(workoutData.date),
+      workoutId,
+      10 
+    );
+    console.log(`SERVER WRAPPER: Found ${previousWorkoutsData.length} previous workouts with minimal data.`);
   } catch (error) {
-     console.error(`SERVER WRAPPER: Error fetching/serializing previous workouts:`, error);
-     // Proceed with empty array if fetch/serialization fails
+    console.error(`SERVER WRAPPER: Error fetching previous workouts:`, error);
   }
 
   // Check if the current user is the owner of the workout
   const isOwner = workoutData.userId === session.user.id;
 
-  // Pass the fetched & serialized data as props to the client component
-  console.log("SERVER WRAPPER: Rendering WorkoutDetailsClient...");
-  // Pass props directly, client component will handle types
-  return <WorkoutDetailsClient workout={workoutData} previousWorkouts={previousWorkoutsData} isOwner={isOwner} />;
+  // Pass the fetched data as props to the client component
+  return <WorkoutDetailsClient 
+    workout={workoutData} 
+    previousWorkouts={previousWorkoutsData} 
+    isOwner={isOwner} 
+  />;
 }
 

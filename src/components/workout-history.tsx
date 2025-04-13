@@ -22,6 +22,8 @@ import {
   Search
 } from "lucide-react"
 import type { WorkoutData } from "@/types/db"
+import { formatDate } from "@/lib/utils"
+import { formatDuration } from "@/lib/utils"
 
 // Add missing popover components temporarily - will be replaced with proper imports
 const Popover = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
@@ -371,9 +373,9 @@ export default function WorkoutHistory({ initialWorkouts }: WorkoutHistoryProps)
                   </Badge>
                 </div>
                 <div className="col-span-1">
-                  <div className="flex items-center gap-1 text-sm">
-                    <Clock className="h-3 w-3 text-muted-foreground" />
-                    {workout.duration} min
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    <span>{formatDuration(workout.duration)}</span>
                   </div>
                   {(workout.distance || workout.cardioDetails?.distance) && (
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">

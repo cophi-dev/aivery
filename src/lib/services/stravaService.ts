@@ -463,94 +463,54 @@ export const transformStravaActivity = (activity: StravaActivity): ImportActivit
   // Map activity type using our comprehensive mapping function
   const mappedType = mapStravaType(activity.type || '', activity.sport_type);
   
-  // Ensure we have valid distance and duration values
-  // Convert meters to kilometers, ensure it's a number and positive
+  // KEEP distance in METERS
   let distance = 0;
-  
-  // Handle distance - typically comes in meters from Strava API
-  if (typeof activity.distance === 'number') {
-    if (activity.distance > 0) {
-      // Check if the distance seems reasonable - FIXED to properly handle all distances
-      if (activity.distance >= 100) {
-        // Normal case: Convert meters to kilometers
-        distance = activity.distance / 1000;
-        console.log(`Converting distance from ${activity.distance}m to ${distance}km`);
-      } else {
-        // Small distance, likely already in meters
-        distance = activity.distance / 1000; // Always convert from meters to km
-        console.log(`Converting small distance ${activity.distance}m to ${distance}km`);
-      }
-    }
+  if (activity.distance !== undefined && activity.distance !== null && activity.distance > 0) {
+    distance = activity.distance; // Keep distance in meters
+    console.log(`Using distance: ${distance}m`);
+  } else {
+    console.log(`No valid distance provided or distance is zero: ${activity.distance}`);
   }
   
-  // Use moving_time if available, otherwise use elapsed_time
-  // Duration should be in minutes for our app's format
-  // We receive seconds from Strava API, so divide by 60
-  let duration = 0;
-  if (typeof activity.moving_time === 'number' && activity.moving_time > 0) {
-    duration = activity.moving_time / 60; // Convert seconds to minutes
-  } else if (typeof activity.elapsed_time === 'number' && activity.elapsed_time > 0) {
-    duration = activity.elapsed_time / 60; // Convert seconds to minutes
+  // KEEP duration in SECONDS
+  // Use moving_time primarily, fallback to elapsed_time
+  let duration = 0; // Declare duration variable here
+  if (activity.moving_time !== undefined && activity.moving_time !== null && activity.moving_time > 0) {
+    duration = activity.moving_time; // Keep duration in seconds
+    console.log(`Using moving_time: ${duration}s`);
+  } else if (activity.elapsed_time !== undefined && activity.elapsed_time !== null && activity.elapsed_time > 0) {
+    duration = activity.elapsed_time; // Fallback to elapsed_time in seconds
+    console.log(`Using elapsed_time as fallback: ${duration}s`);
+  } else {
+    console.log(`No valid duration provided: moving_time=${activity.moving_time}, elapsed_time=${activity.elapsed_time}`);
   }
   
-  // Sanity check for extremely long durations (more than 24 hours)
-  if (duration > 1440) { // 24 hours in minutes
-    console.warn(`Unusually long duration detected: ${duration} minutes. Check if units are correct.`);
-    // See if it might be seconds instead of minutes
-    if (duration > 3600) { // More than 60 hours is almost certainly seconds
-      console.log(`Converting suspected seconds (${duration}) to minutes: ${duration / 60}`);
-      duration = duration / 60;
-    }
-  }
+  // Ensure duration is at least 0
+  duration = Math.max(0, duration);
   
-  // If we have duration but no distance, estimate distance
-  if (duration > 0 && distance <= 0) {
-    // Estimate distance based on activity type and duration
-    let speedKmPerHour;
-    switch(mappedType) {
-      case 'running':
-        speedKmPerHour = 10; // 10 km/h average running pace
-        break;
-      case 'cycling':
-        speedKmPerHour = 20; // 20 km/h average cycling speed
-        break;
-      case 'swimming':
-        speedKmPerHour = 3; // 3 km/h average swimming speed
-        break;
-      case 'walking':
-        speedKmPerHour = 5; // 5 km/h average walking pace
-        break;
-      case 'hiking':
-        speedKmPerHour = 4; // 4 km/h average hiking pace
-        break;
-      default:
-        speedKmPerHour = 8; // Default estimation
-    }
-    
-    // Calculate distance in km based on duration in minutes
-    distance = (duration / 60) * speedKmPerHour;
-    console.log(`Estimated distance from duration (${duration} min): ${distance.toFixed(2)}km`);
-  }
+  // REMOVED: Sanity checks/estimations based on minutes/km - data should be correct now 
   
-  console.log(`Processing Strava activity: ${activity.name}, Type: ${activity.type} -> ${mappedType}, Distance: ${distance}km, Duration: ${duration}min`);
+  console.log(`Processing Strava activity: ${activity.name || 'Unnamed Activity'}, Type: ${activity.type} -> ${mappedType}, Distance: ${distance}m, Duration: ${duration}s`);
   
+  // Ensure all required fields for ImportActivity are provided, even if using defaults/zeros
   return {
     id: activity.id?.toString() || '',
     title: activity.name || 'Untitled Activity',
     description: activity.description || '',
     type: mappedType,
-    distance: distance,
-    duration: duration,
-    date: parseStravaDate(activity.start_date),
+    distance: distance, // Return METERS
+    duration: duration, // Return SECONDS
+    date: parseStravaDate(activity.start_date), // parseStravaDate handles undefined/null start_date
     calories: activity.calories || 0,
     averageHeartRate: activity.average_heartrate || 0,
     maxHeartRate: activity.max_heartrate || 0,
-    averageSpeed: activity.average_speed || 0,
+    // Ensure averageSpeed calculation is safe
+    averageSpeed: (distance > 0 && duration > 0) ? distance / duration : 0, // m/s
     maxSpeed: activity.max_speed || 0,
     totalElevationGain: activity.total_elevation_gain || 0,
     sportType: activity.sport_type || '',
     source: 'strava',
-    sourceData: activity
+    sourceData: activity // Keep original activity data for reference if needed
   };
 };
 
@@ -566,16 +526,10 @@ function parseStravaDate(dateString?: string): Date {
   try {
     const parsedDate = new Date(dateString);
     
-    // Check if date is valid and not in the future
+    // Check if date is valid
     if (isNaN(parsedDate.getTime())) {
       console.warn(`Invalid Strava date: ${dateString}, using current date`);
-      return new Date();
-    }
-    
-    const now = new Date();
-    if (parsedDate > now) {
-      console.warn(`Future Strava date detected: ${dateString}, using current date`);
-      return now;
+      return new Date(); // Keep fallback for truly invalid dates
     }
     
     console.log(`Parsed Strava date: ${parsedDate.toISOString()} from ${dateString}`);
@@ -692,16 +646,19 @@ export async function syncStravaActivity(userId: string, activityId: string) {
       name: activity.name || `Strava ${mappedType}`, 
       date: parseStravaDate(activity.start_date),
       type: mappedType,
-      duration: activity.elapsed_time || 0, // Use elapsed_time for total duration
+      duration: activity.moving_time || activity.elapsed_time || 0, // Use moving_time primarily, fallback to elapsed_time (seconds)
       intensity: calculateIntensity(activity),
       notes: activity.description || "",
       stravaLink: `https://www.strava.com/activities/${activityId}`,
       // Add initial cardioDetails structure if applicable
       cardioDetails: { 
-        distance: (activity.distance || 0) / 1000, // Convert meters to km
-        duration: activity.moving_time || 0, // Use moving_time for active duration
-        pace: activity.average_speed && activity.average_speed > 0 ? (1000 / activity.average_speed) / 60 : undefined, // Calculate pace min/km
-        speed: activity.average_speed ? activity.average_speed * 3.6 : undefined, // Convert m/s to km/h
+        distance: activity.distance || 0, // Store distance in METERS
+        duration: activity.moving_time || 0, // Use moving_time for active duration (seconds)
+        // Calculate pace using consistent distance (meters) and duration (moving_time seconds)
+        pace: (activity.distance && activity.moving_time && activity.distance > 0 && activity.moving_time > 0) 
+              ? (activity.moving_time / 60) / (activity.distance / 1000) 
+              : undefined, // Pace in min/km
+        speed: activity.average_speed ? activity.average_speed * 3.6 : undefined, // Convert m/s to km/h (keep original Strava value if needed)
         maxSpeed: activity.max_speed ? activity.max_speed * 3.6 : undefined,
         elevationGain: activity.total_elevation_gain,
         heartRate: {
@@ -711,8 +668,8 @@ export async function syncStravaActivity(userId: string, activityId: string) {
         // power: activity.average_watts ? { average: activity.average_watts, max: activity.max_watts } : undefined,
         // Laps/Sets need separate processing later
       },
-      // Ensure top-level distance matches cardioDetails distance (in km)
-      distance: (activity.distance || 0) / 1000, // Convert meters to km
+      // Ensure top-level distance matches cardioDetails distance (store in METERS)
+      distance: activity.distance || 0, // Store distance in METERS
     };
     
     // Remove undefined heart rate values
@@ -767,8 +724,10 @@ export async function syncStravaActivity(userId: string, activityId: string) {
       order: 0, // Assuming only one exercise entry per Strava activity for now
       sets: [], // Placeholder - Laps/intervals processing needed here
       // Add duration/distance if applicable (maybe from cardioDetails?)
+      // Duration in seconds (already using moving_time from cardioDetails)
       duration: workoutData.cardioDetails?.duration, // Duration in seconds
-      distance: workoutData.cardioDetails?.distance ? workoutData.cardioDetails.distance * 1000 : undefined, // Distance in meters
+      // Distance in meters (already using meters from cardioDetails)
+      distance: workoutData.cardioDetails?.distance, // Distance in meters
     };
 
     // 3. Upsert WorkoutExercise document

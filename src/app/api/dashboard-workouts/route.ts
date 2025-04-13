@@ -20,25 +20,7 @@ export async function GET(request: Request) {
     const workouts = await fetchWorkouts(); // fetchWorkouts handles user filtering
     console.log(`[API Route /api/dashboard-workouts] fetchWorkouts returned ${workouts.length} workouts.`);
     
-    // Add date range information for debugging
-    if (workouts.length > 0) {
-      const dates = workouts.map(w => w.date).sort();
-      console.log(`[API Route /api/dashboard-workouts] Date range: ${dates[0]} to ${dates[dates.length - 1]}`);
-      
-      // Check for recent workouts (from April 2025)
-      const recentWorkouts = workouts.filter(w => w.date && w.date.includes('2025-04'));
-      console.log(`[API Route /api/dashboard-workouts] Recent workouts (April 2025): ${recentWorkouts.length}`);
-      
-      // Check for workouts in the last 7 days
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      const oneWeekAgoStr = oneWeekAgo.toISOString().split('T')[0]; // YYYY-MM-DD
-      
-      const last7DaysWorkouts = workouts.filter(w => w.date && w.date >= oneWeekAgoStr);
-      console.log(`[API Route /api/dashboard-workouts] Workouts in last 7 days (>= ${oneWeekAgoStr}): ${last7DaysWorkouts.length}`);
-    }
-    
-    // Return the workouts as JSON
+    // Return all workouts to let the metrics calculation handle the filtering
     return NextResponse.json({ workouts });
 
   } catch (error) {

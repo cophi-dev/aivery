@@ -19,7 +19,6 @@ function isWorkoutDocument(doc: any): doc is SafeAny {
 function convertDocToWorkoutData(doc: any): WorkoutData {
   if (!doc) return {} as WorkoutData;
   
-  // Create a type-safe object with proper conversions
   return {
     _id: doc._id ? doc._id.toString() : '',
     userId: doc.userId ? doc.userId.toString() : '',
@@ -28,9 +27,8 @@ function convertDocToWorkoutData(doc: any): WorkoutData {
     duration: doc.duration || 0,
     intensity: doc.intensity || '',
     type: doc.type || '',
-    volume: doc.volume || 0,
     distance: doc.distance,
-    exercises: doc.exercises || [],
+    workoutExercises: doc.workoutExercises || [],
     cardioDetails: doc.cardioDetails,
     notes: doc.notes || '',
     stravaLink: doc.stravaLink,
@@ -130,7 +128,7 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
         volume: doc.volume || 0,
         
         // Carefully handle exercises to avoid nested buffer objects
-        exercises: Array.isArray(doc.exercises) ? doc.exercises.map((exercise: any) => ({
+        exercises: Array.isArray(doc.workoutExercises) ? doc.workoutExercises.map((exercise: any) => ({
           _id: exercise._id ? exercise._id.toString() : undefined,
           name: exercise.name || '',
           sets: Array.isArray(exercise.sets) ? exercise.sets.map((set: any) => ({
@@ -186,97 +184,133 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
   }
 }
 
+// Helper function defined or imported here if needed
+function calculateExerciseVolume(exercise: any): number {
+  // Placeholder - Actual implementation needed
+  // This function should calculate volume based on sets (weight * reps)
+  // Similar logic might exist in workout-details-client.tsx or utils.ts
+  if (!exercise || !exercise.sets) return 0;
+  return exercise.sets.reduce((sum: number, set: any) => {
+    const weight = set.weight || 0;
+    const reps = set.reps || 0;
+    return sum + (weight * reps);
+  }, 0);
+}
+
 // Get a workout by ID
 export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
   try {
     await dbConnect()
-    
-    // Fetch the document
     const rawDoc = await WorkoutModel.findById(id).lean().exec();
-
-    if (!rawDoc) {
-      return null
-    }
-    
-    // Cast to any to simplify property access in mapping
+    if (!rawDoc) return null;
     const doc: any = rawDoc;
 
-    // Manually map all fields (ensuring correct types)
+    // Create a clean object without using JSON.parse(JSON.stringify())
     return {
-      _id: doc._id ? doc._id.toString() : '',
-      userId: doc.userId ? doc.userId.toString() : '', // Ensure userId is included
+      _id: doc._id.toString(),
+      userId: doc.userId.toString(),
       type: doc.type || '',
       name: doc.name || '',
-      // Ensure date is consistently handled (return Date object)
-      date: doc.date instanceof Date ? doc.date : 
-            (doc.date ? new Date(doc.date) : new Date()), 
+      date: doc.date instanceof Date ? doc.date.toISOString() : new Date(doc.date).toISOString(),
       duration: doc.duration || 0,
-      // Include calculated pace for consistency with getPreviousWorkoutsByType
-      pace: (doc.distance && doc.distance > 0 && doc.duration > 0) 
-            ? (doc.duration / doc.distance) / 60 
+      pace: (doc.cardioDetails?.distance && doc.cardioDetails.distance > 0 && doc.duration > 0)
+            ? (doc.duration / doc.cardioDetails.distance) / 60
             : undefined,
-      // Include calculated volume for consistency
-      calculatedVolume: doc.type === 'strength' && Array.isArray(doc.exercises) 
-            ? doc.exercises.reduce((total: number, exercise: any) => total + calculateExerciseVolume(exercise), 0) 
+      calculatedVolume: doc.type === 'strength' && Array.isArray(doc.workoutExercises)
+            ? doc.workoutExercises.reduce((total: number, exercise: any) => total + calculateExerciseVolume(exercise), 0)
             : undefined,
-      distance: doc.distance, // Keep original distance
+      distance: doc.distance,
       calories: doc.calories,
       notes: doc.notes,
       intensity: doc.intensity,
-      volume: doc.volume, // Keep original volume if stored
-      exercises: doc.exercises ? JSON.parse(JSON.stringify(doc.exercises)) : [], // Deep copy to avoid issues
-      cardioDetails: doc.cardioDetails ? JSON.parse(JSON.stringify(doc.cardioDetails)) : undefined, // Deep copy
+      workoutExercises: Array.isArray(doc.workoutExercises) ? doc.workoutExercises.map((ex: any) => ({
+        _id: ex._id?.toString(),
+        workoutId: ex.workoutId?.toString(),
+        exerciseId: ex.exerciseId ? {
+          _id: ex.exerciseId._id?.toString(),
+          name: ex.exerciseId.name,
+          category: ex.exerciseId.category,
+          equipment: ex.exerciseId.equipment
+        } : null,
+        sets: Array.isArray(ex.sets) ? ex.sets.map((set: any) => ({
+          _id: set._id?.toString(),
+          weight: set.weight,
+          reps: set.reps,
+          duration: set.duration,
+          distance: set.distance,
+          notes: set.notes
+        })) : [],
+        notes: ex.notes,
+        duration: ex.duration,
+        distance: ex.distance
+      })) : [],
+      cardioDetails: doc.cardioDetails ? {
+        distance: doc.cardioDetails.distance,
+        duration: doc.cardioDetails.duration,
+        pace: doc.cardioDetails.pace,
+        speed: doc.cardioDetails.speed,
+        maxSpeed: doc.cardioDetails.maxSpeed,
+        elevationGain: doc.cardioDetails.elevationGain,
+        heartRate: doc.cardioDetails.heartRate ? {
+          average: doc.cardioDetails.heartRate.average,
+          max: doc.cardioDetails.heartRate.max,
+          zones: doc.cardioDetails.heartRate.zones
+        } : undefined,
+        power: doc.cardioDetails.power ? {
+          average: doc.cardioDetails.power.average,
+          max: doc.cardioDetails.power.max
+        } : undefined
+      } : undefined,
       source: doc.source,
       sourceId: doc.sourceId,
       importedFrom: doc.importedFrom,
       importId: doc.importId,
       stravaLink: doc.stravaLink,
-      // Ensure createdAt and updatedAt are included and correctly typed (return as string)
-      createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : 
-                (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
-      updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
-                (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
-      // Include the records field
-      records: doc.records ? JSON.parse(JSON.stringify(doc.records)) : [] // Deep copy
+      createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : new Date(doc.createdAt).toISOString(),
+      updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : new Date(doc.updatedAt).toISOString(),
+      records: Array.isArray(doc.records) ? doc.records.map((record: any) => ({
+        timestamp: record.timestamp instanceof Date ? record.timestamp.toISOString() : new Date(record.timestamp).toISOString(),
+        heart_rate: record.heart_rate,
+        distance: record.distance,
+        speed: record.speed,
+        altitude: record.altitude,
+        latitude: record.latitude,
+        longitude: record.longitude,
+        cadence: record.cadence,
+        power: record.power
+      })) : []
     };
-
   } catch (error) {
     console.error(`Error getting workout ${id}:`, error)
     throw new Error(`Failed to get workout ${id}`)
   }
 }
 
-// Create a new workout
+// Create a new workout (Simplified userId handling)
 export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<WorkoutData> {
   try {
-    await dbConnect()
+    await dbConnect();
     
-    // Create workout object with only the properties that exist
-    const workoutObj: any = {
-      userId: new ObjectId(workoutData.userId),
-      name: workoutData.name || "",
+    // Attempt to create ObjectId regardless, MongoDB driver/Mongoose might handle it
+    const workoutToSave = {
+      ...workoutData,
+      userId: new ObjectId(workoutData.userId as string | ObjectId), // Convert or pass through
       date: workoutData.date || new Date(),
-      duration: workoutData.duration || 0,
-      type: workoutData.type || "strength",
-      volume: workoutData.volume || 0,
-      notes: workoutData.notes || "",
+      volume: undefined, 
+      exercises: undefined,
     };
-    
-    // Only add optional properties if they exist
-    if (workoutData.intensity) workoutObj.intensity = workoutData.intensity;
-    if (workoutData.distance !== undefined) workoutObj.distance = workoutData.distance;
-    if (workoutData.exercises) workoutObj.exercises = workoutData.exercises;
-    if (workoutData.cardioDetails) workoutObj.cardioDetails = workoutData.cardioDetails;
-    if (workoutData.stravaLink) workoutObj.stravaLink = workoutData.stravaLink;
-    if (workoutData.source) workoutObj.source = workoutData.source;
-    if (workoutData.sourceId) workoutObj.sourceId = workoutData.sourceId;
-    if (workoutData.importedFrom) workoutObj.importedFrom = workoutData.importedFrom;
-    if (workoutData.importId) workoutObj.importId = workoutData.importId;
-    
-    const workout = new WorkoutModel(workoutObj);
-    const savedWorkout = await workout.save()
-    const result = savedWorkout.toObject()
 
+    // Remove properties not in schema explicitly before saving
+    delete (workoutToSave as any).volume;
+    delete (workoutToSave as any).exercises;
+    delete (workoutToSave as any).calculatedVolume; // Also remove this if it sneaks in
+    delete (workoutToSave as any).pace; // Remove this if it sneaks in
+    
+    const workout = new WorkoutModel(workoutToSave);
+    const savedWorkout = await workout.save();
+    const result = savedWorkout.toObject();
+
+    // Return mapped data, ensuring no volume field
     return {
       _id: result._id.toString(),
       userId: result.userId.toString(),
@@ -285,9 +319,8 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       duration: result.duration,
       intensity: result.intensity,
       type: result.type,
-      volume: result.volume,
       distance: result.distance,
-      exercises: result.exercises,
+      workoutExercises: result.workoutExercises,
       cardioDetails: result.cardioDetails,
       notes: result.notes,
       stravaLink: result.stravaLink,
@@ -297,7 +330,11 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       importId: result.importId,
       createdAt: result.createdAt.toISOString(),
       updatedAt: result.updatedAt.toISOString(),
-    }
+      // Ensure records and other fields are mapped if needed, matching WorkoutData type
+      records: result.records,
+      calories: result.calories
+    } as WorkoutData;
+
   } catch (error) {
     console.error("Error creating workout:", error)
     throw new Error("Failed to create workout")
@@ -330,9 +367,8 @@ export async function updateWorkout(id: string, workoutData: Partial<WorkoutData
       duration: workout.duration,
       intensity: workout.intensity,
       type: workout.type,
-      volume: workout.volume,
       distance: workout.distance,
-      exercises: workout.exercises,
+      workoutExercises: workout.workoutExercises,
       cardioDetails: workout.cardioDetails,
       notes: workout.notes,
       createdAt: workout.createdAt.toISOString(),
@@ -396,7 +432,7 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
     
     const workoutDocs = await WorkoutModel.find({
       userId: new ObjectId(userId),
-      "exercises.name": exerciseName,
+      "workoutExercises.name": exerciseName,
       date: { $lt: currentDate },
     })
       .sort({ date: -1 })
@@ -414,7 +450,7 @@ export async function getPreviousWorkouts(userId: string, exerciseName: string, 
       type: workoutDoc.type || '',
       volume: workoutDoc.volume || 0,
       distance: workoutDoc.distance,
-      exercises: workoutDoc.exercises || [],
+      workoutExercises: workoutDoc.workoutExercises || [],
       cardioDetails: workoutDoc.cardioDetails,
       notes: workoutDoc.notes || '',
       createdAt: workoutDoc.createdAt instanceof Date ? workoutDoc.createdAt.toISOString() : new Date().toISOString(),
@@ -852,68 +888,61 @@ export async function getWorkoutDatesForMonth(userId: string, date: Date) {
 }
 
 // Get previous workouts for a specific workout TYPE
-export async function getPreviousWorkoutsByType(userId: string, workoutType: string, currentDate: Date, limit = 10): Promise<WorkoutData[]> {
+export async function getPreviousWorkoutsByType(
+  userId: string, 
+  workoutType: string, 
+  currentDate: Date,
+  currentWorkoutId: string,
+  limit = 10
+): Promise<WorkoutData[]> {
   try {
     await dbConnect()
     
-    // Find workouts of the same type, older than the current one, sorted newest first
+    // Only select the minimal fields needed for comparison
     const workoutDocs = await WorkoutModel.find({
       userId: new ObjectId(userId),
-      type: workoutType, // Filter by workout type
+      type: workoutType,
+      _id: { $ne: new ObjectId(currentWorkoutId) },
       date: { $lt: currentDate },
     })
+      .select({
+        _id: 1,
+        userId: 1,
+        date: 1,
+        duration: 1,
+        distance: 1,
+        'cardioDetails.distance': 1,
+        'cardioDetails.duration': 1,
+        'cardioDetails.pace': 1,
+        type: 1,
+        createdAt: 1,
+        updatedAt: 1
+      })
       .sort({ date: -1 })
       .limit(limit)
       .lean()
       .exec()
 
-    // Map to WorkoutData format
-    return workoutDocs.map((workoutDoc: any) => ({
-      _id: workoutDoc._id.toString(),
-      userId: workoutDoc.userId.toString(),
-      name: workoutDoc.name || '',
-      date: workoutDoc.date || new Date(),
-      duration: workoutDoc.duration || 0,
-      intensity: workoutDoc.intensity || '',
-      type: workoutDoc.type || '',
-      volume: workoutDoc.volume || 0,
-      distance: workoutDoc.distance,
-      exercises: workoutDoc.exercises || [],
-      cardioDetails: workoutDoc.cardioDetails,
-      notes: workoutDoc.notes || '',
-      createdAt: workoutDoc.createdAt instanceof Date ? workoutDoc.createdAt.toISOString() : new Date().toISOString(),
-      updatedAt: workoutDoc.updatedAt instanceof Date ? workoutDoc.updatedAt.toISOString() : new Date().toISOString(),
-      // Include calculated pace if applicable (similar to workout page logic)
-      pace: (workoutDoc.distance && workoutDoc.distance > 0 && workoutDoc.duration > 0) 
-            ? (workoutDoc.duration / workoutDoc.distance) / 60 
-            : undefined,
-      // Include calculated volume if applicable (similar to workout page logic)
-      calculatedVolume: workoutDoc.type === 'strength' && workoutDoc.exercises 
-            ? workoutDoc.exercises.reduce((total: number, exercise: any) => total + calculateExerciseVolume(exercise), 0) 
-            : undefined
+    // Return minimal data structure
+    return workoutDocs.map((doc: any) => ({
+      _id: doc._id.toString(),
+      userId: doc.userId.toString(),
+      type: doc.type,
+      date: doc.date,
+      duration: doc.duration || 0,
+      distance: doc.distance || doc.cardioDetails?.distance || 0,
+      cardioDetails: doc.cardioDetails ? {
+        distance: doc.cardioDetails.distance,
+        duration: doc.cardioDetails.duration,
+        pace: doc.cardioDetails.pace
+      } : undefined,
+      createdAt: doc.createdAt.toISOString(),
+      updatedAt: doc.updatedAt.toISOString()
     }))
   } catch (error) {
     console.error(`Error getting previous workouts for type ${workoutType}:`, error)
-    // Return empty array on error instead of throwing, to avoid breaking the page
     return [] 
   }
-}
-
-// Calculate volume helper (ensure it's available here or imported)
-// Simplified version, assuming it's defined elsewhere or needs to be added/imported
-function calculateExerciseVolume(exercise: any): number {
-  // Placeholder: This logic should match the one in the page component
-  const estimatedWeight = 0; // Replace with actual estimation logic if needed
-  return exercise.sets.reduce((sum: number, set: any) => {
-    const weight = set.weight || 0;
-    const reps = set.reps || 0;
-    if (weight > 0) return sum + (weight * reps);
-    // Basic bodyweight estimation placeholder - refine if needed
-    if (exercise.name?.toLowerCase().includes('pull-up') || exercise.name?.toLowerCase().includes('chin-up')) return sum + (estimatedWeight * reps); // Use estimated bodyweight
-    if (exercise.name?.toLowerCase().includes('push-up')) return sum + (estimatedWeight * 0.6 * reps); // Approx 60% bodyweight
-    // Add more estimations as needed...
-    return sum + reps; // Fallback
-  }, 0);
 }
 
 /**
@@ -936,24 +965,24 @@ export async function getExercisePR(
     const isRepBased = lowerExerciseName.includes('pull-up') || lowerExerciseName.includes('chin-up') || lowerExerciseName.includes('push-up') || lowerExerciseName.includes('dip'); // Add more rep-based exercises here
 
     let pipeline: any[] = [
-      { $match: { userId: new ObjectId(userId), 'exercises.name': exerciseName } },
-      { $unwind: '$exercises' },
-      { $match: { 'exercises.name': exerciseName } },
-      { $unwind: '$exercises.sets' },
+      { $match: { userId: new ObjectId(userId), 'workoutExercises.name': exerciseName } },
+      { $unwind: '$workoutExercises' },
+      { $match: { 'workoutExercises.name': exerciseName } },
+      { $unwind: '$workoutExercises.sets' },
     ];
 
     if (isRepBased) {
       // Find max reps in a single set
       pipeline.push(
-        { $match: { 'exercises.sets.reps': { $gt: 0 } } }, // Ensure reps > 0
-        { $sort: { 'exercises.sets.reps': -1, date: -1 } }, // Sort by reps desc, then date desc
+        { $match: { 'workoutExercises.sets.reps': { $gt: 0 } } }, // Ensure reps > 0
+        { $sort: { 'workoutExercises.sets.reps': -1, date: -1 } }, // Sort by reps desc, then date desc
         { $limit: 1 }
       );
     } else {
       // Find max weight lifted for at least 1 rep
       pipeline.push(
-        { $match: { 'exercises.sets.weight': { $gt: 0 }, 'exercises.sets.reps': { $gte: 1 } } }, // Ensure weight > 0 and reps >= 1
-        { $sort: { 'exercises.sets.weight': -1, date: -1 } }, // Sort by weight desc, then date desc
+        { $match: { 'workoutExercises.sets.weight': { $gt: 0 }, 'workoutExercises.sets.reps': { $gte: 1 } } }, // Ensure weight > 0 and reps >= 1
+        { $sort: { 'workoutExercises.sets.weight': -1, date: -1 } }, // Sort by weight desc, then date desc
         { $limit: 1 }
       );
     }
@@ -964,13 +993,13 @@ export async function getExercisePR(
       const record = result[0];
       if (isRepBased) {
         return {
-          value: record.exercises.sets.reps,
+          value: record.workoutExercises.sets.reps,
           unit: 'reps',
           date: record.date,
         };
       } else {
         return {
-          value: record.exercises.sets.weight,
+          value: record.workoutExercises.sets.weight,
           unit: 'kg', // Assuming weight is stored in kg
           date: record.date,
         };
@@ -996,52 +1025,30 @@ export async function getExercisePR(
 export async function getFastestPace(
   userId: string,
   distanceKm: number,
-  tolerance: number = 0.1 // Allow +/- 100m variance for 5k, 10k etc.
-): Promise<{ pace: number; date: Date } | null> {
+  tolerance: number = 0.1 
+): Promise<{ pace: number; date: Date; workoutId: string } | null> { // Ensure workoutId is in return type
   try {
     await dbConnect();
-
     const minDistance = distanceKm - tolerance;
     const maxDistance = distanceKm + tolerance;
 
-    // Find runs within the distance range, calculate pace, sort by pace ascending
     const pipeline: any[] = [
-      {
-        $match: {
-          userId: new ObjectId(userId),
-          type: { $in: ['running', 'run'] }, // Match running types
-          distance: { $gte: minDistance, $lte: maxDistance },
-          duration: { $gt: 0 } // Ensure duration is positive
-        }
-      },
-      {
-        $addFields: {
-          // Calculate pace in seconds per kilometer first for accurate sorting
-          paceSecondsPerKm: { $divide: ["$duration", "$distance"] }
-        }
-      },
-      {
-        $sort: { paceSecondsPerKm: 1, date: -1 } // Sort by pace ascending, then date descending
-      },
+      { $match: { userId: new ObjectId(userId), type: { $in: ['running', 'run'] }, "cardioDetails.distance": { $gte: minDistance, $lte: maxDistance, $gt: 0 }, duration: { $gt: 0 } } },
+      { $addFields: { paceSecondsPerKm: { $cond: { if: { $and: [ { $gt: ["$cardioDetails.distance", 0] }, { $ne: ["$cardioDetails.distance", null] } ] }, then: { $divide: ["$duration", "$cardioDetails.distance"] }, else: null } } } },
+      { $match: { paceSecondsPerKm: { $ne: null } } },
+      { $sort: { paceSecondsPerKm: 1, date: -1 } },
       { $limit: 1 }
     ];
 
     const result = await WorkoutModel.aggregate(pipeline).exec();
-
     if (result.length > 0) {
       const record = result[0];
-      // Convert pace from sec/km to min/km
       const paceMinPerKm = record.paceSecondsPerKm / 60;
-      return {
-        pace: paceMinPerKm,
-        date: record.date,
-      };
+      return { pace: paceMinPerKm, date: record.date, workoutId: record._id.toString() }; // Include workoutId
     }
-
-    return null; // No matching run found
+    return null;
   } catch (error) {
     console.error(`Error getting fastest ${distanceKm}k pace:`, error);
-    // Don't throw, just return null if error occurs
     return null;
   }
 }

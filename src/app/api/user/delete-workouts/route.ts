@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db/mongoose';
 import WorkoutModel from '@/lib/db/models/workout';
 import UserModel from '@/lib/db/models/user';
+import WorkoutExerciseModel from '@/lib/db/models/workoutExercise';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -195,6 +196,15 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[delete-workouts] Found ${workoutIdsToDelete.length} workouts to delete`);
+
+    // Delete associated WorkoutExercise documents first
+    if (workoutIdsToDelete.length > 0) {
+      console.log(`[delete-workouts] Deleting ${workoutIdsToDelete.length} associated workout exercises...`);
+      const deleteExercisesResult = await WorkoutExerciseModel.deleteMany({
+        workoutId: { $in: workoutIdsToDelete }
+      });
+      console.log(`[delete-workouts] Deleted ${deleteExercisesResult.deletedCount} workout exercise documents.`);
+    }
 
     // Remove workout references from user document
     await UserModel.updateOne(

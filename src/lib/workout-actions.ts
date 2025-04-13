@@ -40,57 +40,57 @@ interface PopulatedWorkoutExercise extends Omit<IWorkoutExercise, 'exerciseId'> 
   exerciseId: IExercise & { _id: Types.ObjectId };
 }
 
-// Helper function to deeply serialize Mongoose docs/objects
-// Converts ObjectIds and Dates to strings, ensures plain objects
-function deepSerialize(obj: any): any {
-  if (obj === null || typeof obj !== 'object') {
-    // Return primitives directly
-    return obj;
-  }
+// Helper function to safely serialize dates
+function serializeDate(date: any): string | undefined {
+  if (!date) return undefined;
+  if (date instanceof Date) return date.toISOString();
+  if (typeof date === 'string') return new Date(date).toISOString();
+  return undefined;
+}
 
-  // Handle Mongoose ObjectId
-  // Use 'instanceof' and also check for ObjectId structure if needed
-  if (obj instanceof mongoose.Types.ObjectId) {
-    return obj.toString();
+// Helper function to deep serialize objects
+function deepSerialize(obj: any, seen = new WeakSet()): any {
+  if (!obj) return obj;
+  
+  // Handle primitives
+  if (typeof obj !== 'object') return obj;
+  
+  // Handle circular references
+  if (seen.has(obj)) {
+    return null; // Break circular reference
   }
-  // Sometimes lean() might return {_id: ..., ...} without instanceof working perfectly
-  if (typeof obj._id === 'object' && obj._id instanceof mongoose.Types.ObjectId) {
-     obj._id = obj._id.toString(); // Serialize _id within the object too
-  }
-
-  // Handle Date
+  seen.add(obj);
+  
+  // Handle dates
   if (obj instanceof Date) {
     return obj.toISOString();
   }
 
-  // Handle Arrays: Recursively serialize each item
+  // Handle ObjectId
+  if (obj instanceof Types.ObjectId) {
+    return obj.toString();
+  }
+
+  // Handle arrays
   if (Array.isArray(obj)) {
-    return obj.map(item => deepSerialize(item));
+    return obj.map(item => deepSerialize(item, seen));
   }
 
-  // Handle Mongoose Documents explicitly first
+  // Handle Mongoose documents
   if (typeof obj.toObject === 'function') {
-    // Convert Mongoose doc to plain object first
-    obj = obj.toObject(); 
+    obj = obj.toObject();
   }
 
-  // Handle generic Objects: Recursively serialize properties
-  // Crucially, this needs to handle the plain object resulting from .toObject()
-  const serializedObj: { [key: string]: any } = {};
+  // Handle plain objects
+  const result: any = {};
   for (const key in obj) {
-    // Ensure it's an own property and handle potential prototype pollution
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        // Check if the key is _id and needs serialization after toObject
-        if (key === '_id' && obj[key] instanceof mongoose.Types.ObjectId) {
-            serializedObj[key] = obj[key].toString();
-        } else {
-            // Recursively serialize the property value
-            serializedObj[key] = deepSerialize(obj[key]);
-        }
+      // Skip internal Mongoose properties
+      if (key === '__v' || key === '$__' || key === '$init') continue;
+      result[key] = deepSerialize(obj[key], seen);
     }
   }
-  
-  return serializedObj;
+  return result;
 }
 
 // Fetch all workouts for the current user (Refactored)
@@ -105,133 +105,94 @@ export async function fetchWorkouts(): Promise<any[]> {
     const userId = user.id;
     console.log(`Fetching all workouts for user: ${userId}`);
 
-    // 1. Fetch all workout documents for user, sorted by date descending
-    // Use .lean() here as we mostly need plain data downstream
-    const workoutDocs = await WorkoutModel.find({ userId: userId }).sort({ date: -1 }).lean(); 
+    // 1. Fetch all workout documents for the user
+    const workoutDocs = await WorkoutModel
+      .find({ userId: new Types.ObjectId(userId) })
+      .lean()
+      .sort({ date: -1 }); // Sort by date descending
 
     if (!workoutDocs || workoutDocs.length === 0) {
-        console.log(`No workouts found for user: ${userId}`);
-        return [];
+      console.log("No workouts found for user.");
+      return [];
     }
-    console.log(`Found ${workoutDocs.length} workout documents.`);
 
-    // --- ORIGINAL CODE (RESTORED WITH ERROR LOGGING) --- 
-    // 2. Get workout IDs
-    const workoutIds = workoutDocs.map((doc: any) => doc._id); // Use lean doc
+    // 2. Extract workout IDs for fetching exercises
+    const workoutIds = workoutDocs.map(doc => doc._id);
 
     // 3. Fetch all relevant WorkoutExercise documents, populated
     console.log(`Fetching workout exercises for ${workoutIds.length} workouts...`);
     const workoutExercisesDocs = await WorkoutExerciseModel
       .find({ workoutId: { $in: workoutIds } })
-      .populate<{ exerciseId: IExercise & { _id: Types.ObjectId }}>('exerciseId') 
-      .lean() // Use lean here too for easier processing
-      .sort({ workoutId: 1, order: 1 }); // Sort for easier grouping
+      .populate<{ exerciseId: IExercise & { _id: Types.ObjectId }}>('exerciseId')
+      .lean()
+      .sort({ workoutId: 1, order: 1 });
+
     console.log(`Found ${workoutExercisesDocs.length} total workout exercises.`);
 
-    // Define the expected populated type
-    type PopulatedWorkoutExerciseDoc = IWorkoutExercise & {
-      _id: Types.ObjectId; // Ensure _id is ObjectId
-      exerciseId?: (IExercise & { _id: Types.ObjectId }) | null; // Populated field type
-    };
+    // 4. Group workout exercises by workout ID
+    const exercisesByWorkout = workoutExercisesDocs.reduce((acc: any, exercise: any) => {
+      const workoutId = exercise.workoutId.toString();
+      if (!acc[workoutId]) acc[workoutId] = [];
+      acc[workoutId].push(exercise);
+      return acc;
+    }, {});
 
-    // 4. Manually serialize workoutExercisesDocs
-    const plainWorkoutExercises = workoutExercisesDocs.map((doc: any) => {
-      // Use optional chaining and provide defaults or null
-      const docId = doc?._id?.toString();
-      const workoutId = doc?.workoutId?.toString();
-      const exerciseIdObj = doc?.exerciseId as any; // Cast to any to access properties
+    // 5. Combine workouts with their exercises
+    const combinedWorkouts = workoutDocs.map((workoutDoc: any) => {
+      const workoutId = workoutDoc._id.toString();
+      const workoutExercises = exercisesByWorkout[workoutId] || [];
 
-      if (!docId || !workoutId) {
-        console.error(`WorkoutExercise is missing essential IDs (_id or workoutId)! Skipping serialization for doc:`, doc);
-        return null; // Skip if essential IDs are missing
-      }
-
-      let exerciseDetails = null;
-      if (exerciseIdObj?._id) { // Check populated field safely
-         exerciseDetails = {
-          _id: exerciseIdObj._id.toString(),
-          name: exerciseIdObj.name ?? 'Unknown Exercise', // Default if name missing
-          category: exerciseIdObj.category ?? 'Unknown',
-         };
-      } else {
-          console.warn(`WorkoutExercise ${docId} is missing populated exerciseId details.`);
-      }
-
-      return {
-        _id: docId,
-        workoutId: workoutId,
-        order: doc?.order,
-        notes: doc?.notes,
-        exerciseId: exerciseDetails,
-        sets: doc?.sets ? (doc.sets as any[]).map((set: any) => ({ // Cast sets array to any[]
-            weight: set?.weight,
-            reps: set?.reps,
-            duration: set?.duration,
-            distance: set?.distance,
-            notes: set?.notes,
-            order: set?.order,
-        })) : [],
-        duration: doc?.duration,
-        distance: doc?.distance,
-        pace: doc?.pace,
-        speed: doc?.speed,
-        elevationGain: doc?.elevationGain,
-        calories: doc?.calories,
-        // Use optional chaining for dates too, provide fallback
-        createdAt: doc?.createdAt instanceof Date ? doc.createdAt.toISOString() : undefined,
-        updatedAt: doc?.updatedAt instanceof Date ? doc.updatedAt.toISOString() : undefined,
+      // Serialize the workout document
+      const serializedWorkout = {
+        _id: workoutId,
+        userId: workoutDoc.userId.toString(),
+        name: workoutDoc.name,
+        date: serializeDate(workoutDoc.date),
+        duration: workoutDoc.duration,
+        distance: workoutDoc.distance,
+        intensity: workoutDoc.intensity,
+        type: workoutDoc.type,
+        notes: workoutDoc.notes,
+        completed: workoutDoc.completed,
+        completedAt: serializeDate(workoutDoc.completedAt),
+        source: workoutDoc.source,
+        sourceId: workoutDoc.sourceId,
+        createdAt: serializeDate(workoutDoc.createdAt),
+        updatedAt: serializeDate(workoutDoc.updatedAt),
+        calculatedVolume: workoutDoc.calculatedVolume,
+        cardioDetails: deepSerialize(workoutDoc.cardioDetails),
+        records: deepSerialize(workoutDoc.records || []),
+        workoutExercises: workoutExercises.map((exercise: any) => ({
+          _id: exercise._id.toString(),
+          workoutId: exercise.workoutId.toString(),
+          exerciseId: exercise.exerciseId ? {
+            _id: exercise.exerciseId._id.toString(),
+            name: exercise.exerciseId.name,
+            category: exercise.exerciseId.category
+          } : null,
+          order: exercise.order,
+          notes: exercise.notes,
+          sets: (exercise.sets || []).map((set: any) => ({
+            weight: set.weight,
+            reps: set.reps,
+            duration: set.duration,
+            distance: set.distance,
+            notes: set.notes,
+            order: set.order
+          })),
+          duration: exercise.duration,
+          distance: exercise.distance
+        }))
       };
-    }).filter(Boolean); // Filter out any null values from skipped records
 
-    // 5. Combine workouts with their grouped, serialized exercises (Removed specific error handling)
-    const combinedWorkouts = [];
-    for (const workoutDoc of workoutDocs as any[]) {
-        // try {
-            const workoutIdStr = workoutDoc._id.toString();
-            // Manually serialize the workout doc (since we used .lean())
-            const plainWorkout: any = {
-                _id: workoutIdStr,
-                userId: workoutDoc.userId.toString(),
-                name: workoutDoc.name,
-                date: (workoutDoc.date as Date)?.toISOString(), // Handle potential non-Date
-                duration: workoutDoc.duration,
-                distance: workoutDoc.distance,
-                intensity: workoutDoc.intensity,
-                type: workoutDoc.type,
-                notes: workoutDoc.notes,
-                completed: workoutDoc.completed,
-                completedAt: (workoutDoc.completedAt as Date)?.toISOString(),
-                source: workoutDoc.source,
-                sourceId: workoutDoc.sourceId,
-                // ... other simple fields
-                createdAt: (workoutDoc.createdAt as Date)?.toISOString(),
-                updatedAt: (workoutDoc.updatedAt as Date)?.toISOString(),
-                // Serialize complex fields carefully
-                cardioDetails: workoutDoc.cardioDetails ? deepSerialize(workoutDoc.cardioDetails) : undefined,
-                records: workoutDoc.records ? deepSerialize(workoutDoc.records) : [],
-            };
-            // Attach the corresponding exercises
-            const finalWorkout = {
-                ...plainWorkout,
-                workoutExercises: plainWorkoutExercises.filter(ex => ex?.workoutId === workoutIdStr) || [], // Use optional chaining ex?.workoutId
-            };
-            combinedWorkouts.push(finalWorkout);
-        // } catch (err) {
-        //     console.error(`[fetchWorkouts ERROR] Failed combining/serializing workout ${workoutDoc._id?.toString()}:`, err);
-        //      // Optionally continue to next workout, or rethrow if critical
-        //     // continue;
-        // }
-    }
-    
-    // Removed debug log
-    // console.log(`[fetchWorkouts Return] Dates in final returned array: ${combinedWorkouts.map((w: any) => w.date).join(', ') || 'Empty array'}`);
-    console.log(`Returning ${combinedWorkouts.length} combined and serialized workouts.`);
+      return serializedWorkout;
+    });
+
+    console.log(`>>> FETCHWORKOUTS: Returning ${combinedWorkouts.length} workouts. First few:`, JSON.stringify(combinedWorkouts.slice(0, 3), null, 2)); // Log first few fetched workouts
     return combinedWorkouts;
- // --- END ORIGINAL CODE --- 
-
   } catch (error) {
     console.error("Error fetching workouts:", error);
-    return []; // Return empty array on error
+    return [];
   }
 }
 
@@ -425,7 +386,15 @@ export async function fetchWorkout(id: string): Promise<any | null> {
 }
 
 // Create a new workout (Refactored for WorkoutExercise schema)
-export async function createWorkout(workoutData: Partial<WorkoutData> & { exercises?: Array<{ name: string; notes?: string; sets?: InputSetData[] }> }): Promise<IWorkout> { 
+export async function createWorkout(workoutData: Partial<WorkoutData> & { 
+  exercises?: Array<{ 
+    name: string; 
+    notes?: string; 
+    sets?: InputSetData[]; 
+    duration?: number;
+    distance?: number;
+  }> 
+}): Promise<IWorkout> { 
   let savedWorkout: IWorkout | null = null;
   const createdWorkoutExerciseIds: Types.ObjectId[] = [];
   
@@ -455,13 +424,34 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & { exerci
       userId: userId,
       name: workoutData.name || "Workout", 
       date: workoutData.date ? new Date(workoutData.date) : new Date(),
-      duration: workoutData.duration || 0, 
       type: isValidWorkoutType ? workoutType as IWorkout['type'] : 'other',
       notes: workoutData.notes || "",
       source: isValidSource ? workoutData.source as IWorkout['source'] : 'manual',
       intensity: isValidIntensity ? workoutData.intensity as IWorkout['intensity'] : undefined,
       cardioDetails: undefined, // Initialize cardioDetails
+      calculatedVolume: 0 // Initialize calculatedVolume explicitly
     };
+
+    // Calculate total duration from exercises if available
+    let totalDuration = 0;
+    if (workoutData.exercises && Array.isArray(workoutData.exercises)) {
+      workoutData.exercises.forEach(exercise => {
+        // Add exercise duration if it exists
+        if (exercise.duration) {
+          totalDuration += exercise.duration;
+        }
+        // Add durations from sets if they exist
+        if (exercise.sets && Array.isArray(exercise.sets)) {
+          exercise.sets.forEach(set => {
+            if (set.duration) {
+              totalDuration += set.duration;
+            }
+          });
+        }
+      });
+    }
+    // Use provided duration as fallback if no exercises or if it's larger
+    workoutDocData.duration = Math.max(totalDuration, workoutData.duration || 0);
     
     // Build cardioDetails only if relevant and data exists
     if (['run', 'cycle', 'swim', 'walk', 'hike', 'row'].includes(workoutType) && (workoutData.distance !== undefined || workoutData.duration !== undefined)) {
@@ -483,6 +473,26 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & { exerci
              // Type assertion needed as we build Partial<ICardioDetails>
              workoutDocData.cardioDetails = details as ICardioDetails; 
         }
+    }
+
+    // Calculate total volume for strength workouts
+    let totalVolume = 0;
+    if (workoutType === 'strength' && workoutData.exercises && Array.isArray(workoutData.exercises)) {
+        workoutData.exercises.forEach(exercise => {
+            if (exercise.sets && Array.isArray(exercise.sets)) {
+                exercise.sets.forEach(set => {
+                    const weight = typeof set.weight === 'number' ? set.weight : 0;
+                    const reps = typeof set.reps === 'number' ? set.reps : 0;
+                    // Use simple weight * reps for consistency
+                    totalVolume += weight * reps;
+                });
+            }
+        });
+        workoutDocData.calculatedVolume = totalVolume;
+        console.log(`Calculated total volume for new strength workout: ${totalVolume}kg`);
+    } else {
+        // Ensure volume is 0 for non-strength workouts or those without exercises
+        workoutDocData.calculatedVolume = 0;
     }
 
     // Filter out undefined fields before saving (optional, Mongoose handles undefined)
@@ -669,28 +679,77 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
         console.log("Ownership verified.");
 
         // 2. Separate payload into workout fields and exercises
-        const { exercises: incomingExercises, ...workoutUpdateData } = payload;
+        const { exercises: incomingExercises, ...workoutUpdateDataInput } = payload;
         
-        // Simple walking distance estimation with minimal code changes
-        // Convert to any to avoid TypeScript errors with property access
-        const updateData = workoutUpdateData as any;
-        const workoutType = existingWorkout.type || '';
-        const workoutName = existingWorkout.name || '';
-        const isWalking = workoutType.toLowerCase() === 'walking' || workoutName.toLowerCase().includes('walk');
-        
-        // If it's a walking workout with duration but no distance
-        if (isWalking && existingWorkout.duration > 0 && !updateData.distance) {
-          // Estimate distance based on average walking pace (5 km/h = 1.38 m/s)
-          const estimatedMeters = Math.round(1.38 * existingWorkout.duration);
-          console.log(`Auto-calculating distance for walking workout: ${existingWorkout.duration}s → ${estimatedMeters}m`);
-          updateData.distance = estimatedMeters;
-        }
-        
-        // Add updatedAt timestamp
-        (workoutUpdateData as any).updatedAt = new Date();
+        // Create a type-safe object for the update
+        const workoutUpdateData: Partial<IWorkout> = { ...workoutUpdateDataInput };
 
-        // 3. Update the main Workout document fields
-        console.log("Updating main workout document:", workoutUpdateData);
+        // Recalculate total volume if type is strength and exercises are provided
+        let updatedVolume: number | undefined = undefined;
+        if (workoutUpdateData.type === 'strength' && incomingExercises !== undefined) {
+            updatedVolume = 0; // Start calculation only if relevant
+            // Use incomingExercises if available, otherwise fetch existing to recalculate
+            const exercisesToCalculate = incomingExercises || []; 
+            // Note: If incomingExercises is undefined but type *is* strength, we might 
+            // want to fetch existing exercises to ensure volume is recalculated correctly.
+            // For now, we only recalculate if exercises are part of the update.
+            
+            exercisesToCalculate.forEach(exercise => {
+                if (exercise.sets && Array.isArray(exercise.sets)) {
+                    exercise.sets.forEach(set => {
+                        const weight = typeof set.weight === 'number' ? set.weight : 0;
+                        const reps = typeof set.reps === 'number' ? set.reps : 0;
+                        updatedVolume! += weight * reps;
+                    });
+                }
+            });
+            workoutUpdateData.calculatedVolume = updatedVolume;
+            console.log(`Recalculated volume for updated strength workout: ${updatedVolume}kg`);
+        } else if (workoutUpdateData.type && workoutUpdateData.type !== 'strength') {
+            // Explicitly set volume to 0 if type is changed to non-strength
+            workoutUpdateData.calculatedVolume = 0;
+            console.log(`Workout type changed to non-strength, setting calculatedVolume to 0.`);
+        } else if (workoutUpdateData.type === 'strength' && incomingExercises === undefined) {
+            // If type is strength but exercises aren't in payload, recalculate from existing
+            // This handles cases where only workout metadata (like name/date) is changed
+            console.log("Recalculating volume from existing exercises as type is strength and no exercises provided in update...");
+            const existingWorkoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutId }).lean();
+            updatedVolume = 0;
+            existingWorkoutExercises.forEach(exercise => {
+                 if (exercise.sets && Array.isArray(exercise.sets)) {
+                    exercise.sets.forEach(set => {
+                        const weight = typeof set.weight === 'number' ? set.weight : 0;
+                        const reps = typeof set.reps === 'number' ? set.reps : 0;
+                        updatedVolume! += weight * reps;
+                    });
+                }
+            });
+            workoutUpdateData.calculatedVolume = updatedVolume;
+            console.log(`Recalculated volume from existing exercises: ${updatedVolume}kg`);
+        }
+
+        // Calculate total duration from exercises if available
+        let totalDuration = 0;
+        if (incomingExercises && Array.isArray(incomingExercises)) {
+          incomingExercises.forEach(exercise => {
+            // Add exercise duration if it exists
+            if (exercise.duration) {
+              totalDuration += exercise.duration;
+            }
+            // Add durations from sets if they exist
+            if (exercise.sets && Array.isArray(exercise.sets)) {
+              exercise.sets.forEach(set => {
+                if (set.duration) {
+                  totalDuration += set.duration;
+                }
+              });
+            }
+          });
+        }
+        // Use provided duration as fallback if no exercises or if it's larger
+        workoutUpdateData.duration = Math.max(totalDuration, payload.duration || 0);
+
+        // Update the workout document using the type-safe object
         const updatedWorkout = await WorkoutModel.findByIdAndUpdate(workoutId, workoutUpdateData, { new: true });
     if (!updatedWorkout) {
             // Should not happen if findById succeeded, but good practice
@@ -1123,7 +1182,8 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       date: data.date || new Date(),
       type: exerciseType,  // Use the specific exercise type (running, cycling, etc.) instead of 'cardio'
       userId: data.userId,
-      duration: Math.max(1, data.duration || 0), // Duration in minutes, minimum 1
+      // Don't multiply by 60 if source is strava since it's already in seconds
+      duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
       distance: data.distance || 0, // Distance in km
       calories: data.calories || 0,
       intensity: data.intensity || 'Medium',
@@ -1133,10 +1193,11 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       sourceData: data.sourceData,
       stravaLink: data.stravaLink,
       cardioDetails: {
-        distance: data.distance || 0, // Ensure distance is also in cardioDetails
-        duration: data.duration * 60 || 0, // Convert minutes to seconds for cardioDetails
-        pace: data.distance && data.duration ? (data.duration * 60) / data.distance : 0, // min/km in seconds
-        speed: data.distance && data.duration ? data.distance / (data.duration / 60) : 0, // km/h
+        distance: data.distance || 0, // Ensure distance is also in cardioDetails (km)
+        // Don't multiply by 60 if source is strava since it's already in seconds
+        duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
+        pace: data.distance && data.duration ? data.duration / data.distance : 0, // pace (min/km) calculation uses input minutes
+        speed: data.distance && data.duration ? data.distance / (data.duration / 60) : 0, // speed (km/h) calculation uses input minutes
         elevationGain: data.totalElevationGain || 0,
         heartRate: (data.averageHeartRate || data.maxHeartRate) ? {
           average: data.averageHeartRate || 0,
@@ -1157,7 +1218,8 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       workoutId: workout._id,
       exerciseId: exercise._id,
       userId: data.userId,
-      duration: data.duration * 60 || 0, // Duration in seconds
+      // Don't multiply by 60 if source is strava since it's already in seconds
+      duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
       distance: data.distance || 0, // Distance in km
       order: 1,
       sets: [],

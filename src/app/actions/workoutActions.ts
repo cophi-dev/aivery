@@ -9,7 +9,7 @@ interface ExercisePrData {
   pullups?: { value: number; unit: string; date: Date } | null;
 }
 interface PacePrData {
-  fastest5k?: { pace: number; date: Date } | null;
+  fastest5k?: { pace: number; date: Date; workoutId: string } | null;
 }
 
 interface PrDataResult {

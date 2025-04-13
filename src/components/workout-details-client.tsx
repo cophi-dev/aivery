@@ -34,7 +34,7 @@ import { DeleteWorkoutButton } from "@/components/delete-workout-button";
 import Image from "next/image";
 import { 
   formatDate, 
-  formatDuration as formatDurationUtil, 
+  formatDuration, 
   formatDistance as formatDistanceUtil, 
   formatPace as formatPaceUtil,
   estimateBodyweightForExercise, 
@@ -46,6 +46,7 @@ import { WorkoutData } from '@/types/db';
 import { useSession } from "next-auth/react";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useRouter } from 'next/navigation';
+import { debounce } from 'lodash';
 
 const getPaceZone = (pace: number | null): { zone: string; color: string } => {
   if (pace === null || pace <= 0 || !isFinite(pace)) return { zone: "Unknown", color: "" };
@@ -208,14 +209,26 @@ const getWorkoutTypeIcon = (type: string | undefined) => {
   return <Activity className="h-4 w-4" />;
 };
 
-// Explicitly define local formatters pointing to utils
-const formatDuration = formatDurationUtil;
-const formatDistance = formatDistanceUtil;
-const formatPace = formatPaceUtil;
+// Format distance for display
+const formatDistance = (km: number) => {
+  if (!km || km <= 0) return "N/A";
+  return `${km.toFixed(2)} km`;
+};
+
+// Format pace for display
+const formatPace = (pace: number | null) => {
+  if (!pace || pace <= 0 || !isFinite(pace)) return "N/A";
+  const minutes = Math.floor(pace);
+  const seconds = Math.round((pace - minutes) * 60);
+  if (seconds === 60) {
+     return `${minutes + 1}:00 min/km`;
+  }
+  return `${minutes}:${seconds.toString().padStart(2, "0")} min/km`;
+};
 
 export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwner }: WorkoutDetailsClientProps) {
   const [insight, setInsight] = useState<string>('');
-  const [isLoadingInsight, setIsLoadingInsight] = useState<boolean>(true);
+  const [isLoadingInsight, setIsLoadingInsight] = useState<boolean>(false);
   const [scrollOpacity, setScrollOpacity] = useState<number>(1);
   const params = useParams();
   const workoutId = params?.id as string;
@@ -265,58 +278,71 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
     };
   }, []);
 
-  const fetchInsight = useCallback(async () => {
-    const userName = session?.user?.nickname || session?.user?.name || "Fitness Pro";
-
-    if (!workoutId || typeof workoutId !== 'string') {
-      setIsLoadingInsight(false);
-      setInsight('Could not load workout highlight.');
-      return;
-    }
-    setIsLoadingInsight(true);
-    try {
-      const response = await fetch(`/api/ai/workout-highlight?t=${Date.now()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userName: userName,
-          workout: workout
-        }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setInsight(data.insight || 'Highlight unavailable.');
-    } catch (error) {
-      console.error("Error fetching workout insight:", error);
-      setInsight('Oops! Could not generate a highlight.');
-    } finally {
-      setIsLoadingInsight(false);
-    }
-  }, [workoutId, workout, session]);
-
-  useEffect(() => {
-    fetchInsight();
-  }, [fetchInsight]);
-
+  // Memoize expensive calculations
   const totalVolume = useMemo(() => {
     if (!workout?.workoutExercises || workout.type !== 'strength') return null;
     return workout.workoutExercises.reduce((sum: number, ex: any) => {
-        if (!ex.sets?.length) return sum;
-        const estimatedWeight = estimateBodyweightForExercise(ex.exerciseId?.name || '');
-        return sum + ex.sets.reduce((setSum: number, set: any) => {
-            const weight = set.weight ?? 0;
-            const reps = set.reps ?? 0;
-            const effectiveWeight = weight > 0 ? weight : (estimatedWeight > 0 ? estimatedWeight : 0);
-            return setSum + effectiveWeight * reps;
-        }, 0);
+      if (!ex.sets?.length) return sum;
+      const estimatedWeight = estimateBodyweightForExercise(ex.exerciseId?.name || '');
+      return sum + ex.sets.reduce((setSum: number, set: any) => {
+        const weight = set.weight ?? 0;
+        const reps = set.reps ?? 0;
+        const effectiveWeight = weight > 0 ? weight : (estimatedWeight > 0 ? estimatedWeight : 0);
+        return setSum + effectiveWeight * reps;
+      }, 0);
     }, 0);
-  }, [workout]);
-  
+  }, [workout?.workoutExercises, workout?.type]);
+
+  // Memoize cardio details calculation
+  const cardioDetails = useMemo(() => ({
+    distance: workout.distance ?? workout.cardioDetails?.distance ?? 0,
+    pace: workout.cardioDetails?.pace ?? null,
+    heartRate: workout.cardioDetails?.heartRate ?? null,
+    elevationGain: workout.cardioDetails?.elevationGain ?? null,
+    power: workout.cardioDetails?.power ?? null,
+  }), [workout]);
+
+  // Memoize pace info
+  const paceInfo = useMemo(() => getPaceZone(cardioDetails.pace ?? null), [cardioDetails.pace]);
+
+  // Fetch insight with debounce
+  const debouncedFetchInsight = useCallback(
+    debounce(async () => {
+      if (!workoutId || typeof workoutId !== 'string' || isLoadingInsight) return;
+      
+      const userName = session?.user?.nickname || session?.user?.name || "Fitness Pro";
+      
+      setIsLoadingInsight(true);
+      try {
+        const response = await fetch(`/api/ai/workout-highlight?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userName, workout }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        setInsight(data.insight || 'Highlight unavailable.');
+      } catch (error) {
+        console.error("Error fetching workout insight:", error);
+        setInsight('Oops! Could not generate a highlight.');
+      } finally {
+        setIsLoadingInsight(false);
+      }
+    }, 1000),
+    [workoutId, workout, session, isLoadingInsight]
+  );
+
+  useEffect(() => {
+    debouncedFetchInsight();
+    return () => {
+      debouncedFetchInsight.cancel();
+    };
+  }, [debouncedFetchInsight]);
+
   const overallTotalReps = useMemo(() => {
       if (!workout?.workoutExercises) return 0;
       return workout.workoutExercises.reduce((exSum: number, ex: any) =>
@@ -351,16 +377,6 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
     return totalDurationMinutes / totalDistanceKm; // minutes per km
   }, [workout.duration, aggregatedDistanceKm, workout.distance]);
 
-  // Extract Cardio Details safely, prioritizing calculated/aggregated values
-  const cardioDetails: CardioDetails = useMemo(() => ({
-      distance: workout.distance ?? aggregatedDistanceKm, // Use aggregated distance as fallback
-      pace: workout.cardioDetails?.pace ?? calculatedPace, // Use calculated pace as fallback
-      heartRate: workout.cardioDetails?.heartRate,
-      elevationGain: workout.cardioDetails?.elevationGain,
-      power: workout.cardioDetails?.power,
-  }), [workout, aggregatedDistanceKm, calculatedPace]); // Add dependencies
-
-  const paceInfo = getPaceZone(cardioDetails.pace ?? null);
   const workoutIdString = workout._id.toString();
 
   // Define a helper component for Stat Cards
@@ -418,13 +434,13 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
       <div ref={detailsRef} className="container mx-auto px-4 py-12 space-y-8 scroll-mt-20">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <Button variant="outline" size="sm" asChild>
-            <Link href="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Link>
+            <Link href="/workouts"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Workouts</Link>
           </Button>
           <div className="flex flex-wrap gap-2 justify-end">
-            <Button variant="outline" size="sm"><Share className="w-4 h-4 mr-1" /> Share</Button>
-            <Link href={`/workouts/new?duplicate=${workoutIdString}`}><Button variant="outline" size="sm"><Copy className="w-4 h-4 mr-1" /> Duplicate</Button></Link>
-            {isOwner && <Link href={`/workouts/new?edit=${workoutIdString}`}><Button variant="outline" size="sm"><Pencil className="w-4 h-4 mr-1" /> Edit</Button></Link>}
-            {isOwner && <DeleteWorkoutButton workoutId={workoutIdString} />}
+            <Button variant="outline" size="icon" title="Share" className="hover:bg-accent hover:text-accent-foreground"><Share className="w-4 h-4" /></Button>
+            <Link href={`/workouts/new?duplicate=${workoutIdString}`} title="Duplicate"><Button variant="outline" size="icon" className="hover:bg-accent hover:text-accent-foreground"><Copy className="w-4 h-4" /></Button></Link>
+            {isOwner && <Link href={`/workouts/new?edit=${workoutIdString}`} title="Edit"><Button variant="outline" size="icon" className="hover:bg-accent hover:text-accent-foreground"><Pencil className="w-4 h-4" /></Button></Link>}
+            {isOwner && <DeleteWorkoutButton workoutId={workoutIdString} asIcon={true} />}
           </div>
         </div>
 
@@ -435,7 +451,6 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
             </h2>
             <p className="text-muted-foreground text-sm">{formatDate(workout.date as any)}</p>
           </div>
-          {workout.type && <Badge variant="outline" className="capitalize mt-1">{workout.type}</Badge>}
         </div>
 
         {/* --- Key Stats Grid --- */}
@@ -473,8 +488,13 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
                         {workout.workoutExercises.map((exerciseDetail: any, index: number) => (
                             <div key={exerciseDetail._id || index} className="border-b pb-6 last:border-b-0">
                                 <h3 className="text-lg font-medium mb-3 flex justify-between items-center">
-                                    <span>{index + 1}. {exerciseDetail.exerciseId?.name || 'Unknown Exercise'}</span>
-                                    {exerciseDetail.exerciseId?.category && <Badge variant="secondary" className="ml-2 text-xs font-normal">{capitalizeFirstLetter(exerciseDetail.exerciseId.category)}</Badge>}
+                                    {exerciseDetail.exerciseId?._id ? (
+                                        <Link href={`/exercises/${exerciseDetail.exerciseId._id}`} className="hover:underline cursor-pointer">
+                                            {index + 1}. {exerciseDetail.exerciseId.name}
+                                        </Link>
+                                    ) : (
+                                        <span>{index + 1}. {exerciseDetail.exerciseId?.name || 'Unknown Exercise'}</span>
+                                    )}
                                 </h3>
                                 <div className="space-y-4 pl-2 sm:pl-4">
                                     {/* Strength Exercise List (Reverted from Table) */}
@@ -496,32 +516,24 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
                                     {/* Cardio/Other Exercise Details Grid - This part might need adjustment based on how non-strength exercise data is stored */}
                                     {(!exerciseDetail.sets || exerciseDetail.sets.length === 0) && (
                                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 text-sm">
-                                            {/* Assuming details like duration/distance might now be per-set for interval training, or still on WorkoutExercise for continuous cardio */}
-                                            {/* If duration/distance/pace are now primarily in Sets, this section needs adapting */}
-                                            {/* Example if these details remain on WorkoutExercise: */}
                                             {exerciseDetail.duration !== undefined && exerciseDetail.duration > 0 && (
-                                                <div><p className="font-semibold text-muted-foreground">Duration:</p><p>{formatDuration(exerciseDetail.duration)}</p></div>
+                                                <div>
+                                                    <p className="font-semibold text-muted-foreground">Duration:</p>
+                                                    <p>{formatDuration(exerciseDetail.duration)}</p>
+                                                </div>
                                             )}
                                             {exerciseDetail.distance !== undefined && exerciseDetail.distance > 0 && (
-                                                <div><p className="font-semibold text-muted-foreground">Distance:</p><p>{formatDistance((exerciseDetail.distance ?? NaN) / 1000)}</p></div>
+                                                <div>
+                                                    <p className="font-semibold text-muted-foreground">Distance:</p>
+                                                    <p>{formatDistance(exerciseDetail.distance / 1000)}</p>
+                                                </div>
                                             )}
                                             {exerciseDetail.pace !== undefined && exerciseDetail.pace > 0 && (
-                                                <div><p className="font-semibold text-muted-foreground">Pace:</p><p>{formatPace(exerciseDetail.pace ?? null)}</p></div>
+                                                <div>
+                                                    <p className="font-semibold text-muted-foreground">Pace:</p>
+                                                    <p>{formatPace(exerciseDetail.pace)}</p>
+                                                </div>
                                             )}
-                                            {/* Example if details are expected in Sets for cardio intervals: */}
-                                            {/* {exerciseDetail.sets && exerciseDetail.sets.map((set: any, setIndex: number) => (
-                                                <React.Fragment key={`${exerciseDetail._id}-set-${set.id || setIndex}`}>
-                                                    {set.duration !== undefined && set.duration > 0 && (
-                                                         <div><p className="font-semibold text-muted-foreground">Interval {setIndex+1} Duration:</p><p>{formatDuration(set.duration)}</p></div>
-                                                    )}
-                                                     {set.distance !== undefined && set.distance > 0 && (
-                                                         <div><p className="font-semibold text-muted-foreground">Interval {setIndex+1} Distance:</p><p>{formatDistance(set.distance / 1000)}</p></div>
-                                                     )}
-                                                     {set.pace !== undefined && set.pace > 0 && (
-                                                        <div><p className="font-semibold text-muted-foreground">Interval {setIndex+1} Pace:</p><p>{formatPace(set.pace)}</p></div>
-                                                    )}
-                                                </React.Fragment>
-                                            ))} */}
                                         </div>
                                     )}
                                     {/* Display Notes */}

@@ -5,7 +5,7 @@ export interface IExercise extends Document {
   description?: string
   muscleGroups: string[]
   category: "strength" | "cardio" | "flexibility"
-  equipment?: string
+  equipment?: string[]
   instructions?: string
   createdAt: Date
   updatedAt: Date
@@ -22,7 +22,7 @@ const ExerciseSchema: Schema = new Schema(
       default: "strength", 
       required: true 
     },
-    equipment: { type: String },
+    equipment: { type: [String] },
     instructions: { type: String },
   },
   { timestamps: true },

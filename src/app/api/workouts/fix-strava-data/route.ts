@@ -85,14 +85,15 @@ export async function GET(request: NextRequest) {
         
         // Calculate pace and speed
         const durationMinutes = workout.duration || 0;
-        const pace = distanceKm > 0 && durationMinutes > 0 ? (durationMinutes * 60) / distanceKm : 0; // seconds per km
-        const speed = distanceKm > 0 && durationMinutes > 0 ? distanceKm / (durationMinutes / 60) : 0; // km/h
+        // Pace should be minutes per km: (duration in seconds / 60) / distance in km
+        const paceMinPerKm = distanceKm > 0 && durationMinutes > 0 ? (workout.duration / 60) / distanceKm : 0; 
+        const speedKmPerHour = distanceKm > 0 && durationMinutes > 0 ? distanceKm / (workout.duration / 3600) : 0; // km/h
         
         // Prepare cardioDetails update
         const cardioDetails = workout.cardioDetails || {};
         cardioDetails.distance = distanceKm;
-        cardioDetails.pace = pace;
-        cardioDetails.speed = speed;
+        cardioDetails.pace = paceMinPerKm; // Save pace in min/km
+        cardioDetails.speed = speedKmPerHour;
         
         // Update the workout
         await db.collection('workouts').updateOne(

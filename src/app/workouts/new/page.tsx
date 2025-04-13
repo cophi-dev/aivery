@@ -26,6 +26,7 @@ import { fetchExercises } from "@/lib/exercise-actions"
 import type { ExerciseData, WorkoutData, WorkoutExerciseData, Set } from "@/types/db"
 import { IWorkout } from "@/lib/db/models/workout"
 import { estimateBodyweightForExercise } from "@/lib/utils"
+import { Textarea } from "@/components/ui/textarea"
 
 // Type guard to filter out nulls
 function isDefined<T>(value: T | null | undefined): value is T {
@@ -66,6 +67,44 @@ type WorkoutTense = "past" | "present" | "future"
 
 // Estimate weight for common bodyweight exercises
 // Moved to src/lib/utils.ts
+
+// Add this function near the other utility functions
+const estimateWorkoutDuration = (exercises: ExerciseState[]): number => {
+  if (!exercises.length) return 0;
+  
+  let totalDuration = 0;
+  
+  // Average time per rep in seconds
+  const timePerRep = 3;
+  // Average rest between sets in seconds
+  const restBetweenSets = 90;
+  // Average rest between exercises in seconds
+  const restBetweenExercises = 120;
+  
+  exercises.forEach((exercise, exerciseIndex) => {
+    exercise.sets.forEach((set) => {
+      // Time for the reps
+      const reps = Number(set.reps) || 0;
+      totalDuration += reps * timePerRep;
+      
+      // Add rest time after each set (except the last set of the last exercise)
+      if (exerciseIndex < exercises.length - 1 || set !== exercise.sets[exercise.sets.length - 1]) {
+        totalDuration += restBetweenSets;
+      }
+    });
+    
+    // Add rest time between exercises (except after the last exercise)
+    if (exerciseIndex < exercises.length - 1) {
+      totalDuration += restBetweenExercises;
+    }
+  });
+  
+  // Add 5 minutes (300 seconds) for warm-up
+  totalDuration += 300;
+  
+  // Return total seconds
+  return totalDuration;
+};
 
 export default function NewWorkoutPage() {
   const router = useRouter()
@@ -113,6 +152,65 @@ export default function NewWorkoutPage() {
     return dbExercises.filter(ex => ex.category?.toLowerCase() === 'strength');
   }, [dbExercises]);
 
+  // Replace with new filtering logic
+  const filteredExercises = useMemo(() => {
+    // Always include exercises that are currently in the workout
+    const currentExerciseNames = new Set(exercises.map(ex => ex.name));
+    const exercisesInCurrentWorkout = dbExercises.filter(ex => currentExerciseNames.has(ex.name));
+    
+    // If no workout type selected, show all exercises plus current ones
+    if (!workoutType) {
+      return Array.from(new Set([...exercisesInCurrentWorkout, ...dbExercises]));
+    }
+    
+    if (workoutType === "home_strength") {
+      // Filter for exercises that are marked as suitable for home workouts
+      const filteredHomeExercises = dbExercises.filter(ex => {
+        // Skip filtering for exercises that are already in the workout
+        if (currentExerciseNames.has(ex.name)) {
+          return true;
+        }
+        
+        const equipmentList = Array.isArray(ex.equipment) ? ex.equipment : [];
+        const category = ex.category?.toLowerCase() || '';
+        const name = ex.name.toLowerCase();
+        
+        // Exclude cardio exercises
+        if (
+          category.includes('cardio') ||
+          name.includes('running') ||
+          name.includes('walking') ||
+          name.includes('hiking') ||
+          name.includes('swimming') ||
+          name.includes('cycling')
+        ) {
+          return false;
+        }
+        
+        return equipmentList.some(eq => eq?.toLowerCase().includes('bodyweight') || eq?.toLowerCase().includes('home')) ||
+               equipmentList.length === 0 || // No equipment needed
+               category.includes('bodyweight');
+      });
+
+      return Array.from(new Set([...exercisesInCurrentWorkout, ...filteredHomeExercises]));
+    } else if (workoutType === "gym") {
+      // For gym workouts, show all strength exercises
+      const filteredGymExercises = dbExercises.filter(ex => {
+        // Skip filtering for exercises that are already in the workout
+        if (currentExerciseNames.has(ex.name)) {
+          return true;
+        }
+        
+        const category = ex.category?.toLowerCase() || '';
+        return category.includes('strength');
+      });
+
+      return Array.from(new Set([...exercisesInCurrentWorkout, ...filteredGymExercises]));
+    }
+    
+    return Array.from(new Set([...exercisesInCurrentWorkout, ...dbExercises]));
+  }, [workoutType, dbExercises, exercises]);
+
   // Fetch exercises from DB on mount
   useEffect(() => {
     const loadExercises = async () => {
@@ -148,25 +246,40 @@ export default function NewWorkoutPage() {
           const dateString = typeof data.date === 'string' ? data.date : String(data.date);
           setDate(parseISO(dateString)); 
           
-          const formTypeOption: WorkoutTypeOption = data.type as WorkoutTypeOption; // Use actual type now
-          setWorkoutType(formTypeOption); 
+          // Map the database workout type to the correct form type
+          let formTypeOption: WorkoutTypeOption;
+          if (data.type === 'strength') {
+            // Default to home_strength, will be updated based on exercises
+            formTypeOption = 'home_strength';
+            // Check if any exercise requires gym equipment
+            const hasGymExercises = data.workoutExercises?.some(ex => {
+              const exercise = dbExercises.find(dbEx => dbEx._id === ex.exerciseId?._id);
+              const equipment = Array.isArray(exercise?.equipment) ? exercise.equipment : [];
+              return equipment.some(eq => !eq?.toLowerCase().includes('bodyweight') && !eq?.toLowerCase().includes('home'));
+            });
+            if (hasGymExercises) {
+              formTypeOption = 'gym';
+            }
+          } else {
+            formTypeOption = data.type as WorkoutTypeOption;
+          }
+          setWorkoutType(formTypeOption);
+          
           setWorkoutName(data.name || "");
-          // Pre-fill overall distance/duration if applicable (e.g., for pure cardio workouts)
           setDistance(data.cardioDetails?.distance?.toString() || data.distance?.toString() || ""); 
-          setDuration(data.duration?.toString() || ""); 
-
-          // Map DB WorkoutExercises (with Sets) to the new ExerciseState format
+          
+          // Map DB WorkoutExercises to form state
+          let mappedExercises: ExerciseState[] = [];
           if (data.workoutExercises && data.workoutExercises.length > 0) {
-            const mappedExercises: ExerciseState[] = data.workoutExercises.map((ex: WorkoutExerciseData): ExerciseState => { 
-              // Ensure ex.sets is an array before mapping
+            mappedExercises = data.workoutExercises.map((ex: WorkoutExerciseData): ExerciseState => { 
               const setsArray = Array.isArray(ex.sets) ? ex.sets : [];
               return {
-                id: ex._id || `loaded-${Date.now()}`, // Simplified temp ID generation
+                id: ex._id || `loaded-${Date.now()}`,
                 exerciseId: ex.exerciseId?._id?.toString(),
-                name: ex.exerciseId?.name || 'Unknown Exercise', 
+                name: ex.exerciseId?.name || 'Unknown Exercise',
                 notes: ex.notes || undefined,
                 sets: setsArray.map((set: Set, setIndex: number): SetState => ({ 
-                  id: set._id || `loaded-set-${setIndex}-${Date.now()}`, 
+                  id: set._id || `loaded-set-${setIndex}-${Date.now()}`,
                   order: set.order ?? setIndex,
                   weight: set.weight?.toString() || "",
                   reps: set.reps?.toString() || "",
@@ -180,6 +293,14 @@ export default function NewWorkoutPage() {
           } else {
             setExercises([]); 
           }
+
+          // If it's a strength workout and duration is missing or zero, estimate it
+          if (data.type === 'strength' && (!data.duration || data.duration === 0)) {
+            const estimatedDuration = estimateWorkoutDuration(mappedExercises);
+            setDuration(estimatedDuration.toString());
+          } else {
+            setDuration(data.duration?.toString() || "");
+          }
           
           console.log("Loaded workout data for edit/duplicate:", data);
 
@@ -192,7 +313,7 @@ export default function NewWorkoutPage() {
       };
       fetchWorkoutData();
     }
-  }, [editingWorkoutId, duplicateWorkoutId]); 
+  }, [editingWorkoutId, duplicateWorkoutId, dbExercises]); // Added dbExercises to dependencies
 
   // Set tense based on date
   useEffect(() => {
@@ -390,6 +511,60 @@ export default function NewWorkoutPage() {
     return null;
   }
 
+  // Handle selection from ExerciseSelect component
+  const handleExerciseSelection = (exerciseId: number | string, selectedDbExerciseId: string) => {
+    setError(null);
+    // Find by ID now, assuming map key is ID
+    const selectedDbExercise = dbExercises.find(ex => ex._id === selectedDbExerciseId); 
+    if (!selectedDbExercise) {
+      console.error("Selected DB exercise not found:", selectedDbExerciseId);
+      // If not found by ID, try by name as a fallback (using the Map)
+      const selectedByName = dbExercisesMap.get(selectedDbExerciseId); // selectedDbExerciseId might actually be the name here
+      if (selectedByName) {
+         // Call recursively with the ID if found by name
+         handleExerciseSelection(exerciseId, selectedByName._id);
+         return;
+      }
+      console.error("Selected exercise not found by ID or name:", selectedDbExerciseId);
+      toast.error("Could not find selected exercise details.");
+      return; 
+    }
+
+    setExercises((prevExercises) =>
+      prevExercises.map((ex) => {
+        if (ex.id === exerciseId) {
+          const firstSet = ex.sets[0];
+          let updatedWeight = firstSet?.weight || "";
+          
+          // --- Safer Bodyweight Check ---
+          // Use type assertion assuming session might be augmented
+          const userWeight = typeof (session?.user as any)?.weight === 'number' ? (session?.user as any).weight : undefined;
+          const isBodyweightExercise = selectedDbExercise.category?.toLowerCase().includes('bodyweight');
+
+          // Ensure userWeight is a number before calling
+          if (isBodyweightExercise && typeof userWeight === 'number' && userWeight > 0 && !updatedWeight) {
+             // Pass only exercise name as per linter error
+             updatedWeight = estimateBodyweightForExercise(selectedDbExercise.name /*, userWeight */).toString();
+          }
+          // --- End Safer Check ---
+          
+          return {
+            ...ex,
+            exerciseId: selectedDbExercise._id,
+            name: selectedDbExercise.name, 
+            sets: ex.sets.map((set, index) => index === 0 ? { ...set, weight: updatedWeight } : set),
+          };
+        }
+        return ex;
+      })
+    );
+  };
+
+  const getDefaultWorkoutName = (type: WorkoutTypeOption | undefined, workoutDate: Date) => {
+    if (!type) return `Workout - ${format(workoutDate, 'PP')}`;
+    return `${workoutTypeDisplayNames[type]} - ${format(workoutDate, 'PP')}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!workoutType) {
@@ -430,8 +605,7 @@ export default function NewWorkoutPage() {
       return;
     }
     
-    const defaultWorkoutName = workoutTypeDisplayNames[workoutType] || "Workout";
-    const finalWorkoutName = workoutName.trim() || defaultWorkoutName;
+    const finalWorkoutName = workoutName.trim() || getDefaultWorkoutName(workoutType, date);
 
     // --- Map form state (ExerciseState[]) to payload structure --- 
     let exercisesPayload: WorkoutUpdatePayload['exercises'] = []; 
@@ -466,15 +640,17 @@ export default function NewWorkoutPage() {
               order: index,
               sets: exerciseSetsPayload,
               notes: exState.notes || undefined, 
-            };
+            } as WorkoutUpdatePayload['exercises'][0];
           } 
           return null; 
         });
         
-      // @ts-ignore - Linter seems unable to correctly infer type after filter
-      exercisesPayload = mappedExercises.filter(isDefined);
+      // Remove @ts-ignore and explicitly type the result of filter
+      const definedExercisesPayload: WorkoutUpdatePayload['exercises'][0][] = mappedExercises.filter(isDefined);
+      exercisesPayload = definedExercisesPayload; // Assign to the broader type variable
       
-      if (exercisesPayload.length === 0 && exercisesToSubmit.length > 0) {
+      // Add check here (using the correctly typed variable)
+      if (exercisesToSubmit.length > 0 && definedExercisesPayload.length === 0) {
          setError("Could not map any exercises to a valid format. Ensure reps > 0.");
          setIsSubmitting(false);
          return;
@@ -497,21 +673,25 @@ export default function NewWorkoutPage() {
 
       if (!canonicalCardioExercise) {
           console.error(`Could not find canonical exercise for type: ${finalWorkoutTypeForPayload}. Tried: ${cardioExerciseName}`);
-          // Decide how to handle - maybe create a placeholder exercise? For now, we might error.
           setError(`Could not find a matching exercise definition for type: ${finalWorkoutTypeForPayload}.`);
           setIsSubmitting(false);
           return; 
       } else {
           // Create a single WorkoutExercise entry for the cardio activity
-          exercisesPayload = [{
-              exerciseId: canonicalCardioExercise._id,
-              name: canonicalCardioExercise.name,
-              order: 0,
-              // Store duration/distance on the WorkoutExercise level for cardio
-              duration: parsedDuration * 60, // Convert form minutes to seconds
-              distance: parsedDistance * 1000, // Convert form km to meters?
-              sets: [], // Cardio doesn't have sets in this model
-          }];
+          // Check for non-empty duration/distance before creating payload
+          if (parsedDuration > 0 || parsedDistance > 0) { 
+              exercisesPayload = [{
+                  exerciseId: canonicalCardioExercise._id,
+                  name: canonicalCardioExercise.name,
+                  order: 0,
+                  duration: parsedDuration > 0 ? parsedDuration * 60 : undefined, // Convert form minutes to seconds
+                  distance: parsedDistance > 0 ? parsedDistance * 1000 : undefined, // Convert form km to meters?
+                  sets: [], // Cardio doesn't have sets in this model
+              }] as WorkoutUpdatePayload['exercises'];
+          } else {
+             // If no duration/distance, don't add an exercise entry
+             exercisesPayload = []; 
+          }
       }
     }
 
@@ -529,7 +709,9 @@ export default function NewWorkoutPage() {
       name: finalWorkoutName,
       type: finalWorkoutTypeForPayload,
       notes: getSummaryText() || "", 
-      duration: isStrengthType ? undefined : (parsedCardioDuration || 0),
+      duration: isStrengthType 
+        ? estimateWorkoutDuration(exercisesToSubmit)
+        : (parsedCardioDuration || 0),
       exercises: exercisesPayload, 
       cardioDetails: cardioDetailsPayload,
     };
@@ -576,233 +758,312 @@ export default function NewWorkoutPage() {
 
   // Loading indicator
   if (isLoadingData) {
-      return <div className="container mx-auto px-4 py-6 flex justify-center items-center min-h-[calc(100vh-120px)]"><p>Loading workout data...</p></div>;
+      return <div className="container mx-auto px-4 py-8">Loading workout data...</div>;
   }
 
+  // --- Render Logic ---
+  const isStrengthWorkout = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
+
   return (
-    <div className="container mx-auto px-4 py-6 max-w-3xl flex flex-col min-h-[calc(100vh-120px)]">
-      <div className="flex items-center mb-8 flex-shrink-0">
+    <div className="container mx-auto px-4 py-8 max-w-3xl"> 
+      <div className="flex items-center mb-6">
+        <Button variant="ghost" size="icon" onClick={() => router.back()} className="mr-2">
+          <LucideArrowLeft className="h-5 w-5" />
+        </Button>
         <h1 className="text-2xl font-semibold tracking-tight">
-           {isEditing ? 'Edit your workout' : 'Log your workout'}
+          {isEditing ? "Edit Workout" : duplicateWorkoutId ? "Duplicate Workout" : "Log New Workout"}
         </h1>
       </div>
 
-      <div className="flex flex-col justify-center flex-grow"> 
-        <div className="text-foreground px-1 text-center"> 
-          <form onSubmit={handleSubmit} className="space-y-10">
-            <div className="space-y-8 leading-relaxed">
-             {/* --- Workout Name Input (Optional) --- */}
-              <div className="text-base font-medium">
-                <label htmlFor="workoutName" className="sr-only">Workout Name (Optional)</label>
-                <Input
-                  id="workoutName"
-                  type="text"
-                  value={workoutName}
-                  onChange={(e) => setWorkoutName(e.target.value)}
-                  placeholder={workoutType ? workoutTypeDisplayNames[workoutType] : "Workout Name (Optional)"}
-                  className="w-full max-w-xs mx-auto h-10 px-3 text-center border-0 border-b rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary bg-transparent text-lg"
-                />
-              </div>
+      {/* Error Display */}
+      {error && (
+        <div className="mb-4 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+          <p className="font-medium">Error:</p>
+          <p>{error}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-8">
+
+        {/* Workout Metadata Section */}
+        <div className="space-y-4 rounded-md border p-4 md:p-6">
+           <h2 className="text-lg font-medium mb-4">Workout Details</h2>
             
-              <p className="text-base font-medium">
-                On{" "}
-                <Popover>
-                  <PopoverTrigger asChild>
-                          <Button variant="link" className={inlineButtonStyle}>
-                              {format(date, "MMMM d, yyyy")}
-                              <CalendarIcon className="ml-1.5 h-4 w-4 inline-block" />
-                          </Button>
-                  </PopoverTrigger>
-                  <PopoverContent style={{ backgroundColor: 'hsl(var(--card))' }} className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus />
-                  </PopoverContent>
-                </Popover>{" "}
-                {getVerbTenseText()}{" "}
-                a{" "} 
-                <Select value={workoutType || ""} onValueChange={(value) => setWorkoutType(value as WorkoutTypeOption)}>
-                  <SelectTrigger className={cn(inlineSelectStyle, !workoutType && "text-lg font-semibold text-muted-foreground")}>
-                     {workoutType ? workoutTypeDisplayNames[workoutType] : "Select activity..."} 
+           {/* Workout Type Selection */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                 <Label htmlFor="workout-type">Activity Type</Label>
+                 <Select 
+                    value={workoutType} 
+                    onValueChange={(value) => setWorkoutType(value as WorkoutTypeOption)}
+                    // disabled={isEditing} // Maybe allow changing type even when editing? Or disable?
+                 >
+                  <SelectTrigger id="workout-type">
+                    <SelectValue placeholder="Select activity type" />
                   </SelectTrigger>
-                  <SelectContent style={{ backgroundColor: 'hsl(var(--card))' }}>
-                    {Object.entries(workoutTypeDisplayNames).filter(([key]) => key !== 'strength').map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                  <SelectContent position="popper" className="bg-zinc-950 shadow-lg border">
+                    {Object.entries(workoutTypeDisplayNames)
+                      // Filter out 'strength' maybe? Keep for now.
+                      // .filter(([key]) => key !== 'strength') 
+                      .map(([value, displayName]) => (
+                        <SelectItem key={value} value={value}>{displayName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </p>
+              </div>
 
-              {/* Cardio workout details - check against WorkoutTypeOption */}
-              {workoutType && !["gym", "home_strength", "strength"].includes(workoutType) && workoutType !== "other" && (
-                <p className="text-base font-medium">
-                  {getVerbTenseText()}{" "} 
-                  <Input
-                    type="number"
-                    value={distance}
-                    onChange={(e) => setDistance(e.target.value)}
-                    className={cn(inlineInputStyle, !distance && "text-muted-foreground")}
-                    placeholder="distance"
-                    step="0.1"
-                    min="0"
-                  />{" "}
-                  km in{" "}
-                  <Input
-                    type="number"
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                    className={cn(inlineInputStyle, !duration && "text-muted-foreground")}
-                    placeholder="time"
-                    min="0"
-                  />{" "}
-                  minutes.
-                </p>
-              )}
-               {/* Other workout type - ensure medium weight */} 
-               {workoutType && workoutType === "other" && (
-                  <p className="text-base font-medium">
-                      Describe your activity...
-                  </p>
-               )}
-
-              {/* Gym workout details - check against WorkoutTypeOption */}
-              {workoutType && (workoutType === "gym" || workoutType === "home_strength") && (
-                <div className="space-y-10 text-left">
-                  {exercises.map((exercise, exerciseIndex) => (
-                    <div key={exercise.id} className="space-y-4 p-4 border rounded-lg relative group bg-muted/20">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold mr-1">{exerciseIndex + 1}.</span>
-                            <Select
-                              value={exercise.name}
-                              onValueChange={(value) => updateExerciseField(exercise.id, "name", value)}
-                            >
-                              <SelectTrigger className="h-auto p-1 border-b border-input text-base w-auto min-w-[150px]">
-                                <SelectValue placeholder="Select exercise" />
-                              </SelectTrigger>
-                              <SelectContent style={{ backgroundColor: 'hsl(var(--card))' }}>
-                                {strengthExercises.length > 0 ? strengthExercises.map((option) => (
-                                  <SelectItem key={option._id} value={option.name}>{option.name}</SelectItem>
-                                )) : <SelectItem value="" disabled>Loading...</SelectItem>}
-                                <SelectItem value="Other">Other (Type name)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            {exercise.name === 'Other' && (
-                              <Input
-                                type="text"
-                                value={exercise.name === 'Other' ? '' : exercise.name}
-                                onChange={(e) => updateExerciseField(exercise.id, "name", e.target.value)}
-                                className="h-auto p-1 border-b border-input text-base w-40 bg-transparent"
-                                placeholder="Type exercise name"
-                                autoFocus
-                              />
-                            )}
-                         </div>
-                         <Button 
-                           type="button" 
-                           variant="ghost" 
-                           size="icon" 
-                           className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-50 group-hover:opacity-100 transition-opacity"
-                           onClick={() => removeExercise(exercise.id)} 
-                           aria-label="Remove exercise"
-                          >
-                            <LucideX className="h-4 w-4" />
-                          </Button>
-                      </div>
-
-                      <div className="space-y-2 pl-4">
-                        <Label className="text-xs font-semibold text-muted-foreground block mb-1">Sets:</Label>
-                        {exercise.sets.map((set, setIndex) => (
-                          <div key={set.id} className="flex items-center gap-3 flex-wrap relative group/set ml-2"> 
-                            <span className="font-medium text-sm w-10 text-right text-muted-foreground">{setIndex + 1}.</span>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="sr-only">Weight</Label>
-                                <Input id={`weight-${exercise.id}-${set.id}`} type="number" value={set.weight || ''} onChange={(e) => updateSetField(exercise.id, set.id, "weight", e.target.value)} className="h-8 w-20 text-sm" placeholder="Weight" step="0.5" min="0" /> 
-                                <span className="text-sm text-muted-foreground">kg</span>
-                                
-                                <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="sr-only">Reps</Label>
-                                <Input id={`reps-${exercise.id}-${set.id}`} type="number" value={set.reps || ''} onChange={(e) => updateSetField(exercise.id, set.id, "reps", e.target.value)} className="h-8 w-16 text-sm" placeholder="Reps" min="1" />
-                                <span className="text-sm text-muted-foreground">reps</span>
-                                
-                                <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="sr-only">Set Notes</Label>
-                                <Input id={`set-notes-${exercise.id}-${set.id}`} type="text" value={set.notes || ''} onChange={(e) => updateSetField(exercise.id, set.id, "notes", e.target.value)} className="h-8 text-sm flex-grow min-w-[100px]" placeholder="Set notes (optional)" />
-                            </div>
-                             <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="icon" 
-                                className="text-muted-foreground hover:text-destructive h-6 w-6 opacity-0 group-hover/set:opacity-100 transition-opacity absolute -right-2 top-1/2 -translate-y-1/2" 
-                                onClick={() => removeSet(exercise.id, set.id)} 
-                                aria-label="Remove set"
-                              >
-                                <LucideX className="h-3.5 w-3.5" />
-                              </Button>
-                          </div>
-                        ))}
-                         <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="sm" 
-                          className="mt-2 h-8 text-xs"
-                          onClick={() => addSet(exercise.id)}
-                        >
-                          <LucidePlus className="h-3 w-3 mr-1"/> Add Set
-                        </Button>
-                      </div>
-                      
-                       <div className="pl-4 pt-2">
-                           <Label htmlFor={`notes-${exercise.id}`} className="text-xs text-muted-foreground">Exercise Notes (Optional)</Label>
-                           <Input 
-                              id={`notes-${exercise.id}`}
-                              type="text" 
-                              value={exercise.notes || ''} 
-                              onChange={(e) => updateExerciseField(exercise.id, "notes", e.target.value)} 
-                              className="h-8 text-sm mt-1 w-full"
-                              placeholder="e.g., warm-up/cool-down, technique focus..." 
-                            />
-                        </div>
-
-                    </div>
-                  ))}
-                  <div className="flex justify-center pt-4"> 
-                     <Button
-                       type="button"
-                       variant="ghost"
-                       size="sm"
-                       onClick={addExercise}
-                       className="text-muted-foreground hover:text-primary"
-                     >
-                       <LucidePlus className="h-4 w-4 mr-1.5"/> Add exercise
-                     </Button>
-                  </div>
+              {/* Date Picker */}
+               <div>
+                 <Label htmlFor="workout-date">Date</Label>
+                 <Popover modal={false}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="workout-date"
+                        variant={"outline"}
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !date && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {date ? format(date, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0 bg-zinc-950 shadow-lg border">
+                      <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={(newDate) => {
+                            if (newDate) {
+                                setDate(newDate);
+                                updateTenseBasedOnDate(newDate);
+                            }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
-              )}
+           </div>
+           
+           {/* Workout Name Input */}
+           <div>
+             <Label htmlFor="workout-name">Workout Name</Label>
+             <Input
+                id="workout-name"
+                placeholder={workoutType ? `e.g., ${workoutTypeDisplayNames[workoutType]}` : "Workout Name"}
+                value={workoutName}
+                onChange={(e) => setWorkoutName(e.target.value)}
+                className="placeholder:text-muted-foreground/50"
+             />
+             <p className="text-sm text-muted-foreground mt-1">Give your workout a descriptive name.</p>
+           </div>
 
-              {/* Workout summary - keep text-sm */} 
-              {workoutSummary && (
-                <div className="mt-8 text-muted-foreground italic text-sm">
-                  <p>{getSummaryText()}</p>
-                  </div>
-              )}
-            </div>
-
-             {/* Error Message */}
-              {error && (
-                  <p className="text-sm text-destructive mt-4">{error}</p>
-              )}
-
-            {/* Submit Button */}
-            <div className="mt-10 flex justify-center">
-                        <Button
-                type="submit"
-                disabled={isSubmitting || isLoadingData}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-                size="lg" 
-              >
-                {isSubmitting ? (isEditing ? "Updating..." : "Saving...") : (isEditing ? "Update Workout" : "Save Workout")}
-                        </Button>
-                  </div>
-          </form>
+           {/* Summary Text */}
+           <p className="text-sm text-muted-foreground pt-2">
+             {getSummaryText()}
+           </p>
         </div>
-      </div>
+
+
+        {/* Conditional Fields for Non-Strength Workouts */}
+        {!isStrengthWorkout && workoutType && (
+          <div className="space-y-4 rounded-md border p-4 md:p-6">
+             <h2 className="text-lg font-medium mb-4">{workoutTypeDisplayNames[workoutType]} Details</h2>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="duration">Duration (minutes)</Label>
+                  <Input 
+                    id="duration"
+                    type="number" 
+                    placeholder="e.g., 30" 
+                    value={duration} 
+                    onChange={(e) => setDuration(e.target.value)}
+                    min="0" 
+                  />
+                </div>
+                {/* Add distance field only for relevant types */}
+                {(workoutType === 'running' || workoutType === 'cycling' || workoutType === 'walking' || workoutType === 'swimming') && (
+                  <div>
+                    <Label htmlFor="distance">Distance (km/miles)</Label> 
+                    <Input 
+                      id="distance"
+                      type="number" 
+                      placeholder="e.g., 5" 
+                      value={distance} 
+                      onChange={(e) => setDistance(e.target.value)}
+                      min="0"
+                      step="0.1" 
+                    />
+                    {/* Consider adding unit toggle (km/miles) later */}
+                  </div>
+                )}
+             </div>
+          </div>
+        )}
+
+        {/* Exercises Section (for Strength Workouts) */}
+        {isStrengthWorkout && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-semibold">Exercises</h2>
+            {exercises.map((exercise, index) => (
+              <div key={exercise.id} className="rounded-md border p-4 md:p-6 space-y-4 relative bg-background">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1 space-y-2 mr-2">
+                     <Label htmlFor={`exercise-name-${exercise.id}`}>Exercise #{index + 1}</Label>
+                     {/* Use ExerciseSelect component - REPLACED with standard Select */}
+                     <Select
+                        // Pass the canonical ID if known, otherwise the name might be temporarily stored
+                        value={exercise.exerciseId || exercise.name || ''} 
+                        // Add string type to parameter
+                        onValueChange={(selectedIdOrName: string) => {
+                            // Find the exercise in dbExercises by ID first
+                            const matchedEx = dbExercises.find(dbEx => dbEx._id === selectedIdOrName);
+                            if (matchedEx) {
+                                handleExerciseSelection(exercise.id, matchedEx._id);
+                            } else {
+                                // Fallback: If not found by ID, assume it's a name (e.g., "Other")
+                                // or handle the case where the ID isn't in the list
+                                console.warn(`Exercise ID ${selectedIdOrName} not found directly, might be a name.`);
+                                // If it's just the name changing, update the name field directly
+                                // The exerciseId lookup happens in updateExerciseField or handleExerciseSelection
+                                updateExerciseField(exercise.id, 'name', selectedIdOrName);
+                                // If selectedIdOrName *is* a valid DB exercise ID after all, call handleSelection
+                                const potentialMatchById = dbExercises.find(dbEx => dbEx._id === selectedIdOrName);
+                                if(potentialMatchById) {
+                                   handleExerciseSelection(exercise.id, potentialMatchById._id);
+                                } else if (selectedIdOrName === 'Other') {
+                                  // Handle 'Other' explicitly if needed
+                                }
+                                // Consider adding an 'Other' input field if selectedIdOrName === 'Other'
+                            }
+                        }}
+                     >
+                        <SelectTrigger id={`exercise-name-${exercise.id}`}>
+                          <SelectValue placeholder="Select exercise" />
+                        </SelectTrigger>
+                        <SelectContent position="popper" className="bg-zinc-950 shadow-lg border">
+                           {/* Use filteredExercises instead of dbExercises */}
+                           {filteredExercises.length > 0 ? filteredExercises.map((option) => (
+                              <SelectItem key={option._id} value={option._id}>{option.name}</SelectItem>
+                           )) : <SelectItem value="" disabled>Loading exercises...</SelectItem>}
+                        </SelectContent>
+                     </Select>
+                     {/* Consider adding a manual Input field if 'Other' is selected or if the Select value doesn't match a known ID */}
+                     {/* {exercise.name === 'Other' && ( ... Input field ... ) } */}
+                  </div>
+                   <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => removeExercise(exercise.id)}
+                      className="absolute top-2 right-2 text-muted-foreground hover:text-destructive h-7 w-7"
+                      title="Remove Exercise"
+                    >
+                      <LucideX className="h-4 w-4" />
+                      <span className="sr-only">Remove Exercise</span>
+                   </Button>
+                 </div>
+
+                {/* Sets Section */}
+                <div className="space-y-3 pl-2 border-l-2 border-muted">
+                   <Label className="text-sm font-medium">Sets</Label>
+                   {exercise.sets.map((set, setIndex) => (
+                    <div key={set.id} className="flex items-end space-x-2">
+                       <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
+                       {/* Set Inputs - Arranged Horizontally */}
+                       <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                         <div>
+                           <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
+                           <Input
+                              id={`weight-${exercise.id}-${set.id}`}
+                              type="number"
+                              placeholder="Weight"
+                              value={set.weight || ""}
+                              onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                              min="0"
+                              step="0.1"
+                           />
+                         </div>
+                         <div>
+                           <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
+                           <Input
+                              id={`reps-${exercise.id}-${set.id}`}
+                              type="number"
+                              placeholder="Reps"
+                              value={set.reps || ""}
+                              onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                              min="0"
+                           />
+                         </div>
+                          {/* Optional Notes per Set - moved to end */}
+                         <div className="col-span-2 md:col-span-1">
+                             <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="text-xs">Set Notes (Opt.)</Label>
+                             <Input
+                                id={`set-notes-${exercise.id}-${set.id}`}
+                                placeholder="e.g., RPE 8"
+                                value={set.notes || ""}
+                                onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
+                                className="placeholder:text-muted-foreground/50"
+                             />
+                         </div>
+                       </div>
+                       
+                       {/* Remove Set Button */}
+                       <Button 
+                         type="button" 
+                         variant="ghost" 
+                         size="icon" 
+                         onClick={() => removeSet(exercise.id, set.id)}
+                         disabled={exercise.sets.length <= 1} // Disable removing the last set
+                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                         title="Remove Set"
+                       >
+                         <LucideX className="h-4 w-4" />
+                         <span className="sr-only">Remove Set</span>
+                       </Button>
+                    </div>
+                   ))}
+                   {/* Add Set Button */}
+                   <Button 
+                     type="button" 
+                     variant="outline" 
+                     size="sm"
+                     onClick={() => addSet(exercise.id)} 
+                     className="mt-2"
+                    >
+                     <LucidePlus className="h-4 w-4 mr-1" /> Add Set
+                   </Button>
+                </div>
+
+                {/* Exercise Notes */}
+                <div>
+                  <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
+                  <Textarea
+                    id={`exercise-notes-${exercise.id}`}
+                    placeholder="e.g., Focused on form, felt strong"
+                    value={exercise.notes || ""}
+                    onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                    className="placeholder:text-muted-foreground/50"
+                    rows={2}
+                  />
+                </div>
+              </div>
+            ))}
+            {/* Add Exercise Button */}
+            <Button type="button" variant="secondary" onClick={addExercise} className="w-full md:w-auto">
+               <LucidePlus className="h-4 w-4 mr-2" /> Add Exercise
+            </Button>
+          </div>
+        )}
+
+        {/* Save Workout Button */}
+        <div className="flex justify-end pt-4">
+          <Button type="submit" disabled={isSubmitting || !workoutType || (!isStrengthWorkout && !duration && !distance) || (isStrengthWorkout && exercises.length === 0) }>
+            {isSubmitting ? "Saving..." : isEditing ? "Update Workout" : "Save Workout"}
+          </Button>
+        </div>
+      </form>
     </div>
   )
 }

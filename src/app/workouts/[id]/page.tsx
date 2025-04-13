@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
+import { formatDate, formatDuration } from "@/lib/utils"
 
 export default function ActivityDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -94,15 +95,6 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
       month: "long",
       day: "numeric",
     })
-  }
-
-  // Format duration
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60)
-    const mins = Math.floor(minutes % 60)
-    const secs = Math.round((minutes % 1) * 60)
-
-    return `${hours > 0 ? `${hours}h ` : ""}${mins}m${secs > 0 ? ` ${secs}s` : ""}`
   }
 
   if (isLoading) {
@@ -257,7 +249,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                     {exerciseDetail.duration !== undefined && exerciseDetail.duration > 0 && (!exerciseDetail.sets || exerciseDetail.sets.length === 0) && (
                       <div>
                         <h4 className="font-semibold mb-1">Performance:</h4>
-                        <p className="text-sm text-muted-foreground">Duration: {formatDuration(exerciseDetail.duration / 60)}</p> 
+                        <p className="text-sm text-muted-foreground">Duration: {formatDuration(exerciseDetail.duration)}</p> 
                         {exerciseDetail.distance !== undefined && <p className="text-sm text-muted-foreground">Distance: {exerciseDetail.distance} m</p>} 
                       </div>
                     )}

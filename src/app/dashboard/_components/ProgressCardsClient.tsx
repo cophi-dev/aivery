@@ -1,85 +1,62 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dumbbell, HeartPulse, Route } from "lucide-react";
+import { Dumbbell, HeartPulse, Route, TrendingDown, TrendingUp } from "lucide-react";
+import { formatDuration } from "@/lib/utils"
 
 // --- Formatting Helpers (defined locally) ---
 // Format volume (assuming kg)
 const formatVolume = (volume: number | undefined | null): string | null => {
   if (volume === undefined || volume === null || volume <= 0) return null;
-  // Format with commas for thousands
-  return `${Math.round(volume).toLocaleString()} kg`;
+  // Convert to tons and format with one decimal place
+  const tons = volume / 1000;
+  return `${tons.toFixed(1)} tons`;
 };
 
-// Format distance (handling both meters and km appropriately)
-const formatDistance = (meters: number | undefined | null): string => {
-  console.log('[ProgressCards] Formatting distance:', meters);
-  
-  // Handle undefined, null, or negative values
-  if (meters === undefined || meters === null || meters <= 0) {
-    return "0 m"; // Show as meters for zero
-  }
-  
-  // For small distances (less than 1000m), show in meters
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
-  }
-  
-  // For larger distances, convert to km and format to 1 decimal place
+// Format distance (in meters)
+const formatDistance = (meters: number | undefined | null): string | null => {
+  if (meters === undefined || meters === null || meters <= 0) return null;
   const km = meters / 1000;
-  
-  // Log to verify the conversion is happening correctly
-  console.log(`[ProgressCards] Converting ${meters}m to ${km.toFixed(1)}km`);
-  
   return `${km.toFixed(1)} km`;
 };
 
-// Format duration (assuming input is in seconds)
-const formatDuration = (seconds: number | undefined | null): string | null => {
-  console.log('[ProgressCards] Formatting duration:', seconds, 'seconds');
-  
-  if (seconds === undefined || seconds === null || seconds <= 0) return null;
-  
-  // Convert seconds to hours and minutes
-  const totalMinutes = Math.floor(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const remainingMinutes = totalMinutes % 60;
-  
-  console.log('[ProgressCards] Duration converted to:', { hours, remainingMinutes });
-  
-  let formatted = "";
-  if (hours > 0) {
-    formatted += `${hours}h`;
-  }
-  if (remainingMinutes > 0 || hours === 0) {
-    formatted += `${hours > 0 ? ' ' : ''}${remainingMinutes}m`;
-  }
-  return formatted.trim();
+// Calculate percentage change
+const calculateChange = (current: number, previous: number): number => {
+  if (previous === 0) return 0;
+  return ((current - previous) / previous) * 100;
 };
+
 // -----------------------------------------
 
 interface ProgressCardsProps {
-  strengthVolume: number;
-  cardioDuration: number;
-  cardioDistance?: number; // Added optional distance
+  strengthVolume: number; // Total volume in kg
+  cardioDuration: number; // Duration in seconds
+  cardioDistance?: number; // Distance in meters
+  strengthVolumePrevious: number;
+  cardioDurationPrevious: number;
+  cardioDistancePrevious?: number;
 }
 
-export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }: ProgressCardsProps) {
-  // Determine if we should show distance alongside duration
-  const hasCardioDistance = cardioDistance !== undefined && cardioDistance !== null && cardioDistance > 0;
-  
-  // Debug values
-  console.log('[ProgressCards] Received props:', { strengthVolume, cardioDuration, cardioDistance });
-  console.log('[ProgressCards] Raw cardioDistance:', cardioDistance);
-  console.log('[ProgressCards] Kilometers (raw / 1000):', (cardioDistance || 0) / 1000);
-  console.log('[ProgressCards] Formatted duration:', formatDuration(cardioDuration));
-  console.log('[ProgressCards] Formatted distance:', formatDistance(cardioDistance));
-  console.log('[ProgressCards] Display distance:', hasCardioDistance);
-  
-  // For testing, calculate a raw km value
-  const distanceInKm = (cardioDistance || 0) / 1000;
-  const formattedKm = `${distanceInKm.toFixed(1)} km`;
-  
+export function ProgressCards({ 
+  strengthVolume, 
+  cardioDuration, 
+  cardioDistance,
+  strengthVolumePrevious,
+  cardioDurationPrevious,
+  cardioDistancePrevious
+}: ProgressCardsProps) {
+  // Calculate formatted values
+  const formattedVolume = formatVolume(strengthVolume) ?? "0 tons";
+  const minutes = Math.floor(cardioDuration / 60);
+  const formattedDuration = `${minutes} minutes`;
+  const formattedDistance = formatDistance(cardioDistance);
+
+  // Calculate percentage changes
+  const volumeChange = calculateChange(strengthVolume, strengthVolumePrevious);
+  const durationChange = calculateChange(cardioDuration, cardioDurationPrevious);
+  const distanceChange = cardioDistance && cardioDistancePrevious ? 
+    calculateChange(cardioDistance, cardioDistancePrevious) : 0;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
       {/* Strength Progress Card */}
@@ -91,9 +68,21 @@ export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }
           <CardDescription>Total Volume (Last 7 Days)</CardDescription>
         </CardHeader>
         <CardContent className="text-center">
-          <p className="text-3xl font-bold">{formatVolume(strengthVolume) ?? "0 kg"}</p>
-          {/* Placeholder for comparison, could be passed as prop if calculated server-side */}
-          {/* <p className="text-sm text-muted-foreground">+X% from last week</p> */}
+          <p className="text-3xl font-bold">{formattedVolume}</p>
+          <div className="flex items-center justify-center mt-2 text-sm">
+            {volumeChange !== 0 && (
+              <>
+                {volumeChange > 0 ? (
+                  <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+                ) : (
+                  <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
+                )}
+                <span className={volumeChange > 0 ? "text-green-500" : "text-red-500"}>
+                  {Math.abs(volumeChange).toFixed(1)}% from previous week
+                </span>
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -105,14 +94,42 @@ export function ProgressCards({ strengthVolume, cardioDuration, cardioDistance }
           </CardTitle>
           <CardDescription>Total Time (Last 7 Days)</CardDescription>
         </CardHeader>
-        <CardContent className="text-center">
-          <p className="text-3xl font-bold">{formatDuration(cardioDuration) ?? "0m"}</p>
-          
-          {/* Always show the distance element */}
-          <p className="text-md text-muted-foreground mt-1 flex items-center justify-center">
-            <Route className="h-4 w-4 mr-1" />
-            {formattedKm}
-          </p>
+        <CardContent className="text-center flex flex-col items-center gap-2">
+          <p className="text-3xl font-bold">{formattedDuration}</p>
+          <div className="flex items-center justify-center text-sm">
+            {durationChange !== 0 && (
+              <>
+                {durationChange > 0 ? (
+                  <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+                ) : (
+                  <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
+                )}
+                <span className={durationChange > 0 ? "text-green-500" : "text-red-500"}>
+                  {Math.abs(durationChange).toFixed(1)}% from previous week
+                </span>
+              </>
+            )}
+          </div>
+          {formattedDistance && (
+            <div className="flex flex-col items-center text-muted-foreground">
+              <div className="flex items-center">
+                <Route className="h-4 w-4 mr-1" />
+                <span>{formattedDistance}</span>
+              </div>
+              {distanceChange !== 0 && (
+                <div className="flex items-center text-sm mt-1">
+                  {distanceChange > 0 ? (
+                    <TrendingUp className="h-3 w-3 text-green-500 mr-1" />
+                  ) : (
+                    <TrendingDown className="h-3 w-3 text-red-500 mr-1" />
+                  )}
+                  <span className={distanceChange > 0 ? "text-green-500" : "text-red-500"}>
+                    {Math.abs(distanceChange).toFixed(1)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

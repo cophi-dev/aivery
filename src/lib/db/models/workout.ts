@@ -65,6 +65,7 @@ export interface IWorkout extends Document {
   intensity?: "Low" | "Medium" | "High"
   type: "strength" | "running" | "swimming" | "cycling" | "hiit" | "flexibility" | "walking" | "yoga" | "pilates" | "other" // Overall type, could be derived or set
   // volume?: number // Volume might be better calculated on the fly from WorkoutExercises
+  calculatedVolume?: number; // Added field for storing total calculated volume
   distance: number // <-- Uncomment this line
   // calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
   // REMOVED: exercises?: IExercise[] // This is now handled by WorkoutExercise collection
@@ -193,6 +194,7 @@ const WorkoutSchema: Schema = new Schema(
       required: true,
     },
     // REMOVED: volume: { type: Number },
+    calculatedVolume: { type: Number, default: 0 }, // Added field to schema definition
     distance: { type: Number }, // <-- Uncomment this line
     // REMOVED: calories: { type: Number },
     // REMOVED: exercises: [ExerciseSchema], // Removed embedded exercises

@@ -9,7 +9,7 @@ import { fetchUserWorkoutSummary } from '@/app/actions/workout-actions';
 export default function WorkoutSummary() {
   const [summary, setSummary] = useState<{
     totalWorkouts: number;
-    totalTimeInMinutes: number;
+    totalTimeInSeconds: number;
     totalDistanceInKm: number;
     favoriteType: string;
   } | null>(null);
@@ -50,7 +50,11 @@ export default function WorkoutSummary() {
             {isLoading ? (
               <Skeleton className="h-9 w-36 mx-auto mt-1" />
             ) : (
-              <p className="text-2xl font-bold">{formatDuration(summary?.totalTimeInMinutes || 0)}</p>
+              <p className="text-2xl font-bold">
+                {summary?.totalTimeInSeconds ? 
+                  `${Math.floor(summary.totalTimeInSeconds / 3600)} hours` 
+                  : '0 hours'}
+              </p>
             )}
           </div>
           

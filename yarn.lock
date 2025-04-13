@@ -975,6 +975,11 @@
   resolved "https://registry.npmjs.org/@types/json5/-/json5-0.0.29.tgz"
   integrity sha512-dRLjCWHYg4oaA77cxO64oO+7JwCwnIzkZPdrrC71jQmQtlhM556pwKo5bUzqvZndkVbeFLIIi+9TC40JNF5hNQ==
 
+"@types/lodash@^4.17.16":
+  version "4.17.16"
+  resolved "https://registry.npmjs.org/@types/lodash/-/lodash-4.17.16.tgz"
+  integrity sha512-HX7Em5NYQAXKW+1T+FiuG27NGwzJfCX3s1GjOa7ujxZa52kjJLOr4FUxT+giF6Tgxv1e+/czV/iTtBw27WTU9g==
+
 "@types/mdast@^3.0.0":
   version "3.0.15"
   resolved "https://registry.npmjs.org/@types/mdast/-/mdast-3.0.15.tgz"
@@ -2830,10 +2835,10 @@ find-up@^5.0.0:
     locate-path "^6.0.0"
     path-exists "^4.0.0"
 
-fit-file-parser@^1.21.0:
-  version "1.21.0"
-  resolved "https://registry.npmjs.org/fit-file-parser/-/fit-file-parser-1.21.0.tgz"
-  integrity sha512-O/P/7wSX0IOpAnZZscYuKgQykuUZs8fPzU3Uv9TpX65Ged70y5/g0jtWkJ+xyFo46q/MJcjsXQNdTvebXLYETg==
+fit-file-parser@^1.9.4:
+  version "1.9.4"
+  resolved "https://registry.npmjs.org/fit-file-parser/-/fit-file-parser-1.9.4.tgz"
+  integrity sha512-mP0mdLEqLJWWakXqCuvXTLjS27RWTL6HkkjGXzw5owNTfJDSmBe8WrKatG/R31zMfe6s1u0I9WBj3j7bKBxPCQ==
   dependencies:
     buffer "^5.1.0"
 

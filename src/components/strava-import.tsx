@@ -17,6 +17,7 @@ import Link from "next/link"
 import { disconnectStravaAction } from "@/lib/integration-actions"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { v4 as uuidv4 } from 'uuid'
+import { formatDuration } from "@/lib/utils"
 
 interface ImportStats {
   count: number;
@@ -569,6 +570,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       let totalErrors = 0;
       const activityTypesCounts: Record<string, number> = {};
       let consecutiveErrors = 0;
+      let accumulatedDistance = 0; // Add accumulator for distance
+      let accumulatedDuration = 0; // Add accumulator for duration
       
       // Process batches until we're done or hit an error
       let isComplete = false;
@@ -621,6 +624,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
           totalProcessed += batchData.processed || 0;
           totalImported += batchData.imported || 0;
           totalErrors += batchData.errors || 0;
+          
+          // Add batch distance and duration to accumulators
+          accumulatedDistance += batchData.batchTotalDistance || 0; 
+          accumulatedDuration += batchData.batchTotalDuration || 0;
           
           // Update activity type counts
           if (batchData.activityTypes) {
@@ -719,13 +726,19 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       }
       
       // Final completion
+      console.log(`[StravaImport] Final accumulated stats before setting state:`, {
+        distance: accumulatedDistance,
+        duration: accumulatedDuration,
+        count: totalImported,
+        types: activityTypesCounts
+      });
       const summaryStats: ImportStats = {
         count: totalImported,
         types: activityTypesCounts,
         earliestDate: '', // We don't have this info from batch processing
         latestDate: '',
-        totalDistance: 0,
-        totalDuration: 0,
+        totalDistance: accumulatedDistance, // Use accumulated distance
+        totalDuration: accumulatedDuration, // Use accumulated duration
       };
       setUploadStats(summaryStats);
       
@@ -817,16 +830,6 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     return `${distance.toFixed(1)} km`;
   }
 
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = Math.floor(minutes % 60);
-    
-    if (hours > 0) {
-      return `${hours}h ${mins}m`;
-    }
-    return `${mins} min`;
-  }
-
   const renderImportSummary = () => {
     if (!uploadStats) return null;
 
@@ -884,9 +887,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                         <span className="text-sm capitalize text-green-800 dark:text-green-300">{type}</span>
                         <span className="text-xs text-green-700 dark:text-green-400">{count}</span>
                       </div>
-                      <Progress value={uploadStats.count > 0 ? (count / uploadStats.count) * 100 : 0} className="h-1.5 bg-green-200 dark:bg-green-900">
-                        <div className="bg-green-600 dark:bg-green-500 h-full" style={{ width: `${uploadStats.count > 0 ? (count / uploadStats.count) * 100 : 0}%` }}/>
-                      </Progress>
+                      <Progress 
+                        value={uploadStats.count > 0 ? (count / uploadStats.count) * 100 : 0} 
+                        className="h-1.5 bg-green-200 dark:bg-green-900" 
+                      />
                     </div>
                   </div>
                 ))}

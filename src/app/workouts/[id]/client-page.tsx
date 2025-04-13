@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import type { WorkoutData } from "@/types/db"
+import { formatDuration } from "@/lib/utils"
 
 export default function ActivityDetailClient({ id }: { id: string }) {
   const router = useRouter()
@@ -70,15 +71,6 @@ export default function ActivityDetailClient({ id }: { id: string }) {
       month: "long",
       day: "numeric",
     })
-  }
-
-  // Format duration
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60)
-    const mins = Math.floor(minutes % 60)
-    const secs = Math.round((minutes % 1) * 60)
-
-    return `${hours > 0 ? `${hours}h ` : ""}${mins}m${secs > 0 ? ` ${secs}s` : ""}`
   }
 
   // Format pace for running/swimming

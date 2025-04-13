@@ -38,7 +38,7 @@ type SortDirection = "asc" | "desc";
 // Explicitly define WorkoutStats interface
 interface WorkoutStats {
   totalWorkouts: number;
-  totalMinutes: number;
+  totalSeconds: number;
   totalDistance: number;
   totalVolume: number;
   favoriteType: string;
@@ -54,7 +54,7 @@ interface ExercisePrData {
   pullups?: { value: number; unit: string; date: Date } | null;
 }
 interface PacePrData {
-  fastest5k?: { pace: number; date: Date } | null;
+  fastest5k?: { pace: number; date: Date; workoutId: string } | null;
 }
 
 // Simple error boundary class component
@@ -159,8 +159,8 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   
   // PR state
-  const [exercisePRs, setExercisePRs] = useState<any>({}); // Using 'any' temporarily, will be typed by action response
-  const [pacePRs, setPacePRs] = useState<any>({}); // Using 'any' temporarily
+  const [exercisePRs, setExercisePRs] = useState<any>({});
+  const [pacePRs, setPacePRs] = useState<PacePrData>({});
   const [loadingPRs, setLoadingPRs] = useState(true);
   
   // Get unique workout types
@@ -173,22 +173,26 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const startDate = startDateString ? new Date(startDateString) : undefined
   const endDate = endDateString ? new Date(endDateString) : undefined
   
-  // Get workout distance safely
+  // Get workout distance safely (prioritize cardioDetails)
   const getWorkoutDistance = useCallback((workout: WorkoutData): number => {
     try {
-      // Debugging: Log the type and value of workout.distance
-      console.log(`Workout ID: ${workout._id}, Distance Value: ${workout.distance}, Distance Type: ${typeof workout.distance}`);
-      
-      if (typeof workout.distance === 'number') {
-        return workout.distance;
-      }
-      if (workout.cardioDetails?.distance !== undefined) {
+      // Prioritize cardioDetails.distance (should be in km)
+      if (workout.cardioDetails?.distance !== undefined && typeof workout.cardioDetails.distance === 'number') {
         return workout.cardioDetails.distance;
       }
+      // Fallback to top-level distance if it exists and is a number (less likely)
+      if (typeof workout.distance === 'number') {
+        console.warn(`Workout ${workout._id}: Using top-level distance ${workout.distance}. Is this expected?`);
+        return workout.distance;
+      }
+      // Maybe check workoutExercises as a last resort?
+      // const exerciseDistance = workout.workoutExercises?.[0]?.distance;
+      // if (typeof exerciseDistance === 'number') return exerciseDistance / 1000; // Convert from meters
+      
     } catch (e) {
       console.error("Error getting workout distance:", e);
     }
-    return 0;
+    return 0; // Default to 0 if no reliable distance found
   }, []);
 
   // Get workout volume based on type
@@ -202,18 +206,17 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
           unit: "km" 
         };
       } else if (typeLower === "strength") {
-        // For strength, return total volume (weight * reps across all exercises)
-        // Prioritize explicitly stored volume if available
-        if (typeof workout.volume === 'number' && workout.volume > 0) {
-          return { value: workout.volume, unit: "kg" };
+        // For strength, use calculatedVolume if available, otherwise calculate
+        if (typeof workout.calculatedVolume === 'number' && workout.calculatedVolume > 0) {
+          return { value: workout.calculatedVolume, unit: "kg" };
         }
         
-        // Calculate volume if not stored directly or is 0
+        // Calculate volume from workoutExercises if calculatedVolume isn't usable
         let totalVolume = 0;
-        if (workout.exercises && Array.isArray(workout.exercises)) {
-          workout.exercises.forEach(exercise => {
+        if (workout.workoutExercises && Array.isArray(workout.workoutExercises)) {
+          workout.workoutExercises.forEach((exercise) => {
             if (exercise && Array.isArray(exercise.sets)) {
-               exercise.sets.forEach(set => {
+               exercise.sets.forEach((set) => {
                  // Ensure weight and reps are numbers before multiplying
                  const weight = typeof set.weight === 'number' ? set.weight : 0;
                  const reps = typeof set.reps === 'number' ? set.reps : 0;
@@ -385,10 +388,10 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     }
     
     // Add exercise details for strength workouts
-    if (workout.type.toLowerCase() === "strength" && workout.exercises && workout.exercises.length > 0) {
-      const exercisesList = workout.exercises.map(ex => {
-        const setsInfo = ex.sets.map(set => `${set.weight}kg x ${set.reps}`).join(", ");
-        return `${ex.name}: ${setsInfo}`;
+    if (workout.type.toLowerCase() === "strength" && workout.workoutExercises && workout.workoutExercises.length > 0) {
+      const exercisesList = workout.workoutExercises.map(ex => {
+        const setsInfo = (ex.sets || []).map((set: any) => `${set.weight || 0}kg x ${set.reps || 0}`).join(", ");
+        return `${ex.exerciseId?.name || 'Unknown Exercise'}: ${setsInfo}`;
       }).join("; ");
       details.push(`Exercises: ${exercisesList}`);
     }
@@ -429,7 +432,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     // Ensure we always return a valid stats object
     const emptyStats: WorkoutStats = {
       totalWorkouts: 0,
-      totalMinutes: 0,
+      totalSeconds: 0,
       totalDistance: 0,
       totalVolume: 0,
       favoriteType: 'None'
@@ -441,13 +444,15 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     }
 
     try {
-      // Calculate total workout time in minutes
-      const totalMinutes = workouts.reduce((sum, w) => sum + (w.duration || 0), 0);
+      // Calculate total workout time in SECONDS
+      const totalSeconds = workouts.reduce((sum, w) => sum + (w.duration || 0), 0);
       
-      // Calculate total distance for cardio workouts
+      // Calculate total distance for cardio workouts using the helper
       const totalDistance = workouts.reduce((sum, w) => {
-        if (w.type && (w.type.toLowerCase() === "running" || w.type.toLowerCase() === "cycling")) {
-          return sum + getWorkoutDistance(w);
+        const typeLower = w.type?.toLowerCase();
+        if (typeLower === "running" || typeLower === "run" || typeLower === "cycling" || typeLower === "bike") {
+          // CORRECTED: Call getWorkoutDistance
+          return sum + getWorkoutDistance(w); 
         }
         return sum;
       }, 0);
@@ -474,7 +479,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
       
       return {
         totalWorkouts: workouts.length,
-        totalMinutes: parseFloat(totalMinutes.toFixed(2)),
+        totalSeconds: parseFloat(totalSeconds.toFixed(2)),
         totalDistance,
         totalVolume,
         favoriteType: favoriteType.charAt(0).toUpperCase() + favoriteType.slice(1)
@@ -508,7 +513,10 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Time</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatDuration(workoutStats.totalMinutes)}</div>
+              {/* Calculate total hours and display in the new format */}
+              <div className="text-2xl font-bold">
+                {`over ${Math.floor(workoutStats.totalSeconds / 3600)} hours`}
+              </div>
             </CardContent>
           </Card>
           {/* Total Distance (Running/Cycling) */} 
@@ -517,7 +525,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Distance</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatDistance(workoutStats.totalDistance)}</div>
+              <div className="text-2xl font-bold">{Math.round(workoutStats.totalDistance)} km</div>
               <p className="text-xs text-muted-foreground">(Running/Cycling)</p>
             </CardContent>
           </Card>
@@ -531,17 +539,24 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             </CardContent>
           </Card>
           {/* Fastest 5k */}
-          <Card className="border-border/50">
+          <Card className="border-border/50 hover:border-primary/40 transition-colors duration-150">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Fastest 5k Pace</CardTitle>
             </CardHeader>
             <CardContent>
-              {pacePRs.fastest5k ? (
-                <>
-                  {/* Use the local formatPaceDisplay function */}
-                  <div className="text-2xl font-bold">{formatPaceDisplay(pacePRs.fastest5k.pace)}<span className="text-lg"> /km</span></div>
-                  <p className="text-xs text-muted-foreground">on {formatDate(pacePRs.fastest5k.date)}</p>
-                </>
+              {loadingPRs ? (
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              ) : pacePRs.fastest5k && pacePRs.fastest5k.workoutId ? (
+                <Link href={`/workout/${pacePRs.fastest5k.workoutId}`} className="block group">
+                  <div className="text-2xl font-bold group-hover:text-primary transition-colors">
+                    {formatPaceDisplay(pacePRs.fastest5k.pace)}
+                    <span className="text-lg"> /km</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    on {formatDate(pacePRs.fastest5k.date)}
+                    <ChevronRight className="inline-block h-3 w-3 ml-1 group-hover:translate-x-0.5 transition-transform" />
+                  </p>
+                </Link>
               ) : (
                 <p className="text-sm text-muted-foreground">No data</p>
               )}

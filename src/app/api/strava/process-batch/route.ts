@@ -10,6 +10,10 @@ import { promises as fs } from 'fs'
 import * as fsSync from 'fs'
 import path from 'path'
 import os from 'os'
+import { FitFileParser } from '@/lib/services/fitFileService'
+import mongoose from 'mongoose'
+import WorkoutModel from '@/lib/db/models/workout'
+import ExerciseModel from '@/lib/db/models/exercise'
 
 // Keep runtime (Node.js needed for processing)
 export const runtime = 'nodejs'
@@ -105,33 +109,31 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
   try {
     console.log(`Processing FIT file: ${fileName}, size: ${buffer.length} bytes`);
     
-    // For decompressed FIT files (if already decompressed)
-    // Note this function might be called after gunzip if the file was .fit.gz
+    const parser = new FitFileParser();
+    const data = await parser.parse(buffer);
     
-    // First, try to extract a rudimentary timestamp from the FIT file headers
-    // FIT files usually have a header timestamp field near the start of the file
-    
-    // Very basic header check - we're looking for the FIT signature
-    const isFitFile = buffer.length > 12 && 
-                      buffer.readUInt8(8) === 0x2E && // '.'
-                      buffer.readUInt8(9) === 0x46 && // 'F'
-                      buffer.readUInt8(10) === 0x49 && // 'I'
-                      buffer.readUInt8(11) === 0x54; // 'T'
-    
-    if (!isFitFile) {
-      console.warn(`File does not appear to be a valid FIT file: ${fileName}`);
-    }
-    
-    // Create default workout data that gets overridden by extraction
+    // Create workout data with proper duration handling - keep in seconds for Strava transform
     const workout: any = {
-      date: new Date(),
-      duration: 0,
-      distance: 0,
+      date: data.start_time,
+      duration: data.total_timer_time || data.total_moving_time || data.total_elapsed_time || 0, // Keep in seconds
+      elapsed_time: data.total_elapsed_time || 0, // Keep in seconds
+      distance: data.total_distance || 0, // Keep in meters
       type: 'other',
       title: `Activity imported from ${fileName}`,
-      sport: 'other',
-      sub_sport: undefined
+      sport: data.sport || 'other',
+      sub_sport: data.sub_sport,
+      avg_heart_rate: data.avg_heart_rate,
+      max_heart_rate: data.max_heart_rate,
+      total_elevation_gain: data.total_ascent,
+      avg_speed: data.enhanced_avg_speed || data.avg_speed,
+      max_speed: data.enhanced_max_speed || data.max_speed,
+      records: data.records || [] // Include records for better data processing
     };
+
+    // Map the sport type
+    if (workout.sport) {
+      workout.type = mapSportTypeToActivityType(workout.sport);
+    }
     
     // Try to extract activity type from filename and path
     const normalizedPath = fileName.toLowerCase().replace(/\\/g, '/');
@@ -161,242 +163,38 @@ async function processFitFile(buffer: Buffer, fileName: string): Promise<any> {
       workout.id = idMatch[1];
     }
     
-    // Also try to determine workout type from the file directory structure
-    if (normalizedPath.includes('/activities/')) {
-      // Look at the parent directory of the activity which might indicate type
-      const parts = normalizedPath.split('/');
-      const activityIndex = parts.findIndex(p => p === 'activities');
-      if (activityIndex > 0 && activityIndex < parts.length - 1) {
-        const activityType = parts[activityIndex + 1].toLowerCase();
-        if (['running', 'cycling', 'swimming', 'walking', 'hiking'].includes(activityType)) {
-          workout.type = activityType;
-          workout.sport = activityType;
-          console.log(`Detected activity type from directory structure: ${activityType}`);
-        }
-      }
-    }
-    
-    // Simple approach to find standard record fields in FIT files
-    // This will be hit or miss without a proper FIT parser but can catch some common formats
-    
-    // Look for timestamps (UNIX timestamps are often stored as 4-byte uint32s)
-    for (let i = 0; i < buffer.length - 8; i++) {
-      // Look for records with a timestamp field (typical encoding in FIT)
-      if (buffer[i] === 0x00 && buffer[i+1] === 0x01) {
-        try {
-          const timestamp = buffer.readUInt32LE(i+2);
-          // Simple validation - timestamps should be between 2010-2030
-          if (timestamp > 1262304000 && timestamp < 1900000000) {
-            workout.date = new Date(timestamp * 1000);
-            console.log(`Found timestamp: ${workout.date.toISOString()}`);
-            break;
-          }
-        } catch (e) {
-          // Ignore read errors
-        }
-      }
-    }
-    
-    // Look for activity duration (often 4-byte float or uint32)
-    for (let i = 0; i < buffer.length - 8; i++) {
-      // Common pattern for duration fields
-      if ((buffer[i] === 0x00 && buffer[i+1] === 0x02) || 
-          (buffer[i] === 0x12 && buffer[i+1] === 0x00)) {
-        try {
-          const duration = buffer.readUInt32LE(i+2);
-          // Simple validation - between 1 minute and 24 hours
-          if (duration > 60 && duration < 86400) {
-            workout.duration = duration;
-            console.log(`Found duration: ${duration} seconds`);
-            break;
-          }
-        } catch (e) {
-          // Ignore read errors
-        }
-      }
-    }
-    
-    // Look for distance field (often 4-byte float)
-    for (let i = 0; i < buffer.length - 8; i++) {
-      // Common pattern for distance fields
-      if ((buffer[i] === 0x00 && buffer[i+1] === 0x03) || 
-          (buffer[i] === 0x07 && buffer[i+1] === 0x00)) {
-        try {
-          const distance = buffer.readFloatLE(i+2);
-          console.log(`Found potential distance value: ${distance} meters`);
-          // More rigorous validation - reasonable distance (0.1-500 km)
-          if (distance >= 100 && distance < 500000) {
-            // Value is reasonable (100m to 500km), use it
-            workout.distance = distance;
-            console.log(`Using distance: ${distance} meters`);
-            break;
-          } else if (distance > 0 && distance < 100) {
-            // Very small distance - could be correct for very short activities
-            // but more likely is a garbled value, log but keep searching
-            console.log(`Found suspiciously small distance: ${distance} meters - ignoring`);
-          } else if (distance < 0.01 && distance > 0) {
-            // Extremely small distance, definitely a data error
-            console.log(`Found invalid tiny distance: ${distance} meters - ignoring`);
-          }
-        } catch (e) {
-          // Ignore read errors
-        }
-      }
-    }
-    
-    // Additional search for sport type in FIT file
-    for (let i = 0; i < buffer.length - 8; i++) {
-      // Try to find sport field (often a single byte enum)
-      if ((buffer[i] === 0x00 && buffer[i+1] === 0x04) || 
-          (buffer[i] === 0x0A && buffer[i+1] === 0x00)) {
-        try {
-          const sportValue = buffer.readUInt8(i+2);
-          // Map common sport values based on FIT SDK
-          const sportMap: { [key: number]: string } = {
-            1: 'running',    // Running
-            2: 'cycling',    // Cycling
-            5: 'swimming',   // Swimming
-            11: 'walking',   // Walking
-            17: 'hiking',    // Hiking
-            15: 'strength',  // Strength Training
-            10: 'yoga',      // Yoga
-            27: 'pilates',   // Pilates
-            // Add more mappings as needed
-          };
-          
-          if (sportMap[sportValue]) {
-            workout.sport = sportMap[sportValue];
-            workout.type = sportMap[sportValue];
-            console.log(`Found sport type in file: ${workout.sport}`);
-            break;
-          }
-        } catch (e) {
-          // Ignore read errors
-        }
-      }
-    }
-    
-    // Final validation - if we have timestamp and duration, that's enough
-    // Otherwise extract timestamp from the filename
-    if (!workout.date || workout.date.toString() === "Invalid Date") {
-      // Try to extract date from filename
-      const dateMatch = fileName.match(/(\d{4}-\d{2}-\d{2})|(\d{8})/);
-      if (dateMatch) {
-        const dateStr = dateMatch[0];
-        if (dateStr.includes('-')) {
-          workout.date = new Date(dateStr);
-        } else {
-          // Format like 20220315
-          const year = parseInt(dateStr.substring(0, 4));
-          const month = parseInt(dateStr.substring(4, 6)) - 1;
-          const day = parseInt(dateStr.substring(6, 8));
-          workout.date = new Date(year, month, day);
-        }
-        console.log(`Extracted date from filename: ${workout.date.toISOString()}`);
-      }
-    }
-    
-    // If we still don't have a valid date, use the Strava ID if it looks like a timestamp
-    if ((!workout.date || workout.date.toString() === "Invalid Date") && workout.id) {
-      const id = parseInt(workout.id);
-      if (id > 1262304000) { // After 2010-01-01
-        workout.date = new Date(id * 1000);
-        console.log(`Derived date from Strava ID: ${workout.date.toISOString()}`);
-      }
-    }
-    
-    // If we still don't have a valid date, use a reasonable default (today minus random days)
-    if (!workout.date || workout.date.toString() === "Invalid Date" || workout.date > new Date()) {
-      const randomDaysAgo = Math.floor(Math.random() * 30); // 0-30 days ago
-      workout.date = new Date(Date.now() - (randomDaysAgo * 24 * 60 * 60 * 1000));
-      console.log(`Using default date: ${workout.date.toISOString()}`);
-    }
-    
-    // If we couldn't extract duration, use a reasonable estimate based on distance
-    if (!workout.duration || workout.duration < 60) {
-      // Estimate pace based on activity type
-      let paceSecPerKm = 300; // Default: 5 min/km
-      
-      if (workout.type === 'running') {
-        paceSecPerKm = 300; // 5:00 min/km
-      } else if (workout.type === 'cycling') {
-        paceSecPerKm = 120; // 2:00 min/km (30 km/h)
-      } else if (workout.type === 'swimming') {
-        paceSecPerKm = 1200; // 20:00 min/km
-      } else if (workout.type === 'walking') {
-        paceSecPerKm = 720; // 12:00 min/km
-      } else if (workout.type === 'hiking') {
-        paceSecPerKm = 900; // 15:00 min/km
-      }
-      
-      if (workout.distance > 0) {
-        workout.duration = Math.round((workout.distance / 1000) * paceSecPerKm);
-        console.log(`Estimated duration from distance: ${workout.duration} seconds for ${workout.distance}m`);
-      } else {
-        // If we also don't have distance, use a reasonable default of 30 minutes
-        workout.duration = 1800;
-        console.log(`Using default duration of 30 minutes`);
-      }
-    }
-    
-    // If we couldn't extract distance, estimate from duration
-    if (!workout.distance || workout.distance < 10) {
-      // NOTE: We're REMOVING the estimation logic and instead using a small default distance
-      // that won't create misleading workout stats but will allow the workout to be created
-      // This ensures only actual data from the FIT/GPX files is used
-      
-      // REMOVED: Pace in meters per second based on activity type
-      // REMOVED: Estimation calculation
-      
-      // Instead of estimating, just log that we couldn't extract distance
-      console.log(`No valid distance found in file. Using minimum value.`);
-      workout.distance = 10; // Use minimum valid distance (10 meters)
-    }
-    
-    // Create a more comprehensive workout object with validated data
+    // Create a workout object matching StravaActivity interface structure
     const result = {
+      id: workout.id,
+      name: workout.title,
       type: workout.type,
-      date: workout.date,
-      duration: Math.max(60, workout.duration), // Minimum 1 minute
-      distance: workout.distance, // Use the exact value we found - removed Math.max(10, workout.distance)
-      calories: workout.duration ? Math.round(workout.duration / 60 * 10) : 300, // 10 cal per minute estimate
-      average_speed: (workout.distance && workout.duration) ? workout.distance / workout.duration : 3.0, // Default to 3 m/s if can't calculate
-      max_speed: (workout.distance && workout.duration) ? (workout.distance / workout.duration) * 1.3 : 4.0, // +30% estimate or default to 4 m/s
-      avg_heart_rate: workout.avg_heart_rate || 0,
-      max_heart_rate: workout.max_heart_rate || 0,
-      title: workout.title || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} on ${workout.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-      description: workout.description || `Imported from ${fileName}`,
-      total_elevation_gain: workout.total_elevation_gain || 0,
-      sport_type: workout.sport,
-      workout_type: null
+      start_date: workout.date?.toISOString() || null,
+      description: `Imported from ${fileName}`,
+      moving_time: Math.max(60, workout.duration || 0), // Minimum 60 seconds
+      elapsed_time: Math.max(60, workout.elapsed_time || workout.duration || 0), // Minimum 60 seconds
+      distance: workout.distance, // Keep in meters for Strava transform
+      calories: workout.calories || Math.round((workout.duration / 60) * 10), // Calculate from seconds
+      average_speed: workout.avg_speed,
+      max_speed: workout.max_speed,
+      average_heartrate: workout.avg_heart_rate,
+      max_heartrate: workout.max_heart_rate,
+      total_elevation_gain: workout.total_elevation_gain,
+      sport_type: workout.sport || workout.type,
+      equipment: null, // Use null instead of empty string
+      muscleGroups: null, // Use null instead of empty string
+      notes: `Imported from ${fileName}`,
+      records: workout.records // Pass through records for additional processing
     };
     
     console.log('Successfully extracted FIT data:', {
       type: result.type,
-      date: result.date,
-      duration: result.duration,
-      distance: result.distance
+      start_date: result.start_date,
+      moving_time: `${result.moving_time}s`,
+      elapsed_time: `${result.elapsed_time}s`,
+      distance: `${result.distance}m`
     });
     
-    // Convert units for createCardioWorkout to avoid display issues
-    // createCardioWorkout expects:
-    // - distance in km (not meters)
-    // - duration in minutes (not seconds)
-    const workoutToSave = {
-      ...result,
-      duration: Math.ceil(result.duration / 60),   // Convert from seconds to minutes
-      distance: result.distance / 1000,            // Convert from meters to kilometers
-    };
-    
-    console.log('Workout data prepared for saving:', {
-      type: workoutToSave.type,
-      date: workoutToSave.date,
-      duration: workoutToSave.duration + ' minutes',  // Now in minutes
-      distance: workoutToSave.distance + ' km'        // Now in kilometers
-    });
-    
-    return workoutToSave;
-    
+    return result;
   } catch (error) {
     console.error(`Error processing FIT file ${fileName}:`, error);
     throw new Error(`Failed to process FIT file: ${error instanceof Error ? error.message : String(error)}`);
@@ -737,49 +535,43 @@ async function processGpxFile(buffer: Buffer, fileName: string): Promise<any> {
   }
 }
 
-// Function to create base exercise types when they don't exist
-async function createBaseExerciseForType(type: string): Promise<void> {
-  // This function is copied from import/route.ts
+// Helper function to find or create a base ExerciseData entry
+async function findOrCreateBaseExercise(type: string, category: 'cardio' | 'strength' | 'flexibility' = 'cardio'): Promise<{ _id: string, name: string, category: string } | null> {
+  if (!type || type === 'unknown') {
+    return null;
+  }
+  
   try {
-    console.log(`Creating base exercise for type: ${type}`)
+    const db = await (await import('@/lib/db/mongodb')).getDatabase();
+    let exercise = await db.collection('exercises').findOne({ name: { $regex: new RegExp(`^${type}$`, 'i') } });
     
-    // Clean up the exercise name - capitalize first letter
-    const exerciseName = type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()
-    
-    // Get database connection
-    const db = await (await import('@/lib/db/mongodb')).getDatabase()
-    
-    // Check if the exercise already exists
-    const existingExercise = await db.collection('exercises').findOne({
-      name: exerciseName,
-      category: 'cardio'
-    })
-    
-    if (existingExercise) {
-      console.log(`Exercise '${exerciseName}' already exists in the database.`)
-      return
+    if (!exercise) {
+      console.log(`Base exercise for type "${type}" not found, creating...`);
+      const newExerciseData = {
+        name: type.charAt(0).toUpperCase() + type.slice(1), // Capitalize
+        category: category,
+        muscleGroups: [], // Default to empty
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const result = await db.collection('exercises').insertOne(newExerciseData);
+      exercise = await db.collection('exercises').findOne({ _id: result.insertedId });
+      console.log(`Created base exercise for "${type}" with ID: ${result.insertedId}`);
     }
     
-    // Create a new exercise document
-    const exerciseDoc = {
-      name: exerciseName,
-      category: 'cardio',
-      muscleGroups: [], // Cardio exercises don't target specific muscle groups
-      equipment: [],    // No specific equipment for generic cardio
-      instructions: '',
-      userId: null,     // System exercise (not user-specific)
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      isSystemExercise: true, // Mark as system-created
-      isDefault: true         // This is a default exercise
+    if (!exercise) {
+        console.error(`Failed to find or create exercise for type "${type}"`);
+        return null;
     }
-    
-    // Insert the exercise
-    const result = await db.collection('exercises').insertOne(exerciseDoc)
-    console.log(`Created base exercise '${exerciseName}' with ID: ${result.insertedId}`)
+
+    return {
+      _id: exercise._id.toString(),
+      name: exercise.name,
+      category: exercise.category
+    };
   } catch (error) {
-    console.error(`Error creating base exercise for type '${type}':`, error)
-    throw new Error(`Failed to create base exercise: ${error instanceof Error ? error.message : String(error)}`)
+    console.error(`Error finding or creating base exercise for type "${type}":`, error);
+    return null;
   }
 }
 
@@ -821,6 +613,38 @@ function extractStravaIdFromFilename(filename: string): string | undefined {
   }
   
   return undefined
+}
+
+// Function to generate a user-friendly workout name
+function generateWorkoutName(workout: any): string {
+  const date = new Date(workout.date);
+  const hour = date.getHours();
+  
+  // Determine time of day
+  let timeOfDay = '';
+  if (hour >= 5 && hour < 12) timeOfDay = 'Morning';
+  else if (hour >= 12 && hour < 17) timeOfDay = 'Afternoon';
+  else if (hour >= 17 && hour < 21) timeOfDay = 'Evening';
+  else timeOfDay = 'Night';
+
+  // Capitalize workout type
+  const type = workout.type.charAt(0).toUpperCase() + workout.type.slice(1);
+  
+  // Format distance if available
+  let distanceStr = '';
+  if (workout.distance) {
+    const distanceKm = workout.distance / 1000; // Convert meters to km
+    if (distanceKm >= 1) {
+      distanceStr = ` (${Math.round(distanceKm * 10) / 10}km)`;
+    } else {
+      distanceStr = ` (${Math.round(workout.distance)}m)`;
+    }
+  }
+
+  // Format date
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  
+  return `${timeOfDay} ${type}${distanceStr} - ${dateStr}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -926,13 +750,15 @@ export async function POST(request: NextRequest) {
     
     console.log(`Processing batch ${batchIndex + 1}, files ${startIndex + 1}-${endIndex} of ${activityFiles.length}`)
     
-    // Process each file in the batch
+    // Add summary metrics to batch results
     const batchResults = {
       processed: 0,
       imported: 0,
       errors: 0,
       activityTypesCounts: {} as Record<string, number>,
-      errorDetails: [] as string[]
+      errorDetails: [] as string[],
+      batchDistanceKm: 0, 
+      batchDurationSeconds: 0
     }
     
     for (const relativeFilePath of batchFiles) {
@@ -1047,104 +873,34 @@ export async function POST(request: NextRequest) {
           continue
         }
         
-        // Transform and save workout
-        const transformedWorkout = transformStravaActivity(workout)
+        // ---> workout object now adheres closer to StravaActivity structure <---
         
-        // Fix future dates
-        if (transformedWorkout.date) {
-          const activityDate = transformedWorkout.date instanceof Date ? 
-                               transformedWorkout.date : 
-                               new Date(transformedWorkout.date);
-          const now = new Date();
-          
-          if (activityDate > now || isNaN(activityDate.getTime())) {
-            console.log(`Detected future or invalid date in activity: ${activityDate}, fixing...`);
-            // Use today's date instead of a random past date to preserve the actual workout timing
-            transformedWorkout.date = new Date();
-            console.log(`Fixed date to current date: ${transformedWorkout.date.toISOString()}`);
-          }
-        } else {
-          // If no date, set to today
-          console.log('No date found, setting to today');
-          transformedWorkout.date = new Date();
-        }
+        // Transform using the standardized function
+        const transformedWorkout = transformStravaActivity(workout);
         
-        // Generate a more descriptive workout name with correct date
-        if (!transformedWorkout.title || transformedWorkout.title === 'Untitled Activity') {
-          const dateStr = transformedWorkout.date.toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-          });
-          const typeCapitalized = transformedWorkout.type.charAt(0).toUpperCase() + transformedWorkout.type.slice(1);
-          transformedWorkout.title = `${typeCapitalized} on ${dateStr}`;
-          console.log(`Generated descriptive name: ${transformedWorkout.title}`);
-        }
+        // Update batch metrics (converting units appropriately)
+        const distanceInKm = transformedWorkout.distance ? transformedWorkout.distance / 1000 : 0; // Convert meters to kilometers
+        const durationInSeconds = transformedWorkout.duration || 0; // Duration is already in seconds
+
+        // Accumulate for the batch response
+        batchResults.batchDistanceKm += distanceInKm;
+        batchResults.batchDurationSeconds += durationInSeconds;
+
+        // Update state's total metrics (state uses km and minutes)
+        state.totalDistance = (state.totalDistance || 0) + distanceInKm;
+        state.totalDuration = (state.totalDuration || 0) + (durationInSeconds / 60); // Convert seconds to minutes for state
+
+        // Log the metrics for debugging
+        console.log(`Batch Add: ${distanceInKm.toFixed(2)}km, ${durationInSeconds}s. Batch Totals: ${batchResults.batchDistanceKm.toFixed(2)}km, ${batchResults.batchDurationSeconds}s`);
+        console.log(`State Totals: ${state.totalDistance.toFixed(2)}km, ${state.totalDuration.toFixed(2)}min`);
         
-        // Ensure duration and distance are preserved and correctly formatted
-        // Duration in our app is stored in minutes
-        if (!transformedWorkout.duration && workout.duration) {
-          // Check if workout.duration is in seconds or minutes
-          if (workout.duration > 3600) { // If more than 60 minutes, likely in seconds
-            console.log(`Duration appears to be in seconds: ${workout.duration}, converting to minutes`);
-            transformedWorkout.duration = workout.duration / 60; 
-          } else {
-            console.log(`Using original duration: ${workout.duration} minutes`);
-            transformedWorkout.duration = workout.duration;
-          }
-        }
-        
-        // Ensure duration is reasonable (maximum 24 hours in minutes)
-        if (transformedWorkout.duration > 1440) {
-          console.log(`Duration too long (${transformedWorkout.duration} minutes), capping at 24 hours`);
-          transformedWorkout.duration = 1440; // Cap at 24 hours
-        }
-        
-        // Minimum duration of 1 minute
-        if (!transformedWorkout.duration || transformedWorkout.duration < 1) {
-          console.log(`Setting minimum duration of 1 minute`);
-          transformedWorkout.duration = 1;
-        }
-        
-        // Ensure distance is in kilometers and reasonable
-        if (transformedWorkout.distance > 0) {
-          // If distance is extremely large, it might be in meters
-          if (transformedWorkout.distance > 1000) { // More than 1000 km is unusual
-            console.log(`Distance appears to be in meters: ${transformedWorkout.distance}, converting to km`);
-            transformedWorkout.distance = transformedWorkout.distance / 1000;
-          }
-          console.log(`Distance: ${transformedWorkout.distance} km`);
-        } else if (workout.distance) {
-          // If original workout has distance but transformed doesn't
-          // Always assume workout.distance is in meters as that's what our extraction produces
-          if (workout.distance > 0) {
-            const distanceInKm = workout.distance / 1000;
-            console.log(`Using original workout.distance: ${workout.distance}m converted to ${distanceInKm} km`);
-            transformedWorkout.distance = distanceInKm;
-          }
-        }
-        
-        // Generate a more descriptive workout name
-        if (transformedWorkout.distance > 0 && !transformedWorkout.title.includes('km') && !transformedWorkout.title.includes('m')) {
-          // Add distance to title for cardio workouts if not already present
-          let distanceStr;
-          
-          if (transformedWorkout.distance < 0.1) {
-            // For very small distances (less than 100m), show in meters for clarity
-            distanceStr = `${Math.round(transformedWorkout.distance * 1000)}m`;
-          } else {
-            // For normal distances, show in km with 2 decimal places
-            distanceStr = `${transformedWorkout.distance.toFixed(2)}km`;
-          }
-          
-          transformedWorkout.title = `${transformedWorkout.title || 'Untitled Activity'} (${distanceStr})`;
-          console.log(`Updated workout name with distance: ${transformedWorkout.title}`);
-        }
-        
+        // Prepare the final object for saving
         const workoutToSave = {
           ...transformedWorkout,
           userId: userId,
           source: "strava",
+          equipment: [], // Equipment should be an array
+          muscleGroups: [], // Keep muscle groups as array since that's expected
           sourceId: (() => {
             const id = extractStravaIdFromFilename(normalizedFilePath)
             return id && /^\d{5,}$/.test(id) ? id : undefined
@@ -1196,12 +952,108 @@ export async function POST(request: NextRequest) {
         
         // Save the workout
         try {
-          // Detailed logging to verify data
-          console.log(`Creating cardio workout with: name=${workoutToSave.title}, type=${workoutToSave.type}, duration=${workoutToSave.duration} minutes, distance=${workoutToSave.distance}km`);
+          // Convert duration from seconds to minutes and distance from meters to kilometers
+          const durationInMinutes = Math.round((workoutToSave.duration / 60) * 100) / 100;  // Convert seconds to minutes, preserve 2 decimal places
+          const distanceInKm = Math.round(workoutToSave.distance / 1000 * 100) / 100;  // Convert meters to km, round to 2 decimals
+
+          // Generate a user-friendly name
+          const workoutName = generateWorkoutName({
+            ...workoutToSave,
+            date: workoutToSave.date || new Date(),
+            distance: workoutToSave.distance || 0
+          });
+
+          console.log(`Creating cardio workout: ${workoutName} (duration: ${durationInMinutes}min, distance: ${distanceInKm}km)`);
           
-          await createCardioWorkout(workoutToSave)
-          console.log(`Successfully imported workout from ${normalizedFilePath}`)
-          batchResults.imported++
+          // Calculate pace in minutes per kilometer
+          const paceMinPerKm = distanceInKm > 0 ? (workoutToSave.duration / 60) / distanceInKm : 0; // Convert duration to minutes first
+          console.log(`Calculated pace: ${paceMinPerKm} min/km`);
+
+          // Find or create the base exercise for this workout type
+          const baseExercise = await findOrCreateBaseExercise(workoutToSave.type);
+          let workoutExerciseDocData = null; // Initialize as null
+
+          if (baseExercise) {
+            // Prepare the WorkoutExerciseData document *without* saving yet
+            workoutExerciseDocData = {
+              _id: new mongoose.Types.ObjectId(), // Generate new ID for the exercise entry
+              workoutId: null, // Will be set after saving the main workout
+              exerciseId: { // Embedded reference
+                _id: baseExercise._id,
+                name: baseExercise.name,
+                category: baseExercise.category,
+              },
+              sets: [], // No sets for imported cardio
+              duration: workoutToSave.duration, // Store duration in seconds
+              distance: workoutToSave.distance, // Store distance in meters
+              order: 0, // First (and only) exercise for this import
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            console.log(`Prepared WorkoutExercise entry for ${baseExercise.name}`);
+          } else {
+            console.warn(`Could not find or create base exercise for type: ${workoutToSave.type}. Workout will be saved without a workoutExercise entry.`);
+          }
+
+          // Prepare data for WorkoutModel (without workoutExercises array)
+          const workoutDocData = {
+            ...workoutToSave, // Includes original duration in seconds
+            _id: new mongoose.Types.ObjectId(), // Generate new ID for the workout itself
+            name: workoutName,
+            userId: new mongoose.Types.ObjectId(userId),
+            source: "strava",
+            sourceId: workoutToSave.id, // Use the original Strava ID if available
+            stravaLink: workoutToSave.stravaLink,
+            cardioDetails: {
+              duration: workoutToSave.duration, // Keep original duration in seconds
+              distance: distanceInKm, // CORRECTED: Use distance in KM
+              pace: paceMinPerKm, // Store pace in minutes per kilometer
+              speed: workoutToSave.distance > 0 ? (workoutToSave.distance / workoutToSave.duration) * 3.6 : 0, // Calculate speed in km/h from m/s
+              maxSpeed: workoutToSave.maxSpeed ? workoutToSave.maxSpeed * 3.6 : undefined, // Convert maxSpeed to km/h if present
+              elevationGain: workoutToSave.totalElevationGain,
+              heartRate: workoutToSave.averageHeartRate ? {
+                average: workoutToSave.averageHeartRate,
+                max: workoutToSave.maxHeartRate
+              } : undefined,
+              sportDetails: {
+                sport: workoutToSave.sportType || workoutToSave.type, // Corrected: Use sportType
+                subSport: workoutToSave.type // Use mapped type as subSport
+              }
+            },
+            // Remove redundant top-level fields now in cardioDetails
+            distance: undefined, // Ensure top-level distance is not saved
+            pace: undefined, // Ensure top-level pace is not saved
+            duration: workoutToSave.duration, // Ensure top-level duration remains (in seconds)
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          // Remove undefined fields to avoid saving them as null
+          Object.keys(workoutDocData).forEach(key => (workoutDocData as any)[key] === undefined && delete (workoutDocData as any)[key]);
+          Object.keys(workoutDocData.cardioDetails).forEach(key => (workoutDocData.cardioDetails as any)[key] === undefined && delete (workoutDocData.cardioDetails as any)[key]);
+          
+          console.log(`Attempting to save workout: ${workoutName}`);
+          const db = await (await import('@/lib/db/mongodb')).getDatabase();
+          
+          // Step 1: Save the main workout document
+          const workoutInsertResult = await db.collection('workouts').insertOne(workoutDocData);
+          console.log(`Successfully saved workout: ${workoutName} with ID ${workoutDocData._id}`);
+
+          // Step 2: If a WorkoutExercise doc was prepared, update its workoutId and save it
+          if (workoutExerciseDocData) {
+            // Assign the saved workout's ID (using type assertion to handle null -> ObjectId)
+            (workoutExerciseDocData as any).workoutId = workoutDocData._id; 
+            try {
+              await db.collection('workoutexercises').insertOne(workoutExerciseDocData);
+              console.log(`Successfully saved WorkoutExercise entry ${workoutExerciseDocData._id} for workout ${workoutDocData._id}`);
+            } catch (exerciseSaveError) {
+              console.error(`Failed to save WorkoutExercise entry for workout ${workoutDocData._id}:`, exerciseSaveError);
+              // Decide if this error should prevent the batch from succeeding or just log
+              // For now, we'll just log it and count the workout as imported
+            }
+          }
+          
+          batchResults.imported++;
           
           // Add to imported files in state
           if (!state.importedFiles.includes(relativeFilePath)) {
@@ -1216,10 +1068,28 @@ export async function POST(request: NextRequest) {
           if (isMissingExerciseError) {
             console.log(`Missing exercise type: ${workoutToSave.type}. Attempting to create base exercise.`)
             try {
-              await createBaseExerciseForType(workoutToSave.type)
+              await findOrCreateBaseExercise(workoutToSave.type)
               
-              // Try again after creating the exercise
-              await createCardioWorkout(workoutToSave)
+              // Try again after creating the exercise with the same converted units
+              const durationInMinutes = Math.round((workoutToSave.duration / 60) * 100) / 100;  // Convert seconds to minutes, preserve 2 decimal places
+              const distanceInKm = Math.round(workoutToSave.distance / 1000 * 100) / 100;  // Convert meters to km, round to 2 decimals
+              
+              // Generate a user-friendly name
+              const workoutName = generateWorkoutName({
+                ...workoutToSave,
+                date: workoutToSave.date || new Date(),
+                distance: workoutToSave.distance || 0
+              });
+              
+              await createCardioWorkout({
+                ...workoutToSave,
+                name: workoutName,
+                duration: durationInMinutes,
+                distance: distanceInKm,
+                equipment: workoutToSave.equipment || [], // Ensure equipment is an array
+                muscleGroups: workoutToSave.muscleGroups || [] // Keep muscle groups as array
+              });
+              
               console.log(`Successfully imported workout after creating base exercise`)
               batchResults.imported++
               
@@ -1309,6 +1179,8 @@ export async function POST(request: NextRequest) {
       errors: batchResults.errors,
       errorDetails: batchResults.errorDetails.slice(0, 5), // Just return the first 5 errors
       activityTypes: batchResults.activityTypesCounts,
+      batchTotalDistance: batchResults.batchDistanceKm,
+      batchTotalDuration: batchResults.batchDurationSeconds,
       nextBatch: endIndex < activityFiles.length ? batchIndex + 1 : null,
       progress: {
         total: activityFiles.length,
@@ -1403,25 +1275,19 @@ export async function GET(request: NextRequest) {
     const isComplete = state.status === 'completed' || state.processedFiles.length >= activityFiles.length
     
     return NextResponse.json({
-      success: true,
-      processingId,
-      status: state.status,
+      status: 'processing',
       progress: {
-        total: activityFiles.length,
-        processed: state.processedFiles.length,
-        imported: state.importedFiles.length,
-        errors: state.errorFiles.length,
-        percentComplete: Math.round((state.processedFiles.length / Math.max(1, activityFiles.length)) * 100)
-      },
-      fileStats: {
-        total: activityFiles.length,
-        gpx: state.gpxFilesCount || 0,
-        fit: state.fitFilesCount || 0,
-        fitGz: state.fitGzFilesCount || 0
-      },
-      isComplete
-    })
-    
+        processed: state.processed || 0,
+        imported: state.imported || 0,
+        errors: state.errors || 0,
+        totalFiles: state.totalFiles || 0,
+        totalDistance: Math.round((state.totalDistance || 0) * 100) / 100, // Round to 2 decimal places
+        totalDuration: Math.round((state.totalDuration || 0) * 100) / 100, // Round to 2 decimal places
+        activityTypesCounts: state.activityTypesCounts || {},
+        errorDetails: state.errorDetails || [],
+        importedFiles: state.importedFiles || []
+      }
+    });
   } catch (error) {
     console.error("Error checking progress:", error)
     return NextResponse.json({
