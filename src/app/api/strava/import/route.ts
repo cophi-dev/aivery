@@ -605,11 +605,11 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
     console.log(`Processing FIT file: ${fileName}, size: ${content.length} bytes`);
     
     // Use dynamic import instead of require
-    const fitFileParserModule = await import('fit-file-parser');
+    const fitFileParserModule = await import('fit-file-parser'); // Revert to original package import
     console.log('Dynamically imported fit-file-parser module:', typeof fitFileParserModule, Object.keys(fitFileParserModule));
 
     // Attempt to access FitParser constructor, check common export patterns
-    const FitParserConstructor = fitFileParserModule.FitParser || fitFileParserModule.default || fitFileParserModule;
+    const FitParserConstructor = fitFileParserModule.default; // Correctly access the default export
     if (typeof FitParserConstructor !== 'function') {
       console.error('FitParser constructor is not a function. Type:', typeof FitParserConstructor);
       throw new Error('Failed to load FitParser constructor.');
