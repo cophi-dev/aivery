@@ -119,13 +119,6 @@ async function main() {
     });
     const existingWorkoutExerciseIds = existingWorkoutExercises.map(we => we.id);
 
-    if (existingWorkoutExerciseIds.length > 0) {
-      const deletedSets = await prisma.set.deleteMany({ where: { workoutExerciseId: { in: existingWorkoutExerciseIds } } });
-      console.log(`Deleted ${deletedSets.count} associated sets.`);
-    } else {
-        console.log('No associated sets found.')
-    }
-
     const deletedWorkoutExercises = await prisma.workoutExercise.deleteMany({ where: { workoutId: { in: existingWorkoutIds } } });
     console.log(`Deleted ${deletedWorkoutExercises.count} associated workout exercises.`);
 
