@@ -5,79 +5,10 @@ import type { WorkoutData } from "@/types/db"
 const MOCK_USER_ID = "64f5a53e9d312a1f5e7b8f01"
 
 // Mock workouts for fallback
-const mockWorkouts: WorkoutData[] = [
-  {
-    _id: "1",
-    userId: MOCK_USER_ID,
-    name: "Upper Body",
-    date: new Date("2025-06-08"),
-    duration: 65,
-    intensity: "High",
-    type: "strength",
-    volume: 3240,
-    exercises: [
-      {
-        name: "Bench Press",
-        sets: [
-          { weight: 80, reps: 10 },
-          { weight: 85, reps: 8 },
-          { weight: 90, reps: 6 },
-          { weight: 85, reps: 8 },
-        ],
-      },
-      {
-        name: "Incline Dumbbell Press",
-        sets: [
-          { weight: 30, reps: 12 },
-          { weight: 32, reps: 10 },
-          { weight: 34, reps: 8 },
-        ],
-      },
-      {
-        name: "Lat Pulldown",
-        sets: [
-          { weight: 70, reps: 12 },
-          { weight: 75, reps: 10 },
-          { weight: 80, reps: 8 },
-        ],
-      },
-    ],
-    notes: "Felt strong today. Increased weight on bench press and hit a new PR.",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    _id: "2",
-    userId: MOCK_USER_ID,
-    name: "Lower Body",
-    date: new Date("2025-06-10"),
-    duration: 75,
-    intensity: "High",
-    type: "strength",
-    volume: 4560,
-    exercises: [
-      {
-        name: "Squats",
-        sets: [
-          { weight: 100, reps: 10 },
-          { weight: 110, reps: 8 },
-          { weight: 120, reps: 6 },
-        ],
-      },
-      {
-        name: "Deadlifts",
-        sets: [
-          { weight: 120, reps: 8 },
-          { weight: 130, reps: 6 },
-          { weight: 140, reps: 4 },
-        ],
-      },
-    ],
-    notes: "Focus on form for deadlifts.",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-]
+// const mockWorkouts: WorkoutData[] = [
+//  DELETED MOCK DATA BLOCK TO FIX BUILD ERRORS
+//];
+const mockWorkouts: WorkoutData[] = []; // Return empty array
 
 // Get all workouts
 export async function getWorkouts(): Promise<WorkoutData[]> {
@@ -118,10 +49,12 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
   try {
     // Calculate volume based on exercises
     let volume = 0
-    if (workoutData.exercises) {
-      for (const exercise of workoutData.exercises) {
-        for (const set of exercise.sets) {
-          volume += set.weight * set.reps
+    if (workoutData.workoutExercises) {
+      for (const exercise of workoutData.workoutExercises) {
+        if (exercise.sets && Array.isArray(exercise.sets)) {
+          for (const set of exercise.sets) {
+            volume += (set.weight ?? 0) * (set.reps ?? 0)
+          }
         }
       }
     }
@@ -129,10 +62,14 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
     const workout = {
       ...workoutData,
       userId: MOCK_USER_ID,
-      volume,
+      calculatedVolume: volume,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      workoutExercises: workoutData.workoutExercises || [],
     }
+
+    delete (workout as any).volume
+    delete (workout as any).exercises
 
     const dbClient = await getDbClient()
     const result = await dbClient.insertWorkout(workout)
@@ -153,14 +90,14 @@ export async function createWorkout(workoutData: Partial<WorkoutData>): Promise<
       duration: workoutData.duration || 60,
       intensity: workoutData.intensity || "Medium",
       type: workoutData.type || "strength",
-      volume: 0,
-      exercises: workoutData.exercises || [],
+      calculatedVolume: 0,
+      workoutExercises: workoutData.workoutExercises || [],
       notes: workoutData.notes || "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
 
-    return newWorkout
+    return newWorkout as WorkoutData
   }
 }
 
