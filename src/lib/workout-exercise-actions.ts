@@ -10,6 +10,7 @@ import {
   deleteWorkoutExercisesByWorkoutId,
 } from "./db/repositories/workoutExerciseRepository"
 import { getWorkoutById } from "./db/repositories/workoutRepository"
+import { getExerciseById } from "./db/repositories/exerciseRepository"
 import type { WorkoutExerciseData } from "@/types/db"
 import { getCurrentUser } from "./auth"
 
@@ -77,9 +78,21 @@ export async function addExerciseToWorkout(workoutId: string, exerciseId: string
       throw new Error("Workout not found or unauthorized")
     }
 
+    // Fetch exercise details to get name and category
+    const exerciseDetails = await getExerciseById(exerciseId); 
+    if (!exerciseDetails) {
+        console.error(`Exercise with ID ${exerciseId} not found.`);
+        throw new Error(`Exercise with ID ${exerciseId} not found.`);
+    }
+
     const workoutExerciseData: Partial<WorkoutExerciseData> = {
       workoutId,
-      exerciseId,
+      // Construct the exerciseId object as required by the type
+      exerciseId: {
+          _id: exerciseId, 
+          name: exerciseDetails.name, // Use fetched name
+          category: exerciseDetails.category // Use fetched category (optional)
+      },
       sets: sets || [{weight: 0, reps: 0}]
     }
 
