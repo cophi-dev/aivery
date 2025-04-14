@@ -91,6 +91,7 @@ export function MainHeader() {
   // --- End Event Logic Helper ---
 
   // --- Combined Event Effect ---
+  /* // Temporarily commented out to fix build issues
   useEffect(() => {
     // Early exit if window is not defined (SSR or other environments)
     if (typeof window === 'undefined') {
@@ -192,6 +193,7 @@ export function MainHeader() {
     };
 
   }, []); // Run once on mount
+  */
   // --- End Combined Event Effect ---
 
 

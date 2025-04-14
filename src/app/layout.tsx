@@ -41,9 +41,9 @@ const inter = Inter({
 })
 
 // Force dynamic rendering for the entire app
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-export const fetchCache = 'force-no-store'
+// export const dynamic = 'force-dynamic' // Removed
+// export const revalidate = 0 // Removed
+// export const fetchCache = 'force-no-store' // Removed
 export const runtime = 'nodejs'
 
 export const metadata: Metadata = {
