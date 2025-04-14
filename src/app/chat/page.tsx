@@ -13,12 +13,15 @@ import Image from "next/image"
 import ReactMarkdown from "react-markdown"
 import { cn } from "@/lib/utils"
 import { UserAvatar } from "@/components/user-avatar"
+import { WorkoutListDisplay } from "@/components/workout-list-display"
+import { fetchWorkoutSummary } from "@/lib/workout-actions"
 
 // Define Message type clearly
 interface Message {
   id: string;
   role: 'user' | 'assistant'; // Use literal types
   content: string;
+  data?: any; // Add optional data field to hold structured data like workouts
 }
 
 // Simplified ChatMessage component
@@ -50,22 +53,30 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
          )}
        </div>
        {/* Bubble */}
-       <div className={cn('px-3 py-1.5 rounded-lg max-w-[75%] break-words', {
+       <div className={cn('px-3 py-1.5 rounded-xl max-w-[75%] break-words', {
          'order-1 bg-primary text-primary-foreground': isUserMessage,
-         'order-2 bg-muted': !isUserMessage,
+         'order-2 bg-secondary': !isUserMessage,
        })}>
          {showLoading ? (
             <div className="flex items-center space-x-1">
-                <span className="h-1.5 w-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                <span className="h-1.5 w-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                <span className="h-1.5 w-1.5 bg-current rounded-full animate-bounce"></span>
+                <span className="h-2 w-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="h-2 w-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="h-2 w-2 bg-current rounded-full animate-bounce"></span>
             </div>
          ) : (
-            <ReactMarkdown 
-              className="prose prose-sm dark:prose-invert"
-              >
-                {message.content}
-              </ReactMarkdown>
+            <>
+              <ReactMarkdown 
+                className="prose prose-sm dark:prose-invert"
+                >
+                  {message.content} 
+                </ReactMarkdown>
+              {/* Conditionally render WorkoutListDisplay if workouts data exists */}
+              {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-dashed border-current/20">
+                  <WorkoutListDisplay workouts={message.data.workouts} />
+                </div>
+              )}
+            </>
          )}
        </div>
      </div>
@@ -83,7 +94,16 @@ export default function ChatPage() {
   const searchParams = useSearchParams(); // Get search params
   const initialMessageSentRef = useRef(false); // Ref to track initial message
 
+  // Use a ref to reliably get the latest messages for the API call
+  const messagesRef = useRef<Message[]>(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || "there";
+
+  // State to hold fetched workout summary for context
+  const [workoutContext, setWorkoutContext] = useState<{ name: string | null; type: string | null; date: string | null } | null>(null);
 
   // Focus input on initial mount
   useEffect(() => {
@@ -91,7 +111,10 @@ export default function ChatPage() {
   }, []);
 
   // Function to send a message (refactored from handleSubmit)
-  const sendMessage = useCallback(async (messageContent: string) => {
+  const sendMessage = useCallback(async (messageContent: string, context?: any) => {
+    // Capture the history *before* adding the new user message
+    const previousMessages = messagesRef.current;
+
     if (!messageContent.trim() || isLoading) return;
 
     const userMessage: Message = {
@@ -125,7 +148,9 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: finalQuery, // Use potentially enhanced query
-          userName: userDisplayName 
+          userName: userDisplayName,
+          history: previousMessages, // Send the history *before* this turn
+          context: context // Send the optional context object
         }),
       });
 
@@ -143,13 +168,16 @@ export default function ChatPage() {
       
       const result = await response.json();
       const text = result.response; 
+      const structuredData = result.data; // Capture the data object
       console.log("[ChatPage] Received result from backend:", result); // Log 1
       console.log("[ChatPage] Extracted text:", text); // Log 2
+      console.log("[ChatPage] Extracted data:", structuredData); // Log for data
 
       const aiMessage: Message = {
         id: `ai-${Date.now()}`,
         role: "assistant",
-        content: text || "Sorry, I couldn't get a proper response."
+        content: text || "Sorry, I couldn't get a proper response.",
+        data: structuredData // Store the data object in the message state
       };
       console.log("[ChatPage] Created aiMessage object:", aiMessage); // Log 3
       
@@ -181,33 +209,79 @@ export default function ChatPage() {
   }, [isLoading, userDisplayName]); // Dependencies for sendMessage
 
   // Fetch initial message OR handle keyword query OR data query
+  // OR handle workoutId query
   useEffect(() => {
      const keyword = searchParams?.get('keyword');
      const dataQuery = searchParams?.get('dataQuery');
+     const workoutId = searchParams?.get('workoutId'); // Get workoutId
 
-    if (dataQuery && !initialMessageSentRef.current) {
-      // Priority 1: Handle Data Query
-      initialMessageSentRef.current = true; 
-      setMessages([]); 
-      console.log(`[ChatPage] Data query detected: '${dataQuery}'. Sending initial message.`);
-      sendMessage(dataQuery); // Send the data query directly
-    } else if (keyword && !initialMessageSentRef.current) {
-      // Priority 2: Handle Keyword Query
-      initialMessageSentRef.current = true; // Mark as sent
-      setMessages([]); // Start fresh
-      const initialQuery = `What is ${keyword}?`;
-      console.log(`[ChatPage] Keyword detected: '${keyword}'. Sending initial message.`);
-      sendMessage(initialQuery);
-    } else if (!keyword && !dataQuery && messages.length === 0 && !isLoading) {
-      // Priority 3: Display Welcome Message (if no query and chat is empty)
-      setMessages([{
-        id: "welcome-message-" + Date.now(),
-        role: "assistant",
-        content: getRandomWelcomeMessage(userDisplayName)
-      }]);
-    }
-    // Dependencies include searchParams to react to changes in URL query params
-  }, [searchParams, userDisplayName, isLoading]); // Keep isLoading to trigger welcome message check after loading finishes
+     // Define async function inside useEffect to handle async operations
+     const handleInitialLoad = async () => {
+       if (workoutId && !initialMessageSentRef.current) {
+         // Priority 1: Handle Workout ID Query
+         initialMessageSentRef.current = true;
+         setMessages([]); // Start fresh
+         setIsLoading(true); // Show loading indicator
+         try {
+           console.log(`[ChatPage] Workout ID detected: '${workoutId}'. Fetching summary...`);
+           const summary = await fetchWorkoutSummary(workoutId);
+           if (summary) {
+             setWorkoutContext(summary); // Store summary if needed later
+             const workoutName = summary.name || summary.type || 'workout'; // Fallback name
+             const workoutDate = summary.date ? ` from ${summary.date}` : '';
+             // Use a slightly more conversational prompt
+             const initialPrompt = `Can you give me some insights on my ${workoutName}${workoutDate}?`;
+             console.log(`[ChatPage] Workout summary found. Sending initial message: "${initialPrompt}"`);
+             // Pass the fetched summary as context
+             sendMessage(initialPrompt, { workoutSummary: summary });
+           } else {
+             console.log(`[ChatPage] Workout summary not found for ID: ${workoutId}. Sending generic welcome.`);
+             // Workout not found or not owned, send generic welcome
+             setMessages([{
+               id: "welcome-error-" + Date.now(),
+               role: "assistant",
+               content: getRandomWelcomeMessage(userDisplayName)
+             }]);
+             setIsLoading(false);
+           }
+         } catch (error) {
+           console.error(`[ChatPage] Error fetching workout summary for ID ${workoutId}:`, error);
+           // Handle fetch error, send generic welcome
+           setMessages([{
+             id: "welcome-fetch-error-" + Date.now(),
+             role: "assistant",
+             content: `Sorry, I couldn't load the details for that workout. ${getRandomWelcomeMessage(userDisplayName)}`
+           }]);
+           setIsLoading(false);
+         }
+       } else if (dataQuery && !initialMessageSentRef.current) {
+       // Priority 2: Handle Data Query
+       initialMessageSentRef.current = true; 
+       setMessages([]); 
+       console.log(`[ChatPage] Data query detected: '${dataQuery}'. Sending initial message.`);
+       sendMessage(dataQuery); // No context needed here
+     } else if (keyword && !initialMessageSentRef.current) {
+       // Priority 3: Handle Keyword Query
+       initialMessageSentRef.current = true; // Mark as sent
+       setMessages([]); // Start fresh
+       const initialQuery = `What is ${keyword}?`;
+       console.log(`[ChatPage] Keyword detected: '${keyword}'. Sending initial message.`);
+       sendMessage(initialQuery); // No context needed here
+     } else if (!workoutId && !keyword && !dataQuery && messages.length === 0 && !isLoading && !initialMessageSentRef.current) {
+       // Priority 4: Display Welcome Message (if no query and chat is empty)
+        setMessages([{
+          id: "welcome-message-" + Date.now(),
+          role: "assistant",
+          content: getRandomWelcomeMessage(userDisplayName)
+        }]);
+        initialMessageSentRef.current = true; // Mark welcome as sent too
+     }
+     }
+
+     handleInitialLoad(); // Call the async function
+
+     // Dependencies include searchParams to react to URL changes and the sendMessage callback
+   }, [searchParams, userDisplayName, isLoading, sendMessage]); // Add sendMessage to dependencies
 
   function getRandomWelcomeMessage(name: string): string {
     const welcomeMessages = [

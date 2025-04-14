@@ -26,7 +26,8 @@ import {
   Share,
   Bike,
   Waves,
-  HeartPulse
+  HeartPulse,
+  MessageSquare
 } from "lucide-react";
 import { format } from "date-fns";
 import { WorkoutAnalysis } from "@/components/workout-analysis";
@@ -398,6 +399,17 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
     );
   };
 
+  // --- Add click handler for the Analyze button ---
+  const handleAnalyzeWorkout = () => {
+    if (workoutIdString) {
+      router.push(`/chat?workoutId=${workoutIdString}`);
+    } else {
+      console.error("Workout ID is missing, cannot navigate to chat.");
+      // Optionally show an error to the user
+    }
+  };
+  // --- End click handler ---
+
   if (!workout) {
     return <div>Workout data is missing.</div>;
   }
@@ -552,6 +564,46 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
                 )}
             </CardContent>
         </Card>
+
+        {/* --- AI Workout Analysis Section --- */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center">
+                <BarChart className="h-5 w-5 mr-2 text-primary" /> {/* Using BarChart as placeholder icon */}
+                AI Workout Analysis
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Get personalized feedback on your workout including:
+            </p>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-muted-foreground" /> {/* Pace/Effort Icon */}
+                Pace and effort analysis
+              </li>
+              <li className="flex items-center gap-2">
+                <Heart className="h-4 w-4 text-muted-foreground" /> {/* Heart Rate Icon */}
+                Heart rate zone breakdown
+              </li>
+              <li className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" /> {/* Progress Icon */}
+                Progress tracking compared to previous workouts
+              </li>
+              <li className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-muted-foreground" /> {/* Recovery Icon */}
+                Recovery recommendations
+              </li>
+            </ul>
+            <Button onClick={handleAnalyzeWorkout} className="w-full sm:w-auto">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Discuss with Aivery
+            </Button>
+          </CardContent>
+        </Card>
+        {/* --- End AI Workout Analysis Section --- */}
 
         {/* --- Strava Link Button --- */}
         {fixedStravaLink && (

@@ -218,7 +218,7 @@ async function generateAIQuote(context: {
 
     // Call Anthropic
     const response = await client.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 75,
       temperature: 0.7,
       system: `Act as a fitness coach. Provide brief, motivational advice. 

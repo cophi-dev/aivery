@@ -196,6 +196,56 @@ export async function fetchWorkouts(): Promise<any[]> {
   }
 }
 
+// Interface for the lean workout summary object
+interface WorkoutSummary {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  name?: string;
+  type?: string;
+  date?: Date | string;
+}
+
+// NEW: Fetch a workout summary (name, type, date) for the current user
+export async function fetchWorkoutSummary(id: string): Promise<{ _id: string; name: string | null; type: string | null; date: string | null } | null> {
+  try {
+    const user = await getCurrentUser();
+    if (!user || !user.id) {
+      console.warn("User not authenticated in fetchWorkoutSummary");
+      return null;
+    }
+    const userId = user.id;
+
+    if (!Types.ObjectId.isValid(id)) {
+       console.warn("Invalid workout ID format provided:", id);
+       return null;
+    }
+
+    console.log(`Fetching workout summary for ID: ${id} for user: ${userId}`);
+
+    const workout = await WorkoutModel
+      .findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) })
+      .select('_id name type date') // <-- Add _id to select
+      .lean<WorkoutSummary>(); // Use lean and cast to specific interface
+
+    if (!workout) {
+      console.log(`Workout summary not found or user ${userId} does not own workout ${id}.`);
+      return null;
+    }
+
+    // Return the selected fields (date is already serializable)
+    return {
+      _id: workout._id.toString(), // <-- Add _id to return object
+      name: workout.name ?? null, // Use nullish coalescing
+      type: workout.type ?? null,
+      date: workout.date ? format(new Date(workout.date), 'yyyy-MM-dd') : null // Use ISO 8601 date format
+    };
+
+  } catch (error) {
+    console.error(`Error fetching workout summary for ID ${id}:`, error);
+    return null; // Return null on error
+  }
+}
+
 // Fetch a single workout with its populated exercises (Refactored & Manually Serialized)
 export async function fetchWorkout(id: string): Promise<any | null> { 
   try {

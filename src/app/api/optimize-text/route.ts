@@ -95,7 +95,7 @@ Your task is to enhance and structure the user's dietary preferences into a natu
 
     // Call Anthropic API
     const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 500,
       temperature: 0.7,
       system: systemPrompt,

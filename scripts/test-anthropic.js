@@ -12,7 +12,7 @@ async function main() {
     console.log('API Key (first 5 chars):', process.env.ANTHROPIC_API_KEY?.substring(0, 5) + '...');
     
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 100,
       messages: [
         {

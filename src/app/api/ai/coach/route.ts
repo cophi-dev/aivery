@@ -13,6 +13,11 @@ import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { capitalizeFirstLetter } from "@/lib/utils"; // Import capitalizeFirstLetter
 // import { Prisma } from "@prisma/client"; // Remove unused Prisma types import
+import { startOfYear, subDays, subMonths, subWeeks, subYears } from "date-fns";
+// Removed incorrect WorkoutListItem import and duplicate IWorkout import
+
+// Import the function needed for initial workout analysis
+import { fetchWorkoutForAI } from "@/lib/workout-actions";
 
 // Define valid intents
 const ValidIntents = z.enum([
@@ -114,30 +119,122 @@ function getQueryAnalysisSchemaString(): string {
   `.trim();
 }
 
+// Define a type for messages in history (subset of frontend Message type)
+interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Generates an initial insightful message for a specific workout.
+ */
+async function generateInitialWorkoutInsight(workoutId: string, userName: string): Promise<string> {
+  try {
+    console.log(`[generateInitialWorkoutInsight] Fetching workout details for AI: ${workoutId}`);
+    const workoutDataForAI = await fetchWorkoutForAI(workoutId);
+
+    if (!workoutDataForAI) {
+      console.log(`[generateInitialWorkoutInsight] Workout ${workoutId} not found.`);
+      return `Sorry, I couldn't find the details for that workout (ID: ${workoutId}). How else can I help?`;
+    }
+
+    // Clean up data slightly for the prompt (remove potentially huge fields if necessary)
+    const promptData = {
+      currentWorkout: {
+        name: workoutDataForAI.name,
+        type: workoutDataForAI.type,
+        date: workoutDataForAI.date,
+        duration: workoutDataForAI.duration,
+        distance: workoutDataForAI.distance,
+        calories: workoutDataForAI.calories,
+        intensity: workoutDataForAI.intensity,
+        calculatedVolume: workoutDataForAI.calculatedVolume,
+        cardioDetails: workoutDataForAI.cardioDetails, // Keep cardio details
+        // Omit workoutExercises here to keep prompt concise, unless needed
+      },
+      previousWorkoutsSummary: workoutDataForAI.previousWorkouts?.map((w: any) => ({ // Use any temporarily
+        date: w.date,
+        duration: w.duration,
+        distance: w.distance,
+        calculatedVolume: w.calculatedVolume,
+        pace: w.cardioDetails?.pace
+      })),
+      progressMetrics: workoutDataForAI.progressMetrics,
+    };
+
+    const systemPrompt = `\nYou are Aivery, a friendly and insightful fitness coach. The user, ${userName}, has just clicked on a specific workout in their history and wants to discuss it.
+
+Workout Data Overview:
+${JSON.stringify(promptData, null, 2)}
+
+Your task is to generate a welcoming and insightful opening message (1-2 sentences) based ONLY on the provided Workout Data Overview. Briefly highlight something interesting (e.g., a key stat, a comparison like duration/distance change if progressMetrics exist, a potential PR) and then ask an open-ended question to guide the conversation, like "What aspect of this workout would you like to focus on?" or "How did this workout feel compared to your last session?". Be encouraging and conversational. Focus on the MOST RECENT workout data provided.
+`;
+
+    console.log("[generateInitialWorkoutInsight] Sending prompt to Anthropic for initial insight...");
+    const msg = await anthropic.messages.create({
+      model: "claude-3-5-haiku-20241022", 
+      max_tokens: 150, // Keep response concise
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: "Generate the initial insightful message based on the workout data provided in the system prompt." },
+      ],
+    });
+
+    console.log("[generateInitialWorkoutInsight] Anthropic Raw Response:", msg);
+
+    let insightText = "Okay, let's look at that workout. What stands out to you?"; // Fallback
+    const firstBlock = msg.content?.[0];
+    if (firstBlock && firstBlock.type === "text") {
+      insightText = firstBlock.text.trim();
+    }
+
+    console.log(`[generateInitialWorkoutInsight] Generated insight: "${insightText}"`);
+    return insightText;
+
+  } catch (error) {
+    console.error(`[generateInitialWorkoutInsight] Error generating initial insight for workout ${workoutId}:`, error);
+    return `Sorry ${userName}, I had trouble loading the full details for that workout right now. What would you like to discuss about it generally?`;
+  }
+}
+
 /**
  * Analyzes the user's fitness query using Anthropic Claude API.
  */
-async function analyzeUserQuery(query: string): Promise<QueryAnalysis> {
+async function analyzeUserQuery(query: string, history: HistoryMessage[]): Promise<QueryAnalysis> {
   const schemaString = getQueryAnalysisSchemaString();
-  const systemPrompt = `
-You are an AI assistant for a fitness tracking application. Your task is to analyze the user's natural language query about their workout history and extract relevant information into a structured JSON object. The JSON object MUST strictly conform to the following TypeScript type definition (based on a Zod schema):
+  
+  // Format history for the prompt
+  const historyString = history
+    .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+    .join('\n');
 
-\`\`\`typescript
-${schemaString}
-\`\`\`
+  const systemPrompt = `\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.
 
-Key considerations:
-- Determine the primary 'intent' of the user's query.
-- Extract relevant 'entities' like metric, workout_type, period, dates, qualifiers, identifiers, or limits.
-- If the query mentions a specific date or date range (e.g., "July 2024", "last Tuesday", "2024-07-18"), try to capture it in 'workout_identifier' or 'explicit_start_date'/'explicit_end_date'. For relative periods like "last month", use the 'period' field.
-- If providing 'explicit_start_date' or 'explicit_end_date', ensure they are full ISO 8601 datetime strings (e.g., "2024-07-01T00:00:00Z", "2024-07-31T23:59:59.999Z"). If the user provides only a date (like "July 1st, 2024"), assume the full day (start: T00:00:00Z, end: T23:59:59.999Z). If they provide a month (like "July 2024"), use the start of the first day and the end of the last day of that month.
-- For records (intent: "get_record"), infer the 'metric' (e.g., distance, duration, pace) and 'record_qualifier' (e.g., "5k", "overall").
-- If the query is vague or cannot be mapped to a known intent, set intent to "unknown".
-- If the query is very simple or ambiguous, you can optionally provide a 'response_suggestion' for the backend to use directly or as a clarification question.
-- Only output the raw JSON object. Do not include any other text, explanations, or markdown formatting like \`\`\`json ... \`\`\`.
-- Ensure all string values in the JSON strictly match the allowed enum values where applicable (e.g., for intent, metric, workout_type, period).
-- If a field is optional and not present in the query, omit it from the JSON.
-- Today's date is ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).
+CONVERSATION HISTORY:
+${historyString}
+
+LATEST USER QUERY: "${query}"
+
+Your goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.
+
+AVAILABLE DATA TYPES OVERVIEW:
+- User: name, goals, preferences, location, age, weight, height, ...
+- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...
+- Exercises (Library): name, description, muscles, category, equipment, ...
+
+SCHEMA:\n\`\`\`json\n${schemaString}\n\`\`\`\n\nRULES:\n- Analyze the LATEST USER QUERY: "${query}".
+- Use the CONVERSATION HISTORY to understand context (e.g., what "these" refers to).
+- Identify the primary intent of the LATEST QUERY.
+- Extract all relevant entities mentioned or implied in the LATEST QUERY. Use context from history if needed (e.g., if the user says "show me those", infer the period/type from the previous message).
+- **IMPORTANT CONTEXT RULE:** If the LATEST QUERY is a direct follow-up asking to list items mentioned previously (like "show me those", "list them"), **you MUST inherit the period, explicit_start_date, explicit_end_date, and workout_type entities from the context of the previous turn** unless the LATEST QUERY explicitly specifies a *new* period or type.
+- Use the current date ONLY for resolving relative time periods like 'today', 'last week', etc. The backend will handle the precise date calculations.
+- If the LATEST QUERY is too vague, even with history context, set intent to "unknown" and optionally provide a suggestion for clarification in response_suggestion.
+- For comparison intents, try to extract both the main period and the comparison period.
+- If the user asks for a specific workout (e.g., 'my run yesterday', 'workout ID 123'), capture this in workout_identifier.
+- Only return the JSON object adhering strictly to the schema.
+- Do NOT add any explanations or commentary outside the JSON structure.
+
+CURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).
 `;
 
   const defaultUnknownResponse: QueryAnalysis = {
@@ -174,9 +271,13 @@ Key considerations:
       };
     }
 
-    // Attempt to parse the JSON string
+    // Clean the string: remove potential markdown fences
+    const cleanedJsonString = jsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
+    console.log("Cleaned JSON string for parsing:", cleanedJsonString);
+
+    // Attempt to parse the CLEANED JSON string
     try {
-      const parsedJson = JSON.parse(jsonString);
+      const parsedJson = JSON.parse(cleanedJsonString);
       console.log("Parsed AI Analysis:", parsedJson);
 
       // Validate the parsed JSON against our Zod schema
@@ -263,25 +364,58 @@ async function fetchTotalMetricForPeriod(
     }
 
     if (metric === 'distance' || metric === 'duration' || metric === 'calories') {
-      // Map metric enum to schema field names
-      const fieldMap = {
-        distance: 'distance',
-        duration: 'duration',
-        calories: 'calories',
-      };
-      const fieldToSum = fieldMap[metric as keyof typeof fieldMap]; // Type assertion
-
-      if (!fieldToSum) {
-         console.warn(`Unsupported metric for sum: ${metric}`);
-         return null;
+      // Determine the correct field to sum based on the metric
+      let fieldToSum = '';
+      if (metric === 'distance') {
+        fieldToSum = 'cardioDetails.distance'; // Use nested distance for cardio
+      } else if (metric === 'duration') {
+        fieldToSum = 'duration';
+      } else if (metric === 'calories') {
+        fieldToSum = 'calories';
+      } else {
+        // Handle other metrics or throw an error
+        console.error(`[DB Fetch Total] Unsupported metric for sum: ${metric}`);
+        return null;
       }
 
       await dbConnect(); // Connect Mongoose
-      const result = await WorkoutModel.aggregate([
-        { $match: filters },
-        { $group: { _id: null, total: { $sum: `$${fieldToSum}` } } }
-      ]);
+      console.log(`[DB Fetch Total] Filters for ${metric}:`, JSON.stringify(filters)); // Log filters
+
+      // Build aggregation pipeline
+      const pipeline: any[] = [
+        { $match: filters } // Initial match based on user, type, date
+      ];
+
+      // Add specific match stage for the field being summed to ensure it exists and is valid
+      if (metric === 'distance') {
+        pipeline.push({ 
+          $match: { 
+            'cardioDetails.distance': { $exists: true, $ne: null, $type: "number" } 
+          } 
+        });
+      } else if (metric === 'duration') {
+        pipeline.push({ 
+          $match: { 
+            'duration': { $exists: true, $ne: null, $type: "number" } 
+          } 
+        });
+      } else if (metric === 'calories') {
+         pipeline.push({ 
+          $match: { 
+            'calories': { $exists: true, $ne: null, $type: "number" } 
+          } 
+        });       
+      }
+
+      // Add the grouping stage
+      pipeline.push({ $group: { _id: null, total: { $sum: `$${fieldToSum}` } } });
+
+      console.log(`[DB Fetch Total] Aggregation pipeline for ${metric}:`, JSON.stringify(pipeline)); // Log pipeline
+      
+      const result = await WorkoutModel.aggregate(pipeline);
+      console.log(`[DB Fetch Total] Raw aggregation result for ${metric}:`, JSON.stringify(result)); // Log raw result
       const sum = result[0]?.total ?? 0; // Extract sum from Mongoose aggregation result
+      console.log(`[DB Fetch Total] Calculated sum for ${metric}: ${sum}`); // Log final sum
       return sum;
     }
 
@@ -523,8 +657,9 @@ async function listWorkouts(
             date: new Date(doc.date).toISOString(),
             type: doc.type,
             duration: doc.duration ?? null,
-            distance: doc.distance ?? null,
-            calories: doc.calories ?? null,
+            // Prioritize cardioDetails.distance if it exists, fallback to top-level distance
+            distance: doc.cardioDetails?.distance ?? doc.distance ?? null, 
+            calories: doc.calories ?? null, // Assuming calories might be top-level for simplicity here
             notes: doc.notes ?? null,
         }));
         return workouts; // No assertion needed
@@ -729,39 +864,59 @@ async function getDirectTextResponse(query: string): Promise<string | null> {
 // --- Main POST Handler ---
 
 export async function POST(req: NextRequest) {
+  console.log("[API /coach] Received POST request");
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = session.user.id;
+  const userName = (session.user as any)?.nickname || session.user.name || "Fitness Pro";
+
+  let query: string;
+  let history: HistoryMessage[];
+  let context: any; // Variable to hold context
+
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = session.user.id;
-    
     const body = await req.json();
-    const { query, userName } = body; // Extract userName
-    const currentUserName = userName || "Friend"; // Default name
-
-    if (!query || typeof query !== "string") {
-      return NextResponse.json({ error: "Query is required" }, { status: 400 });
+    console.log("[API /coach] Request Body:", body);
+    query = z.string().min(1).parse(body.query);
+    // Parse history, ensuring it defaults to an empty array if optional parse results in undefined
+    history = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).optional().parse(body.history) ?? []; 
+    context = body.context; // Get context object
+    console.log("[API /coach] Parsed - Query:", query, "History Len:", history.length, "Context:", context);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Invalid request body", details: error.errors }, { status: 400 });
     }
+    return NextResponse.json({ error: "Failed to parse request body" }, { status: 400 });
+  }
 
-    console.log(`Received query from user ${userId}: \\"${query}\\"`);
+  // --- Check for Initial Workout Context --- 
+  const workoutSummary = context?.workoutSummary;
+  const workoutId = workoutSummary?._id;
+  // Check if it's the first *real* message exchange (history length 1 means only the user's initial prompt exists)
+  const isInitialWorkoutContext = !!workoutId && history.length === 0; 
 
-    // --- START: Conditional Logic for Keyword Explanation ---
-    const keywordExplanationPrefix = "Explain the fitness concept";
-    if (query.startsWith(keywordExplanationPrefix)) {
-      console.log("Handling direct keyword explanation request.");
-      const directResponse = await getDirectTextResponse(query);
-      return NextResponse.json({
-        response: directResponse || "Sorry, I couldn't generate an explanation for that concept.",
-        // Keep data and analysis null/empty for direct responses
-        data: null,
-        analysis: { intent: 'keyword_explanation' } // Indicate the type of response
-      });
+  if (isInitialWorkoutContext) {
+    console.log(`[API /coach] Initial workout context detected for ID: ${workoutId}. Generating insight...`);
+    try {
+      const initialInsight = await generateInitialWorkoutInsight(workoutId, userName);
+      return NextResponse.json({ response: initialInsight, data: { type: 'insight' } }); // Return insight directly
+    } catch (error) {
+      console.error("[API /coach] Error generating initial workout insight:", error);
+      // Fallback to generic response if insight generation fails
+      return NextResponse.json({ response: "Sorry, I had trouble getting the details for that workout. How can I help otherwise?", data: null }, { status: 500 });
     }
-    // --- END: Conditional Logic ---
+  }
+  // --- End Initial Workout Context Check --- 
 
-    // 1. Analyze Query (Only if not a direct keyword explanation)
-    const analysisResult = await analyzeUserQuery(query);
+  // --- Normal Chat Flow (Not initial workout context) --- 
+  console.log("[API /coach] Proceeding with normal query analysis...");
+  try {
+    await dbConnect(); // Ensure DB connection
+
+    // 1. Analyze Query (Pass history)
+    const analysisResult = await analyzeUserQuery(query, history as HistoryMessage[]);
     console.log("Query Analysis Result:", analysisResult);
 
     // Validate analysis result
@@ -815,7 +970,7 @@ export async function POST(req: NextRequest) {
           entities.period, 
           startDate, 
           endDate,  
-          currentUserName // Pass userName
+          userName // Pass userName
         );
         break;
 
@@ -837,13 +992,13 @@ export async function POST(req: NextRequest) {
              entities.period, 
              startDate, 
              endDate,  
-             currentUserName // Pass userName
+             userName // Pass userName
            );
          } else {
             // Handle null average case with personality
             const typeDesc = describeWorkoutType(entities.workout_type ?? "any");
             const periodDesc = describePeriod(entities.period, startDate, endDate);
-            responseText = `Hmm ${currentUserName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
+            responseText = `Hmm ${userName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
          }
         break;
 
@@ -863,15 +1018,20 @@ export async function POST(req: NextRequest) {
                 entities.metric,
                 entities.workout_type,
                 entities.record_qualifier,
-                currentUserName // Pass userName
+                userName // Pass userName
             );
          } else {
-            responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${currentUserName}. Keep pushing for those PBs! 🚀`;
+            responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${userName}. Keep pushing for those PBs! 🚀`;
          }
          break;
 
        case "list_workouts":
-         if (!startDate && !endDate && !entities?.period) { responseText = "Please specify a time period (like last week or July 2024) to list workouts."; break; }
+         if (!startDate && !endDate && !entities?.period) { 
+             responseText = "Please specify a time period (like last week or July 2024) to list workouts."; 
+             // Set data to empty array for consistency if parameters are missing
+             responseData = { workouts: [] }; 
+             break; 
+         }
          const workouts = await listWorkouts(
              userId,
              entities?.workout_type ?? "any",
@@ -879,17 +1039,12 @@ export async function POST(req: NextRequest) {
              endDate,
              entities?.limit
          );
-         responseData = { workouts };
+         responseData = { workouts }; // Send the raw workout array
          if (workouts.length > 0) {
-             responseText = generateListResponse(
-                 workouts,
-                 entities?.workout_type,
-                 entities?.period,
-                 startDate,
-                 endDate,
-                 entities?.limit,
-                 currentUserName // Pass userName
-             );
+            // Generate a simple text message, frontend will handle display
+             const typeDesc = describeWorkoutType(entities?.workout_type);
+             const periodDesc = describePeriod(entities?.period, startDate, endDate);
+             responseText = `Okay ${userName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
          } else {
              // Use the potentially more specific describePeriod
              const periodDesc = describePeriod(entities?.period, startDate, endDate);
@@ -902,15 +1057,15 @@ export async function POST(req: NextRequest) {
          const details = await fetchWorkoutDetails(userId, entities.workout_identifier, entities?.workout_type);
          responseData = { details };
          if (details) {
-            responseText = generateDetailsResponse(details, currentUserName); // Pass userName
+            responseText = generateDetailsResponse(details, userName); // Pass userName
          } else {
-            responseText = `Sorry ${currentUserName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
+            responseText = `Sorry ${userName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
          }
          break;
 
       case "compare_metric":
           if (!entities?.metric || !entities?.period || (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date))) {
-               responseText = `To compare, ${currentUserName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
+               responseText = `To compare, ${userName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
                break; 
           }
           
@@ -932,7 +1087,7 @@ export async function POST(req: NextRequest) {
                 // Keep period2Label as the enum value
               } else {
                 // Should not happen due to initial check, but safeguard
-                responseText = `Something went wrong determining the second period for comparison, ${currentUserName}.`;
+                responseText = `Something went wrong determining the second period for comparison, ${userName}.`;
                 break;
               }
           } else {
@@ -958,13 +1113,13 @@ export async function POST(req: NextRequest) {
               entities.period, // Label for period 1
               period2Label, // Label for period 2 (if used)
               period2Description, // Description if explicit dates used
-              currentUserName 
+              userName 
           );
           break;
 
       case "unknown":
       default:
-         responseText = response_suggestion || `Sorry ${currentUserName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
+         responseText = response_suggestion || `Sorry ${userName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
         break;
     }
 
@@ -998,11 +1153,12 @@ export async function POST(req: NextRequest) {
 // They also handle unit conversions for display (e.g., seconds -> min, meters -> km).
 
 function formatDuration(seconds: number): string {
-    if (seconds < 60) return `${seconds} sec`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const totalSecondsRounded = Math.round(seconds); // Round the total seconds first
+    if (totalSecondsRounded < 60) return `${totalSecondsRounded} sec`; // Use rounded seconds
+    const minutes = Math.floor(totalSecondsRounded / 60);
+    const remainingSeconds = totalSecondsRounded % 60;
     if (remainingSeconds === 0) return `${minutes} min`;
-    return `${minutes}m ${remainingSeconds}s`;
+    return `${minutes}m ${remainingSeconds}s`; // Use rounded remaining seconds
 }
 
 function formatDistance(kilometers: number): string {
@@ -1174,13 +1330,19 @@ function generateListResponse(
 
     response += workouts.map(w => {
         const dateStr = new Date(w.date).toLocaleDateString();
-        const details = [
-            w.distance ? formatDistance(w.distance) : null,
-            w.duration ? formatDuration(w.duration) : null,
-            w.calories ? `${w.calories} kcal` : null
-        ].filter(Boolean).join(', '); // Filter out null/undefined details
-        return `- ${dateStr}: ${w.name || w.type} (${details || 'No details'})`; // Handle missing name
-    }).join('\n');
+        // Use helper functions for formatting and handle nulls
+        const formattedDistance = w.distance ? formatDistance(w.distance) : 'N/A';
+        const formattedDuration = w.duration ? formatDuration(w.duration) : 'N/A';
+        const formattedCalories = w.calories ? `${Math.round(w.calories)} kcal` : 'N/A'; 
+
+        // Create a more structured markdown string
+        let workoutString = `*   **${dateStr}: ${w.name || w.type}**\n`;
+        workoutString += `    *   Duration: ${formattedDuration}\n`;
+        workoutString += `    *   Distance: ${formattedDistance}\n`;
+        workoutString += `    *   Calories: ${formattedCalories}`;
+        // Removed the less structured single line return
+        return workoutString;
+    }).join('\n\n'); // Add extra newline between workout entries
 
     return response;
 }
@@ -1283,4 +1445,37 @@ function generateCompareResponse(
     }
 
     return comparisonText;
+}
+
+function createHighlightPrompt(userName: string, workout: Partial<IWorkout>) {
+    // Convert workout data to a string format, handling potential undefined fields
+    let workoutDetails = `Workout Type: ${workout.type || 'N/A'}`;
+    if (workout.duration) workoutDetails += `\nDuration: ${(workout.duration / 60).toFixed(1)} minutes`;
+    if (workout.distance) workoutDetails += `\nDistance: ${workout.distance.toFixed(2)} km`;
+    if (workout.calculatedVolume) workoutDetails += `\nTotal Volume: ${workout.calculatedVolume.toFixed(0)} kg`; // Use calculatedVolume
+    if (workout.notes) workoutDetails += `\nNotes: ${workout.notes}`; 
+
+    // Construct the system prompt
+    return `You are Aivery, a fitness coach AI. Your task is to generate a **single, concise, positive, and encouraging highlight statement** (max 20 words) for the user based on their completed workout. 
+
+DATABASE SCHEMA OVERVIEW (Key Fields for Context):
+- UserData: _id, email, name, image, aiPreferences { location, fitnessGoals, trainingPreferences, ... }, height, weight, age, gender, ...
+- WorkoutData: _id, userId, type (strength, run, cycle, swim, ...), name, date, duration, distance, calories, notes, intensity, workoutExercises[], cardioDetails { pace, speed, heartRate, laps, ... }, source, records[] { timestamp, heart_rate, speed, ... }, calculatedVolume, ...
+- ExerciseData: _id, name, description, muscleGroups, category (strength, cardio, flexibility), equipment, instructions
+- WorkoutExerciseData: _id, workoutId, exerciseId { _id, name, category }, sets[], notes, order, duration, distance
+- Set: _id, weight, reps, duration, distance, notes
+
+USER NAME: ${userName}
+
+WORKOUT DATA:
+${workoutDetails}
+
+INSTRUCTIONS:
+1. Address the user by name (e.g., "Great job, ${userName}!").
+2. Focus on ONE key positive aspect (e.g., consistency, distance, strength, trying something new).
+3. Keep it short and punchy (max 20 words).
+4. Be encouraging and positive in tone.
+5. Do NOT include specific numbers unless it's a notable achievement (like a PR, which you won't know, so avoid specifics).
+6. Do NOT ask questions.
+7. Only output the highlight statement itself, no extra text.`;
 } 

@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
     let generatedStory = "";
     try {
       const completion = await client.messages.create({
-        model: "claude-3-5-sonnet-20240620",
+        model: "claude-3-5-haiku-20241022",
         messages: [
           {
             role: "user",

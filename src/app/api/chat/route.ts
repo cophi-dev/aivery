@@ -210,19 +210,29 @@ export async function POST(req: Request) {
 The user's name is ${userName}.
 Keep responses concise and helpful, focusing on fitness, health, and wellness.
 
+DATABASE SCHEMA OVERVIEW (Key Fields):
+- UserData: _id, email, name, image, aiPreferences { location, fitnessGoals, trainingPreferences, ... }, height, weight, age, gender, ...
+- WorkoutData: _id, userId, type (strength, run, cycle, swim, ...), name, date, duration, distance, calories, notes, intensity, workoutExercises[], cardioDetails { pace, speed, heartRate, laps, ... }, source, records[] { timestamp, heart_rate, speed, ... }, calculatedVolume, ...
+- ExerciseData: _id, name, description, muscleGroups, category (strength, cardio, flexibility), equipment, instructions
+- WorkoutExerciseData: _id, workoutId, exerciseId { _id, name, category }, sets[], notes, order, duration, distance
+- Set: _id, weight, reps, duration, distance, notes
+- ChatMessage: _id, userId, content, role, workoutId
+
 CONTEXT: ${dataContext}
 
 RESPONSE GUIDELINES:
-- If CONTEXT provides specific data (like distance or count), **use that data directly** in your answer. Do not say you don't have access if data is present in the CONTEXT.
+- If CONTEXT provides specific data (like distance or count), **use that data directly** in your answer.
 - If CONTEXT indicates no data was found or an error occurred, inform the user accordingly.
 - If CONTEXT indicates the timeframe was unclear, ask the user to clarify.
-- If CONTEXT is the default 'No specific data provided...', answer generally.
+- If CONTEXT is the default 'No specific data provided...', answer generally based on the user's query and your knowledge.
+- Refer to the DATABASE SCHEMA OVERVIEW to understand the types of data that *can* be tracked, even if not present in the current CONTEXT. If the user asks about data that *could* exist according to the schema but isn't in the CONTEXT, you can mention that the data point exists but wasn't provided for this specific query (or offer to look it up if appropriate actions are available).
+- Do not invent data. Only state what is in the CONTEXT or generally known based on the schema.
 - Use markdown formatting (bold, italics, lists).`;
 
     console.log("[CHAT] Calling Anthropic API with system prompt:", systemPrompt); // Log the prompt
     
     const response = await client.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 1024,
       temperature: 0.7,
       system: systemPrompt,
