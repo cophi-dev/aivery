@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import dbConnect from "@/lib/db/mongodb"
 
+// Force dynamic execution, prevents static generation during build
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     // Test database connection
