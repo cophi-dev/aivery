@@ -28,6 +28,9 @@ export function MainHeader() {
   const isLoading = status === "loading";
   const isAuthenticated = status === "authenticated" && !!user;
 
+  // Determine if on the landing page
+  const isLandingPage = pathname === '/';
+
   // Navigation links configuration for reuse
   const navLinks = [
     {
@@ -193,15 +196,16 @@ export function MainHeader() {
 
 
   // Prevent render errors during loading state
-  if (isLoading) {
-    // Keep loading state centered too
+  if (isLoading && !isLandingPage) {
     return (
-      <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-center"> {/* Center loading state */} 
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"> {/* Keep layout consistent */}
+        <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="w-14 h-14 rounded-full bg-primary/10 animate-pulse" /> {/* Make loading bigger */} 
-             <span className="font-bold text-xl ml-2">Aivery</span>
+             <div className="w-10 h-10 rounded-full bg-primary/10 animate-pulse" />
+             <span className="font-bold text-xl ml-2 opacity-0">Aivery</span> {/* Keep space but hide text */}
           </div>
+           {/* Placeholder for user nav during load */}
+          <div className="w-10 h-10 rounded-full bg-muted animate-pulse" />
         </div>
       </header>
     );
@@ -209,115 +213,108 @@ export function MainHeader() {
 
   return (
     <header
-      className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      className={cn(
+        "sticky top-0 z-50 w-full",
+        isLandingPage
+          ? "bg-white"
+          : "border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      )}
     >
-      {/* Changed flex layout: justify-between -> no justify, added divs for structure */}
-      <div className="container mx-auto px-4 py-0 h-16 flex items-center">
-        
-        {/* Left Section (Mobile Menu Trigger / Desktop Nav) */} 
-        <div className="flex-1 flex justify-start items-center">
-          {/* Mobile Menu Trigger - only shows for logged in users on small screens */}
+      <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
+        {/* Left Section (Logo + Desktop Nav) */}
+        <div className="flex items-center gap-6">
+          <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
+            <div ref={logoRef} className="h-10 w-10 relative">
+               <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                 <defs>
+                   <radialGradient id="glow-main" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                     <stop offset="0%" stopColor="#4B9EFF"/>
+                     <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                   </radialGradient>
+                 </defs>
+                 <circle cx="256" cy="256" r="200" fill="url(#glow-main)" />
+                 <circle ref={eyeLeftRef} cx="200" cy="200" r="20" fill="#FFFFFF" style={{ transition: 'transform 0.1s ease-out' }}/>
+                 <circle ref={eyeRightRef} cx="312" cy="200" r="20" fill="#FFFFFF" style={{ transition: 'transform 0.1s ease-out' }}/>
+                 <path ref={mouthRef} d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="15" fill="none" strokeLinecap="round" style={{ transition: 'transform 0.1s ease-out' }}/>
+               </svg>
+             </div>
+            <span className={cn("font-bold text-xl", isLandingPage ? "text-gray-800" : "")}>aivery</span>
+          </Link>
+          {/* Desktop Navigation - shown only for logged-in users */}
           {user && (
-             <Sheet>
-               <SheetTrigger asChild>
-                 <Button variant="ghost" size="icon" className="md:hidden mr-2"> {/* Show only on small screens */} 
-                   <Menu className="h-6 w-6" />
-                   <span className="sr-only">Toggle Navigation</span>
-                 </Button>
-               </SheetTrigger>
-               <SheetContent side="left" className="w-[250px]">
-                  {/* You might want a header inside the sheet */}
-                  <div className="flex items-center p-4 border-b">
-                     {/* Optionally repeat the logo/name inside sheet */}
-                     <div className="w-8 h-8 relative">
-                       <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
-                         <defs><radialGradient id="glow-sheet" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5"><stop offset="0%" stopColor="#4B9EFF"/><stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/></radialGradient></defs>
-                         <circle cx="256" cy="256" r="200" fill="url(#glow-sheet)" />
-                         <circle cx="200" cy="200" r="20" fill="#FFFFFF"/>
-                         <circle cx="312" cy="200" r="20" fill="#FFFFFF"/>
-                         <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="15" fill="none" strokeLinecap="round"/>
-                       </svg>
-                     </div>
-                      <span className="font-bold text-lg ml-2">Aivery</span>
-                  </div>
-                  <nav className="flex flex-col p-4 space-y-2">
-                     {navLinks.map((link) => (
-                       <Link
-                         key={link.href}
-                         href={link.href}
-                         className={cn(
-                           "flex items-center gap-3 py-2 px-3 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                           link.active ? "text-foreground bg-accent/50" : "text-muted-foreground"
-                         )}
-                        // Add onClick={() => setOpen(false)} if you manage Sheet open state 
-                       >
-                         {link.icon}
-                         <span>{link.label}</span>
-                       </Link>
-                     ))}
-                  </nav>
-               </SheetContent>
-             </Sheet>
-          )}
-          {/* Desktop Navigation - shown only for logged in users on medium+ screens */}
-          {user && (
-            <nav className="hidden md:flex items-center gap-6 text-sm font-medium"> {/* Hide on small screens */} 
+            <nav className="hidden md:flex items-center gap-4">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "flex items-center gap-1.5 py-1 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                    link.active ? "text-foreground bg-accent/50" : "text-foreground/70"
+                    "text-sm font-medium transition-colors",
+                    link.active
+                      ? (isLandingPage ? "text-indigo-600" : "text-foreground") // Adjust active color for landing page
+                      : (isLandingPage ? "text-gray-600 hover:text-gray-900" : "text-muted-foreground hover:text-foreground/80") // Adjust default/hover for landing page
                   )}
                 >
-                  {link.icon}
-                  <span>{link.label}</span>
+                  {link.label}
                 </Link>
               ))}
             </nav>
           )}
         </div>
 
-        {/* Center Section (Logo) */} 
-        <div className="flex justify-center items-center">
-           <Link href="/" className="flex items-center">
-            {/* Increased size w-14 h-14 -> w-14 h-14 */}
-            <div ref={logoRef} className="w-14 h-14 relative">
-              <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
-                <defs>
-                  <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
-                    <stop offset="0%" stopColor="#4B9EFF"/>
-                    <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
-                  </radialGradient>
-                </defs>
-                <circle cx="256" cy="256" r="200" fill="url(#glow)" />
-                <circle ref={eyeLeftRef} cx="200" cy="200" r="20" fill="#FFFFFF" style={{ transition: 'transform 0.1s ease-out' }}/>
-                <circle ref={eyeRightRef} cx="312" cy="200" r="20" fill="#FFFFFF" style={{ transition: 'transform 0.1s ease-out' }}/>
-                <path ref={mouthRef} d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="15" fill="none" strokeLinecap="round" style={{ transition: 'transform 0.1s ease-out' }}/>
-              </svg>
-            </div>
-            {/* Hide text label? Optional - keeps it cleaner when centered */}
-            {/* <span className="font-bold text-xl ml-2">Aivery</span> */}
-          </Link>
-        </div>
-
-        {/* Right Section (User Nav or Login/Signup) */} 
-        <div className="flex-1 flex justify-end items-center">
-          {isAuthenticated ? (
-            <UserNavigation />
+        {/* Right Section (User Nav / Login/Signup / Mobile Menu) */}
+        <div className="flex items-center gap-3">
+          {user ? (
+            <>
+              {/* Mobile Menu Trigger - only shows for logged in users on small screens */}
+               <Sheet>
+                 <SheetTrigger asChild>
+                   <Button variant="ghost" size="icon" className="md:hidden"> {/* Show only on small screens */} 
+                     <Menu className="h-6 w-6" />
+                     <span className="sr-only">Toggle Navigation</span>
+                   </Button>
+                 </SheetTrigger>
+                 <SheetContent side="left" className="w-[250px]">
+                    <div className="flex items-center p-4 border-b mb-2">
+                       <div className="h-8 w-8 mr-2 relative">
+                           <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                             <defs>
+                               <radialGradient id="glow-sheet" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                                 <stop offset="0%" stopColor="#4B9EFF"/>
+                                 <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                               </radialGradient>
+                             </defs>
+                             <circle cx="256" cy="256" r="200" fill="url(#glow-sheet)" />
+                             <circle cx="200" cy="200" r="20" fill="#FFFFFF"/>
+                             <circle cx="312" cy="200" r="20" fill="#FFFFFF"/>
+                             <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="15" fill="none" strokeLinecap="round"/>
+                           </svg>
+                       </div>
+                       <span className="font-bold text-lg">aivery</span>
+                    </div>
+                    <nav className="flex flex-col p-2 space-y-1">
+                       {navLinks.map((link) => (
+                         <Button key={link.href} variant="ghost" className={cn("justify-start", link.active ? "bg-accent" : "")} asChild>
+                           <Link href={link.href} >
+                             {link.icon}
+                             <span className="ml-2">{link.label}</span>
+                           </Link>
+                         </Button>
+                       ))}
+                    </nav>
+                 </SheetContent>
+               </Sheet>
+              {/* User Navigation (for desktop) */}
+              <UserNavigation />
+            </>
           ) : (
-            <div className="flex items-center gap-3">
-              <Link href="/login">
-                <Button variant="ghost" size="sm">
-                  Log in
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button variant="default" size="sm" className="font-medium">
-                  Sign up
-                </Button>
-              </Link>
+            // Show Login/Signup buttons if not logged in
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" asChild>
+                <Link href="/login">Log in</Link>
+              </Button>
+              <Button asChild>
+                 <Link href="/register">Sign up</Link>
+              </Button>
             </div>
           )}
         </div>

@@ -251,3 +251,8 @@ html {
 #page-loading-indicator img {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Add this font utility class */
+.font-dm-serif {
+  font-family: var(--font-dm-serif);
+}

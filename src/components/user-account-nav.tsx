@@ -59,7 +59,7 @@ export function UserAccountNav({ user }: UserAccountNavProps) {
           onSelect={(event) => {
             console.log('Sign out clicked')
             signOut({
-              callbackUrl: `${window.location.origin}/login`,
+              callbackUrl: `/`,
             })
           }}
         >

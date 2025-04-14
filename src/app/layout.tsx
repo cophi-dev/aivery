@@ -1,5 +1,5 @@
 import "./globals.css"
-import { Inter } from "next/font/google"
+import { Inter, Poppins, DM_Serif_Display } from "next/font/google"
 import { ThemeProvider } from "next-themes"
 import { AuthProvider } from "@/components/providers/auth-provider"
 import { MainHeader } from "@/components/main-header"
@@ -20,16 +20,31 @@ import { default as NextDynamic } from "next/dynamic"
 // Import CacheBuster with client-side only rendering
 const CacheBuster = NextDynamic(() => import("@/components/cache-buster"), { ssr: false })
 
+// Initialize Poppins
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"], // Include needed weights
+  variable: "--font-poppins", // Define CSS variable
+})
+
+// Initialize DM Serif Display
+const dmSerif = DM_Serif_Display({
+  subsets: ["latin"],
+  weight: "400", // DM Serif Display typically only has 400 weight
+  variable: "--font-dm-serif", // Define CSS variable
+})
+
+// Keep Inter if needed elsewhere, otherwise could remove
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+})
+
 // Force dynamic rendering for the entire app
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const fetchCache = 'force-no-store'
 export const runtime = 'nodejs'
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-})
 
 export const metadata: Metadata = {
   title: "Aivery",
@@ -138,7 +153,7 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
+      <body className={`${poppins.variable} ${inter.variable} ${dmSerif.variable} font-sans antialiased`} suppressHydrationWarning>
         {/* Initial Load Splash Screen */}
         <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
           <img src="/icons/aivery.svg" alt="Loading Aivery..." style={{ width: '150px', height: '150px' }} />
@@ -158,8 +173,10 @@ export default async function RootLayout({
             disableTransitionOnChange
           >
             <ToastProvider>
+              {/* Always render MainHeader */}
               <MainHeader />
-              <main className="min-h-screen pt-14">{children}</main>
+              {/* Conditionally apply main padding based on session */}
+              <main className={`min-h-screen ${session?.user ? 'pt-14' : 'pt-0'}`}>{children}</main> 
               {/* {session?.user && <PersistentChat />} */}
               <Toaster />
             </ToastProvider>
