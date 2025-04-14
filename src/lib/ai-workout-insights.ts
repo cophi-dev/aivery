@@ -131,9 +131,9 @@ function calculateWorkoutMetrics(sets: Set[]) {
     }
   }
   
-  const totalWeight = sets.reduce((sum, set) => sum + set.weight, 0)
-  const totalReps = sets.reduce((sum, set) => sum + set.reps, 0)
-  const totalVolume = sets.reduce((sum, set) => sum + (set.weight * set.reps), 0)
+  const totalWeight = sets.reduce((sum, set) => sum + (set.weight ?? 0), 0)
+  const totalReps = sets.reduce((sum, set) => sum + (set.reps ?? 0), 0)
+  const totalVolume = sets.reduce((sum, set) => sum + ((set.weight ?? 0) * (set.reps ?? 0)), 0)
   
   return {
     avgWeight: totalWeight / sets.length,
