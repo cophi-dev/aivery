@@ -134,17 +134,6 @@ export async function syncGarminWorkouts(userId: string) {
       duration: 3600, // 1 hour
       intensity: "Medium",
       distance: 10000, // 10km
-      exercises: [
-        {
-          name: "Running",
-          sets: [
-            {
-              weight: 0,
-              reps: 0,
-            },
-          ],
-        },
-      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
@@ -176,17 +165,6 @@ export async function syncCorosWorkouts(userId: string) {
       duration: 3600, // 1 hour
       intensity: "Medium",
       distance: 10000, // 10km
-      exercises: [
-        {
-          name: "Running",
-          sets: [
-            {
-              weight: 0,
-              reps: 0,
-            },
-          ],
-        },
-      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
@@ -218,17 +196,6 @@ export async function syncStravaWorkouts(userId: string) {
       duration: 3600, // 1 hour
       intensity: "Medium",
       distance: 10000, // 10km
-      exercises: [
-        {
-          name: "Running",
-          sets: [
-            {
-              weight: 0,
-              reps: 0,
-            },
-          ],
-        },
-      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
