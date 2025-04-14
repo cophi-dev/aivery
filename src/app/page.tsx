@@ -136,14 +136,13 @@ export default function LandingPage() {
                 Aivery helps you understand your workouts – not just track them.
               </p>
 
-              {/* CTA Buttons - Default size might be better on mobile */}
-              <div className="flex justify-center"> 
-                <Button 
-                  asChild 
-                  // Removed size="lg" for default size
+              {/* CTA Buttons - Update link */}
+              <div className="flex justify-center">
+                <Button
+                  asChild
                   className="rounded-md px-6 sm:px-8 text-white bg-brand-accent hover:bg-brand-accent-hover shadow-sm transition-colors duration-200"
                 >
-                  <Link href="#cta">Start using Aivery now</Link>
+                  <Link href="/register">Start using Aivery now</Link>
                 </Button>
               </div>
             </div>
@@ -355,8 +354,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Pricing Section - Adjust text sizes */}
-        <section id="pricing" className="w-full py-16 md:py-20"> {/* Adjusted padding */} 
+        {/* Pricing Section - Update button links */}
+        <section id="pricing" className="w-full py-16 md:py-20">
           <div className="container px-4 md:px-6 max-w-3xl mx-auto">
             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4 text-center">Pricing</h2> {/* Adjusted sizes */} 
             <p className="text-gray-600 text-center mb-10 md:mb-12 max-w-2xl mx-auto text-sm sm:text-base"> {/* Adjusted sizes */} 
@@ -384,7 +383,7 @@ export default function LandingPage() {
                 size="lg"
                 className="w-full rounded-md text-white bg-brand-accent hover:bg-brand-accent-hover shadow-md hover:shadow-lg transition-all duration-200"
               >
-                <Link href="#cta">Start using Aivery now</Link>
+                <Link href="/register">Start using Aivery now</Link>
               </Button>
             </div>
 
@@ -399,7 +398,7 @@ export default function LandingPage() {
                 </div>
               </div>
               <Button asChild variant="outline" size="lg" className="w-full rounded-md">
-                <Link href="#cta">Start for free</Link>
+                <Link href="/register">Start for free</Link>
               </Button>
             </div>
 
@@ -411,8 +410,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* CTA Section - Adjust heading size */}
-        <section id="cta" className="w-full py-16 md:py-20 relative overflow-hidden"> {/* Adjusted padding */} 
+        {/* CTA Section - No button here anymore */}
+        <section id="cta" className="w-full py-16 md:py-20 relative overflow-hidden">
           {/* Changed background to white */}
           <div className="absolute inset-0 bg-white opacity-90"></div> 
           {/* Updated SVG pattern to include blue circle */}
