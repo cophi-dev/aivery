@@ -612,7 +612,7 @@ export default function NewWorkoutPage() {
 
     if (finalWorkoutTypeForPayload === 'strength') {
       const mappedExercises = exercisesToSubmit
-        .map((exState, index): WorkoutUpdatePayload['exercises'][0] | null => {
+        .map((exState, index): NonNullable<WorkoutUpdatePayload['exercises']>[number] | null => {
           const canonicalExerciseId = exState.exerciseId || dbExercisesMap.get(exState.name)?._id;
           if (!canonicalExerciseId) return null;
           const exerciseSetsPayload: InputSetData[] = exState.sets
@@ -640,13 +640,13 @@ export default function NewWorkoutPage() {
               order: index,
               sets: exerciseSetsPayload,
               notes: exState.notes || undefined, 
-            } as WorkoutUpdatePayload['exercises'][0];
+            } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
           } 
           return null; 
         });
         
       // Remove @ts-ignore and explicitly type the result of filter
-      const definedExercisesPayload: WorkoutUpdatePayload['exercises'][0][] = mappedExercises.filter(isDefined);
+      const definedExercisesPayload: NonNullable<WorkoutUpdatePayload['exercises']>[number][] = mappedExercises.filter(isDefined);
       exercisesPayload = definedExercisesPayload; // Assign to the broader type variable
       
       // Add check here (using the correctly typed variable)
