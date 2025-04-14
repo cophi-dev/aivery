@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { initializeDatabase } from "@/lib/db/init-db"
 
+// Force dynamic execution, prevents static generation during build
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const result = await initializeDatabase()
