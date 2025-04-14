@@ -177,7 +177,7 @@ export default function ActivityDetailClient({ id }: { id: string }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-medium">{formatDate(workout.date)}</div>
+            <div className="text-2xl font-medium">{formatDate(new Date(workout.date))}</div>
           </CardContent>
         </Card>
 
