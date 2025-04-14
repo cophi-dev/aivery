@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCollection } from "../../../../lib/db/mongodb"
 import { Document, WithId } from "mongodb"
+import { getWorkoutById } from "@/lib/db/repositories/workoutRepository"
+import { getWorkoutExercisesByWorkoutId } from "@/lib/db/repositories/workoutExerciseRepository"
 
 interface Workout {
   _id: any;
@@ -26,6 +28,9 @@ interface MappedWorkout {
   source: string;
   importedFrom: string;
 }
+
+// Force dynamic execution, prevents static generation during build
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
