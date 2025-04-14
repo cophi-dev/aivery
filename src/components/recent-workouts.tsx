@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { LucideChevronRight, LucideClock, LucideDumbbell, LucideRuler, LucidePlus } from "lucide-react"
 import { fetchWorkouts } from "@/lib/workout-actions"
 import { format } from "date-fns"
-import type { WorkoutData } from "@/types/db"
+import type { WorkoutData, WorkoutExerciseData } from "@/types/db"
 
 export default function RecentWorkouts() {
   const [workouts, setWorkouts] = useState<WorkoutData[]>([])
@@ -111,12 +111,12 @@ export default function RecentWorkouts() {
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground mt-1">
-                      {formatDate(workout.date)} • {workout.duration} min
+                      {formatDate(new Date(workout.date))} • {workout.duration} min
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {workout.exercises?.slice(0, 4).map((exercise, i) => (
+                      {workout.workoutExercises?.slice(0, 4).map((exercise: WorkoutExerciseData, i: number) => (
                         <Badge key={i} variant="outline" className="font-normal">
-                          {exercise.name}
+                          {exercise.exerciseId?.name}
                         </Badge>
                       ))}
                     </div>
