@@ -1,6 +1,6 @@
 import { getCollection } from "@/lib/db/mongodb"
 import { ObjectId } from "mongodb"
-import { mockIntegrations } from "../db/mock-data"
+// import { mockIntegrations } from "../db/mock-data" // Removed import from deleted file
 import { exchangeCodeForToken, refreshToken } from "../strava/config"
 import axios from "axios"
 import mongoose from 'mongoose'; // Import mongoose
