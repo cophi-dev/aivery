@@ -5,6 +5,9 @@ import { authOptions } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 import { IWorkout } from '@/lib/db/models/workout'; // Assuming IWorkout defines the structure
 
+// Explicitly mark this route as dynamic
+export const dynamic = 'force-dynamic';
+
 // Initialize Anthropic client
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,

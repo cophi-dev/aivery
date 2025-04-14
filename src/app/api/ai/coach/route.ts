@@ -19,6 +19,9 @@ import { startOfYear, subDays, subMonths, subWeeks, subYears } from "date-fns";
 // Import the function needed for initial workout analysis
 import { fetchWorkoutForAI } from "@/lib/workout-actions";
 
+// Explicitly mark this route as dynamic
+export const dynamic = 'force-dynamic';
+
 // Define valid intents
 const ValidIntents = z.enum([
   "get_total_metric",
