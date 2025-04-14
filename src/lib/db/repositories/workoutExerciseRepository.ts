@@ -11,18 +11,14 @@ function convertDocToWorkoutExerciseData(doc: any, exercise?: any): WorkoutExerc
   return {
     _id: doc._id ? doc._id.toString() : '',
     workoutId: doc.workoutId ? doc.workoutId.toString() : '',
-    exerciseId: doc.exerciseId ? doc.exerciseId.toString() : '',
-    exercise: exercise ? {
-      _id: exercise._id ? exercise._id.toString() : '',
-      name: exercise.name || '',
-      description: exercise.description || '',
-      muscleGroups: exercise.muscleGroups || [],
-      category: exercise.category || 'strength',
-      equipment: exercise.equipment || '',
-      instructions: exercise.instructions || '',
-      createdAt: exercise.createdAt instanceof Date ? exercise.createdAt.toISOString() : String(exercise.createdAt),
-      updatedAt: exercise.updatedAt instanceof Date ? exercise.updatedAt.toISOString() : String(exercise.updatedAt),
-    } : undefined,
+    exerciseId: exercise ? {
+        _id: exercise._id ? exercise._id.toString() : '',
+        name: exercise.name || '',
+        category: exercise.category || undefined
+    } : {
+        _id: doc.exerciseId ? doc.exerciseId.toString() : '',
+        name: 'Unknown Exercise',
+    },
     sets: doc.sets || [],
     notes: doc.notes || '',
     createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc.createdAt || new Date()),
@@ -93,7 +89,7 @@ export async function createWorkoutExercise(workoutExerciseData: Partial<Workout
     
     const workoutExercise = new WorkoutExerciseModel({
       workoutId: new ObjectId(workoutExerciseData.workoutId),
-      exerciseId: new ObjectId(workoutExerciseData.exerciseId),
+      exerciseId: new ObjectId(workoutExerciseData.exerciseId?._id),
       sets: workoutExerciseData.sets || [],
       notes: workoutExerciseData.notes || "",
     })
