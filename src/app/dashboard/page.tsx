@@ -31,25 +31,26 @@ export default async function DashboardPage() {
     const userId = session.user.id;
 
     // Fetch workouts directly and calculate metrics
-    let workouts = [];
+    // let workouts = []; // This fetch is redundant, metrics are calculated internally
     let metrics = null;
     try {
-        // Fetch workouts directly using the imported action
-        console.log("[Dashboard Page] Fetching workouts directly...");
-        workouts = await fetchWorkouts(); // Already filters by user implicitly
+        // Fetch workouts directly using the imported action - REMOVED
+        // console.log("[Dashboard Page] Fetching workouts directly...");
+        // workouts = await fetchWorkouts(); // Already filters by user implicitly - REMOVED
         
-        // Enhanced logging to debug workout data
-        console.log(`[Dashboard Page] Fetched ${workouts.length} workouts`);
-        if (workouts.length > 0) {
-            console.log('[Dashboard Page] First workout date:', workouts[0].date);
-            console.log('[Dashboard Page] Last workout date:', workouts[workouts.length - 1].date);
-            // Log the calculatedVolume of the first workout if it exists
-            console.log('[Dashboard Page] First workout calculatedVolume:', workouts[0].calculatedVolume);
-        }
+        // Enhanced logging to debug workout data - REMOVED
+        // console.log(`[Dashboard Page] Fetched ${workouts.length} workouts`);
+        // if (workouts.length > 0) {
+        //     console.log('[Dashboard Page] First workout date:', workouts[0].date);
+        //     console.log('[Dashboard Page] Last workout date:', workouts[workouts.length - 1].date);
+        //     // Log the calculatedVolume of the first workout if it exists
+        //     console.log('[Dashboard Page] First workout calculatedVolume:', workouts[0].calculatedVolume);
+        // }
         
-        console.log(`[Dashboard Page] Before metrics calculation: workouts array length = ${workouts.length}`);
+        // console.log(`[Dashboard Page] Before metrics calculation: workouts array length = ${workouts.length}`);
         
-        // Calculate metrics - no longer needs workouts passed
+        // Calculate metrics - Fetches its own data internally
+        console.log("[Dashboard Page] Calculating metrics...");
         metrics = await calculateDashboardMetrics();
         console.log("[Dashboard Page] Calculated metrics:", metrics);
 

@@ -547,7 +547,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               {loadingPRs ? (
                 <p className="text-sm text-muted-foreground">Loading...</p>
               ) : pacePRs.fastest5k && pacePRs.fastest5k.workoutId ? (
-                <Link href={`/workout/${pacePRs.fastest5k.workoutId}`} className="block group">
+                <Link href={`/workouts/${pacePRs.fastest5k.workoutId}`} className="block group">
                   <div className="text-2xl font-bold group-hover:text-primary transition-colors">
                     {formatPaceDisplay(pacePRs.fastest5k.pace)}
                     <span className="text-lg"> /km</span>
@@ -613,7 +613,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               const typeStyle = getWorkoutTypeStyle(workout.type);
               const volume = getWorkoutVolume(workout);
               return (
-                <Link href={`/workout/${workout._id}`} key={workout._id} className="block group">
+                <Link href={`/workouts/${workout._id}`} key={workout._id} className="block group">
                   <Card className="hover:border-primary/40 transition-colors duration-150 border-border/50">
                     <CardContent className="p-4 flex justify-between items-center">
                       {/* Left Side: Date & Type */} 

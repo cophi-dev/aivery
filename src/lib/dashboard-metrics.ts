@@ -149,7 +149,7 @@ async function fetchTopPRs(userId: string, limit: number = 3): Promise<PRData[]>
 }
 
 export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
-  console.log(">>> EXECUTING METRICS CODE V4 (Optimized Fetch) <<<");
+  console.log(">>> EXECUTING METRICS CODE V5 (Re-enabled Previous Week) <<<"); // Updated log message
   const user = await getCurrentUser();
   if (!user?.id) {
     console.warn("No user found for dashboard metrics calculation");
@@ -161,20 +161,20 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
   try {
     const today = new Date();
     const endOfCurrentPeriod = endOfDay(today);
-    const startOfCurrentPeriod = startOfDay(subDays(today, 7)); // Start of 7 days ago
-    // Fetch only 7 days total to reduce load
-    const startOfPreviousPeriod = startOfCurrentPeriod; // No need for a separate previous period if only fetching 7 days total
-    const endOfPreviousPeriod = startOfCurrentPeriod; // Keep consistent, though won't be used if fetching only 7 days
+    // Keep start of current period as 7 days ago
+    const startOfCurrentPeriod = startOfDay(subDays(today, 7));
+    // Define start of the full 14-day fetch period (14 days ago)
+    const startOfFetchPeriod = startOfDay(subDays(today, 14));
 
     console.log(`[Metrics] Calculating periods based on current date: ${today.toISOString()}`);
-    // Modify the date range to fetch only last 7 days
-    console.log(`[Metrics] Fetching workouts from: ${startOfCurrentPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
+    // Update log to reflect the 14-day fetch range
+    console.log(`[Metrics] Fetching workouts from: ${startOfFetchPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
 
-    // Fetch only workouts from the last 7 days
-    const workouts = await fetchWorkoutsForMetrics(userId, startOfCurrentPeriod, endOfCurrentPeriod);
-    console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 7 days.`);
+    // Fetch workouts for the last 14 days using the start of the fetch period
+    const workouts = await fetchWorkoutsForMetrics(userId, startOfFetchPeriod, endOfCurrentPeriod);
+    console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 14 days.`);
 
-    // Temporarily disabled to diagnose performance bottleneck
+    // Temporarily disabled to diagnose performance bottleneck - KEEP DISABLED FOR NOW
     // const topPRs = await fetchTopPRs(userId);
     // console.log(`[Metrics] Fetched ${topPRs.length} Top PRs.`);
     const topPRs: PRData[] = []; // Provide empty array while disabled
@@ -182,42 +182,73 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
     let strengthVolumeLast7Days = 0;
     let cardioDurationLast7Days = 0;
     let cardioDistanceLast7Days = 0;
-    // Reset previous period metrics since we are only fetching 7 days
-    let strengthVolumePrevious7Days = 0; 
+    // Re-initialize previous period metrics
+    let strengthVolumePrevious7Days = 0;
     let cardioDurationPrevious7Days = 0;
     let cardioDistancePrevious7Days = 0;
 
+    // Define the time boundaries for comparison
+    const startOfCurrentPeriodTime = startOfCurrentPeriod.getTime();
+    const endOfCurrentPeriodTime = endOfCurrentPeriod.getTime();
+    // Previous period is from startOfFetchPeriod up to (but not including) startOfCurrentPeriod
+    const startOfPreviousPeriodTime = startOfFetchPeriod.getTime();
+    const endOfPreviousPeriodTime = startOfCurrentPeriodTime;
+
+    console.log(`[Metrics Debug] Raw workouts fetched (${workouts.length}):`, JSON.stringify(workouts.slice(0, 5), null, 2)); // Log first 5 raw workouts
+
     for (const workout of workouts) {
+        // Ensure workout.date is valid before parsing
+        if (!workout.date || !isValid(parseISO(workout.date))) {
+          console.warn(`[Metrics] Skipping workout with invalid date: ${workout.date}`);
+          continue; 
+        }
         const workoutDate = parseISO(workout.date);
         const workoutTime = workoutDate.getTime();
 
-        // Only process current period since we only fetched last 7 days
-        const isInCurrentPeriod = workoutTime >= startOfCurrentPeriod.getTime() && workoutTime <= endOfCurrentPeriod.getTime();
-        
-        // No need to check isInPreviousPeriod anymore
+        // Check which period the workout falls into
+        const isInCurrentPeriod = workoutTime >= startOfCurrentPeriodTime && workoutTime <= endOfCurrentPeriodTime;
+        const isInPreviousPeriod = workoutTime >= startOfPreviousPeriodTime && workoutTime < endOfPreviousPeriodTime; // Use '<' for end
 
-        // Simplified processing logic
+        // Simplified processing function (remains the same)
         const processWorkout = (workout: SerializedWorkout) => {
+            let volume = 0;
+            let duration = 0;
+            let distance = 0;
+
             if (workout.type === 'strength') {
-                const volume = workout.calculatedVolume ?? 0;
-                strengthVolumeLast7Days += volume;
+                volume = workout.calculatedVolume ?? 0;
             } else if (['running', 'cycling', 'walking', 'cardio'].includes(workout.type)) {
-                const duration = workout.duration || 0;
-                const distanceInMeters = workout.distance ?? workout.cardioDetails?.distance ?? 0;
-                cardioDurationLast7Days += duration;
-                cardioDistanceLast7Days += distanceInMeters;
+                duration = workout.duration || 0;
+                distance = workout.distance ?? workout.cardioDetails?.distance ?? 0;
             }
+            return { volume, duration, distance };
         };
 
+        const metrics = processWorkout(workout);
+
+        // Log metrics being processed for each workout
+        if (metrics.volume > 0 || metrics.distance > 0 || metrics.duration > 0) {
+            console.log(`[Metrics Debug] Processing workout (${workout.type}, Date: ${workout.date}): Vol=${metrics.volume}, Dist=${metrics.distance}, Dur=${metrics.duration}`);
+        }
+
         if (isInCurrentPeriod) {
-            processWorkout(workout);
-        } 
-        // Remove the else if block for previous period
+            strengthVolumeLast7Days += metrics.volume;
+            cardioDurationLast7Days += metrics.duration;
+            cardioDistanceLast7Days += metrics.distance;
+        } else if (isInPreviousPeriod) {
+             // Accumulate metrics for the previous period
+            strengthVolumePrevious7Days += metrics.volume;
+            cardioDurationPrevious7Days += metrics.duration;
+            cardioDistancePrevious7Days += metrics.distance;
+        }
     }
 
-    // Round distances
-    cardioDistanceLast7Days = Math.round(cardioDistanceLast7Days);
-    cardioDistancePrevious7Days = Math.round(cardioDistancePrevious7Days);
+    // Remove rounding for distances - assume values are already in KM and let UI format
+    // cardioDistanceLast7Days = Math.round(cardioDistanceLast7Days);
+    // cardioDistancePrevious7Days = Math.round(cardioDistancePrevious7Days);
+
+    // Log final raw sums before returning
+    console.log(`[Metrics Debug] Final Sums: StrVol7d=${strengthVolumeLast7Days}, CardioDist7d=${cardioDistanceLast7Days} (raw km), StrVolPrev7d=${strengthVolumePrevious7Days}, CardioDistPrev7d=${cardioDistancePrevious7Days} (raw km)`); // Updated log message
 
     const finalMetrics = {
         strengthVolumeLast7Days,
@@ -228,7 +259,7 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
         cardioDistancePrevious7Days,
         topPRs
     };
-    console.log("[Metrics] Final Calculated Metrics:", finalMetrics);
+    console.log("[Metrics] Final Calculated Metrics (with previous week):", finalMetrics);
     return finalMetrics;
 
   } catch (error) {
