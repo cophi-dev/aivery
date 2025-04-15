@@ -9,6 +9,8 @@ import { getCollection } from "@/lib/db/mongodb";
 import { ObjectId } from "mongodb";
 import { getToken } from "next-auth/jwt";
 
+export const dynamic = 'force-dynamic';
+
 // Define workout type
 interface WorkoutType {
   _id: string;

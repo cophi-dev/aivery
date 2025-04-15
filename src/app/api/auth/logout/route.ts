@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+export const dynamic = 'force-dynamic';
+
 // Force clear all session cookies
 async function clearAllCookies(request: Request) {
   try {
