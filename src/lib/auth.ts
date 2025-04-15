@@ -170,7 +170,8 @@ export const authOptions: NextAuthOptions = {
           // Verify we have an ID
           if (!session.user.id) {
             console.error("Session missing user ID after setting");
-            return { ...session, user: { id: '', email: '', name: '' } };
+            // Revert to returning null to avoid client crash
+            return null;
           }
 
           // Verify user still exists in database and get latest image and nickname
@@ -181,7 +182,8 @@ export const authOptions: NextAuthOptions = {
           
           if (!userDoc) {
             console.error("[SIMPLIFIED QUERY] User no longer exists in database:", session.user.id);
-            return { ...session, user: { id: '', email: '', name: '' } };
+            // Revert to returning null to avoid client crash
+            return null;
           }
           console.log("[SIMPLIFIED QUERY] Found userDoc:", userDoc._id.toString()); // Log success
           
@@ -212,7 +214,8 @@ export const authOptions: NextAuthOptions = {
         return session;
       } catch (error) {
         console.error("Error in session callback:", error);
-        return { ...session, user: { id: '', email: '', name: '' } };
+        // Revert to returning null to avoid client crash
+        return null;
       }
     }
   },

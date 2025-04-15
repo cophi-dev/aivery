@@ -78,12 +78,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. Handle authenticated users trying to access login/register
+  /* // Temporarily disabled to break redirect loop for invalid sessions
   if (isAuthenticated && authProtectedPaths.includes(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = dashboardPath;
     console.log(`[MIDDLEWARE] Authenticated user on '${pathname}'. Redirecting to ${dashboardPath}`);
     return NextResponse.redirect(url);
   }
+  */
 
   // 3. Handle unauthenticated users trying to access protected paths
   const isPublic = publicPaths.some(path => pathname.startsWith(path));
