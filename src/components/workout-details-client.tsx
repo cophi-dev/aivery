@@ -380,243 +380,154 @@ export default function WorkoutDetailsClient({ workout, previousWorkouts, isOwne
 
   const workoutIdString = workout._id.toString();
 
-  // Define a helper component for Stat Cards
-  const StatCard = ({ icon: Icon, label, value, unit, colorClass }: { icon: React.ElementType, label: string, value: string | number | null | undefined, unit?: string, colorClass?: string }) => {
-    const isValueMissing = value === null || value === undefined || value === 'N/A' || (typeof value === 'number' && !isFinite(value)) || (typeof value === 'string' && value.trim() === '');
-    if (isValueMissing) return null;
-    let displayValue = value;
-    if (typeof value === 'number') {
-        displayValue = Number.isInteger(value) ? value : value.toFixed(1);
-    }
+  // --- Styling Adjustments for Landing Page Theme ---
+  // Define base card class - remove explicit bg-card, rely on theme
+  const cardBaseClass = "border shadow-sm"; 
+  // Define primary text color class (assuming theme provides this)
+  const primaryTextColor = "text-primary"; 
+  // Define accent color for specific highlights if needed (example)
+  // const accentTextColor = "text-orange-500"; 
+
+  // --- Stat Card Component (Minor Style Update) ---
+  const StatCard = ({ icon: Icon, label, value, unit, colorClass = primaryTextColor }: { icon: React.ElementType, label: string, value: string | number | null | undefined, unit?: string, colorClass?: string }) => {
+    const displayValue = value !== null && value !== undefined && value !== '' ? `${value}${unit ? ` ${unit}` : ''}` : "N/A";
     return (
-      <div className={`flex items-center p-3 bg-muted/50 rounded-lg border ${colorClass || 'border-border'}`}>
-        <Icon className={`w-5 h-5 mr-3 ${colorClass || 'text-muted-foreground'}`} />
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-md font-medium">{displayValue}{unit || ''}</p>
-        </div>
+      <div className="flex flex-col items-center text-center p-2 bg-muted/50 rounded-lg">
+        <Icon className={`h-6 w-6 mb-1 ${colorClass}`} />
+        <p className="text-xs text-muted-foreground font-medium">{label}</p>
+        <p className="text-sm font-semibold mt-0.5">{displayValue}</p>
       </div>
     );
   };
 
-  // --- Add click handler for the Analyze button ---
-  const handleAnalyzeWorkout = () => {
-    if (workoutIdString) {
-      router.push(`/chat?workoutId=${workoutIdString}`);
-    } else {
-      console.error("Workout ID is missing, cannot navigate to chat.");
-      // Optionally show an error to the user
-    }
-  };
-  // --- End click handler ---
-
-  if (!workout) {
-    return <div>Workout data is missing.</div>;
-  }
-  
+  // --- Main Return Statement --- 
   return (
-    <div className="bg-background text-foreground">
-      <div className="h-screen flex flex-col items-center bg-gradient-to-br from-primary/10 to-secondary/10 relative p-6">
-        <div className="w-full max-w-4xl flex flex-col justify-center items-center h-full mt-[-5vh]">
-          <div className="text-center">
-            {isLoadingInsight ? (
-              <p className="text-2xl sm:text-3xl font-semibold animate-pulse text-center">Aivery is checking out your workout now...</p>
-            ) : (
-               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-center leading-tight text-primary">
-                 {insight}
-               </h1>
+    // Use default background, remove specific bg colors if present
+    <div className="container mx-auto px-2 sm:px-4 py-8">
+      {/* Back Button */}
+      <Button variant="ghost" onClick={() => router.back()} className="mb-4">
+        <ArrowLeft className="mr-2 h-4 w-4" /> Back
+      </Button>
+
+      {/* Main Content Card - Apply base class */}
+      <Card className={`${cardBaseClass} mb-6 overflow-hidden`}>
+        <CardHeader className="flex flex-row items-start justify-between gap-4 p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-cyan-50">
+          <div>
+            <CardTitle className={`text-2xl font-bold ${primaryTextColor}`}>{workout.name || "Workout Details"}</CardTitle>
+            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                {getWorkoutTypeIcon(workout.type)}
+                {capitalizeFirstLetter(workout.type || "Workout")}
+              </span>
+              <span>&bull;</span>
+              <span>{formatDate(workout.date)}</span>
+            </div>
+          </div>
+          {/* Edit/Delete Buttons - Style appropriately */} 
+          {isOwner && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Link href={`/workout/edit/${workoutId}`}>
+                <Button variant="outline" size="icon">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </Link>
+              <DeleteWorkoutButton workoutId={workoutId} />
+            </div>
+          )}
+        </CardHeader>
+        
+        <CardContent className="p-4 sm:p-6 space-y-6">
+          {/* Overall Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+            <StatCard icon={Timer} label="Duration" value={formatDuration(workout.duration)} unit="" colorClass={primaryTextColor} />
+            {workout.type !== 'Strength' && workout.distance !== null && workout.distance !== undefined && workout.distance > 0 && (
+              <StatCard icon={Ruler} label="Distance" value={formatDistance(workout.distance)} unit="" colorClass={primaryTextColor}/>
+            )}
+            {workout.type !== 'Strength' && workout.pace !== null && workout.pace !== undefined && workout.pace > 0 && (
+              <StatCard icon={Activity} label="Avg Pace" value={formatPace(workout.pace)} unit="/km" colorClass={primaryTextColor}/>
+            )}
+            {workout.calories !== null && workout.calories !== undefined && workout.calories > 0 && (
+              <StatCard icon={Zap} label="Calories" value={Math.round(workout.calories)} unit=" kcal" colorClass="text-orange-500"/> // Example Accent
+            )}
+             {workout.heartRate?.average && (
+               <StatCard icon={Heart} label="Avg HR" value={Math.round(workout.heartRate.average)} unit=" bpm" colorClass="text-red-500"/> // Example Specific Color
              )}
+            {workout.volume !== null && workout.volume !== undefined && workout.volume > 0 && (
+              <StatCard icon={Dumbbell} label="Volume" value={Math.round(workout.volume)} unit=" kg" colorClass={primaryTextColor} />
+            )}
+            {/* Add more stats as needed */}
           </div>
-        </div>
-      </div>
 
-      {!isLoadingInsight && (
-         <div 
-           className="text-center animate-bounce fixed bottom-8 left-0 right-0 cursor-pointer z-50 transition-opacity duration-200"
-           style={{ opacity: scrollOpacity }}
-           onClick={scrollToDetails}
-           role="button"
-           aria-label="Scroll to details"
-         >
-           <span className="text-xs text-muted-foreground block">Scroll for details</span>
-           <svg className="w-6 h-6 text-muted-foreground mx-auto mt-1" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-         </div>
-       )}
-
-      <div ref={detailsRef} className="container mx-auto px-4 py-12 space-y-8 scroll-mt-20">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/workouts"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Workouts</Link>
-          </Button>
-          <div className="flex flex-wrap gap-2 justify-end">
-            <Button variant="outline" size="icon" title="Share" className="hover:bg-accent hover:text-accent-foreground"><Share className="w-4 h-4" /></Button>
-            <Link href={`/workouts/new?duplicate=${workoutIdString}`} title="Duplicate"><Button variant="outline" size="icon" className="hover:bg-accent hover:text-accent-foreground"><Copy className="w-4 h-4" /></Button></Link>
-            {isOwner && <Link href={`/workouts/new?edit=${workoutIdString}`} title="Edit"><Button variant="outline" size="icon" className="hover:bg-accent hover:text-accent-foreground"><Pencil className="w-4 h-4" /></Button></Link>}
-            {isOwner && <DeleteWorkoutButton workoutId={workoutIdString} asIcon={true} />}
-          </div>
-        </div>
-
-        <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6 pb-4 border-b">
-          <div className="space-y-1">
-            <h2 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-              {workoutTypeIcon} {workout.name || capitalizeFirstLetter(workout.type || 'Workout')}
-            </h2>
-            <p className="text-muted-foreground text-sm">{formatDate(workout.date as any)}</p>
-          </div>
-        </div>
-
-        {/* --- Key Stats Grid --- */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard icon={Timer} label="Duration" value={formatDuration(workout.duration)} colorClass="text-blue-500" />
-          {workout.type === 'strength' ? (
-             <StatCard icon={BarChart} label="Volume" value={totalVolume?.toLocaleString()} unit=" kg" colorClass="text-purple-500" />
-           ) : (
-             <StatCard icon={Ruler} label="Distance" value={formatDistance(workout.cardioDetails?.distance ?? workout.distance ?? 0)} colorClass="text-green-500" />
+          {/* Notes Section */}
+           {workout.notes && (
+            <Card className={`${cardBaseClass} bg-background/50`}>
+              <CardHeader className="py-3 px-4 border-b">
+                <CardTitle className="text-base font-medium">Notes</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 text-sm text-muted-foreground whitespace-pre-wrap">
+                {workout.notes}
+              </CardContent>
+            </Card>
            )}
-          <StatCard icon={Clock} label={`Avg Pace (${paceInfo.zone})`} value={formatPace(cardioDetails.pace ?? null)} colorClass={paceInfo.color} />
-          <StatCard icon={Zap} label="Calories" value={workout.calories?.toLocaleString()} unit=" kcal" colorClass="text-orange-500" />
-          <StatCard icon={Heart} label="Avg HR" value={cardioDetails.heartRate?.average ? Math.round(cardioDetails.heartRate.average) : null} unit=" bpm" colorClass="text-red-500" />
-          <StatCard icon={TrendingUp} label="Max HR" value={cardioDetails.heartRate?.max ? Math.round(cardioDetails.heartRate.max) : null} unit=" bpm" colorClass="text-red-600" />
-          <StatCard icon={TrendingUp} label="Elevation Gain" value={cardioDetails.elevationGain ? Math.round(cardioDetails.elevationGain) : null} unit=" m" colorClass="text-teal-500" />
-          <StatCard icon={Zap} label="Avg Power" value={cardioDetails.power?.average ? Math.round(cardioDetails.power.average) : null} unit=" W" colorClass="text-yellow-600" />
-        </div>
 
-        {/* --- Exercises Performed Section --- */}
-        <Card className="mb-6">
-            <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center">
-                        <Dumbbell className="h-5 w-5 mr-2 text-primary" />
-                        Exercises Performed
-                    </div>
-                    {workout.type === 'strength' && totalVolume !== null && totalVolume > 0 && (
-                        <span className="text-sm font-normal text-muted-foreground">Vol: {totalVolume.toLocaleString()} kg / {overallTotalReps} reps</span>
-                    )}
+          {/* Exercise Details Table/Cards */}
+          {workout.exercises && workout.exercises.length > 0 && (
+            <Card className={`${cardBaseClass}`}>
+               <CardHeader className="py-3 px-4 border-b">
+                  <CardTitle className="text-base font-medium">Exercises</CardTitle>
+               </CardHeader>
+               <CardContent className="p-0">
+                  <div className="divide-y divide-border">
+                     {workout.exercises.map((exercise: any, index: number) => (
+                       <div key={index} className="p-4 hover:bg-muted/30">
+                         <p className={`font-semibold mb-2 ${primaryTextColor}`}>{exercise.name}</p>
+                         <div className="space-y-1 text-sm">
+                           {exercise.sets.map((set: any, setIndex: number) => (
+                             <div key={setIndex} className="flex justify-between items-center text-muted-foreground">
+                               <span>Set {setIndex + 1}</span>
+                               <span className="font-medium text-foreground">
+                                 {set.weight ? `${set.weight} kg x ` : ''}
+                                 {set.reps ? `${set.reps} reps` : 'Bodyweight'}
+                                 {/* Add distance/duration for cardio sets if applicable */}
+                               </span>
+                             </div>
+                           ))}
+                         </div>
+                       </div>
+                     ))}
+                  </div>
+               </CardContent>
+             </Card>
+          )}
+
+          {/* Strava Link Button (Style adjustment) */}
+          {fixedStravaLink && (
+            <div className="mt-4">
+              <Button variant="outline" asChild className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white">
+                 <a href={fixedStravaLink} target="_blank" rel="noopener noreferrer">
+                  <StravaLogo /> View on Strava
+                 </a>
+              </Button>
+            </div>
+          )}
+
+          {/* AI Analysis Section */}
+          {isOwner && (
+            <Card className={`${cardBaseClass} bg-gradient-to-r from-blue-50 to-cyan-50`}>
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-base font-medium flex items-center gap-2">
+                    <MessageSquare className={`h-5 w-5 ${primaryTextColor}`} /> AI Analysis
                 </CardTitle>
-            </CardHeader>
-            <CardContent>
-                {workout.workoutExercises && workout.workoutExercises.length > 0 ? (
-                    <div className="space-y-6">
-                        {workout.workoutExercises.map((exerciseDetail: any, index: number) => (
-                            <div key={exerciseDetail._id || index} className="border-b pb-6 last:border-b-0">
-                                <h3 className="text-lg font-medium mb-3 flex justify-between items-center">
-                                    {exerciseDetail.exerciseId?._id ? (
-                                        <Link href={`/exercises/${exerciseDetail.exerciseId._id}`} className="hover:underline cursor-pointer">
-                                            {index + 1}. {exerciseDetail.exerciseId.name}
-                                        </Link>
-                                    ) : (
-                                        <span>{index + 1}. {exerciseDetail.exerciseId?.name || 'Unknown Exercise'}</span>
-                                    )}
-                                </h3>
-                                <div className="space-y-4 pl-2 sm:pl-4">
-                                    {/* Strength Exercise List (Reverted from Table) */}
-                                    {exerciseDetail.sets && exerciseDetail.sets.length > 0 && workout.type === 'strength' && (
-                                        <div className="text-sm">
-                                            <h4 className="font-semibold mb-1 text-muted-foreground">Sets:</h4>
-                                            <ul className="space-y-1 pl-4 list-disc list-inside">
-                                                {exerciseDetail.sets.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)).map((set: any, setIndex: number) => (
-                                                    <li key={`${exerciseDetail._id}-set-${set.id || setIndex}`}>
-                                                        <span className="font-medium">Set {set.order !== undefined && set.order !== null ? set.order + 1 : setIndex + 1}:</span>
-                                                        {set.weight !== undefined && set.weight !== null && set.weight > 0 ? <span className="ml-2">{set.weight} kg</span> : <span className="ml-2">Bodyweight</span>}
-                                                        {set.reps !== undefined && set.reps !== null ? <span className="ml-1">x {set.reps} reps</span> : ''}
-                                                        {set.notes && <span className="ml-2 text-xs italic">({set.notes})</span>}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-                                    {/* Cardio/Other Exercise Details Grid - This part might need adjustment based on how non-strength exercise data is stored */}
-                                    {(!exerciseDetail.sets || exerciseDetail.sets.length === 0) && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 text-sm">
-                                            {exerciseDetail.duration !== undefined && exerciseDetail.duration > 0 && (
-                                                <div>
-                                                    <p className="font-semibold text-muted-foreground">Duration:</p>
-                                                    <p>{formatDuration(exerciseDetail.duration)}</p>
-                                                </div>
-                                            )}
-                                            {exerciseDetail.distance !== undefined && exerciseDetail.distance > 0 && (
-                                                <div>
-                                                    <p className="font-semibold text-muted-foreground">Distance:</p>
-                                                    <p>{formatDistance(exerciseDetail.distance / 1000)}</p>
-                                                </div>
-                                            )}
-                                            {exerciseDetail.pace !== undefined && exerciseDetail.pace > 0 && (
-                                                <div>
-                                                    <p className="font-semibold text-muted-foreground">Pace:</p>
-                                                    <p>{formatPace(exerciseDetail.pace)}</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    {/* Display Notes */}
-                                    {exerciseDetail.notes && (
-                                        <div className="text-sm mt-3 pt-3 border-t border-dashed">
-                                            <h4 className="font-semibold mb-1 text-muted-foreground">Notes:</h4>
-                                            <p className="pl-0 whitespace-pre-wrap text-muted-foreground">{exerciseDetail.notes}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <p className="text-muted-foreground">No specific exercises were recorded for this workout.</p>
-                )}
-            </CardContent>
-        </Card>
+              </CardHeader>
+              <CardContent className="p-4">
+                  <WorkoutAnalysis workout={workout} />
+              </CardContent>
+            </Card>
+          )}
 
-        {/* --- AI Workout Analysis Section --- */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center">
-                <BarChart className="h-5 w-5 mr-2 text-primary" /> {/* Using BarChart as placeholder icon */}
-                AI Workout Analysis
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Get personalized feedback on your workout including:
-            </p>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2">
-                <Activity className="h-4 w-4 text-muted-foreground" /> {/* Pace/Effort Icon */}
-                Pace and effort analysis
-              </li>
-              <li className="flex items-center gap-2">
-                <Heart className="h-4 w-4 text-muted-foreground" /> {/* Heart Rate Icon */}
-                Heart rate zone breakdown
-              </li>
-              <li className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-muted-foreground" /> {/* Progress Icon */}
-                Progress tracking compared to previous workouts
-              </li>
-              <li className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-muted-foreground" /> {/* Recovery Icon */}
-                Recovery recommendations
-              </li>
-            </ul>
-            <Button onClick={handleAnalyzeWorkout} className="w-full sm:w-auto">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Discuss with Aivery
-            </Button>
-          </CardContent>
-        </Card>
-        {/* --- End AI Workout Analysis Section --- */}
-
-        {/* --- Strava Link Button --- */}
-        {fixedStravaLink && (
-             <Button asChild variant="outline" className="w-full sm:w-auto bg-[#FC4C02] hover:bg-[#E34000] text-white">
-               <a href={fixedStravaLink} target="_blank" rel="noopener noreferrer">
-                 <StravaLogo /> View on Strava <ExternalLink className="h-4 w-4 ml-2" />
-               </a>
-             </Button>
-        )}
-
-        {/* --- Progress Analysis & Graph --- */}
-        {/* ... progress sections ... */}
-      </div>
+        </CardContent>
+      </Card>
+      {/* Other sections like Progress Graph */}
     </div>
   );
 }
