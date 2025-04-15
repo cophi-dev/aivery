@@ -45,9 +45,19 @@ export const GET = withApiAuth(async (request: NextRequest, session: any) => {
     })
     
     console.log("Returning user data with AI preferences:", typedUser.aiPreferences || "None")
+    console.log("Returning user tier:", typedUser.tier || "Free")
     
-    // Return user data
-    return NextResponse.json({ user }, { status: 200 })
+    // Return only necessary user data explicitly
+    const clientUserData = {
+        id: typedUser._id.toString(), // Ensure ID is a string
+        name: typedUser.name,
+        email: typedUser.email,
+        image: typedUser.image,
+        tier: typedUser.tier || 'Free' // Default to 'Free' if tier is missing
+        // Add other fields here ONLY if explicitly needed by the client
+    };
+
+    return NextResponse.json({ user: clientUserData }, { status: 200 })
   } catch (error) {
     console.error("Error getting user data:", error)
     return NextResponse.json({ error: "Server error" }, { status: 500 })
