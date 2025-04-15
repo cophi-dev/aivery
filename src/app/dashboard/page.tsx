@@ -49,8 +49,8 @@ export default async function DashboardPage() {
         
         console.log(`[Dashboard Page] Before metrics calculation: workouts array length = ${workouts.length}`);
         
-        // Calculate metrics with the fetched workouts
-        metrics = await calculateDashboardMetrics(workouts);
+        // Calculate metrics - no longer needs workouts passed
+        metrics = await calculateDashboardMetrics();
         console.log("[Dashboard Page] Calculated metrics:", metrics);
 
         // More detailed logging for cardio metrics
