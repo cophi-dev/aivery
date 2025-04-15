@@ -104,78 +104,83 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
     
     const workoutDocs = await WorkoutModel.find({ userId: new ObjectId(userId) })
       .sort({ createdAt: -1 })
+      .select({
+        _id: 1,
+        name: 1,
+        date: 1,
+        type: 1,
+        duration: 1,
+        intensity: 1,
+        distance: 1,              // Fallback distance
+        calculatedVolume: 1,      // Preferred strength volume
+        'cardioDetails.distance': 1, // Preferred cardio distance
+        'workoutExercises.sets.weight': 1, // For volume calculation fallback
+        'workoutExercises.sets.reps': 1,   // For volume calculation fallback
+        createdAt: 1 // Needed for the sort
+      })
       .limit(limit)
       .lean()
       .exec() as any[];
     
     // Process documents to ensure they're safe for client components
-    // This creates new objects with only the necessary properties and
-    // avoids any MongoDB objects with toJSON methods that cause warnings
+    // This mapping is still useful for serialization (toString, toISOString)
+    // and creating clean objects, even with projection.
     return workoutDocs.map((doc: any) => {
       // Create a new clean object with only the properties we need
+      // Note: Some fields might not exist if they weren't selected or don't exist on the doc
       return {
         _id: doc._id ? doc._id.toString() : '',
-        userId: doc.userId ? doc.userId.toString() : '',
+        userId: userId, // We know the userId already
         type: doc.type || '',
         name: doc.name || '',
-        date: doc.date instanceof Date ? doc.date.toISOString() : 
+        date: doc.date instanceof Date ? doc.date.toISOString() :
               (doc.date ? new Date(doc.date).toISOString() : new Date().toISOString()),
         duration: doc.duration || 0,
-        distance: doc.distance || 0,
-        calories: doc.calories || 0,
-        notes: doc.notes || '',
+        distance: doc.distance || 0, // Will be undefined if not selected & not present
+        calories: doc.calories || 0, // Not selected, will default to 0
+        notes: doc.notes || '',       // Not selected, will default to ''
         intensity: doc.intensity || '',
-        volume: doc.volume || 0,
+        volume: doc.volume || 0,       // Keep top-level volume if exists? Or rely on calculatedVolume? Using calculatedVolume if present.
+        calculatedVolume: doc.calculatedVolume, // Use the projected value
         
-        // Carefully handle exercises to avoid nested buffer objects
+        // Only map exercises if they exist (they might not due to projection complexity)
         exercises: Array.isArray(doc.workoutExercises) ? doc.workoutExercises.map((exercise: any) => ({
-          _id: exercise._id ? exercise._id.toString() : undefined,
-          name: exercise.name || '',
+          // We only selected sets.weight and sets.reps within workoutExercises
+          // The structure might be sparse here due to projection.
+          // Let the client handle volume calculation based on what's available.
+          // Return a minimal structure or adjust based on actual projected data shape.
+          // For now, let's assume the projection gives us the needed set data within exercises:
+          _id: exercise._id ? exercise._id.toString() : undefined, // Not selected
+          name: exercise.name || '', // Not selected
           sets: Array.isArray(exercise.sets) ? exercise.sets.map((set: any) => ({
-            weight: set.weight || 0,
-            reps: set.reps || 0,
-            // Skip any _id fields with buffer properties
+            weight: set.weight || 0, // Selected
+            reps: set.reps || 0,   // Selected
           })) : []
         })) : [],
         
-        // Create a simplified version of cardioDetails
+        // Only map cardioDetails if distance exists (it was selected)
         cardioDetails: doc.cardioDetails ? {
-          distance: doc.cardioDetails.distance || 0,
-          duration: doc.cardioDetails.duration || 0,
-          pace: doc.cardioDetails.pace || 0,
-          speed: doc.cardioDetails.speed || 0,
-          maxSpeed: doc.cardioDetails.maxSpeed || 0,
-          elevationGain: doc.cardioDetails.elevationGain || 0,
-          
-          // Include only simplified heart rate data
-          heartRate: doc.cardioDetails.heartRate ? {
-            average: doc.cardioDetails.heartRate.average || 0,
-            max: doc.cardioDetails.heartRate.max || 0
-            // Explicitly omit zones and other objects that might contain buffer properties
-          } : undefined,
-          
-          // Include only simplified power data
-          power: doc.cardioDetails.power ? {
-            average: doc.cardioDetails.power.average || 0,
-            max: doc.cardioDetails.power.max || 0
-            // Omit any potentially problematic nested fields
-          } : undefined,
-          
-          // Skip laps entirely as they often contain buffer objects
+          distance: doc.cardioDetails.distance || 0, // Selected
+          // Other cardio details are not selected
+          duration: 0, // Not selected
+          pace: 0, // Not selected
+          speed: 0, // Not selected
+          maxSpeed: 0, // Not selected
+          elevationGain: 0, // Not selected
         } : undefined,
         
-        // Include metadata fields as simple strings
-        source: doc.source || '',
-        sourceId: doc.sourceId || '',
-        importedFrom: doc.importedFrom || '',
-        importId: doc.importId || '',
-        stravaLink: doc.stravaLink || '',
+        // Metadata fields not selected
+        source: '',
+        sourceId: '',
+        importedFrom: '',
+        importId: '',
+        stravaLink: '',
         
         // Ensure dates are properly serialized
-        createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : 
+        createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() :
                   (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
-        updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
-                  (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString())
+        // updatedAt not selected, provide a default or omit
+        updatedAt: new Date().toISOString() // Provide a default or adjust based on need
       };
     });
   } catch (error) {

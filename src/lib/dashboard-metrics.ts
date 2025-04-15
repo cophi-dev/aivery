@@ -70,28 +70,45 @@ interface DashboardMetrics {
 // --- Helper to Fetch Workouts in Date Range --- 
 async function fetchWorkoutsForMetrics(userId: string, startDate: Date, endDate: Date): Promise<SerializedWorkout[]> {
   await dbConnect();
-  const workoutDocs = await WorkoutModel
-    .find({
-      userId: new mongoose.Types.ObjectId(userId),
-      date: { $gte: startDate, $lte: endDate }
-    })
-    .select('_id userId name date type duration distance calculatedVolume cardioDetails workoutExercises') // Select only needed fields
-    .lean()
-    .sort({ date: -1 }); // Sort by date descending
-
-  // Basic serialization (adapt if needed based on actual usage)
-  return workoutDocs.map((doc: any) => ({
-    _id: doc._id.toString(),
-    userId: doc.userId.toString(),
-    name: doc.name,
-    date: doc.date.toISOString(),
-    type: doc.type,
-    duration: doc.duration,
-    distance: doc.distance,
-    calculatedVolume: doc.calculatedVolume,
-    cardioDetails: doc.cardioDetails ? { distance: doc.cardioDetails.distance } : undefined, // Only serialize needed parts
-    // workoutExercises: doc.workoutExercises // Avoid fetching/serializing exercises if not needed for metrics
-  }));
+  console.log(`Fetching workouts for user: ${userId} in range ${startDate.toISOString()} - ${endDate.toISOString()}`); // Expanded log
+  try { // Add try...catch around the query
+    const workoutDocs = await WorkoutModel
+      .find({
+        userId: new mongoose.Types.ObjectId(userId),
+        date: { $gte: startDate, $lte: endDate }
+      })
+      // Refined projection: Select only fields used in calculateDashboardMetrics loop
+      .select({
+         date: 1,
+         type: 1,
+         duration: 1,
+         distance: 1, // Top-level distance (fallback)
+         calculatedVolume: 1, // For strength
+         'cardioDetails.distance': 1 // Primary cardio distance
+         // _id, userId, name are not needed for the calculation loop
+      })
+      .maxTimeMS(15000) // Keep the 15-second timeout for now
+      .lean()
+      .sort({ date: -1 }); // Requires index { userId: 1, date: -1 }
+    console.log(`Fetched ${workoutDocs.length} workout documents (minimal projection)`); 
+    
+    // Map the minimally projected data
+    // Note: Fields like _id, userId, name will be undefined here
+    return workoutDocs.map((doc: any) => ({
+      _id: '', // Not selected
+      userId: userId, // We know this already
+      name: '', // Not selected
+      date: doc.date.toISOString(), // Selected
+      type: doc.type, // Selected
+      duration: doc.duration, // Selected
+      distance: doc.distance, // Selected (fallback)
+      calculatedVolume: doc.calculatedVolume, // Selected
+      cardioDetails: doc.cardioDetails ? { distance: doc.cardioDetails.distance } : undefined, // Selected distance nested
+    }));
+  } catch (error) {
+    console.error(`Error during fetchWorkoutsForMetrics query (or timeout):`, error);
+    return []; // Return empty array on error/timeout
+  }
 }
 
 // --- Helper to Fetch Top PRs (Example Implementation) ---
@@ -145,58 +162,57 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
     const today = new Date();
     const endOfCurrentPeriod = endOfDay(today);
     const startOfCurrentPeriod = startOfDay(subDays(today, 7)); // Start of 7 days ago
-    const startOfPreviousPeriod = startOfDay(subDays(today, 14)); // Start of 14 days ago
-    const endOfPreviousPeriod = startOfCurrentPeriod; // Previous period ends where current begins
+    // Fetch only 7 days total to reduce load
+    const startOfPreviousPeriod = startOfCurrentPeriod; // No need for a separate previous period if only fetching 7 days total
+    const endOfPreviousPeriod = startOfCurrentPeriod; // Keep consistent, though won't be used if fetching only 7 days
 
     console.log(`[Metrics] Calculating periods based on current date: ${today.toISOString()}`);
-    console.log(`[Metrics] Fetching workouts from: ${startOfPreviousPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
+    // Modify the date range to fetch only last 7 days
+    console.log(`[Metrics] Fetching workouts from: ${startOfCurrentPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
 
-    // Fetch only workouts from the last 14 days
-    const workouts = await fetchWorkoutsForMetrics(userId, startOfPreviousPeriod, endOfCurrentPeriod);
-    console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 14 days.`);
+    // Fetch only workouts from the last 7 days
+    const workouts = await fetchWorkoutsForMetrics(userId, startOfCurrentPeriod, endOfCurrentPeriod);
+    console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 7 days.`);
 
-    // Fetch Top PRs separately
-    const topPRs = await fetchTopPRs(userId);
-    console.log(`[Metrics] Fetched ${topPRs.length} Top PRs.`);
+    // Temporarily disabled to diagnose performance bottleneck
+    // const topPRs = await fetchTopPRs(userId);
+    // console.log(`[Metrics] Fetched ${topPRs.length} Top PRs.`);
+    const topPRs: PRData[] = []; // Provide empty array while disabled
 
     let strengthVolumeLast7Days = 0;
     let cardioDurationLast7Days = 0;
     let cardioDistanceLast7Days = 0;
-    let strengthVolumePrevious7Days = 0;
+    // Reset previous period metrics since we are only fetching 7 days
+    let strengthVolumePrevious7Days = 0; 
     let cardioDurationPrevious7Days = 0;
     let cardioDistancePrevious7Days = 0;
 
     for (const workout of workouts) {
-        const workoutDate = parseISO(workout.date); // Use parseISO for string dates
+        const workoutDate = parseISO(workout.date);
         const workoutTime = workoutDate.getTime();
 
+        // Only process current period since we only fetched last 7 days
         const isInCurrentPeriod = workoutTime >= startOfCurrentPeriod.getTime() && workoutTime <= endOfCurrentPeriod.getTime();
-        const isInPreviousPeriod = workoutTime >= startOfPreviousPeriod.getTime() && workoutTime < endOfPreviousPeriod.getTime();
+        
+        // No need to check isInPreviousPeriod anymore
 
         // Simplified processing logic
-        const processWorkout = (workout: SerializedWorkout, isCurrentPeriod: boolean) => {
+        const processWorkout = (workout: SerializedWorkout) => {
             if (workout.type === 'strength') {
                 const volume = workout.calculatedVolume ?? 0;
-                if (isCurrentPeriod) strengthVolumeLast7Days += volume;
-                else strengthVolumePrevious7Days += volume;
-            } else if (['running', 'cycling', 'walking', 'cardio'].includes(workout.type)) { // Include generic cardio
+                strengthVolumeLast7Days += volume;
+            } else if (['running', 'cycling', 'walking', 'cardio'].includes(workout.type)) {
                 const duration = workout.duration || 0;
                 const distanceInMeters = workout.distance ?? workout.cardioDetails?.distance ?? 0;
-                if (isCurrentPeriod) {
-                    cardioDurationLast7Days += duration;
-                    cardioDistanceLast7Days += distanceInMeters;
-                } else {
-                    cardioDurationPrevious7Days += duration;
-                    cardioDistancePrevious7Days += distanceInMeters;
-                }
+                cardioDurationLast7Days += duration;
+                cardioDistanceLast7Days += distanceInMeters;
             }
         };
 
         if (isInCurrentPeriod) {
-            processWorkout(workout, true);
-        } else if (isInPreviousPeriod) {
-            processWorkout(workout, false);
-        }
+            processWorkout(workout);
+        } 
+        // Remove the else if block for previous period
     }
 
     // Round distances

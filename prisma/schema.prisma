@@ -40,7 +40,11 @@ model Workout {
   userId        String    @db.ObjectId
   user          User      @relation(fields: [userId], references: [id])
   exercises     WorkoutExercise[]
+  // Add calculatedVolume to schema if it's meant to be persisted
+  // calculatedVolume Float? // Uncomment and adjust type if needed
 
+  @@index([userId, date]) // Index for fetching workouts by user and date range
+  @@index([userId, type]) // Index for fetching workouts by user and type (e.g., for PRs)
   @@map("workouts")
 }
 
