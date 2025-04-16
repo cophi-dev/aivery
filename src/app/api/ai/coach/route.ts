@@ -1214,7 +1214,7 @@ ExerciseData: _id, name, description, muscleGroups, category (strength, cardio, 
 WorkoutExerciseData: _id, workoutId, exerciseId { _id, name, category }, sets[], notes, order, duration, distance
 Set: _id, weight, reps, duration, distance, notes
 ChatMessage: _id, userId, content, role, workoutId
-CONTEXT: ${JSON.stringify(workoutDataForAI, null, 2)} // Use full fetched data here
+CONTEXT: ${dataContext} // Use summarized weekly data here
 
 RESPONSE GUIDELINES:
 
@@ -1246,11 +1246,11 @@ Example Response Structure (Adapt based on available data):
 
 Go, Aivery! Analyze ${userDisplayName}'s workout using the CONTEXT data and respond according to the user's request and these guidelines!
 `;
-            const analysisResponse = await generateWorkoutAnalysisResponse(systemPrompt, query, userDisplayName);
+            const analysisResponse = await generateWorkoutAnalysisResponse(systemPromptTemplate, query, userDisplayName);
             return NextResponse.json({ response: analysisResponse, data: null });
         } catch (error) {
-            console.error(`[API /coach] Error during workout analysis for ${workoutId}:`, error);
-            return NextResponse.json({ response: `Sorry ${userDisplayName}, I encountered an internal error while trying to analyze workout ${workoutId}.`, data: null }, { status: 500 });
+            console.error(`[API /coach] Error during weekly review generation:`, error);
+            return NextResponse.json({ response: `Sorry ${userDisplayName}, I encountered an internal error while trying to generate the weekly review.`, data: null }, { status: 500 });
         }
     }
 
