@@ -4,32 +4,9 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db/mongodb';
 import UserModel, { IUser } from '@/lib/db/models/user';
 import WorkoutModel from '@/lib/db/models/workout';
-import Anthropic from '@anthropic-ai/sdk';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
-
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-// Helper function to safely extract text from Claude response content
-function getTextFromResponse(content: any): string | undefined {
-  if (!content || !Array.isArray(content) || content.length === 0) {
-    return undefined;
-  }
-  
-  const firstBlock = content[0];
-  
-  // Handle different content block types safely
-  if (firstBlock && typeof firstBlock === 'object') {
-    if ('text' in firstBlock) {
-      return firstBlock.text as string;
-    }
-  }
-  
-  return undefined;
-}
 
 /**
  * Generate a simple fallback story when the Anthropic API fails
@@ -135,57 +112,12 @@ export async function GET(req: NextRequest) {
       date: new Date(w.date).toLocaleDateString() 
     }));
 
-    // Generate the story with Claude
-    let generatedStory = "";
-    try {
-      const completion = await client.messages.create({
-        model: "claude-3-5-haiku-20241022",
-        messages: [
-          {
-            role: "user",
-            content: `Create fitness journey article:
-
-USER:
-Name: ${userInfo.name}
-Location: ${userInfo.aiPreferences.location}
-Goals: ${userInfo.aiPreferences.fitnessGoals}
-Training: ${userInfo.aiPreferences.trainingPreferences}
-Stats: ${userInfo.age ? userInfo.age + 'y, ' : ''}${userInfo.height ? userInfo.height + 'cm, ' : ''}${userInfo.weight ? userInfo.weight + 'kg' : ''}
-
-WORKOUTS:
-Total: ${workouts.length}
-Types: ${Object.entries(workoutTypes).map(([type, count]) => `${type} (${count})`).join(', ')}
-Duration: ${totalStats.duration} minutes
-Volume: ${totalStats.volume} kg
-Distance: ${totalStats.distance} km
-
-Format as HTML with title, sections, and next steps.`
-          }
-        ],
-        system: `Act as a fitness writer creating a personalized journey article.
-
-FORMAT: HTML, ~500 words
-STRUCTURE:
-1. Catchy title
-2. Personal introduction
-3. Workout highlights with stats
-4. Progress section
-5. Next steps/goals
-
-TONE: Motivational, specific to actual data`,
-        temperature: 0.7,
-        max_tokens: 1000, // Reduced from 1500 to 1000
-      });
-      
-      generatedStory = getTextFromResponse(completion.content) || "";
-    } catch (apiError) {
-      console.error("Anthropic API error:", apiError);
-      // Use the fallback story generator if the API call fails
-      generatedStory = generateFallbackStory(user, workouts.length, workoutTypes);
-    }
+    // Generate the story using the fallback (now primary) method
+    let generatedStory = generateFallbackStory(user, workouts.length, workoutTypes);
 
     if (!generatedStory) {
-      generatedStory = "<p>We couldn't generate your story at this time. Please try again later.</p>";
+      // This condition might be less likely now, but keep as safety net
+      generatedStory = "<p>We couldn't generate your story at this time. Please check your data.</p>";
     }
 
     return NextResponse.json({ 
