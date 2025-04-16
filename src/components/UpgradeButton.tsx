@@ -5,7 +5,6 @@ import { Button, ButtonProps } from "@/components/ui/button"; // Assuming shadcn
 import { LucideSparkles } from "lucide-react"; // Icons - Removed LucideLoader
 import { useToast } from "@/components/ui/use-toast"; // For feedback
 import { loadStripe } from '@stripe/stripe-js';
-import { UserSubscriptionPlan } from "@/types/subscriptions"; // Added specific import path
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 // Ensure the publishable key is available
