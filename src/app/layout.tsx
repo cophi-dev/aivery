@@ -175,8 +175,8 @@ export default async function RootLayout({
             <ToastProvider>
               {/* Always render MainHeader */}
               <MainHeader />
-              {/* Conditionally apply main padding based on session */}
-              <main className={`min-h-screen ${session?.user ? 'pt-14' : 'pt-0'}`}>{children}</main> 
+              {/* Conditionally apply main padding based on session - REMOVED */}
+              <main className="min-h-screen">{children}</main> 
               {/* {session?.user && <PersistentChat />} */}
               <Toaster />
             </ToastProvider>

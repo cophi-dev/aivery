@@ -233,9 +233,10 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
       {/* --- Section 1: Full-Screen AI Highlight (Fun Fact) --- */}
       {/* Only render if highlight is loaded and available */}
       {aiHighlight && !isLoadingHighlight && (
-        <div className="relative flex flex-col items-center justify-center min-h-screen text-center p-8 bg-primary text-primary-dark-bg">
-          {/* Large Highlight Text */}
+        <div className="relative flex flex-col items-center justify-center h-[calc(100vh-3.5rem)] text-center p-8 bg-primary text-primary-dark-bg"> {/* Use calculated height */}
+          {/* Large Highlight Text - Reverted font size */}
           <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-4xl text-primary-dark-bg">
+            {/* Removed inner div */}
             {/* Example structure, replace with actual aiHighlight content parsing if needed */}
             {/* This simple split assumes a ' - ' separator; adjust if AI format changes */}
             {aiHighlight.includes('-') ? (
@@ -250,11 +251,13 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
             )}
           </h2>
 
-          {/* Scroll Down Indicator */}
-          <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 flex flex-col items-center text-secondary-dark-bg animate-bounce">
-            <span className="text-sm mb-1">Scroll for Details</span>
-            <LucideChevronDown className="h-6 w-6" />
-          </div>
+          {/* Scroll Down Hint - Centered */}
+          <a href="#details" className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+            <Button variant="ghost" size="icon" className="rounded-full text-secondary-dark-bg/70 hover:bg-secondary/10 hover:text-secondary-dark-bg">
+              <LucideChevronDown className="h-8 w-8" />
+              <span className="sr-only">Scroll for details</span>
+            </Button>
+          </a>
         </div>
       )}
 

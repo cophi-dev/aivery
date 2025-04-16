@@ -737,7 +737,7 @@ export default function NewWorkoutPage() {
       }
       
       if (savedWorkout && savedWorkout._id) {
-        router.push(`/workout/${savedWorkout._id}`);
+        router.push(`/workouts/${savedWorkout._id}`);
       } else {
         console.error("Workout save operation did not return a valid workout object or ID.", savedWorkout);
         toast.error('Failed to get workout ID after saving.');
@@ -798,13 +798,13 @@ export default function NewWorkoutPage() {
                     onValueChange={(value) => setWorkoutType(value as WorkoutTypeOption)}
                     // disabled={isEditing} // Maybe allow changing type even when editing? Or disable?
                  >
-                  <SelectTrigger id="workout-type">
-                    <SelectValue placeholder="Select activity type" />
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select activity type..." />
                   </SelectTrigger>
-                  <SelectContent position="popper" className="bg-zinc-950 shadow-lg border">
+                  <SelectContent className="bg-white dark:bg-slate-800">
                     {Object.entries(workoutTypeDisplayNames)
-                      // Filter out 'strength' maybe? Keep for now.
-                      // .filter(([key]) => key !== 'strength') 
+                      // Optionally filter out 'strength' if needed
+                      // .filter(([key]) => key !== 'strength')
                       .map(([value, displayName]) => (
                         <SelectItem key={value} value={value}>{displayName}</SelectItem>
                     ))}
@@ -829,7 +829,7 @@ export default function NewWorkoutPage() {
                         {date ? format(date, "PPP") : <span>Pick a date</span>}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 bg-zinc-950 shadow-lg border">
+                    <PopoverContent className="w-auto p-0 bg-white dark:bg-slate-800">
                       <Calendar
                         mode="single"
                         selected={date}
@@ -858,11 +858,6 @@ export default function NewWorkoutPage() {
              />
              <p className="text-sm text-muted-foreground mt-1">Give your workout a descriptive name.</p>
            </div>
-
-           {/* Summary Text */}
-           <p className="text-sm text-muted-foreground pt-2">
-             {getSummaryText()}
-           </p>
         </div>
 
 
@@ -942,7 +937,7 @@ export default function NewWorkoutPage() {
                         <SelectTrigger id={`exercise-name-${exercise.id}`}>
                           <SelectValue placeholder="Select exercise" />
                         </SelectTrigger>
-                        <SelectContent position="popper" className="bg-zinc-950 shadow-lg border">
+                        <SelectContent position="popper" className="bg-card">
                            {/* Use filteredExercises instead of dbExercises */}
                            {filteredExercises.length > 0 ? filteredExercises.map((option) => (
                               <SelectItem key={option._id} value={option._id}>{option.name}</SelectItem>

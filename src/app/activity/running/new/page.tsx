@@ -94,8 +94,13 @@ export default function NewRunningActivityPage() {
       }
 
       console.log("Saving workout:", JSON.stringify(workoutData));
-      const newWorkoutId = await createCardioWorkout(workoutData)
-      router.push(`/workouts/${newWorkoutId}`)
+      const newWorkout = await createCardioWorkout(workoutData)
+      if (newWorkout?._id) {
+        router.push(`/workouts/${newWorkout._id}`)
+      } else {
+        console.error("Failed to get workout ID after creation.");
+        alert("Workout saved, but failed to redirect. Please go to your workout history.");
+      }
     } catch (error) {
       console.error("Failed to create running activity:", error)
       alert("Failed to save workout. Please try again.")
