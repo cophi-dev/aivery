@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+// import Anthropic from "@anthropic-ai/sdk"; // Removed unused import
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -98,24 +98,6 @@ async function getWeather(lat?: string, lon?: string) {
     console.error("Error fetching weather:", error);
     return null;
   }
-}
-
-// Helper function to safely extract text from Claude response content
-function getTextFromResponse(content: any): string | undefined {
-  if (!content || !Array.isArray(content) || content.length === 0) {
-    return undefined;
-  }
-
-  const firstBlock = content[0];
-
-  // Handle different content block types safely
-  if (firstBlock && typeof firstBlock === "object") {
-    if ("text" in firstBlock) {
-      return firstBlock.text as string;
-    }
-  }
-
-  return undefined;
 }
 
 // Use Grok to generate a personalized quote
