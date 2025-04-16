@@ -182,7 +182,7 @@ export async function GET(req: NextRequest) {
             'Authorization': `Bearer ${grokApiKey}`
           },
           body: JSON.stringify({
-            model: 'grok-3-latest',
+            model: 'grok-3-mini-latest',
             messages: [
               { role: 'system', content: systemPrompt },
               // Adding a simple user message to trigger the system prompt processing
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
         'Authorization': `Bearer ${grokApiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-3-latest',
+        model: 'grok-3-mini-latest',
         messages: [
           { role: 'system', content: prompt },
           // Adding a simple user message to trigger the system prompt processing

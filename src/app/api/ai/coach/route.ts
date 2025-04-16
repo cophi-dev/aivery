@@ -11,13 +11,18 @@ import { ObjectId } from 'mongodb'; // Import ObjectId
 // Mongoose imports
 import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
+import User, { IUser } from '@/lib/db/models/user'; // <-- Import User model AND IUser type
 import { capitalizeFirstLetter } from "@/lib/utils"; // Import capitalizeFirstLetter
 // import { Prisma } from "@prisma/client"; // Remove unused Prisma types import
-import { startOfYear, subDays, subMonths, subWeeks, subYears } from "date-fns";
+import { startOfWeek, endOfWeek, format } from "date-fns"; // <-- Import startOfWeek, endOfWeek, format
+import { subDays, subMonths, subWeeks, subYears } from "date-fns";
 // Removed incorrect WorkoutListItem import and duplicate IWorkout import
 
 // Import the function needed for initial workout analysis
 import { fetchWorkoutForAI } from "@/lib/workout-actions";
+// REMOVE the local type alias for ExtendedPeriodType
+// import type { ExtendedPeriodType } from "./dateUtils"; // Import the extended type 
+import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository"; // Import function to get history
 
 // Explicitly mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -73,23 +78,24 @@ const ValidPeriods = z.enum([
   "last_7_days",
   "last_30_days",
   "overall",
+  "next_week", // Added next_week
 ]);
 
 // Define the schema for the structured AI analysis output
 const QueryAnalysisSchema = z.object({
   intent: ValidIntents,
   entities: z.object({
-    metric: ValidMetrics.optional(), // e.g., "distance", "duration"
-    workout_type: ValidWorkoutTypes.optional(), // e.g., "running", "any"
-    period: ValidPeriods.optional(), // e.g., "last_month"
-    explicit_start_date: z.string().datetime().optional(), // ISO string
-    explicit_end_date: z.string().datetime().optional(), // ISO string
-    comparison_period: ValidPeriods.optional(), // For comparison intent
-    record_qualifier: z.string().optional(), // e.g., "5k" for fastest pace, "ever" for longest run
-    workout_identifier: z.string().optional(), // e.g., date "tuesday", specific id
-    limit: z.number().int().positive().optional(), // For listing workouts
-  }).optional(), // Entities might not be relevant for all intents or if analysis fails
-  response_suggestion: z.string().optional(), // Optional direct response if analysis is simple/confident
+    metric: ValidMetrics.optional(),
+    workout_type: ValidWorkoutTypes.optional(),
+    period: ValidPeriods.optional(), // Use the updated ValidPeriods enum
+    explicit_start_date: z.string().datetime().optional(),
+    explicit_end_date: z.string().datetime().optional(),
+    comparison_period: ValidPeriods.optional(), // comparison_period can also now potentially be next_week if needed later
+    record_qualifier: z.string().optional(),
+    workout_identifier: z.string().optional(),
+    limit: z.number().int().positive().optional(),
+  }).optional(),
+  response_suggestion: z.string().optional(),
 });
 
 type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
@@ -109,7 +115,7 @@ function getQueryAnalysisSchemaString(): string {
   entities: {
     metric?: "distance" | "duration" | "count" | "volume" | "pace" | "speed" | "calories" | "elevation",
     workout_type?: "running" | "cycling" | "swimming" | "walking" | "hiking" | "strength" | "hiit" | "yoga" | "flexibility" | "other" | "any",
-    period?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "last_year" | "last_7_days" | "last_30_days" | "overall",
+    period?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "last_year" | "last_7_days" | "last_30_days" | "overall" | "next_week", // <-- Added next_week
     explicit_start_date?: string, // ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
     explicit_end_date?: string, // ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
     comparison_period?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "last_year" | "last_7_days" | "last_30_days" | "overall",
@@ -182,7 +188,7 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
         'Authorization': `Bearer ${grokApiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-3-latest',
+        model: 'grok-3-mini-latest',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: "Generate the initial insightful message based on the workout data provided in the system prompt." }
@@ -281,7 +287,7 @@ CURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this fo
         'Authorization': `Bearer ${grokApiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-3-latest',
+        model: 'grok-3-mini-latest',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `LATEST USER QUERY: "${query}"` } // Pass the query explicitly as per prompt structure
@@ -868,7 +874,7 @@ async function getDirectTextResponse(query: string): Promise<string | null> {
             'Authorization': `Bearer ${grokApiKey}`
           },
           body: JSON.stringify({
-            model: 'grok-3-latest',
+            model: 'grok-3-mini-latest',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: query }
@@ -901,47 +907,387 @@ async function getDirectTextResponse(query: string): Promise<string | null> {
     }
 }
 
-// --- Main POST Handler ---
+/**
+ * Calls the AI model to generate a detailed workout analysis based on a system prompt and user query.
+ */
+async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: string, userName: string): Promise<string> {
+  const grokApiKey = process.env.GROK_API_KEY;
+  if (!grokApiKey) {
+    console.error("[generateWorkoutAnalysisResponse] GROK_API_KEY not configured.");
+    return `Sorry ${userName}, the AI coach is currently unavailable for detailed analysis due to configuration issues.`;
+  }
 
+  try {
+    console.log("[generateWorkoutAnalysisResponse] Sending analysis prompt to Grok...");
+    // console.log("System Prompt:", systemPrompt); // Optional: Log system prompt for debugging
+    // console.log("User Query:", userQuery); // Optional: Log user query
+
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-mini-latest', // Or your preferred model
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userQuery } // Send the original user analysis request
+        ],
+        max_tokens: 1024, // Allow for a longer, detailed response
+        temperature: 0.7, // Allow some creativity for analysis
+        stream: false,
+      })
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[generateWorkoutAnalysisResponse] Grok API error: ${response.status} ${response.statusText}`, errorBody);
+      throw new Error(`Grok API request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    // console.log("[generateWorkoutAnalysisResponse] Grok Raw Response:", data); // Optional: Log raw response
+
+    let analysisText = `Sorry ${userName}, I couldn't generate the analysis properly.`; // Fallback
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+      analysisText = data.choices[0].message.content.trim();
+    } else {
+      console.warn("[generateWorkoutAnalysisResponse] Unexpected Grok response structure:", data);
+    }
+
+    console.log(`[generateWorkoutAnalysisResponse] Generated analysis length: ${analysisText.length} chars`);
+    return analysisText;
+
+  } catch (error) {
+    console.error(`[generateWorkoutAnalysisResponse] Error generating analysis:`, error);
+    return `Sorry ${userName}, I encountered an error while trying to analyze your workout. Please try again later.`;
+  }
+}
+
+// Renaming for clarity, but same function as generateWorkoutAnalysisResponse
+async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string): Promise<string> {
+  // This is essentially the same implementation as generateWorkoutAnalysisResponse
+  // We can potentially merge them later if the parameters (temp, max_tokens) are the same.
+  const grokApiKey = process.env.GROK_API_KEY;
+  if (!grokApiKey) {
+    console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
+    return `Sorry ${userName}, the AI coach is currently unavailable for this request due to configuration issues.`;
+  }
+  try {
+    console.log("[generateResponseFromSystemPrompt] Sending custom system prompt to Grok (using Mini model)...");
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${grokApiKey}` },
+      body: JSON.stringify({
+        model: 'grok-3-mini-latest', // <-- Changed to Mini model
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userQuery }
+        ],
+        max_tokens: 2048, 
+        temperature: 0.7, 
+        stream: false,
+      })
+    });
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[generateResponseFromSystemPrompt] Grok API error: ${response.status} ${response.statusText}`, errorBody);
+      throw new Error(`Grok API request failed with status ${response.status}`);
+    }
+    const data = await response.json();
+    let generatedText = `Sorry ${userName}, I couldn\'t generate the response properly.`; 
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+      generatedText = data.choices[0].message.content.trim();
+    } else {
+      console.warn("[generateResponseFromSystemPrompt] Unexpected Grok response structure:", data);
+    }
+    console.log(`[generateResponseFromSystemPrompt] Generated response length: ${generatedText.length} chars`);
+    return generatedText;
+  } catch (error) {
+    console.error(`[generateResponseFromSystemPrompt] Error generating response:`, error);
+    return `Sorry ${userName}, I encountered an error while processing your request. Please try again later.`;
+  }
+}
+
+// --- MAIN POST HANDLER ---
 export async function POST(req: NextRequest) {
   console.log("[API /coach] Received POST request");
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const userId = session.user.id;
-  const userName = (session.user as any)?.nickname || session.user.name || "Fitness Pro";
-
-  let query: string;
-  let history: HistoryMessage[];
-  let context: any; // Variable to hold context
-
   try {
-    const body = await req.json();
-    console.log("[API /coach] Request Body:", body);
-    query = z.string().min(1).parse(body.query);
-    // Parse history, ensuring it defaults to an empty array if optional parse results in undefined
-    history = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).optional().parse(body.history) ?? []; 
-    context = body.context; // Get context object
-    console.log("[API /coach] Parsed - Query:", query, "History Len:", history.length, "Context:", context);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request body", details: error.errors }, { status: 400 });
+    // 1. Authentication and Session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    return NextResponse.json({ error: "Failed to parse request body" }, { status: 400 });
-  }
+    const userId = session.user.id;
+    const userDisplayName = (session.user as any)?.nickname || session.user.name || "User"; // Use nickname if available
 
-  // --- Normal Chat Flow (Not initial workout context) --- 
-  console.log("[API /coach] Proceeding with normal query analysis...");
-  try {
+    // 2. Parse Request Body
+    const body = await req.json();
+    const { query, history = [], context } = body; // Use provided userName
+
+    // Basic validation
+    if (!query || typeof query !== 'string') {
+      return NextResponse.json({ error: "Invalid query provided" }, { status: 400 });
+    }
+
+    console.log(`[API /coach] Parsed - Query: ${query} History Len: ${history.length} Context:`, context);
+
+    // 3. Connect to Database
     await dbConnect(); // Ensure DB connection
 
-    // 1. Analyze Query (Pass history)
-    const analysisResult = await analyzeUserQuery(query, history as HistoryMessage[]);
-    console.log("Query Analysis Result:", analysisResult);
+    // **** SPECIAL HANDLING FOR PLAN GENERATION REQUEST **** 
+    // Note: The client now only sends requestType = 'generate_plan' and the userQuery.
+    // The backend constructs the full system prompt including history and goals.
+    if (context?.requestType === 'generate_plan') { 
+        console.log(`[API /coach] Detected plan generation request.`);
+        try {
+            // 1. Fetch user goals 
+            console.log(`[API /coach] Fetching user data for goals for user: ${userId}`);
+            // Explicitly type the lean result as potentially having IUser structure
+            const user = await User.findById(userId).select('aiPreferences.fitnessGoals').lean<IUser | null>();
+            const userGoals = user?.aiPreferences?.fitnessGoals || "general fitness"; // Default goal
+            console.log(`[API /coach] User goals: ${userGoals}`);
+
+            // 2. Fetch recent workout history for context
+            console.log(`[API /coach] Fetching recent workout history for user: ${userId}`);
+            const recentWorkouts = await getRecentWorkouts(userId, 15); // Fetch last 15 workouts
+
+            let dataContext = "No recent workout history found.";
+            if (recentWorkouts && recentWorkouts.length > 0) {
+                // Select key fields for the context to keep it concise
+                const historySummary = recentWorkouts.map((w: any) => ({
+                    date: w.date ? new Date(w.date).toISOString().split('T')[0] : 'unknown',
+                    type: w.type,
+                    name: w.name,
+                    duration: w.duration,
+                    distance: w.cardioDetails?.distance ?? w.distance,
+                    calculatedVolume: w.calculatedVolume,
+                    exercises: w.workoutExercises?.slice(0, 5).map((ex: any) => ex.exerciseId?.name) // Max 5 exercise names
+                }));
+                dataContext = JSON.stringify(historySummary, null, 2);
+            }
+            console.log(`[API /coach] Data context for prompt length: ${dataContext.length} chars`);
+
+            // 3. Construct the System Prompt dynamically
+            // TODO: Refine the system prompt template based on requirements
+            const systemPromptTemplate = `You are Aivery, an expert fitness coach. The user's name is ${userDisplayName}. Their stated goal is: "${userGoals}". Based on their recent workout history provided below, create a balanced workout plan for next week (7 days) focusing on their goal. Include specific exercises, sets, reps, and rest periods. Structure the response clearly using markdown.
+
+RECENT HISTORY CONTEXT:
+${dataContext}
+
+RESPONSE GUIDELINES:
+- Ensure the plan aligns with the user's goal: ${userGoals}.
+- Structure the plan day-by-day.
+- Specify exercises, sets, reps/duration, and rest times.
+- Include a mix of workout types appropriate for the goal.
+- If history is empty, create a balanced beginner plan.
+- Keep the tone encouraging.`;
+            
+            const finalSystemPrompt = systemPromptTemplate; // Template literals already handled injection
+
+            // 4. Call the AI with the constructed system prompt and original user query
+            const planResponse = await generateResponseFromSystemPrompt(finalSystemPrompt, query, userDisplayName);
+
+            // 5. Return the AI's direct response
+            return NextResponse.json({ response: planResponse, data: null });
+
+        } catch (error) {
+            console.error(`[API /coach] Error during plan generation:`, error);
+            return NextResponse.json({ response: `Sorry ${userDisplayName}, I encountered an internal error while trying to generate the plan.`, data: null }, { status: 500 });
+        }
+    }
+    // **** SPECIAL HANDLING FOR WEEKLY REVIEW REQUEST ****
+    else if (context?.requestType === 'generate_weekly_review') {
+        console.log(`[API /coach] Detected weekly review request.`);
+        try {
+            // 1. Calculate date range for the current week (Mon-Sun)
+            const now = new Date();
+            const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
+            const weekEnd = endOfWeek(now, { weekStartsOn: 1 }); // Sunday
+            const weekStartDateStr = weekStart.toISOString();
+            const weekEndDateStr = weekEnd.toISOString();
+            // Example: "April 14 - April 20, 2025"
+            const dateRangeString = `${format(weekStart, 'MMMM d')} - ${format(weekEnd, 'MMMM d, yyyy')}`;
+
+            // 2. Fetch workouts for the current week
+            console.log(`[API /coach] Fetching workouts for week: ${dateRangeString} for user: ${userId}`);
+            // Assuming listWorkouts can handle date strings and returns relevant data
+            const weeklyWorkouts = await listWorkouts(userId, 'any', weekStartDateStr, weekEndDateStr, 50); // Limit to 50 for safety
+
+            let dataContext = `No workouts found for this week (${dateRangeString}).`;
+            if (weeklyWorkouts && weeklyWorkouts.length > 0) {
+                 // Simplify the data for the prompt
+                 const weeklySummary = weeklyWorkouts.map((w: any) => ({
+                    date: w.date ? new Date(w.date).toISOString().split('T')[0] : 'unknown',
+                    type: w.type,
+                    name: w.name,
+                    duration: w.duration,
+                    distance: w.distance, // Using the mapped distance from listWorkouts
+                    // Note: calculatedVolume is not directly available from listWorkouts result
+                    // You might need to fetch full details or enhance listWorkouts if volume is crucial
+                 }));
+                 dataContext = JSON.stringify(weeklySummary, null, 2);
+                 console.log(`[API /coach] Found ${weeklyWorkouts.length} workouts for the week.`);
+            } else {
+                console.log(`[API /coach] No workouts found for the week.`);
+            }
+            console.log(`[API /coach] Data context for weekly review prompt length: ${dataContext.length} chars`);
+
+            // 3. Prepare the System Prompt (using the template provided)
+            const systemPromptTemplate = `You are Aivery, a friendly, expert AI fitness coach who's encouraging and insightful. The user's name is ${userDisplayName}. Generate a concise, personalized, and data-driven review of the user's workouts for this week (${dateRangeString}), summarizing performance, progress, and areas for improvement based on their workout history.
+
+DATABASE SCHEMA OVERVIEW (Key Fields):
+
+UserData: _id, email, name, aiPreferences { location, fitnessGoals, trainingPreferences, ... }, height, weight, age, gender, ...
+WorkoutData: _id, userId, type (strength, run, cycle, swim, ...), name, date, duration, distance, calories, notes, intensity, workoutExercises[], cardioDetails { pace, speed, heartRate, laps, ... }, source, records[] { timestamp, heart_rate, speed, ... }, calculatedVolume, ...
+ExerciseData: _id, name, description, muscleGroups, category (strength, cardio, flexibility), equipment, instructions
+WorkoutExerciseData: _id, workoutId, exerciseId { _id, name, category }, sets[], notes, order, duration, distance
+Set: _id, weight, reps, duration, distance, notes
+
+CONTEXT: ${dataContext} // E.g., fetched workout data for ${dateRangeString}, "No specific data provided...", or error messages
+
+RESPONSE GUIDELINES:
+
+Personalized & Motivating: Address ${userDisplayName} directly with an upbeat, encouraging tone. Use emojis sparingly for warmth (e.g., 💪, 🏃‍♀️).
+Data-Driven Review:
+Use CONTEXT Data: If workout data (e.g., type, volume, distance, exercises) is provided, analyze it to summarize key metrics, frequency, and variety.
+Handle Missing Data: If CONTEXT says "No specific data provided..." or indicates an error, acknowledge it (e.g., "I don't have details for this week's workouts, but here's a general review framework...") and provide broad feedback based on typical fitness patterns.
+Schema Awareness: If the user asks about trackable data (e.g., calories, muscle groups) not in CONTEXT, note it's trackable but not provided (e.g., "Calories burned weren't shared, but we can track them next time!").
+Review Structure (Markdown): Organize the response under these headings:
+Weekly Summary: Highlight the number of workouts, types (e.g., strength, cardio), and total metrics (e.g., volume lifted, distance covered, time spent) if available.
+Strengths: Praise specific achievements (e.g., consistency, high volume, improved pace) based on data or inferred effort.
+Progress Insights: Compare this week's metrics to previous weeks (if data is available) or note consistency in workout frequency/type.
+Areas for Improvement: Suggest 1-2 specific adjustments (e.g., add variety, increase intensity, improve recovery) based on data or workout balance.
+Next Steps: Recommend 1-2 goals for next week (e.g., try a new exercise, aim for 5% more volume, prioritize rest).
+Balanced Feedback: Emphasize both strength (e.g., volume, exercise selection) and cardio (e.g., distance, pace) to align with user's interest in tracking both. Ensure feedback is constructive and actionable.
+Goal Alignment: If aiPreferences provide fitnessGoals (e.g., endurance, muscle gain), tailor insights to those goals. Otherwise, assume a balanced fitness objective.
+Concise & Actionable: Keep each section brief (1-3 sentences). Avoid inventing data. Use general best practices if data is limited.
+Handle Ambiguity: If no workouts are recorded or data is unclear, suggest tracking workouts in the app and provide general tips for a balanced week.
+Markdown Formatting: Use bold headings, bullet points, and tables for clarity and readability.
+
+Example Response (Assuming Data Provided):
+
+Weekly Workout Review for ${userDisplayName} (${dateRangeString})
+
+Weekly Summary
+Amazing effort, ${userDisplayName}! You completed 3 workouts (2 strength, 1 cardio run), lifting 6,000kg total volume and running 5km for 150 min total.
+
+Strengths
+Your bench press volume (2,500kg) was a standout, and hitting 5km in 30 min shows awesome cardio consistency! 💪
+
+Progress Insights
+Your strength volume is up 10% from last week's 5,500kg, and your run pace improved by 15 sec/km. Keep it up!
+
+Areas for Improvement
+Add a pull exercise (e.g., pull-ups) to balance your strength sessions.
+Consider a second cardio day to boost endurance.
+
+Next Steps
+Aim for 4 workouts next week, including one cycling session.
+Increase squat weight by 5-10% for progressive overload. 🏃‍♀️
+
+Go, Aivery! Deliver a concise, personalized, and motivating review of ${userDisplayName}'s workouts for ${dateRangeString}, using CONTEXT data to highlight progress and inspire next steps! 💪
+`;
+            // No dynamic placeholders needed as template literals handle injection
+            const finalSystemPrompt = systemPromptTemplate;
+
+            // 4. Call the AI with the fixed user query
+            const userReviewQuery = "Hey, can you review my workouts from this week?";
+            const reviewResponse = await generateResponseFromSystemPrompt(finalSystemPrompt, userReviewQuery, userDisplayName);
+
+            // 5. Return the AI's direct response
+            return NextResponse.json({ response: reviewResponse, data: null });
+
+        } catch (error) {
+            console.error(`[API /coach] Error during weekly review generation:`, error);
+            return NextResponse.json({ response: `Sorry ${userDisplayName}, I encountered an internal error while trying to generate the weekly review.`, data: null }, { status: 500 });
+        }
+    }
+    // **** SPECIAL HANDLING FOR WORKOUT ANALYSIS REQUEST ****
+    else if (context?.workoutSummary?._id) {
+        // ... existing workout analysis logic ...
+        const workoutId = context.workoutSummary._id;
+        console.log(`[API /coach] Detected workout analysis request for ID: ${workoutId}`);
+        try {
+            console.log(`[API /coach] Fetching full workout data for analysis: ${workoutId}`);
+            const workoutDataForAI = await fetchWorkoutForAI(workoutId);
+            if (!workoutDataForAI) {
+                console.warn(`[API /coach] Workout ${workoutId} not found for analysis.`);
+                return NextResponse.json({ response: `Sorry ${userDisplayName}, I couldn't find the details for workout ID ${workoutId} to analyze.`, data: null }, { status: 404 });
+            }
+            const systemPrompt = `You are Aivery, a friendly, expert AI fitness coach who's encouraging and approachable. The user's name is ${userDisplayName}. Deliver concise, actionable, and personalized responses focused on fitness, health, and wellness, using the provided workout data and user context.
+
+DATABASE SCHEMA OVERVIEW (Key Fields):
+
+UserData: _id, email, name, image, aiPreferences { location, fitnessGoals, trainingPreferences, ... }, height, weight, age, gender, ...
+WorkoutData: _id, userId, type (strength, run, cycle, swim, ...), name, date, duration, distance, calories, notes, intensity, workoutExercises[], cardioDetails { pace, speed, heartRate, laps, ... }, source, records[] { timestamp, heart_rate, speed, ... }, calculatedVolume, ...
+ExerciseData: _id, name, description, muscleGroups, category (strength, cardio, flexibility), equipment, instructions
+WorkoutExerciseData: _id, workoutId, exerciseId { _id, name, category }, sets[], notes, order, duration, distance
+Set: _id, weight, reps, duration, distance, notes
+ChatMessage: _id, userId, content, role, workoutId
+CONTEXT: ${JSON.stringify(workoutDataForAI, null, 2)} // Use full fetched data here
+
+RESPONSE GUIDELINES:
+
+Personalized & Encouraging Tone: Address ${userDisplayName} directly. Keep the tone positive, supportive, and motivating. Use emojis sparingly for warmth (e.g., 💪).
+Data-Driven Analysis:
+Use CONTEXT Data: If specific data (e.g., volume, distance, exercises, previousWorkoutsSummary, progressMetrics) is provided in CONTEXT, base your analysis on it. Mention key progress points if available.
+Handle Missing Data: If CONTEXT is missing expected fields (like previousWorkoutsSummary), acknowledge it gracefully (e.g., "I don't have previous workout data to compare against this time...") and provide general advice.
+Schema Awareness: If the user asks about trackable data not in CONTEXT, note it's trackable but not provided.
+Structured Response (Markdown): Address all requested points from the user query ('${query}') in order, using clear headings (e.g., **Exercise Selection & Balance**, **Volume & Intensity**, etc.).
+Concise & Actionable: Keep each section brief (1-3 sentences). Offer practical tips.
+User Preferences: If aiPreferences are in CONTEXT, tailor advice.
+Markdown Formatting: Use bold headings, bullet points, and italics.
+Example Response Structure (Adapt based on available data):
+
+**Exercise Selection & Balance**
+[Analysis based on workoutDataForAI.workoutExercises or type]
+
+**Volume & Intensity**
+[Analysis based on workoutDataForAI.calculatedVolume, intensity, cardioDetails]
+
+**Progress Tracking**
+[Analysis based on workoutDataForAI.progressMetrics or workoutDataForAI.previousWorkoutsSummary if available]
+
+**Suggestions for Improvement**
+[Provide 1-2 actionable tips based on analysis]
+
+**Recovery Recommendations**
+[Suggest based on intensity/type]
+
+Go, Aivery! Analyze ${userDisplayName}'s workout using the CONTEXT data and respond according to the user's request and these guidelines!
+`;
+            const analysisResponse = await generateWorkoutAnalysisResponse(systemPrompt, query, userDisplayName);
+            return NextResponse.json({ response: analysisResponse, data: null });
+        } catch (error) {
+            console.error(`[API /coach] Error during workout analysis for ${workoutId}:`, error);
+            return NextResponse.json({ response: `Sorry ${userDisplayName}, I encountered an internal error while trying to analyze workout ${workoutId}.`, data: null }, { status: 500 });
+        }
+    }
+
+    // 5. Normal Query Analysis (If not a special request)
+    console.log("[API /coach] Proceeding with normal query analysis...");
+
+    // Check for simple keyword explanation request (move this logic here)
+    const keywordMatch = query.match(/^What is (.*)?$/i);
+    if (keywordMatch && keywordMatch[1]) {
+        const keyword = keywordMatch[1];
+        const explanationQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
+        // Directly call Grok or another LLM for explanation
+        const explanation = await getDirectTextResponse(explanationQuery); // Assuming this function calls the LLM
+        if (explanation) {
+             return NextResponse.json({ response: explanation, data: null });
+        }
+        // Fall through to standard analysis if direct explanation fails
+    }
+
+
+    const analysis = await analyzeUserQuery(query, history);
+    console.log("Query Analysis Result:", analysis);
 
     // Validate analysis result
-    const validation = QueryAnalysisSchema.safeParse(analysisResult);
+    const validation = QueryAnalysisSchema.safeParse(analysis);
     if (!validation.success) {
         console.error("Invalid analysis structure:", validation.error);
         return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
@@ -959,14 +1305,16 @@ export async function POST(req: NextRequest) {
     let responseText = "";
 
     // Calculate date range if a period is specified
-    let dateRange: { start_date?: string; end_date?: string; period_description: string } | null = null;
-    if (entities?.period) {
-      dateRange = calculateDateRange(entities.period);
+    let dateRangeResult: { start_date?: string; end_date?: string; period_description: string } | null = null;
+    const period = entities?.period; // Type here is now inferred as the extended type from Zod
+    if (period) {
+      // calculateDateRange now accepts the extended period type
+      dateRangeResult = calculateDateRange(period); // This call should now be type-correct
     }
 
     // Prioritize explicit dates from AI if available
-    const startDate = entities?.explicit_start_date ?? dateRange?.start_date;
-    const endDate = entities?.explicit_end_date ?? dateRange?.end_date;
+    const startDate = entities?.explicit_start_date ?? dateRangeResult?.start_date;
+    const endDate = entities?.explicit_end_date ?? dateRangeResult?.end_date;
 
     const qualifier = entities?.record_qualifier;
     const identifier = entities?.workout_identifier;
@@ -991,7 +1339,7 @@ export async function POST(req: NextRequest) {
           entities.period, 
           startDate, 
           endDate,  
-          userName // Pass userName
+          userDisplayName // Pass userName
         );
         break;
 
@@ -1013,13 +1361,13 @@ export async function POST(req: NextRequest) {
              entities.period, 
              startDate, 
              endDate,  
-             userName // Pass userName
+             userDisplayName // Pass userName
            );
          } else {
             // Handle null average case with personality
             const typeDesc = describeWorkoutType(entities.workout_type ?? "any");
             const periodDesc = describePeriod(entities.period, startDate, endDate);
-            responseText = `Hmm ${userName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
+            responseText = `Hmm ${userDisplayName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
          }
         break;
 
@@ -1039,10 +1387,10 @@ export async function POST(req: NextRequest) {
                 entities.metric,
                 entities.workout_type,
                 entities.record_qualifier,
-                userName // Pass userName
+                userDisplayName // Pass userName
             );
          } else {
-            responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${userName}. Keep pushing for those PBs! 🚀`;
+            responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${userDisplayName}. Keep pushing for those PBs! 🚀`;
          }
          break;
 
@@ -1065,7 +1413,7 @@ export async function POST(req: NextRequest) {
             // Generate a simple text message, frontend will handle display
              const typeDesc = describeWorkoutType(entities?.workout_type);
              const periodDesc = describePeriod(entities?.period, startDate, endDate);
-             responseText = `Okay ${userName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
+             responseText = `Okay ${userDisplayName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
          } else {
              // Use the potentially more specific describePeriod
              const periodDesc = describePeriod(entities?.period, startDate, endDate);
@@ -1078,15 +1426,15 @@ export async function POST(req: NextRequest) {
          const details = await fetchWorkoutDetails(userId, entities.workout_identifier, entities?.workout_type);
          responseData = { details };
          if (details) {
-            responseText = generateDetailsResponse(details, userName); // Pass userName
+            responseText = generateDetailsResponse(details, userDisplayName); // Pass userName
          } else {
-            responseText = `Sorry ${userName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
+            responseText = `Sorry ${userDisplayName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
          }
          break;
 
       case "compare_metric":
           if (!entities?.metric || !entities?.period || (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date))) {
-               responseText = `To compare, ${userName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
+               responseText = `To compare, ${userDisplayName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
                break; 
           }
           
@@ -1108,7 +1456,7 @@ export async function POST(req: NextRequest) {
                 // Keep period2Label as the enum value
               } else {
                 // Should not happen due to initial check, but safeguard
-                responseText = `Something went wrong determining the second period for comparison, ${userName}.`;
+                responseText = `Something went wrong determining the second period for comparison, ${userDisplayName}.`;
                 break;
               }
           } else {
@@ -1134,13 +1482,13 @@ export async function POST(req: NextRequest) {
               entities.period, // Label for period 1
               period2Label, // Label for period 2 (if used)
               period2Description, // Description if explicit dates used
-              userName 
+              userDisplayName 
           );
           break;
 
       case "unknown":
       default:
-         responseText = response_suggestion || `Sorry ${userName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
+         responseText = response_suggestion || `Sorry ${userDisplayName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
         break;
     }
 
@@ -1159,10 +1507,16 @@ export async function POST(req: NextRequest) {
       analysis: validation.data
     });
 
-  } catch (error) {
-    console.error("API Coach Error:", error);
+  } catch (error: any) {
+    console.error("[API /coach] Internal Server Error:", error);
+    // Provide a user-friendly error message
     return NextResponse.json(
-      { error: "An internal error occurred." },
+      {
+        response: "Sorry, the AI coach encountered an unexpected issue. Please try again later.",
+        data: null,
+        // Optionally include error details in development only
+        // error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      },
       { status: 500 }
     );
   }
@@ -1228,15 +1582,18 @@ function formatValue(value: number | null, metric: z.infer<typeof ValidMetrics>)
      }
 }
 
-function describePeriod(period?: z.infer<typeof ValidPeriods>, startDate?: string, endDate?: string): string {
+// Define the extended period type explicitly for clarity in function signatures
+type ExtendedPeriodType = z.infer<typeof ValidPeriods>; // This now includes 'next_week'
+
+function describePeriod(period?: ExtendedPeriodType, startDate?: string, endDate?: string): string { // Use the imported type
     if (startDate && endDate) {
-        // Use UTC methods to avoid timezone-dependent rollover for end date
         const start = new Date(startDate);
         const end = new Date(endDate);
         const startDateString = `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()}`;
-        const endDateString = `${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`; // Format end date using UTC
+        const endDateString = `${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`; 
         return `between ${startDateString} and ${endDateString}`;
     }
+    if (period === 'next_week') return "next week"; 
     if (period) return period.replace(/_/g, ' ');
     return "overall";
 }
@@ -1250,13 +1607,13 @@ function generateTotalResponse(
     totalValue: number | null,
     metric: z.infer<typeof ValidMetrics>,
     workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period: z.infer<typeof ValidPeriods> | undefined,
+    period: ExtendedPeriodType | undefined, // Use the imported type
     startDate: string | undefined,
     endDate: string | undefined,
     userName: string // Add userName parameter
 ): string {
     const typeDesc = describeWorkoutType(workoutType);
-    const periodDesc = describePeriod(period, startDate, endDate);
+    const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
 
     if (totalValue === null || totalValue === 0) {
         return `Hey ${userName}, I checked for ${typeDesc}workouts ${periodDesc}, but it seems there wasn't any ${metric} logged for that time. Keep logging those sessions! 👍`;
@@ -1276,14 +1633,14 @@ function generateAverageResponse(
     average: number | null,
     metric: z.infer<typeof ValidMetrics>,
     workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period: z.infer<typeof ValidPeriods> | undefined,
+    period: ExtendedPeriodType | undefined, // Use the imported type
     startDate: string | undefined,
     endDate: string | undefined,
     userName: string // Add userName
 ): string {
     const formattedValue = formatValue(average, metric);
     const typeDesc = describeWorkoutType(workoutType);
-    const periodDesc = describePeriod(period, startDate, endDate);
+    const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
 
     if (average === null) {
         // Handle null average case with personality
@@ -1330,14 +1687,14 @@ function generateRecordResponse(
 function generateListResponse(
     workouts: WorkoutListItem[],
     workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period: z.infer<typeof ValidPeriods> | undefined,
+    period: ExtendedPeriodType | undefined, // Use the imported type
     startDate: string | undefined,
     endDate: string | undefined,
     limit?: number,
     userName?: string // Add userName parameter
 ): string {
     const typeDesc = describeWorkoutType(workoutType);
-    const periodDesc = describePeriod(period, startDate, endDate);
+    const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
     const name = userName || 'there'; // Default if needed
 
     if (workouts.length === 0) {

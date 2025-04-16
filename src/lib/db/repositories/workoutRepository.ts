@@ -52,44 +52,56 @@ function convertToPlainObject(obj: any): any {
   if (obj === null || obj === undefined) {
     return obj;
   }
-  
-  // Handle dates
-  if (obj instanceof Date) {
+
+  // Handle dates - **Check if it's a valid Date before calling toISOString**
+  if (obj instanceof Date && !isNaN(obj.getTime())) {
     return obj.toISOString();
   }
-  
+  // If it might be a date string, try parsing it
+  if (typeof obj === 'string') {
+     // Add a basic check for date-like strings, adjust regex as needed
+     // This prevents trying to parse non-date strings
+    if (/^\d{4}-\d{2}-\d{2}/.test(obj)) { 
+        const potentialDate = new Date(obj);
+        if (!isNaN(potentialDate.getTime())) {
+            return potentialDate.toISOString();
+        }
+    }
+    // Return the original string if not a parseable date
+    return obj;
+  }
+
   // Handle ObjectId
-  if (obj && obj._id && typeof obj._id.toString === 'function') {
-    obj = { ...obj, _id: obj._id.toString() };
+  // Use optional chaining and check _bsontype for more robustness
+  if (obj?._bsontype === 'ObjectId' && typeof obj.toString === 'function') {
+    return obj.toString();
   }
-  
-  // If we have a MongoDB document with a toObject method, use it
-  if (obj && typeof obj.toObject === 'function') {
-    obj = obj.toObject();
-  }
-  
+
   // Handle arrays by mapping over each item
   if (Array.isArray(obj)) {
     return obj.map(item => convertToPlainObject(item));
   }
   
-  // Handle plain objects with potential nested MongoDB objects
-  if (obj && typeof obj === 'object' && obj.constructor === Object) {
+  // If we have a MongoDB document with a toObject method, use it first
+  // Make sure obj is not null and toObject exists
+  if (obj && typeof obj.toObject === 'function') {
+    obj = obj.toObject({ virtuals: false }); // Call toObject, exclude virtuals
+  }
+
+  // Handle plain objects or objects from toObject()
+  if (obj && typeof obj === 'object' && !Array.isArray(obj) && !(obj instanceof Date)) {
     const result: any = {};
     for (const key in obj) {
-      // Skip keys that start with $ or _
-      if (key.startsWith('$') || key === '__v') continue;
-      
-      // Convert ObjectIds in any key to strings
-      if (obj[key] && typeof obj[key].toString === 'function' && obj[key]._bsontype === 'ObjectID') {
-        result[key] = obj[key].toString();
-      } else {
-        result[key] = convertToPlainObject(obj[key]);
+      // Make sure it's an own property
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        // Skip internal Mongoose/mongo properties more broadly
+        if (key.startsWith('$') || key === '__v') continue;
+        result[key] = convertToPlainObject(obj[key]); // Recurse
       }
     }
     return result;
   }
-  
+
   // Return primitive values and everything else as is
   return obj;
 }
@@ -892,61 +904,60 @@ export async function getWorkoutDatesForMonth(userId: string, date: Date) {
   }
 }
 
-// Get previous workouts for a specific workout TYPE
+/**
+ * Fetch previous workouts of a specific type, excluding the current one.
+ * @param userId - User ID
+ * @param workoutType - Type of workout (e.g., 'running', 'strength')
+ * @param currentDate - The date of the current workout (to find older ones)
+ * @param currentWorkoutId - The ID of the current workout (to exclude it)
+ * @param limit - Max number of previous workouts to return
+ * @returns Array of previous workout documents (lean)
+ */
 export async function getPreviousWorkoutsByType(
-  userId: string, 
-  workoutType: string, 
+  userId: string,
+  workoutType: string,
   currentDate: Date,
   currentWorkoutId: string,
   limit = 10
 ): Promise<WorkoutData[]> {
-  try {
-    await dbConnect()
-    
-    // Only select the minimal fields needed for comparison
-    const workoutDocs = await WorkoutModel.find({
-      userId: new ObjectId(userId),
-      type: workoutType,
-      _id: { $ne: new ObjectId(currentWorkoutId) },
-      date: { $lt: currentDate },
-    })
-      .select({
-        _id: 1,
-        userId: 1,
-        date: 1,
-        duration: 1,
-        distance: 1,
-        'cardioDetails.distance': 1,
-        'cardioDetails.duration': 1,
-        'cardioDetails.pace': 1,
-        type: 1,
-        createdAt: 1,
-        updatedAt: 1
-      })
-      .sort({ date: -1 })
-      .limit(limit)
-      .lean()
-      .exec()
+  if (!userId || !workoutType || !currentDate || !currentWorkoutId) {
+    console.error("[getPreviousWorkoutsByType] Missing required parameters.");
+    return [];
+  }
 
-    // Return minimal data structure
-    return workoutDocs.map((doc: any) => ({
-      _id: doc._id.toString(),
-      userId: doc.userId.toString(),
-      type: doc.type,
-      date: doc.date,
-      duration: doc.duration || 0,
-      distance: doc.distance || doc.cardioDetails?.distance || 0,
-      cardioDetails: doc.cardioDetails ? {
-        distance: doc.cardioDetails.distance,
-        duration: doc.cardioDetails.duration,
-        pace: doc.cardioDetails.pace
-      } : undefined,
-      createdAt: doc.createdAt.toISOString(),
-      updatedAt: doc.updatedAt.toISOString()
-    }))
+  console.log(`[getPreviousWorkoutsByType] Fetching previous '${workoutType}' workouts for user ${userId} before ${currentDate.toISOString()} (excluding ${currentWorkoutId}).`);
+
+  try {
+    await dbConnect();
+
+    const previousWorkoutDocs = await WorkoutModel.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      type: workoutType,
+      date: { $lt: currentDate }, // Find workouts strictly *before* the current date
+      _id: { $ne: new mongoose.Types.ObjectId(currentWorkoutId) } // Exclude the current workout ID itself
+    })
+      .sort({ date: -1 }) // Sort by date descending (most recent first)
+      .limit(limit)
+      .lean() // Return plain JavaScript objects
+      .exec();
+
+    console.log(`[getPreviousWorkoutsByType] Found ${previousWorkoutDocs.length} previous workouts.`);
+
+    // Use the serialization helper - ensure it handles potential errors gracefully
+    const serializedWorkouts = previousWorkoutDocs.map(doc => {
+        try {
+            return convertToPlainObject(doc);
+        } catch (serializeError) {
+            console.error(`[getPreviousWorkoutsByType] Error serializing workout doc ${doc?._id}:`, serializeError);
+            return null; // Return null for documents that fail serialization
+        }
+    }).filter(Boolean) as WorkoutData[]; // Filter out nulls and assert type
+
+    return serializedWorkouts;
+
   } catch (error) {
-    console.error(`Error getting previous workouts for type ${workoutType}:`, error)
-    return [] 
+    console.error(`Error fetching previous ${workoutType} workouts:`, error);
+    return []; // Return empty array on error
   }
 }
 
@@ -1055,6 +1066,39 @@ export async function getFastestPace(
   } catch (error) {
     console.error(`Error getting fastest ${distanceKm}k pace:`, error);
     return null;
+  }
+}
+
+// Get recent workouts (Refactored)
+export async function getRecentWorkouts(userId: string, limit = 10): Promise<any[]> {
+  console.log(`Fetching recent workouts for user ${userId}, limit ${limit}`);
+  try {
+    // This function implementation was missing in the previous edit.
+    // Re-implementing based on previous logic: Fetch all, sort, limit, serialize.
+    await dbConnect();
+    const workoutDocs = await WorkoutModel.find({ userId: new mongoose.Types.ObjectId(userId) })
+      .sort({ date: -1 }) // Sort by date descending
+      .limit(limit)
+      .lean()
+      .exec();
+      
+    // Use the serialization helper
+    const serializedWorkouts = workoutDocs.map(doc => {
+        try {
+            return convertToPlainObject(doc);
+        } catch (serializeError) {
+            console.error(`[getRecentWorkouts] Error serializing workout doc ${doc?._id}:`, serializeError);
+            return null; // Skip documents that fail serialization
+        }
+    }).filter(Boolean) as any[]; // Ensure result is properly typed/filtered
+
+    console.log(`Returning ${serializedWorkouts.length} recent workouts.`);
+    return serializedWorkouts;
+
+  } catch (error) {
+    console.error("Error fetching recent workouts:", error);
+     // Return empty array on error, consistent with other functions
+     return [];
   }
 }
 

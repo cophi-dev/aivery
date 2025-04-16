@@ -1,120 +1,181 @@
-import { getServerSession } from "next-auth/next";
+'use client'; // <-- Make this a Client Component
+
 import { redirect } from "next/navigation";
-import { headers } from 'next/headers';
-import { authOptions } from "@/lib/auth";
+// import { headers } from 'next/headers'; // headers() only works in Server Components
+import { useSession } from "next-auth/react"; // <-- Import useSession
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation'; // Import useRouter
 
-// Force dynamic rendering to disable data caching for this page
-export const dynamic = 'force-dynamic';
-
-// Import Client Components (assuming they exist in separate files)
+// Import Client Components
 import { SubscriptionStatus } from "./_components/SubscriptionStatusClient"; 
 import { DashboardHeader } from "./_components/DashboardHeaderClient"; 
 import { LogWorkoutButton } from "./_components/LogWorkoutButtonClient"; 
 import { ProgressCards } from "./_components/ProgressCardsClient"; 
 import { SpotlightCards } from "./_components/SpotlightCardsClient"; 
 import { PersonalRecordsCard } from "./_components/PersonalRecordsCardClient"; 
-// import { LoadingIndicator } from "@/components/LoadingIndicator"; // If needed
+import { QuickActionsCard } from "./_components/QuickActionsCardClient";
+import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assuming a loading indicator component
 
-// Import Server-side helpers (assuming they exist)
-import { calculateDashboardMetrics } from "@/lib/dashboard-metrics"; 
-import { fetchWorkouts } from "@/lib/workout-actions"; // Use actual workout fetching
+// Define a type for the metrics data (adjust based on actual structure)
+interface DashboardMetrics {
+    strengthVolumeLast7Days: number;
+    cardioDurationLast7Days: number;
+    cardioDistanceLast7Days: number;
+    strengthVolumePrevious7Days: number;
+    cardioDurationPrevious7Days: number;
+    cardioDistancePrevious7Days: number;
+    topPRs: any[]; // Define more specific type if possible
+    // Add any other metrics returned by the API
+}
 
-// --- Main Dashboard Page Component (Server Component) ---
-export default async function DashboardPage() {
-    const session = await getServerSession(authOptions);
+// Placeholder type/interface for a chat message
+interface ChatMessage {
+    id: string; // Or number
+    role: 'user' | 'assistant';
+    content: string;
+}
 
-    // Redirect to login if no session or userId
-    if (!session?.user?.id) {
-        console.warn("[Dashboard Page] No session found, redirecting to login.");
-        redirect("/login?callbackUrl=/dashboard");
-    }
-    const userId = session.user.id;
+// Placeholder declaration for the chat update function
+// TODO: Replace this with your actual chat context/state management hook/import
+declare function addMessageToChat(message: ChatMessage): void;
 
-    // Fetch workouts directly and calculate metrics
-    // let workouts = []; // This fetch is redundant, metrics are calculated internally
-    let metrics = null;
-    try {
-        // Fetch workouts directly using the imported action - REMOVED
-        // console.log("[Dashboard Page] Fetching workouts directly...");
-        // workouts = await fetchWorkouts(); // Already filters by user implicitly - REMOVED
-        
-        // Enhanced logging to debug workout data - REMOVED
-        // console.log(`[Dashboard Page] Fetched ${workouts.length} workouts`);
-        // if (workouts.length > 0) {
-        //     console.log('[Dashboard Page] First workout date:', workouts[0].date);
-        //     console.log('[Dashboard Page] Last workout date:', workouts[workouts.length - 1].date);
-        //     // Log the calculatedVolume of the first workout if it exists
-        //     console.log('[Dashboard Page] First workout calculatedVolume:', workouts[0].calculatedVolume);
-        // }
-        
-        // console.log(`[Dashboard Page] Before metrics calculation: workouts array length = ${workouts.length}`);
-        
-        // Calculate metrics - Fetches its own data internally
-        console.log("[Dashboard Page] Calculating metrics...");
-        metrics = await calculateDashboardMetrics();
-        console.log("[Dashboard Page] Calculated metrics:", metrics);
+// --- Main Dashboard Page Component (Client Component) ---
+export default function DashboardPage() {
+    const { data: session, status } = useSession({
+        required: true, // Require authentication
+        onUnauthenticated() {
+            // Redirect to login if not authenticated
+            redirect("/login?callbackUrl=/dashboard");
+        },
+    });
+    const router = useRouter(); // Initialize router
+    const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+    const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
+    const [errorMetrics, setErrorMetrics] = useState<string | null>(null);
 
-        // More detailed logging for cardio metrics
-        console.log(`[Dashboard Page] Cardio metrics - Duration: ${metrics?.cardioDurationLast7Days} seconds, Distance: ${metrics?.cardioDistanceLast7Days} meters`);
-        console.log(`[Dashboard Page] Cardio duration type: ${typeof metrics?.cardioDurationLast7Days}, Distance type: ${typeof metrics?.cardioDistanceLast7Days}`);
-        
-        // Test km conversion logic here to verify it works
-        const distanceKm = (metrics?.cardioDistanceLast7Days || 0) / 1000;
-        console.log(`[Dashboard Page] Distance in km (calculated here): ${distanceKm.toFixed(1)} km`);
-    } catch (error) {
-        console.error("[Dashboard Page] Failed to fetch server-side data or calculate metrics:", error);
-        // Basic error display
+    // Fetch metrics when session is loaded
+    useEffect(() => {
+        if (status === "authenticated") {
+            const fetchMetrics = async () => {
+                setIsLoadingMetrics(true);
+                setErrorMetrics(null);
+                try {
+                    console.log("[Dashboard Page] Fetching metrics from API...");
+                    const response = await fetch('/api/dashboard/metrics');
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch metrics: ${response.statusText}`);
+                    }
+                    const data: DashboardMetrics = await response.json();
+                    console.log("[Dashboard Page] Metrics fetched successfully:", data);
+                    setMetrics(data);
+                } catch (error: any) {
+                    console.error("[Dashboard Page] Error fetching metrics:", error);
+                    setErrorMetrics(error.message || "Failed to load dashboard metrics.");
+                    setMetrics(null); // Reset metrics on error
+                } finally {
+                    setIsLoadingMetrics(false);
+                }
+            };
+            fetchMetrics();
+        }
+    }, [status]); // Rerun effect when session status changes
+
+    // --- Updated AI message sender ---
+    // Now redirects immediately to chat, passing the query and context type.
+    // The API call will be handled by the chat page.
+    const handleSendAiMessage = (query: string, context: any) => {
+        console.log("--- Triggering AI Action (Redirecting to Chat) ---");
+        console.log("Query:", query);
+        console.log("Context:", context);
+
+        // Encode query and context to pass in URL
+        const encodedQuery = encodeURIComponent(query);
+        // We only need the requestType from context for the chat page to know what to do
+        const requestType = context?.requestType;
+
+        if (!requestType) {
+            console.error("handleSendAiMessage called without a requestType in context!");
+            alert("Cannot start action: Missing context type.");
+            return;
+        }
+
+        const encodedRequestType = encodeURIComponent(requestType);
+
+        // Redirect immediately
+        router.push(`/chat?initialQuery=${encodedQuery}&requestType=${encodedRequestType}`);
+    };
+
+    // Handle loading state for session
+    if (status === "loading") {
         return (
-            <div className="container mx-auto px-4 py-8 text-center">
-                <h1 className="text-2xl font-bold mb-4 text-destructive">Dashboard Error</h1>
-                <p>Failed to load dashboard data. Please refresh or try again later.</p>
+            <div className="flex justify-center items-center h-screen">
+                <LoadingIndicator />
             </div>
         );
     }
-
-    // Get user details directly from the session
-    const displayName = session.user.nickname || session.user.name || "User";
-    const userImage = session.user.image || null;
+    
+    // Session is definitely authenticated here due to `required: true`
+    const displayName = session?.user?.nickname || session?.user?.name || "User";
+    const userImage = session?.user?.image || null;
 
     return (
         <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-6 md:space-y-8">
-            {/* Header - Use session data directly */}
             <DashboardHeader 
                 displayName={displayName} 
                 userImage={userImage} 
             />
 
-            {/* Main Content Grid/Column */}
             <div className="flex flex-col gap-6 w-full max-w-4xl">
-
-                {/* Log Workout Button - Client Component */}
                 <LogWorkoutButton />
-
-                {/* Subscription Status - Client Component (fetches its own data) */}
                 <SubscriptionStatus /> 
+                
+                {/* Conditional rendering for Progress & Records based on loading/error state */} 
+                {isLoadingMetrics ? (
+                    <div className="flex justify-center items-center h-24"><LoadingIndicator /></div>
+                ) : errorMetrics ? (
+                     <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
+                ) : metrics ? (
+                    <>
+                        <ProgressCards 
+                            strengthVolume={metrics.strengthVolumeLast7Days}
+                            cardioDuration={metrics.cardioDurationLast7Days}
+                            cardioDistance={metrics.cardioDistanceLast7Days}
+                            strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
+                            cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
+                            cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
+                        />
 
-                {/* Progress Cards - Client Component (receives metrics) */}
-                <ProgressCards 
-                    strengthVolume={metrics?.strengthVolumeLast7Days ?? 0} 
-                    cardioDuration={metrics?.cardioDurationLast7Days ?? 0}
-                    cardioDistance={metrics?.cardioDistanceLast7Days ?? 0}
-                    strengthVolumePrevious={metrics?.strengthVolumePrevious7Days ?? 0}
-                    cardioDurationPrevious={metrics?.cardioDurationPrevious7Days ?? 0}
-                    cardioDistancePrevious={metrics?.cardioDistancePrevious7Days ?? 0}
-                />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <SpotlightCards />
+                            {/* Pass the actual function as a prop */}
+                            <QuickActionsCard sendAiMessage={handleSendAiMessage} /> 
+                        </div>
 
-                {/* Spotlight Cards - Client Component */}
-                <SpotlightCards />
-
-                {/* Personal Records - Client Component (receives metrics) */}
-                <PersonalRecordsCard 
-                    topPRs={metrics?.topPRs ?? []} 
-                />
-
-                 {/* TODO: Add Recent Workouts List (pass workouts data) */}
-
+                        <PersonalRecordsCard 
+                            topPRs={metrics.topPRs}
+                        />
+                    </>
+                ) : (
+                    <p className="text-center text-muted-foreground">Metrics data not available.</p>
+                )}
+                
+                {/* Render Spotlight/QuickActions even if metrics fail? Or hide them too? 
+                    Keeping them visible for now, but QuickActionsCard needs handleSendAiMessage.
+                    Let's move QuickActionsCard outside the conditional metric rendering. */}
+                {/* 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <SpotlightCards />
+                    <QuickActionsCard sendAiMessage={handleSendAiMessage} /> 
+                </div> 
+                */}
+                
             </div>
-
+            {/* Remove AI Loading indicator from dashboard */}
+            {/* {isAiLoading && (
+                 <div className="fixed bottom-4 right-4 z-50">
+                     <LoadingIndicator /> 
+                 </div>
+            )} */}
         </div>
     );
 }

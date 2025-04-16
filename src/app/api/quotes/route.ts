@@ -203,7 +203,7 @@ Style Guidelines:
         'Authorization': `Bearer ${grokApiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-3-latest',
+        model: 'grok-3-mini-latest',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContextPrompt }

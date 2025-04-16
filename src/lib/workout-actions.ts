@@ -7,6 +7,7 @@ import {
   createWorkout as createWorkoutDb,
   deleteWorkout as deleteWorkoutDb,
   getPreviousWorkouts,
+  getPreviousWorkoutsByType,
   updateWorkout as updateWorkoutDb,
 } from "@/lib/db/repositories/workoutRepository"
 import { getCurrentUser } from "./auth"
@@ -1350,89 +1351,113 @@ export async function fetchWorkoutForAI(id: string): Promise<any> {
   try {
     const workout = await getWorkoutByIdDb(id)
 
-    if (!workout) {
-      return null
+    if (!workout || !workout.userId || !workout.type || !workout.date || !workout._id) {
+        console.error(`[fetchWorkoutForAI] Invalid workout data fetched for ID ${id}:`, workout);
+      return null;
     }
 
-    // Get previous workouts of the same type for comparison
-    const previousWorkouts = await getPreviousWorkouts(
-      workout.userId, 
-      workout.type, // Use workout type instead of name for better matching
-      new Date(workout.date), 
-      5 // Increase the number of previous workouts for better trend analysis
+    const currentWorkoutId = workout._id.toString();
+
+    const previousWorkoutDocs = await getPreviousWorkoutsByType( // Fetch raw docs
+      workout.userId.toString(),
+      workout.type,
+      new Date(workout.date),
+      currentWorkoutId,
+      5
     )
 
-    // Process cardio details for better AI analysis
-    let enhancedWorkout = enhanceCardioWorkout(workout);
-    
-    // Calculate progression metrics compared to previous workouts
+    let enhancedWorkout = enhanceCardioWorkout(workout); // Enhance current workout
     let progressMetrics = null
-    if (previousWorkouts.length > 0) {
-      progressMetrics = calculateProgressionMetrics(enhancedWorkout, previousWorkouts)
+    let previousWorkoutsSummary = undefined; // Initialize summary
+
+    if (previousWorkoutDocs && previousWorkoutDocs.length > 0) {
+      console.log(`[fetchWorkoutForAI] Found ${previousWorkoutDocs.length} previous ${workout.type} workouts for comparison.`);
+      
+      // Create a summary of previous workouts instead of sending full data
+      previousWorkoutsSummary = previousWorkoutDocs.map((prevWorkout: any) => ({
+          _id: prevWorkout._id?.toString(),
+          date: prevWorkout.date ? new Date(prevWorkout.date).toISOString().split('T')[0] : undefined, // Just date part
+          type: prevWorkout.type,
+          duration: prevWorkout.duration,
+          distance: prevWorkout.cardioDetails?.distance ?? prevWorkout.distance,
+          calculatedVolume: prevWorkout.calculatedVolume,
+          // Add key cardio metrics if available
+          pace: prevWorkout.cardioDetails?.pace,
+          avgHeartRate: prevWorkout.cardioDetails?.heartRate?.average,
+      }));
+      
+      // Calculate progress metrics using the enhanced current workout and the *original* previous docs
+      // (calculateProgressionMetrics might need the fuller previous docs)
+      progressMetrics = calculateProgressionMetrics(enhancedWorkout, previousWorkoutDocs); 
+      console.log("[fetchWorkoutForAI] Calculated progress metrics:", progressMetrics);
+    } else {
+       console.log(`[fetchWorkoutForAI] No previous ${workout.type} workouts found for comparison.`); 
     }
 
-    return {
-      ...enhancedWorkout,
-      previousWorkouts: previousWorkouts.length > 0 ? previousWorkouts : undefined,
+    // Combine the results into a new object
+    const result = {
+      ...enhancedWorkout, // contains potentially modified workout data
+      // Include the summary, not the full previous workouts
+      previousWorkoutsSummary: previousWorkoutsSummary, 
       progressMetrics
-    }
+    };
+
+    // Deep serialize the final combined object before returning
+    return deepSerialize(result);
+
   } catch (error) {
     console.error(`Error fetching workout ${id} for AI:`, error)
     throw new Error(`Failed to fetch workout ${id} for AI`)
   }
 }
 
-// Calculate progression metrics compared to previous workouts
-function calculateProgressionMetrics(currentWorkout: any, previousWorkouts: any[]): any {
-  // Skip if no previous workouts
-  if (!previousWorkouts.length) return null
-  
-  const metrics: any = {}
-  
-  // Sort previous workouts by date (newest first)
-  const sortedWorkouts = [...previousWorkouts].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  )
-  
-  // Calculate average metrics from previous workouts
-  const avgDuration = sortedWorkouts.reduce((sum: number, w: any) => sum + w.duration, 0) / sortedWorkouts.length
-  
-  // Calculate duration trend
-  metrics.durationChange = currentWorkout.duration - avgDuration
-  metrics.durationChangePercent = avgDuration > 0 ? (metrics.durationChange / avgDuration) * 100 : 0
-  
-  // Calculate distance trend if available
-  if (currentWorkout.distance || currentWorkout.cardioDetails?.distance) {
-    const currentDistance = currentWorkout.distance || currentWorkout.cardioDetails?.distance || 0
-    const previousDistances = sortedWorkouts
-      .map((w: any) => w.distance || w.cardioDetails?.distance || 0)
-      .filter((d: number) => d > 0)
-    
-    if (previousDistances.length > 0) {
-      const avgDistance = previousDistances.reduce((sum: number, d: number) => sum + d, 0) / previousDistances.length
-      metrics.distanceChange = currentDistance - avgDistance
-      metrics.distanceChangePercent = avgDistance > 0 ? (metrics.distanceChange / avgDistance) * 100 : 0
-    }
+// --- Helper function used by fetchWorkoutForAI ---
+// Ensure this function handles the structure of the raw previousWorkoutDocs
+function calculateProgressionMetrics(currentWorkout: any, previousWorkoutDocs: any[]): any {
+  // Moved metrics declaration to the top
+  const metrics: any = {};
+
+  // Use the correct parameter name here
+  if (!previousWorkoutDocs || previousWorkoutDocs.length === 0) {
+    return null;
   }
-  
-  // Calculate pace trend if available for running/cycling/swimming
-  if (["running", "cycling", "swimming"].includes(currentWorkout.type)) {
-    if (currentWorkout.cardioDetails?.pace) {
-      const currentPace = currentWorkout.cardioDetails.pace
-      const previousPaces = sortedWorkouts
-        .map((w: any) => w.cardioDetails?.pace)
-        .filter((p: any) => p !== undefined) as number[]
-      
-      if (previousPaces.length > 0) {
-        const avgPace = previousPaces.reduce((sum: number, p: number) => sum + p, 0) / previousPaces.length
-        // Note: For pace, lower is better, so we invert the change
-        metrics.paceChange = avgPace - currentPace
-        metrics.paceChangePercent = avgPace > 0 ? (metrics.paceChange / avgPace) * 100 : 0
-      }
-    }
+  // Still use the most recent *full* previous doc for comparison
+  const lastWorkout = previousWorkoutDocs[0];
+
+  // ... rest of the calculations remain the same, using lastWorkout ...
+  // Duration
+  if (currentWorkout.duration && lastWorkout.duration) {
+    metrics.durationChange = currentWorkout.duration - lastWorkout.duration;
+    metrics.durationChangePercent = lastWorkout.duration !== 0 ? (metrics.durationChange / lastWorkout.duration) * 100 : 0;
   }
-  
-  return metrics
+  // Distance
+  const currentDistance = currentWorkout.cardioDetails?.distance ?? currentWorkout.distance;
+  const lastDistance = lastWorkout.cardioDetails?.distance ?? lastWorkout.distance;
+  if (currentDistance && lastDistance) {
+    metrics.distanceChange = currentDistance - lastDistance;
+    metrics.distanceChangePercent = lastDistance !== 0 ? (metrics.distanceChange / lastDistance) * 100 : 0;
+  }
+  // Volume
+  if (currentWorkout.calculatedVolume && lastWorkout.calculatedVolume) {
+     metrics.volumeChange = currentWorkout.calculatedVolume - lastWorkout.calculatedVolume;
+     metrics.volumeChangePercent = lastWorkout.calculatedVolume !== 0 ? (metrics.volumeChange / lastWorkout.calculatedVolume) * 100 : 0;
+  }
+  // Pace
+  const currentPace = currentWorkout.cardioDetails?.pace;
+  const lastPace = lastWorkout.cardioDetails?.pace;
+   if (currentPace && lastPace && currentPace > 0 && lastPace > 0) {
+    metrics.paceChange = currentPace - lastPace;
+    metrics.paceChangePercent = (metrics.paceChange / lastPace) * 100;
+  }
+  // Avg HR
+   const currentAvgHr = currentWorkout.cardioDetails?.heartRate?.average;
+   const lastAvgHr = lastWorkout.cardioDetails?.heartRate?.average;
+   if (currentAvgHr && lastAvgHr) {
+       metrics.avgHrChange = currentAvgHr - lastAvgHr;
+       metrics.avgHrChangePercent = lastAvgHr !== 0 ? (metrics.avgHrChange / lastAvgHr) * 100 : 0;
+   }
+
+  return Object.keys(metrics).length > 0 ? metrics : null;
 }
 
 // Get previous workouts for a specific exercise
