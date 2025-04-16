@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { UserAvatar } from "@/components/user-avatar"
 import { WorkoutListDisplay } from "@/components/workout-list-display"
 import { fetchWorkoutSummary } from "@/lib/workout-actions"
+import { InlineSpinner } from "@/components/ui/inline-spinner"
 
 // Define Message type clearly
 interface Message {
@@ -229,9 +230,17 @@ export default function ChatPage() {
              setWorkoutContext(summary); // Store summary if needed later
              const workoutName = summary.name || summary.type || 'workout'; // Fallback name
              const workoutDate = summary.date ? ` from ${summary.date}` : '';
-             // Use a slightly more conversational prompt
-             const initialPrompt = `Can you give me some insights on my ${workoutName}${workoutDate}?`;
-             console.log(`[ChatPage] Workout summary found. Sending initial message: "${initialPrompt}"`);
+             // Construct a more detailed initial prompt for analysis
+             const initialPrompt = `
+Please analyze my ${workoutName} workout from ${summary.date || 'this date'} (ID: ${workoutId}). Specifically, provide:
+
+*   Feedback on exercise selection and balance
+*   Volume and intensity assessment
+*   Progress tracking compared to previous workouts
+*   Suggestions for improvement
+*   Recovery recommendations
+`;
+             console.log(`[ChatPage] Workout summary found. Sending detailed analysis request for ID: ${workoutId}`);
              // Pass the fetched summary as context
              sendMessage(initialPrompt, { workoutSummary: summary });
            } else {
@@ -365,7 +374,7 @@ export default function ChatPage() {
                 autoComplete="off"
               />
               <Button type="submit" disabled={isLoading || !input.trim()} size="icon">
-                {isLoading ? <LucideLoader className="h-4 w-4 animate-spin" /> : <LucideSend className="h-4 w-4" />}
+                {isLoading ? <InlineSpinner size={16} /> : <LucideSend className="h-4 w-4" />}
               </Button>
             </form>
           </CardContent>

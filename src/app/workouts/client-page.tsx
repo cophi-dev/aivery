@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LucidePlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from 'next/navigation';
+import { LoadingIndicator } from "@/components/ui/loading-indicator";
 
 export default function ClientWorkoutsPage() {
   const [user, setUser] = useState<any>(null);
@@ -61,14 +62,7 @@ export default function ClientWorkoutsPage() {
 
   // Loading state
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-center items-center h-40">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
-        <p className="text-center mt-4">Loading authentication status...</p>
-      </div>
-    );
+    return <LoadingIndicator />;
   }
 
   // Not authenticated

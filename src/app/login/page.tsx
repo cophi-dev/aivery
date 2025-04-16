@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Link from "next/link"
 import { Icons } from "@/components/icons"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
+import { InlineSpinner } from "@/components/ui/inline-spinner"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -81,6 +83,16 @@ export default function LoginPage() {
     }
   }
 
+  // Check if running in development
+  const isDev = process.env.NODE_ENV === 'development'
+
+  // TODO: Add loading state based on session status if needed
+  const isLoadingInitial = false; // Placeholder - Replace with actual session loading check if applicable
+
+  if (isLoadingInitial) {
+    return <LoadingIndicator />;
+  }
+
   // Show a loading state if redirecting
   if (isRedirecting) {
     return (
@@ -151,7 +163,7 @@ export default function LoginPage() {
             className="w-full" 
             disabled={loading}
           >
-            {loading && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+            {loading && <InlineSpinner size={16} className="mr-2" />}
             Sign in
           </Button>
           

@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 // import { calculateDateRange } from "@/lib/utils/dateUtils";
 import { calculateDateRange } from "./dateUtils"; // Use local import
 // import { db } from "@/lib/db"; // Placeholder for actual db import
-import Anthropic from "@anthropic-ai/sdk"; // Import Anthropic SDK
+// import Anthropic from "@anthropic-ai/sdk"; // Import Anthropic SDK
 import { ObjectId } from 'mongodb'; // Import ObjectId
 // Mongoose imports
 import dbConnect from '@/lib/db/mongodb';
@@ -95,9 +95,9 @@ const QueryAnalysisSchema = z.object({
 type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
 
 // Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// const anthropic = new Anthropic({
+//   apiKey: process.env.ANTHROPIC_API_KEY,
+// });
 
 // Helper to get the Zod schema as a string for the prompt
 function getQueryAnalysisSchemaString(): string {
@@ -133,6 +133,13 @@ interface HistoryMessage {
  */
 async function generateInitialWorkoutInsight(workoutId: string, userName: string): Promise<string> {
   try {
+    // Ensure Grok API key is available
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+      console.error("[generateInitialWorkoutInsight] GROK_API_KEY not configured.");
+      return `Sorry ${userName}, the AI coach is currently unavailable. Please try again later.`;
+    }
+
     console.log(`[generateInitialWorkoutInsight] Fetching workout details for AI: ${workoutId}`);
     const workoutDataForAI = await fetchWorkoutForAI(workoutId);
 
@@ -165,33 +172,44 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
       progressMetrics: workoutDataForAI.progressMetrics,
     };
 
-    const systemPrompt = `\nYou are Aivery, a friendly and insightful fitness coach. The user, ${userName}, has just clicked on a specific workout in their history and wants to discuss it.
+    const systemPrompt = `\\nYou are Aivery, a friendly and insightful fitness coach. The user, ${userName}, has just clicked on a specific workout in their history and wants to discuss it.\\n\\nWorkout Data Overview:\\n${JSON.stringify(promptData, null, 2)}\\n\\nYour task is to generate a welcoming and insightful opening message (1-2 sentences) based ONLY on the provided Workout Data Overview. Briefly highlight something interesting (e.g., a key stat, a comparison like duration/distance change if progressMetrics exist, a potential PR) and then ask an open-ended question to guide the conversation, like \"What aspect of this workout would you like to focus on?\" or \"How did this workout feel compared to your last session?\". Be encouraging and conversational. Focus on the MOST RECENT workout data provided.`;
 
-Workout Data Overview:
-${JSON.stringify(promptData, null, 2)}
-
-Your task is to generate a welcoming and insightful opening message (1-2 sentences) based ONLY on the provided Workout Data Overview. Briefly highlight something interesting (e.g., a key stat, a comparison like duration/distance change if progressMetrics exist, a potential PR) and then ask an open-ended question to guide the conversation, like "What aspect of this workout would you like to focus on?" or "How did this workout feel compared to your last session?". Be encouraging and conversational. Focus on the MOST RECENT workout data provided.
-`;
-
-    console.log("[generateInitialWorkoutInsight] Sending prompt to Anthropic for initial insight...");
-    const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022", 
-      max_tokens: 150, // Keep response concise
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: "Generate the initial insightful message based on the workout data provided in the system prompt." },
-      ],
+    console.log("[generateInitialWorkoutInsight] Sending prompt to Grok for initial insight...");
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: "Generate the initial insightful message based on the workout data provided in the system prompt." }
+        ],
+        max_tokens: 150, // Keep response concise
+        temperature: 0, // Keep deterministic for this use case
+        stream: false,
+      })
     });
 
-    console.log("[generateInitialWorkoutInsight] Anthropic Raw Response:", msg);
-
-    let insightText = "Okay, let's look at that workout. What stands out to you?"; // Fallback
-    const firstBlock = msg.content?.[0];
-    if (firstBlock && firstBlock.type === "text") {
-      insightText = firstBlock.text.trim();
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[generateInitialWorkoutInsight] Grok API error: ${response.status} ${response.statusText}`, errorBody);
+      throw new Error(`Grok API request failed with status ${response.status}`);
     }
 
-    console.log(`[generateInitialWorkoutInsight] Generated insight: "${insightText}"`);
+    const data = await response.json();
+    console.log("[generateInitialWorkoutInsight] Grok Raw Response:", data);
+
+    let insightText = "Okay, let's look at that workout. What stands out to you?"; // Fallback
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        insightText = data.choices[0].message.content.trim();
+    } else {
+        console.warn("[generateInitialWorkoutInsight] Unexpected Grok response structure:", data);
+    }
+
+    console.log(`[generateInitialWorkoutInsight] Generated insight: \"${insightText}\"`);
     return insightText;
 
   } catch (error) {
@@ -201,11 +219,20 @@ Your task is to generate a welcoming and insightful opening message (1-2 sentenc
 }
 
 /**
- * Analyzes the user's fitness query using Anthropic Claude API.
+ * Analyzes the user's fitness query using Grok API.
  */
 async function analyzeUserQuery(query: string, history: HistoryMessage[]): Promise<QueryAnalysis> {
   const schemaString = getQueryAnalysisSchemaString();
-  
+  const grokApiKey = process.env.GROK_API_KEY;
+
+  if (!grokApiKey) {
+    console.error("[analyzeUserQuery] GROK_API_KEY not configured.");
+    return {
+      intent: "unknown",
+      response_suggestion: "The AI analysis service is currently unavailable due to configuration issues."
+    };
+  }
+
   // Format history for the prompt
   const historyString = history
     .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
@@ -246,72 +273,70 @@ CURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this fo
   };
 
   try {
-    console.log(`Sending query to Anthropic: \\"${query}\\"`);
-    const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022", // Use Claude 3.5 Haiku
-      max_tokens: 500,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: query },
-      ],
+    console.log(`Sending query to Grok: \\"${query}\\"`);
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `LATEST USER QUERY: "${query}"` } // Pass the query explicitly as per prompt structure
+        ],
+        max_tokens: 1024, // Allow for larger JSON output
+        temperature: 0, // Keep deterministic for analysis
+        stream: false,
+        // Add response_format if Grok supports it for enforcing JSON
+        // response_format: { type: "json_object" }, // <-- Check Grok docs if this is supported
+      })
     });
 
-    console.log("Anthropic Raw Response:", msg);
-
-    // Extract the text content safely
-    let jsonString = "";
-    const firstBlock = msg.content?.[0];
-
-    if (firstBlock && firstBlock.type === "text") {
-        jsonString = firstBlock.text.trim();
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[analyzeUserQuery] Grok API error: ${response.status} ${response.statusText}`, errorBody);
+      return { ...defaultUnknownResponse, response_suggestion: `AI analysis failed (HTTP ${response.status}). Please try rephrasing.` };
     }
 
-    if (!jsonString) {
-      console.error("Anthropic response content is empty or not text", msg.content);
-      return { // Return default error object
-          intent: "unknown",
-          response_suggestion: "Received empty or non-text response from AI."
-      };
+    const data = await response.json();
+    console.log("Grok Raw Response:", data);
+
+    let analysisJsonString = "";
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        analysisJsonString = data.choices[0].message.content.trim();
+    } else {
+        console.error("Grok response content is empty or not as expected", data);
+        return defaultUnknownResponse;
     }
 
-    // Clean the string: remove potential markdown fences
-    const cleanedJsonString = jsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
-    console.log("Cleaned JSON string for parsing:", cleanedJsonString);
+    // Post-processing: Extract JSON from potential markdown code blocks if needed
+    const jsonMatch = analysisJsonString.match(/```(?:json)?\\n([\s\S]*?)\\n```/);
+    if (jsonMatch && jsonMatch[1]) {
+      analysisJsonString = jsonMatch[1];
+    }
 
-    // Attempt to parse the CLEANED JSON string
     try {
-      const parsedJson = JSON.parse(cleanedJsonString);
-      console.log("Parsed AI Analysis:", parsedJson);
-
-      // Validate the parsed JSON against our Zod schema
-      const validation = QueryAnalysisSchema.safeParse(parsedJson);
-      if (!validation.success) {
-        console.error("AI Analysis Zod Validation Error:", validation.error?.errors);
-        // Return a usable 'unknown' intent even if validation fails
-        return { // Return default error object
-          intent: "unknown",
-          response_suggestion: `Sorry, I had trouble understanding the structure of the analysis for your query. (${validation.error?.issues.map(i => i.message).join(', ') ?? 'Validation failed'})`
-        };
+      const parsedAnalysis = JSON.parse(analysisJsonString);
+      // Validate the parsed JSON against the schema
+      const validationResult = QueryAnalysisSchema.safeParse(parsedAnalysis);
+      if (validationResult.success) {
+        console.log("Validated Grok Analysis:", validationResult.data);
+        return validationResult.data;
+      } else {
+        console.error("Failed to validate JSON response from Grok:", validationResult.error);
+        console.error("Invalid JSON received:", analysisJsonString);
+        return { ...defaultUnknownResponse, response_suggestion: "AI analysis returned an unexpected format. Please try again." };
       }
-      // Return the successfully validated analysis
-      return validation.data;
-
     } catch (parseError) {
-      console.error("Failed to parse JSON response from Anthropic:", parseError);
-      console.error("Invalid JSON string received:", jsonString);
-      return { // Return default error object
-        intent: "unknown",
-        response_suggestion: "Sorry, I received an unexpected response format from the AI analysis service."
-      };
+      console.error("Failed to parse JSON response from Grok:", parseError);
+      console.error("Raw response string:", analysisJsonString); // Log the raw string that failed parsing
+      return { ...defaultUnknownResponse, response_suggestion: "AI analysis returned invalid data. Please try again." };
     }
-
   } catch (error) {
-    console.error("Error calling Anthropic API:", error);
-    // Return a generic unknown intent with an error suggestion
-    return { // Return default error object
-      intent: "unknown",
-      response_suggestion: "Sorry, I couldn't connect to the AI analysis service right now. Please try again later.",
-    };
+    console.error("Error calling Grok API:", error);
+    return defaultUnknownResponse;
   }
 }
 
@@ -826,42 +851,54 @@ async function compareMetricBetweenPeriods(
 
 // --- Helper Function to Get Direct AI Text Response ---
 async function getDirectTextResponse(query: string): Promise<string | null> {
-  try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
-    // Enhanced system prompt for a more engaging tone
-    const systemPrompt = `You are Aivery, a friendly, encouraging, and knowledgeable AI fitness coach. 
- You are explaining a fitness concept to the user. 
- Use a conversational and supportive tone. Address the user directly sometimes.
- Explain the concept clearly and concisely. Structure the explanation with the following sections using markdown headings (like '## Key Benefits' or '### How to Incorporate'): Key Benefits, Potential Considerations, How to Incorporate, and Pro Tip (if applicable). Use bullet points within sections for readability.
- End by asking a relevant follow-up question to encourage interaction. 
- Ensure the entire output is valid markdown.`;
-
-    const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 500,
-      system: systemPrompt,
-      messages: [{ role: "user", content: query }],
-    });
-
-    console.log("Direct Anthropic Raw Response:", msg);
-
-    // Extract the text content safely
-    const firstBlock = msg.content?.[0];
-    if (firstBlock && firstBlock.type === "text") {
-      return firstBlock.text.trim();
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+        console.error("[getDirectTextResponse] GROK_API_KEY not configured.");
+        return "Sorry, the AI is unavailable right now.";
     }
 
-    console.error("Direct Anthropic response content is empty or not text", msg.content);
-    return "Sorry, I received an empty or non-text response from the AI.";
+    const systemPrompt = "You are Aivery, a helpful fitness assistant. Respond directly and concisely to the user's query. If it's a question you can answer, provide the answer. If it's a command you understand but can't perform directly (like complex data retrieval), politely explain that and suggest how the user might rephrase for better analysis.";
 
-  } catch (error) {
-    console.error("Error calling Anthropic API for direct response:", error);
-    return "Sorry, I couldn't connect to the AI service right now. Please try again later.";
-  }
-  return null; // Add fallback return to satisfy linter/type checking
+    try {
+        console.log(`[getDirectTextResponse] Sending direct query to Grok: "${query}"`);
+        const response = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${grokApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'grok-3-latest',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: query }
+            ],
+            max_tokens: 150,
+            temperature: 0.5, // Allow a bit more creativity for direct answers
+            stream: false,
+          })
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+          console.error(`[getDirectTextResponse] Grok API error: ${response.status} ${response.statusText}`, errorBody);
+          throw new Error(`Grok API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("Direct Grok Raw Response:", data);
+
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+            return data.choices[0].message.content.trim();
+        } else {
+            console.error("Direct Grok response content is empty or not as expected", data);
+            return null;
+        }
+
+    } catch (error) {
+        console.error("Error calling Grok API for direct response:", error);
+        return null;
+    }
 }
 
 // --- Main POST Handler ---
@@ -893,25 +930,6 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: "Failed to parse request body" }, { status: 400 });
   }
-
-  // --- Check for Initial Workout Context --- 
-  const workoutSummary = context?.workoutSummary;
-  const workoutId = workoutSummary?._id;
-  // Check if it's the first *real* message exchange (history length 1 means only the user's initial prompt exists)
-  const isInitialWorkoutContext = !!workoutId && history.length === 0; 
-
-  if (isInitialWorkoutContext) {
-    console.log(`[API /coach] Initial workout context detected for ID: ${workoutId}. Generating insight...`);
-    try {
-      const initialInsight = await generateInitialWorkoutInsight(workoutId, userName);
-      return NextResponse.json({ response: initialInsight, data: { type: 'insight' } }); // Return insight directly
-    } catch (error) {
-      console.error("[API /coach] Error generating initial workout insight:", error);
-      // Fallback to generic response if insight generation fails
-      return NextResponse.json({ response: "Sorry, I had trouble getting the details for that workout. How can I help otherwise?", data: null }, { status: 500 });
-    }
-  }
-  // --- End Initial Workout Context Check --- 
 
   // --- Normal Chat Flow (Not initial workout context) --- 
   console.log("[API /coach] Proceeding with normal query analysis...");

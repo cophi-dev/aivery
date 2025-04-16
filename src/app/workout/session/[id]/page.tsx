@@ -26,6 +26,7 @@ import { WorkoutAnalysis } from "@/components/workout-analysis"
 import type { WorkoutData, ExerciseData, Set, WorkoutExerciseData } from "@/types/db"
 import { Label } from "@/components/ui/label"
 import { toast } from "react-hot-toast"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 export default function WorkoutSessionPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -132,15 +133,9 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
     }
   }
 
+  // Loading state
   if (isLoading) {
-    return (
-      <>
-        <Header />
-        <div className="container mx-auto px-4 py-8 flex justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
-      </>
-    )
+    return <LoadingIndicator />
   }
 
   if (!workout) {

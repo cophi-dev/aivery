@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
+// import Anthropic from "@anthropic-ai/sdk"; // REMOVED
 import { getTextFromResponse } from "@/lib/utils";
 
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Initialize Anthropic client // REMOVED
+// const anthropic = new Anthropic({ // REMOVED
+//   apiKey: process.env.ANTHROPIC_API_KEY, // REMOVED
+// }); // REMOVED
 
 // Allow responses up to 10 seconds
 export const maxDuration = 10;
@@ -22,6 +22,15 @@ export async function POST(request: Request) {
         "Authentication failed: No session or user found in optimize-text route",
       );
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    // Ensure Grok API key is available
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+      console.error("[optimize-text] GROK_API_KEY not configured.");
+      // Return the original text if AI is unavailable
+      const { text } = await request.json(); // Need to parse here to get original text
+      return NextResponse.json({ optimizedText: text });
     }
 
     // Parse request body
@@ -93,17 +102,51 @@ Your task is to enhance and structure the user's dietary preferences into a natu
       if (context.units) userPrompt += `\n- Preferred units: ${context.units}`;
     }
 
-    // Call Anthropic API
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 500,
-      temperature: 0.7,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
+    // Call Grok API
+    // const response = await anthropic.messages.create({ // REMOVED
+    //   model: "claude-3-5-haiku-20241022", // REMOVED
+    //   max_tokens: 500, // REMOVED
+    //   temperature: 0.7, // REMOVED
+    //   system: systemPrompt, // REMOVED
+    //   messages: [{ role: "user", content: userPrompt }], // REMOVED
+    // }); // REMOVED
+
+    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+        stream: false,
+      })
     });
 
+    if (!fetchResponse.ok) {
+      const errorBody = await fetchResponse.text();
+      console.error(`[optimize-text] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+      // Return original text on error
+      return NextResponse.json({ optimizedText: text });
+    }
+
+    const apiResponseData = await fetchResponse.json();
+    console.log("[optimize-text] Grok Raw Response:", apiResponseData);
+
     // Extract and return the optimized text
-    const optimizedText = getTextFromResponse(response.content) || text;
+    // const optimizedText = getTextFromResponse(response.content) || text; // REMOVED
+    let optimizedText = text; // Default to original text
+    if (apiResponseData.choices && apiResponseData.choices[0] && apiResponseData.choices[0].message && apiResponseData.choices[0].message.content) {
+      optimizedText = apiResponseData.choices[0].message.content.trim();
+    } else {
+      console.warn("[optimize-text] Unexpected Grok response structure:", apiResponseData);
+    }
 
     // Clean up any introductory text patterns that shouldn't be shown to the user
     const cleanedText = optimizedText

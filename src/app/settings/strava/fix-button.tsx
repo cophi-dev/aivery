@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 export default function FixStravaDataButton() {
   const [isLoading, setIsLoading] = useState(false);
@@ -51,7 +52,7 @@ export default function FixStravaDataButton() {
           disabled={isLoading}
           variant="secondary"
         >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isLoading && <InlineSpinner size={16} className="mr-2" />}
           Fix Strava Workout Data
         </Button>
         {result && (

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -23,13 +23,17 @@ import {
   LucideChevronDown,
   LucideBarChart,
   LucideTag,
-  LucideGauge
+  LucideGauge,
+  LucideMountain
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { formatDate, formatDuration } from "@/lib/utils"
 import { getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
+import ReactMarkdown from "react-markdown"
+import Image from "next/image"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 // Helper function to get icon based on workout type
 const getWorkoutIcon = (type: string) => {
@@ -197,11 +201,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
   // Loading State
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-primary"> {/* Use primary background */}
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-accent-start"></div> {/* Use accent color */}
-      </div>
-    )
+    return <LoadingIndicator />
   }
 
   // Error State / Workout Not Found
@@ -222,7 +222,26 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
   // Format details for display using imported utilities
   const formattedDate = workout.date ? formatDate(workout.date) : "N/A"; // Use default format from utility
   const formattedDuration = workout.duration ? formatDuration(workout.duration) : "N/A";
-  const formattedDistance = workout.type !== 'strength' && workout.distance ? `${workout.distance.toFixed(2)} km` : null; // Conditional distance formatting
+  
+  // Update distance calculation logic to check workoutExercises
+  let rawDistanceKm: number | null = null;
+  if (workout.type !== 'strength') { // Only calculate distance for non-strength types typically
+    if (workout.cardioDetails?.distance != null) {
+        // Prioritize cardioDetails if it exists (assume KM)
+        rawDistanceKm = workout.cardioDetails.distance;
+        console.log(`>>> Distance Source: cardioDetails (${rawDistanceKm} km)`);
+    } else if (workout.workoutExercises && workout.workoutExercises[0]?.distance != null) {
+        // Fallback to workoutExercises (assume meters, convert to KM)
+        rawDistanceKm = workout.workoutExercises[0].distance / 1000;
+        console.log(`>>> Distance Source: workoutExercises[0] (${workout.workoutExercises[0].distance}m -> ${rawDistanceKm} km)`);
+    } else if (workout.distance != null) {
+        // Fallback to top-level distance (assume KM)
+        rawDistanceKm = workout.distance;
+        console.log(`>>> Distance Source: workout.distance (${rawDistanceKm} km)`);
+    }
+  }
+  const distanceValue = rawDistanceKm;
+  const formattedDistance = distanceValue != null ? `${distanceValue.toFixed(2)} km` : null;
 
   // Determine overall workout type category (strength or cardio)
   const workoutCategory = workout.type === 'strength' ? 'strength' : 'cardio'; // Simplified category
@@ -233,23 +252,13 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
       {/* --- Section 1: Full-Screen AI Highlight (Fun Fact) --- */}
       {/* Only render if highlight is loaded and available */}
       {aiHighlight && !isLoadingHighlight && (
-        <div className="relative flex flex-col items-center justify-center h-[calc(100vh-3.5rem)] text-center p-8 bg-primary text-primary-dark-bg"> {/* Use calculated height */}
-          {/* Large Highlight Text - Reverted font size */}
-          <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-4xl text-primary-dark-bg">
-            {/* Removed inner div */}
-            {/* Example structure, replace with actual aiHighlight content parsing if needed */}
-            {/* This simple split assumes a ' - ' separator; adjust if AI format changes */}
-            {aiHighlight.includes('-') ? (
-              <>
-                {aiHighlight.split('-')[0].trim()} -<br/>
-                <span className="block mt-2 md:mt-4 text-secondary-dark-bg/90">{aiHighlight.split('-')[1]?.trim()}</span>
-                {/* Optional: Add a relevant large emoji if pattern matches */}
-                {/* {aiHighlight.includes("football fields") && <span className="block text-4xl md:text-5xl mt-4">🏈💨</span>} */}
-              </>
-            ) : (
-              aiHighlight // Render plain text if specific pattern not found
-            )}
-          </h2>
+        <div className="relative flex flex-col items-center justify-center h-[calc(100vh-3.5rem)] text-center p-6 md:p-8 bg-primary text-primary-dark-bg"> {/* Adjusted padding */}
+          {/* Large Highlight Text - Use ReactMarkdown */} 
+          <div className="text-2xl md:text-4xl lg:text-5xl font-bold leading-normal text-primary-dark-bg break-words px-4 prose prose-lg dark:prose-invert max-w-prose mx-auto"> {/* Added prose styles */}
+            <ReactMarkdown>
+              {aiHighlight} 
+            </ReactMarkdown>
+          </div>
 
           {/* Scroll Down Hint - Centered */}
           <a href="#details" className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
@@ -316,22 +325,31 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
               {/* --- Main Content Area (Tabs or Grid) --- */}
               <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 mb-6 bg-secondary/10 border border-secondary/20"> {/* Adjusted style */}
-                  <TabsTrigger value="overview" className="data-[state=active]:bg-accent-start/20 data-[state=active]:text-primary-dark-bg text-secondary-dark-bg">
+                <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 mb-6 bg-secondary/10 rounded-md p-1">
+                  <TabsTrigger 
+                    value="overview" 
+                    className="rounded-md transition-colors data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800 text-primary-dark-bg/80 hover:bg-secondary/20 py-1.5"
+                  >
                       <LucideActivity className="h-4 w-4 mr-1" /> Overview
                   </TabsTrigger>
-                  <TabsTrigger value="details" className="data-[state=active]:bg-accent-start/20 data-[state=active]:text-primary-dark-bg text-secondary-dark-bg">
+                  <TabsTrigger 
+                    value="details" 
+                    className="rounded-md transition-colors data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800 text-primary-dark-bg/80 hover:bg-secondary/20 py-1.5"
+                  >
                       <LucideDumbbell className="h-4 w-4 mr-1" /> {workoutCategory === 'strength' ? 'Exercises' : 'Metrics'}
                   </TabsTrigger>
                   {/* Add Analysis Tab */}
-                  <TabsTrigger value="analysis" className="data-[state=active]:bg-accent-start/20 data-[state=active]:text-primary-dark-bg text-secondary-dark-bg">
+                  <TabsTrigger 
+                    value="analysis" 
+                    className="rounded-md transition-colors data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800 text-primary-dark-bg/80 hover:bg-secondary/20 py-1.5"
+                  >
                      <LucideBarChart className="h-4 w-4 mr-1" /> Analysis
                   </TabsTrigger>
                 </TabsList>
 
                 {/* --- Overview Tab --- */}
                 <TabsContent value="overview">
-                  <Card className="bg-secondary/5 border border-secondary/10 shadow-md"> {/* Subtle card style */}
+                  <Card className="bg-secondary/5 border border-secondary/40 shadow-md">
                     <CardHeader>
                        <CardTitle className="text-2xl font-semibold text-primary-dark-bg flex items-center">
                           {getWorkoutIcon(workout.type)}
@@ -339,7 +357,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                        </CardTitle>
                        <CardDescription className="text-secondary-dark-bg">{workout.notes || "No notes provided for this workout."}</CardDescription>
                     </CardHeader>
-                    <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-6 text-primary-dark-bg">
+                    <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-6 text-primary-dark-bg p-6">
                        {/* Stat Item: Duration */}
                        <div className="flex items-center">
                          <LucideClock className="h-6 w-6 mr-3 text-accent-start" />
@@ -348,7 +366,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                            <p className="text-lg font-medium">{formattedDuration}</p>
                          </div>
                        </div>
-                       {/* Stat Item: Distance (Conditional) */}
+                       {/* Stat Item: Distance (Conditional) - ADDED HERE */}
                        {formattedDistance && (
                          <div className="flex items-center">
                            <LucideRuler className="h-6 w-6 mr-3 text-accent-start" />
@@ -359,7 +377,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                          </div>
                        )}
                        {/* Stat Item: Volume (Conditional) */}
-                       {workoutCategory === 'strength' && workout.calculatedVolume && (
+                       {workoutCategory === 'strength' && typeof workout.calculatedVolume === 'number' && (
                          <div className="flex items-center">
                            <LucideZap className="h-6 w-6 mr-3 text-accent-start" /> {/* Use Zap for volume */}
                            <div>
@@ -421,60 +439,115 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
                 {/* --- Details Tab (Exercises or Cardio Metrics) --- */}
                 <TabsContent value="details">
-                   <Card className="bg-secondary/5 border border-secondary/10 shadow-md">
+                   <Card className="bg-secondary/5 border border-secondary/40 shadow-md">
                        <CardHeader>
                           <CardTitle className="text-2xl font-semibold text-primary-dark-bg">
                              {workoutCategory === 'strength' ? 'Exercises Breakdown' : 'Cardio Metrics'}
                           </CardTitle>
                           {workoutCategory !== 'strength' && <CardDescription className="text-secondary-dark-bg">Detailed performance metrics.</CardDescription>}
                        </CardHeader>
-                       <CardContent>
+                       <CardContent className="p-6">
                           {workoutCategory === 'strength' ? (
-                             // --- Strength Exercises List ---
-                             <div className="space-y-6">
-                                {workout.workoutExercises && workout.workoutExercises.length > 0 ? (
-                                   workout.workoutExercises.map((exercise: any, index: number) => (
-                                      <div key={exercise._id || index} className="p-4 rounded-md bg-secondary/10 border border-secondary/20">
-                                         <h4 className="font-semibold text-lg mb-2 text-primary-dark-bg">{exercise.name || exercise.exerciseName || `Exercise ${index + 1}`}</h4>
+                             <div className="space-y-4">
+                               <h3 className="text-lg font-semibold mb-3">Strength metrics</h3>
+                               {/* Display Strength metrics - CHECK workoutExercises */}
+                               {workout.workoutExercises && workout.workoutExercises.length > 0 ? (
+                                 <ul className="space-y-3">
+                                   {workout.workoutExercises.map((exercise: any, index: number) => (
+                                     <li key={exercise._id || index} className="border-b pb-3 last:border-b-0"> {/* Use exercise._id for key */}
+                                       <p className="font-medium text-primary-dark-bg">{exercise.exerciseId?.name || 'Unnamed Exercise'}</p> {/* Use name from populated exerciseId */}
+                                       <div className="text-sm text-secondary-dark-bg grid grid-cols-3 gap-2 mt-1">
+                                         {/* Map through sets if they exist */}
                                          {exercise.sets && exercise.sets.length > 0 ? (
-                                            <ul className="space-y-1 text-sm text-secondary-dark-bg pl-2">
-                                              {exercise.sets.map((set: any, setIndex: number) => (
-                                                <li key={set._id || setIndex} className="flex justify-between items-center">
-                                                    <span>Set {setIndex + 1}:</span>
-                                                    <span className="text-primary-dark-bg font-medium">
-                                                      {set.weight ?? 0} kg x {set.reps ?? 0} reps
-                                                      {set.notes && <span className="text-xs italic text-secondary-dark-bg/70 ml-2">({set.notes})</span>}
-                                                    </span>
-                                                </li>
-                                              ))}
-                                            </ul>
+                                           exercise.sets.map((set: any, setIndex: number) => (
+                                             <React.Fragment key={set._id || setIndex}>
+                                               <span>Set {setIndex + 1}</span>
+                                               <span>Reps: {set.reps ?? 'N/A'}</span>
+                                               <span>Weight: {set.weight != null ? `${set.weight} kg` : 'N/A'}</span>
+                                             </React.Fragment>
+                                           ))
                                          ) : (
-                                            <p className="text-sm text-secondary-dark-bg italic">No sets recorded for this exercise.</p>
+                                           <span className="col-span-3 italic text-muted-foreground">No sets recorded</span>
                                          )}
-                                      </div>
-                                   ))
-                                ) : (
-                                   <p className="text-secondary-dark-bg italic">No specific exercises recorded for this strength workout.</p>
-                                )}
+                                       </div>
+                                     </li>
+                                   ))}
+                                 </ul>
+                               ) : (
+                                 <p className="text-muted-foreground italic">No specific exercises logged.</p>
+                               )}
                              </div>
                           ) : (
-                             // --- Cardio Metrics ---
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-primary-dark-bg">
-                                {/* Add specific cardio metrics here if available, e.g., pace, heart rate zones */}
-                                {/* Example: */}
-                                {workout.averagePace && (
-                                  <div className="flex items-center">
-                                    <LucideGauge className="h-5 w-5 mr-2 text-accent-start" /> {/* Example Icon */}
-                                    <div>
-                                      <p className="text-sm text-secondary-dark-bg">Average Pace</p>
-                                      <p className="font-medium">{workout.averagePace} min/km</p>
-                                    </div>
-                                  </div>
-                                )}
-                                {/* If no specific metrics, show a message */}
-                                {!workout.averagePace && /* Add other checks */ (
-                                  <p className="text-secondary-dark-bg italic md:col-span-2">No detailed cardio metrics available for this workout.</p>
-                                )}
+                             <div className="space-y-4">
+                               <h3 className="text-lg font-semibold mb-3">Cardio metrics</h3>
+                               {workout.cardioDetails ? (
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                   {/* --- Re-add Cardio Metric Blocks --- */}
+                                   {workout.cardioDetails.distance != null && (
+                                     <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
+                                       <LucideRuler className="h-5 w-5 text-accent-medium" />
+                                       <div>
+                                         <p className="text-sm text-secondary-dark-bg">Distance</p>
+                                         {/* Use formattedDistance which handles KM conversion */}
+                                         <p className="font-semibold text-primary-dark-bg">{formattedDistance || 'N/A'}</p>
+                                       </div>
+                                     </div>
+                                   )}
+                                   {workout.cardioDetails.duration != null && (
+                                      <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
+                                       <LucideClock className="h-5 w-5 text-accent-medium" />
+                                       <div>
+                                         <p className="text-sm text-secondary-dark-bg">Duration</p>
+                                         {/* Use formattedDuration helper */}
+                                         <p className="font-semibold text-primary-dark-bg">{formattedDuration}</p>
+                                       </div>
+                                     </div>
+                                   )}
+                                   {workout.cardioDetails.pace != null && workout.cardioDetails.pace > 0 && (
+                                     <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
+                                       <LucideGauge className="h-5 w-5 text-accent-medium" />
+                                       <div>
+                                         <p className="text-sm text-secondary-dark-bg">Average pace</p>
+                                         {/* Format pace directly */}
+                                         <p className="font-semibold text-primary-dark-bg">{`${Math.floor(workout.cardioDetails.pace)}:${Math.round((workout.cardioDetails.pace % 1) * 60).toString().padStart(2, '0')} min/km`}</p> 
+                                       </div>
+                                     </div>
+                                   )}
+                                   {workout.cardioDetails.elevationGain != null && (
+                                     <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
+                                       <LucideMountain className="h-5 w-5 text-accent-medium" />
+                                       <div>
+                                         <p className="text-sm text-secondary-dark-bg">Elevation gain</p>
+                                         <p className="font-semibold text-primary-dark-bg">{workout.cardioDetails.elevationGain} m</p>
+                                       </div>
+                                     </div>
+                                   )}
+                                   {workout.cardioDetails.heartRate?.average != null && (
+                                      <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
+                                       <LucideHeartPulse className="h-5 w-5 text-accent-medium" />
+                                       <div>
+                                         <p className="text-sm text-secondary-dark-bg">Avg heart rate</p>
+                                         <p className="font-semibold text-primary-dark-bg">{workout.cardioDetails.heartRate.average} bpm</p>
+                                       </div>
+                                     </div>
+                                   )}
+                                    {workout.cardioDetails.heartRate?.max != null && (
+                                      <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
+                                        <LucideHeartPulse className="h-5 w-5 text-red-500" /> {/* Maybe different color for max? */}
+                                        <div>
+                                         <p className="text-sm text-secondary-dark-bg">Max heart rate</p>
+                                         <p className="font-semibold text-primary-dark-bg">{workout.cardioDetails.heartRate.max} bpm</p>
+                                       </div>
+                                     </div>
+                                   )}
+                                    {/* Message if cardioDetails exists but is empty */}
+                                    {Object.keys(workout.cardioDetails).length === 0 && (
+                                        <p className="text-muted-foreground italic sm:col-span-2 lg:col-span-3">No detailed cardio metrics logged for this session.</p>
+                                    )}
+                                 </div>
+                               ) : (
+                                 <p className="text-muted-foreground italic">No detailed cardio metrics available for this workout.</p>
+                               )}
                              </div>
                           )}
                        </CardContent>
@@ -483,17 +556,12 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
                 {/* --- Analysis Tab --- */}
                 <TabsContent value="analysis">
-                   <Card className="bg-secondary/5 border border-secondary/10 shadow-md">
-                      <CardHeader>
-                         <CardTitle className="text-2xl font-semibold text-primary-dark-bg">Workout Analysis</CardTitle>
-                         <CardDescription className="text-secondary-dark-bg">Performance insights and trends compared to previous similar workouts.</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                         {/* Embed the WorkoutAnalysis component */}
+                   <Card className="bg-secondary/5 border border-secondary/40 shadow-md">
+                      <CardContent className="p-6">
                          <WorkoutAnalysis workout={workout} />
                       </CardContent>
                    </Card>
-                </TabsContent>
+                 </TabsContent>
 
               </Tabs>
 

@@ -5,10 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { LucideCheck, LucideLoader, LucideRefreshCw, LucideAlertCircle } from "lucide-react"
+import { LucideCheck, LucideRefreshCw, LucideAlertCircle } from "lucide-react"
 import { connectStravaAction, syncStravaWorkoutsAction, getStravaIntegrationAction } from "@/lib/strava-actions"
 import { StravaImport } from "@/components/strava-import"
 import { Separator } from "@/components/ui/separator"
+import { InlineSpinner } from "@/components/ui/inline-spinner"
 
 export default function IntegrationsPage() {
   const router = useRouter()
@@ -186,7 +187,7 @@ export default function IntegrationsPage() {
               <CardContent>
                 {isLoading ? (
                   <div className="flex justify-center py-4">
-                    <LucideLoader className="h-6 w-6 animate-spin text-primary" />
+                    <InlineSpinner size={24} className="text-primary" />
                   </div>
                 ) : stravaIntegration ? (
                   <div className="space-y-4">
@@ -203,7 +204,7 @@ export default function IntegrationsPage() {
                     <Button onClick={handleSyncStrava} disabled={isSyncing} className="w-full">
                       {isSyncing ? (
                         <>
-                          <LucideLoader className="h-4 w-4 mr-2 animate-spin" />
+                          <InlineSpinner size={16} className="mr-2" />
                           Syncing...
                         </>
                       ) : (

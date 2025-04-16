@@ -18,6 +18,8 @@ import { disconnectStravaAction } from "@/lib/integration-actions"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { v4 as uuidv4 } from 'uuid'
 import { formatDuration } from "@/lib/utils"
+import { InlineSpinner } from "@/components/ui/inline-spinner"
+import { Save } from "lucide-react"
 
 interface ImportStats {
   count: number;
@@ -1220,7 +1222,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <InlineSpinner size={16} className="mr-2" />
                       <span>Importing...</span>
                     </>
                   ) : (
@@ -1273,7 +1275,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     </span>
                   </div>
                   <Button variant="outline" size="sm" onClick={handleDisconnectStrava} disabled={isDisconnecting}>
-                    {isDisconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
+                    {isDisconnecting ? <InlineSpinner size={16} /> : "Disconnect"}
                   </Button>
                 </div>
                 
@@ -1357,7 +1359,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     <div className="flex items-center space-x-2"> 
                       {isWebhookLoading ? (
                         // Show loader when checking webhook status
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        <InlineSpinner size={20} className="text-muted-foreground" />
                       ) : (
                         // Always show a clickable toggle for connected accounts
                         stravaIntegration ? (
@@ -1369,7 +1371,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                             size="sm"
                           >
                             {isSettingUpWebhook ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <InlineSpinner size={16} />
                             ) : webhookStatus?.subscribed ? (
                               "On"
                             ) : (
@@ -1467,7 +1469,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                     <p className="text-sm text-muted-foreground">Select which activity types to automatically sync when new activities are detected on Strava.</p>
                      {isLoadingPreferences ? (
                        <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <InlineSpinner size={16} />
                           <span>Loading preferences...</span>
                        </div>
                     ) : (
@@ -1505,7 +1507,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                       disabled={isSavingPreferences}
                       className="mt-2"
                     >
-                        {isSavingPreferences ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Preferences"}
+                        {isSavingPreferences ? <InlineSpinner size={16} /> : "Save Preferences"}
                     </Button>
                     )}
                   </CollapsibleContent>
@@ -1522,7 +1524,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
               >
                 {isConnecting ? (
                   <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    <InlineSpinner size={16} className="mr-2" />
                     Connecting...
                   </>
                 ) : (

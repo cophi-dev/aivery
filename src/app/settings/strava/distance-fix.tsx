@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { repairWorkoutDistances } from '@/app/actions/workout-actions';
 import { toast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 export default function DistanceRepairPage() {
   const [isRepairing, setIsRepairing] = useState(false);
@@ -75,8 +76,10 @@ export default function DistanceRepairPage() {
             disabled={isRepairing}
             className="w-fit"
           >
-            {isRepairing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Fix Workout Distances
+            {isRepairing ? (
+              <InlineSpinner size={16} className="mr-2" />
+            ) : null}
+            {isRepairing ? "Repairing Distances..." : "Repair Distances"}
           </Button>
           
           {result && (

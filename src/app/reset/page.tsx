@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icons } from "@/components/icons"
+import { Header } from "@/components/header"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 export default function ResetPage() {
   const router = useRouter()
   const [status, setStatus] = useState("Resetting session...")
+  const [isLoading, setIsLoading] = useState(true)
   
   useEffect(() => {
     const resetAll = async () => {
@@ -51,10 +54,19 @@ export default function ResetPage() {
     resetAll()
   }, [router])
   
+  // Simulate loading
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 1500)
+    return () => clearTimeout(timer)
+  }, [])
+
+  if (isLoading) {
+    return <LoadingIndicator />
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center">
       <div className="text-center max-w-md p-6 bg-background rounded-lg shadow-lg">
-        <Icons.spinner className="mx-auto h-8 w-8 animate-spin" />
         <h1 className="mt-4 text-2xl font-bold">{status}</h1>
         <p className="mt-2 text-muted-foreground">
           This helps fix login issues by clearing all session data.

@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { Button, ButtonProps } from "@/components/ui/button"; // Assuming shadcn/ui Button
-import { LucideLoader, LucideSparkles } from "lucide-react"; // Icons
+import { LucideSparkles } from "lucide-react"; // Icons - Removed LucideLoader
 import { useToast } from "@/components/ui/use-toast"; // For feedback
 import { loadStripe } from '@stripe/stripe-js';
+import { UserSubscriptionPlan } from "@/types/subscriptions"; // Added specific import path
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 // Ensure the publishable key is available
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
@@ -95,7 +97,7 @@ export function UpgradeButton({ plan, currentPlanIsFree, children, ...props }: U
   return (
     <Button onClick={handleCheckout} disabled={isLoading || !currentPlanIsFree} {...props}>
       {isLoading ? (
-        <LucideLoader className="mr-2 h-4 w-4 animate-spin" />
+        <InlineSpinner size={16} className="mr-2" />
       ) : (
         <LucideSparkles className="mr-2 h-4 w-4" /> // Example icon
       )}

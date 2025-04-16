@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
+// Remove Google Generative AI import
+// import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { IWorkout } from '@/lib/db/models/workout'; // Assuming IWorkout defines the structure
 // Import the fetchWorkout server action
 import { fetchWorkout } from "@/lib/workout-actions"; 
@@ -10,10 +11,13 @@ import { fetchWorkout } from "@/lib/workout-actions";
 // Explicitly mark this route as dynamic
 export const dynamic = 'force-dynamic';
 
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Remove Google Generative AI client initialization
+// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+// const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+// Remove Gemini specific configs
+// const generationConfig = { ... };
+// const safetySettings = [ ... ];
 
 // Define the expected workout data structure needed for the prompt
 // (should match relevant fields returned by fetchWorkout)
@@ -39,49 +43,77 @@ const HighlightRequestSchema = z.object({
 
 type HighlightRequest = z.infer<typeof HighlightRequestSchema>;
 
-// Helper function to create the prompt for Claude
-// Modified to accept PromptWorkoutData
-function createHighlightPrompt(userName: string, workout: PromptWorkoutData): string {
-    let workoutSummary = `Workout Type: ${workout.type}`;
-    if (workout.duration) workoutSummary += `\nDuration: ${Math.round(workout.duration / 60)} minutes`;
-    if (workout.distance) workoutSummary += `\nDistance: ${workout.distance.toFixed(2)} km`;
-    // Use calculatedVolume if present
-    if (workout.calculatedVolume) workoutSummary += `\nTotal Volume: ${workout.calculatedVolume.toLocaleString()} kg`;
-    if (workout.calories) workoutSummary += `\nCalories Burned: ~${workout.calories} kcal`;
-    if (workout.workoutExercises && workout.workoutExercises.length > 0) {
-        // Extract exercise names safely
-        const exerciseNames = workout.workoutExercises
-          .map((ex: any) => ex?.exerciseId?.name || 'Unnamed Exercise')
-          .slice(0, 3);
-        workoutSummary += `\nExercises: ${exerciseNames.join(', ')}${workout.workoutExercises.length > 3 ? '...' : ''}`;
-    }
-    if (workout.notes) workoutSummary += `\nNotes: ${workout.notes.substring(0, 100)}${workout.notes.length > 100 ? '...' : ''}`;
+// Define a potential type for user context (optional for now)
+// interface UserContext {
+//   location?: string;
+//   favoriteActivity?: string;
+//   // Add other relevant fields from user settings/profile later
+// }
 
-    const systemPrompt = `
-You are an AI fitness coach assistant integrated into a workout tracking app. Your goal is to generate a single, short, fun, and encouraging insight statement (a "highlight") for a specific workout that the user just viewed.
+// Updated function signature (UserContext is optional)
+function createHighlightPrompt(
+  userName: string,
+  workout: PromptWorkoutData,
+  // userContext?: UserContext // Add this later if we fetch user profile data
+): string {
+  let workoutSummary = `Workout Type: ${workout.type}`;
+  if (workout.duration) workoutSummary += `\nDuration: ${Math.round(workout.duration / 60)} minutes`;
+  if (workout.distance) workoutSummary += `\nDistance: ${workout.distance.toFixed(2)} km`;
+  if (workout.calculatedVolume) workoutSummary += `\nTotal Volume: ${workout.calculatedVolume.toLocaleString()} kg`;
+  if (workout.calories) workoutSummary += `\nCalories Burned: ~${workout.calories} kcal`;
+  if (workout.workoutExercises && workout.workoutExercises.length > 0) {
+    const exerciseNames = workout.workoutExercises
+      .map((ex: any) => ex?.exerciseId?.name || 'Unnamed Exercise')
+      .slice(0, 3);
+    workoutSummary += `\nExercises: ${exerciseNames.join(', ')}${workout.workoutExercises.length > 3 ? '...' : ''}`;
+  }
 
-**User's Name:** ${userName}
+  // --- Use the NEW Prompt provided by the user --- 
+  const systemPrompt = `
+You are Aivery, a vibrant, encouraging AI fitness companion! Your mission: Craft ONE short, shareable, personalized, and factually accurate motivational highlight statement for the user's workout that's fun and relatable! 🎉
 
-**Workout Data:**
+User's Name: ${userName}
+
+Workout Data: 
 ${workoutSummary}
 
-**Instructions:**
-1.  **Generate ONE concise statement (1-2 sentences max).**
-2.  **Be positive, encouraging, and slightly informal.** Use the user's name (${userName}).
-3.  **Be Creative:** Use fun, relatable analogies or comparisons based on the provided workout data (e.g., distance compared to landmarks, calories to food items, volume to heavy objects). Avoid generic statements if specific data is available.
-4.  **Focus on the data provided:** Base the insight primarily on the numbers (duration, distance, volume, calories) or the type of workout.
-5.  **Keep it fresh:** Try to generate slightly different phrasing or analogies each time, even for similar workouts.
-6.  **Output ONLY the statement text.** Do not include greetings, introductory phrases, or markdown formatting. Just the raw insight string.
+Your Task: Create a Highlight!
 
-**Example Insights (for inspiration, don't copy directly):**
-*   "Crushing ${workout.distance?.toFixed(1)}km, ${userName}! That's like running across the Golden Gate Bridge! 🌉 Keep it up!"
-*   "Wow ${userName}, lifting ${workout.calculatedVolume?.toLocaleString()}kg total? That's heavier than a grand piano! 🎹 Strong work!"
-*   "Solid ${Math.round((workout.duration || 0) / 60)} minutes, ${userName}! You burned enough calories for a slice of pizza! 🍕"
-*   "Great consistency, ${userName}! Another ${workout.type} session in the books. You're building momentum! 🚀"
+One Punchy Sentence (Max 2): Keep it concise, memorable, and shareable.
+Focus on Key Metrics by Workout Type:
+Strength Workouts (e.g., 'strength', 'push-up'): Prioritize Total Volume (calculatedVolume) if > 0. If unavailable, highlight a key Exercise (e.g., 'Push-ups'). Use Duration only if it's the only metric available.
+Cardio (Running, Cycling, etc.): Prioritize Distance, Pace/Speed, or Duration.
+Other Types: Choose the most relevant metric available.
+Fun, Specific, Factual Comparison: Compare the chosen metric to a specific, named real-world example (except for volume, see below). Ensure the comparison is vivid and relatable!
+Volume (kg): Compare to the average weight of a general category of object (e.g., 'a small car', 'a stack of refrigerators'). Avoid specific model names; focus on accurate weight categories.
+Distance (km): Compare to a specific, named geographical feature, route, or structure (e.g., 'the Brooklyn Bridge', 'the Champs-Élysées').
+Pace/Speed: Compare to the average/top speed of a specific animal species (e.g., 'a cheetah', 'a bald eagle') or a specific vehicle model (use sparingly).
+Duration (min): Compare to the duration of a specific, named event/activity (e.g., 'an episode of Stranger Things', 'the cooking time for a frozen pizza'). Avoid for strength workouts unless it's the only metric.
+Calories: Compare to the caloric content of a specific, named food item (e.g., 'a Starbucks latte', 'a Big Mac').
+Accuracy is Non-Negotiable: Ensure the comparison is factually correct and close to the metric value. If no accurate specific comparison is possible, use a positive, general statement tied to the workout type.
+Vary the Themes: Use specific, named examples from these categories, avoiding repetition (especially vehicles). Rotate themes for freshness:
+Pop Culture: Specific shows, movies, songs, or games (e.g., 'a Marvel movie').
+Nature: Specific animals, plants, or landmarks (e.g., 'Mount Fuji's height').
+Urban/Metro: Specific landmarks or objects (e.g., 'the Eiffel Tower's stairs').
+Animals: Specific species with known stats (e.g., 'a red kangaroo's sprint').
+Like-for-Like Comparisons: Match metrics logically (e.g., distance to length, volume to weight).
+Double-Check Facts: Verify the comparison's accuracy (e.g., is the duration really close to that event?). If off, pick a closer example or default to general praise.
+Personal & Upbeat: Address ${userName} directly with an energetic, positive tone. Emojis are great! 💪🔥
+Shareable Vibe: Make it fun, relatable, and social media-ready. Avoid generic praise if a specific comparison is possible.
+Output Only the Statement: No quotes, intros, or explanations.
 
-Now, generate a highlight for the provided workout data.`;
+Example Highlights (Specific & Accurate):
 
-    return systemPrompt;
+Volume: "Wow, ${userName}, you lifted ${workout.calculatedVolume?.toLocaleString()}kg—equivalent to a couple of grand pianos! Epic strength! 🎹💪"
+Distance: "${userName}, your ${workout.distance?.toFixed(1)}km run matches the length of Central Park's main loop! Amazing stride! 🌳🏃‍♀️"
+Pace: "Your pace outran a red fox darting through the woods, ${userName}! Blazing fast! 🦊💨"
+Duration: "${userName}, your ${Math.round((workout.duration || 0) / 60)}min session lasted as long as a Friends episode! Stellar effort! 📺🔥"
+Calories: "You burned ${workout.calories}kcal, ${userName}—that's like torching a large chocolate chip cookie! Sweet victory! 🍪💥"
+
+Go, Aivery! Craft a verified, specific, fun, and shareable highlight for ${userName} that pops! 🚀
+`;
+
+  return systemPrompt;
 }
 
 // --- GET Handler --- 
@@ -132,30 +164,66 @@ export async function GET(req: NextRequest) {
         }
 
         // 5. Create Prompt for AI
-        const prompt = createHighlightPrompt(userName, validatedWorkoutData);
+        const systemPrompt = createHighlightPrompt(userName, validatedWorkoutData);
 
-        // 6. Call Anthropic API
-        console.log(`[GET /ai/workout-highlight] Sending workout data to Anthropic for highlight generation for user: ${userName}, workout type: ${validatedWorkoutData.type}`);
-        const msg = await anthropic.messages.create({
-          model: "claude-3-haiku-20240307", // Consider updating model if needed
-          max_tokens: 150,
-          system: prompt, 
-          messages: [
-             { role: "user", content: "Generate the highlight statement based on the workout data provided in the system prompt." } 
-          ],
+        // 6. Call Grok API
+        console.log(`[GET /ai/workout-highlight] Sending workout data to Grok for highlight generation for user: ${userName}, workout type: ${validatedWorkoutData.type}`);
+        
+        const grokApiKey = process.env.GROK_API_KEY;
+        if (!grokApiKey) {
+            console.error("[GET /ai/workout-highlight] GROK_API_KEY not configured.");
+            return NextResponse.json({ error: "AI configuration error" }, { status: 500 });
+        }
+
+        const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${grokApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'grok-3-latest',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              // Adding a simple user message to trigger the system prompt processing
+              { role: 'user', content: `Generate a workout highlight for ${userName}.` }
+            ],
+            max_tokens: 150, // Max length for highlight
+            temperature: 0.8, // Allow some creativity
+            stream: false,
+          })
         });
 
-        console.log("[GET /ai/workout-highlight] Anthropic Raw Response:", msg);
-
-        // 7. Extract and Validate Response
-        let aiHighlight = "Great workout! Keep pushing!"; // Default fallback
-        const firstBlock = msg.content?.[0];
-        if (firstBlock && firstBlock.type === "text") {
-            aiHighlight = firstBlock.text.trim().replace(/^["']|["']$/g, "");
-        } else {
-            console.error("[GET /ai/workout-highlight] Anthropic response content is empty or not text", msg.content);
+        if (!fetchResponse.ok) {
+            const errorBody = await fetchResponse.text();
+            console.error(`[GET /ai/workout-highlight] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+            return NextResponse.json({ error: "Failed to generate highlight from AI" }, { status: 502 }); // Use 502 Bad Gateway
         }
-        if (!aiHighlight) {
+
+        const data = await fetchResponse.json();
+        console.log("[GET /ai/workout-highlight] Grok Raw Response:", JSON.stringify(data, null, 2)); // Log the full response
+
+        // 7. Extract and Validate Response from Grok
+        let aiHighlight = "Great workout! Keep pushing!"; // Default fallback
+        try {
+            if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+                 const responseText = data.choices[0].message.content.trim();
+                 aiHighlight = responseText.replace(/^[\"\']|[\"\']$/g, ""); // Remove surrounding quotes
+             } else {
+                 console.error("[GET /ai/workout-highlight] Grok response content is empty or missing.", data);
+                 // Check finish reason if available
+                 const finishReason = data.choices?.[0]?.finish_reason;
+                 if (finishReason && finishReason !== 'stop') {
+                     console.warn(`Grok generation finished unexpectedly. Reason: ${finishReason}`);
+                     aiHighlight = `Highlight generation incomplete. (${finishReason})`;
+                 }
+             }
+        } catch (extractionError) {
+             console.error("[GET /ai/workout-highlight] Error extracting text from Grok response:", extractionError, data);
+             // Add more specific error handling if Grok provides error details in the future
+        }
+        
+        if (!aiHighlight || aiHighlight.trim() === "") {
             aiHighlight = `Awesome effort on that ${validatedWorkoutData.type}, ${userName}! Keep it up!`; // Personalized fallback
         }
 
@@ -199,29 +267,65 @@ export async function POST(req: NextRequest) {
     // 3. Create Prompt for AI (using the validated workout structure)
     const prompt = createHighlightPrompt(userName, workout);
 
-    // 4. Call Anthropic API
-    console.log(`[POST] Sending workout data to Anthropic for highlight generation for user: ${userName}, workout type: ${workout.type}`);
-    const msg = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307", 
-      max_tokens: 150,
-      system: prompt,
-      messages: [
-         { role: "user", content: "Generate the highlight statement based on the workout data provided in the system prompt." } 
-      ],
+    // 4. Call Grok API
+    console.log(`[POST] Sending workout data to Grok for highlight generation for user: ${userName}, workout type: ${workout.type}`);
+    
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+        console.error("[POST /ai/workout-highlight] GROK_API_KEY not configured.");
+        return NextResponse.json({ error: "AI configuration error" }, { status: 500 });
+    }
+
+    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+          { role: 'system', content: prompt },
+          // Adding a simple user message to trigger the system prompt processing
+          { role: 'user', content: `Generate a workout highlight for ${userName}.` }
+        ],
+        max_tokens: 150, // Max length for highlight
+        temperature: 0.8, // Allow some creativity
+        stream: false,
+      })
     });
 
-    console.log("[POST] Anthropic Raw Response:", msg);
-
-    // 5. Extract and Validate Response
-    let aiHighlight = "Great workout! Keep pushing!"; 
-    const firstBlock = msg.content?.[0];
-    if (firstBlock && firstBlock.type === "text") {
-        aiHighlight = firstBlock.text.trim().replace(/^["']|["']$/g, "");
-    } else {
-        console.error("[POST] Anthropic response content is empty or not text", msg.content);
+    if (!fetchResponse.ok) {
+        const errorBody = await fetchResponse.text();
+        console.error(`[POST /ai/workout-highlight] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+        return NextResponse.json({ error: "Failed to generate highlight from AI" }, { status: 502 }); // Use 502 Bad Gateway
     }
-    if (!aiHighlight) {
-        aiHighlight = `Awesome effort on that ${workout.type}, ${userName}! Keep it up!`; 
+
+    const data = await fetchResponse.json();
+    console.log("[POST] Grok Raw Response:", JSON.stringify(data, null, 2)); // Log the full response
+
+    // 5. Extract and Validate Response from Grok
+    let aiHighlight = "Great workout! Keep pushing!";
+     try {
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+             const responseText = data.choices[0].message.content.trim();
+             aiHighlight = responseText.replace(/^[\"\']|[\"\']$/g, ""); // Remove surrounding quotes
+         } else {
+             console.error("[POST /ai/workout-highlight] Grok response content is empty or missing.", data);
+             // Check finish reason if available
+             const finishReason = data.choices?.[0]?.finish_reason;
+             if (finishReason && finishReason !== 'stop') {
+                 console.warn(`Grok generation finished unexpectedly. Reason: ${finishReason}`);
+                 aiHighlight = `Highlight generation incomplete. (${finishReason})`;
+             }
+         }
+    } catch (extractionError) {
+         console.error("[POST /ai/workout-highlight] Error extracting text from Grok response:", extractionError, data);
+         // Add more specific error handling if Grok provides error details in the future
+    }
+
+    if (!aiHighlight || aiHighlight.trim() === "") {
+        aiHighlight = `Awesome effort on that ${workout.type}, ${userName}! Keep it up!`;
     }
 
     console.log(`[POST] Generated AI Highlight for ${userName}: "${aiHighlight}"`);

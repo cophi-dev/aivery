@@ -382,35 +382,13 @@ export async function fetchWorkout(id: string): Promise<any | null> {
         workoutExercises: plainWorkoutExercises
     };
 
-    // 7. Calculate and add total volume for strength workouts
-    if (finalData.type === 'strength' && finalData.workoutExercises) {
-        let totalVolume = 0;
-        // Define an inline type for the serialized exercise structure for clarity
-        type SerializedExercise = {
-            _id: string;
-            workoutId: string;
-            order?: number;
-            notes?: string;
-            exerciseId: { _id: string; name: string; category: string; } | null;
-            sets: Array<InputSetData>; // Use InputSetData defined earlier
-            duration?: number;
-            distance?: number;
-            // ... other potential fields from serialization
-        };
-        
-        finalData.workoutExercises.forEach((exercise: SerializedExercise) => {
-            if (exercise && Array.isArray(exercise.sets)) {
-                exercise.sets.forEach((set: InputSetData) => {
-                    const weight = typeof set.weight === 'number' ? set.weight : 0;
-                    const reps = typeof set.reps === 'number' ? set.reps : 0;
-                    // TODO: Consider bodyweight estimation for reps-only sets if needed?
-                    totalVolume += weight * reps;
-                });
-            }
-        });
-        finalData.calculatedVolume = totalVolume; // Add the calculated volume
+    // 7. Calculate and add total volume using the dedicated helper function
+    if (finalData.type === 'strength') {
+        // Pass the partially built finalData which should include userId and workoutExercises
+        finalData.calculatedVolume = await calculateTotalWeightLifted(finalData);
+        console.log(`[Fetch Workout] Volume calculated via helper: ${finalData.calculatedVolume}kg`);
     } else {
-        finalData.calculatedVolume = 0; // Ensure it's 0 for non-strength or if no exercises
+        finalData.calculatedVolume = 0; // Ensure it's 0 for non-strength workouts
     }
 
     console.log("--- [FETCH WORKOUT DEBUG] Final Data Before Return ---");
@@ -1164,23 +1142,71 @@ export async function createWorkoutFromExisting(workoutData: any): Promise<strin
 }
 
 // Calculate total weight lifted in a workout
+// Modified to include estimated bodyweight for weight=0 sets
 export async function calculateTotalWeightLifted(workout: any): Promise<number> {
-  if (!workout?.exercises || !Array.isArray(workout.exercises)) {
+  // Ensure we have workoutExercises and a userId to fetch user weight
+  // Check for workoutExercises property instead of exercises
+  if (!workout?.workoutExercises || !Array.isArray(workout.workoutExercises) || !workout.userId) {
+    console.warn("[Volume Calc] Missing workoutExercises or userId, returning 0 volume.", { hasWorkoutExercises: !!workout?.workoutExercises, hasUserId: !!workout.userId });
     return 0;
   }
 
   let totalWeight = 0;
+  let userWeight: number | null = null; // Initialize as null
 
-  for (const exercise of workout.exercises) {
+  // Fetch user weight once
+  try {
+    // Assuming workout.userId is available and is a valid ID (string or ObjectId)
+    const userId = workout.userId.toString(); 
+    // Use findOne and explicitly cast to a type that includes weight or check property existence
+    const user = await UserModel.findOne({ _id: new Types.ObjectId(userId) }).select('weight').lean<{ weight?: number } | null>();
+    // Check if user exists and has a weight property before assigning
+    if (user && typeof user.weight === 'number' && user.weight > 0) {
+      userWeight = user.weight;
+    }
+    // console.log(`[Volume Calc] Using user weight for volume calc: ${userWeight} kg`);
+  } catch (error) {
+    console.error("[Volume Calc] Error fetching user weight:", error);
+    // Proceed without user weight if fetching fails, userWeight remains null
+  }
+
+  // Loop through workout.workoutExercises instead of workout.exercises
+  for (const exercise of workout.workoutExercises) {
+    // Ensure exercise name is available for the estimation function
+    // Adjust access based on the structure within workoutExercises
+    const exerciseName = exercise?.exerciseId?.name || exercise.name; // Check both potential structures
+    if (!exerciseName) {
+        console.warn("[Volume Calc] Skipping exercise due to missing name:", exercise);
+        continue;
+    }
+    
     if (exercise.sets && Array.isArray(exercise.sets)) {
       for (const set of exercise.sets) {
-        if (set.weight && set.reps) {
-          totalWeight += set.weight * set.reps;
+        // Ensure reps are valid
+        const reps = typeof set.reps === 'number' && set.reps > 0 ? set.reps : 0;
+        if (reps === 0) continue; // Skip sets with no reps
+        
+        let weightForSet = typeof set.weight === 'number' ? set.weight : 0;
+
+        // If weight is 0, attempt to estimate based on bodyweight
+        if (weightForSet <= 0) {
+          // Pass the fetched (or null) userWeight to the estimation function
+          const estimatedWeight = estimateBodyweightForExercise(exerciseName, userWeight);
+          if (estimatedWeight > 0) {
+            // console.log(`[Volume Calc] Using estimated weight ${estimatedWeight}kg for ${reps} reps of ${exerciseName} (User Weight: ${userWeight || 'N/A'})`);
+            weightForSet = estimatedWeight;
+          } else {
+            // console.log(`[Volume Calc] Weight is 0 and no estimate found for ${exerciseName}. Volume contribution is 0.`);
+            weightForSet = 0; // Ensure it remains 0 if no estimate found
+          }
         }
+
+        // Add to total volume
+        totalWeight += weightForSet * reps;
       }
     }
   }
-
+  // console.log(`[Volume Calc] Final calculated volume for workout: ${totalWeight} kg`);
   return totalWeight;
 }
 

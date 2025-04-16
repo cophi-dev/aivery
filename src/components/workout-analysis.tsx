@@ -31,7 +31,11 @@ export function WorkoutAnalysis({ workout, variant = "card" }: WorkoutAnalysisPr
         <p className="text-sm text-muted-foreground">
           Get personalized feedback and suggestions to improve your {workout.name} workout.
         </p>
-        <Button onClick={handleAnalyze} disabled={isLoading} className="mt-2">
+        <Button 
+          onClick={handleAnalyze} 
+          disabled={isLoading} 
+          className="mt-2 bg-brand-accent text-white"
+        >
           {isLoading ? "Loading..." : "Analyze Workout"}
           <LucideArrowRight className="ml-2 h-4 w-4" />
         </Button>
@@ -57,7 +61,11 @@ export function WorkoutAnalysis({ workout, variant = "card" }: WorkoutAnalysisPr
           <li>Suggestions for improvement</li>
           <li>Recovery recommendations</li>
         </ul>
-        <Button onClick={handleAnalyze} disabled={isLoading} className="w-full">
+        <Button 
+          onClick={handleAnalyze} 
+          disabled={isLoading} 
+          className="w-full bg-brand-accent text-white"
+        >
           {isLoading ? "Loading..." : "Analyze Workout"}
           <LucideArrowRight className="ml-2 h-4 w-4" />
         </Button>

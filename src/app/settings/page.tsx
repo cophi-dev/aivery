@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser, Loader2, RefreshCw, LucideAlertCircle } from "lucide-react"
+import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser, Loader2, RefreshCw, LucideAlertCircle, Sparkles } from "lucide-react"
 import { StravaImport } from "@/components/strava-import"
 import { useToast } from "@/components/ui/use-toast"
 import { useTheme } from "next-themes"
@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { deleteWorkoutsByTypes, deleteWorkoutsAction } from '../actions/delete-workouts'
+import { InlineSpinner } from "@/components/ui/inline-spinner"
 
 interface Change {
   field: string;
@@ -1287,13 +1288,11 @@ export default function SettingsPage() {
                         disabled={isOptimizing.trainingPreferences || !aiPreferences.trainingPreferences}
                       >
                         {isOptimizing.trainingPreferences ? (
-                          <>
-                            <span className="animate-spin mr-1">⟳</span>
-                            Optimizing...
-                          </>
+                          <InlineSpinner size={16} className="mr-2" />
                         ) : (
-                          <>Optimize with AI</>
+                          <Sparkles className="mr-2 h-4 w-4" />
                         )}
+                        Optimize
                       </Button>
                     </div>
                   </div>
@@ -1320,13 +1319,11 @@ export default function SettingsPage() {
                         disabled={isOptimizing.fitnessGoals || !aiPreferences.fitnessGoals}
                       >
                         {isOptimizing.fitnessGoals ? (
-                          <>
-                            <span className="animate-spin mr-1">⟳</span>
-                            Optimizing...
-                          </>
+                          <InlineSpinner size={16} className="mr-2" />
                         ) : (
-                          <>Optimize with AI</>
+                          <Sparkles className="mr-2 h-4 w-4" />
                         )}
+                        Optimize
                       </Button>
                     </div>
                   </div>
@@ -1353,13 +1350,11 @@ export default function SettingsPage() {
                         disabled={isOptimizing.dietaryPreferences || !aiPreferences.dietaryPreferences}
                       >
                         {isOptimizing.dietaryPreferences ? (
-                          <>
-                            <span className="animate-spin mr-1">⟳</span>
-                            Optimizing...
-                          </>
+                          <InlineSpinner size={16} className="mr-2" />
                         ) : (
-                          <>Optimize with AI</>
+                          <Sparkles className="mr-2 h-4 w-4" />
                         )}
+                        Optimize
                       </Button>
                     </div>
                   </div>

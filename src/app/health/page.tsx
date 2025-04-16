@@ -6,6 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LucideCheck, LucideLoader, LucideRefreshCw } from "lucide-react"
 import { Header } from "@/components/header"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 export default function HealthCheckPage() {
   const [isLoading, setIsLoading] = useState(true)
@@ -61,9 +64,7 @@ export default function HealthCheckPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="flex justify-center py-8">
-                <LucideLoader className="h-8 w-8 animate-spin text-primary" />
-              </div>
+              <LoadingIndicator />
             ) : healthStatus ? (
               <div className="space-y-4">
                 <Alert className="bg-green-50 border-green-200">

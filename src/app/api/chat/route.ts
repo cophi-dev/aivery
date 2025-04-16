@@ -1,5 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import User from "@/lib/db/models/user"; // Assuming User model is needed for personalization
@@ -17,17 +15,13 @@ import {
   subYears,
   parse,
 } from "date-fns"; // Import date-fns functions
+import { getServerSession } from "next-auth"; // RE-ADD import
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
-
-// Initialize the Anthropic SDK
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 // Allow responses up to 30 seconds
 export const maxDuration = 30;
@@ -124,7 +118,7 @@ export async function POST(req: Request) {
     userId = session.user.id;
     userName = session.user.name || "User";
 
-    console.log("[CHAT] API Key Loaded:", !!process.env.ANTHROPIC_API_KEY);
+    console.log("[CHAT] API Key Loaded:", !!process.env.GROK_API_KEY);
 
     const body = await req.json();
     const currentQuery = body.query;
@@ -154,28 +148,33 @@ export async function POST(req: Request) {
         const dateRange = getDateRangeFromTimeframe(timeframe);
         if (dateRange) {
           console.log(`[CHAT] Fetching ${workoutType} distance for range:`, dateRange);
-          try {
-            await dbConnect(); // Ensure DB connection
-            // Call the repository function - it returns a number or throws an error
-            const totalDistance: number = await getWorkoutDistanceForDateRange(
-              userId,
-              workoutType,
-              dateRange.start,
-              dateRange.end
-            );
-            console.log("[CHAT] Total distance fetched:", totalDistance);
-            
-            // Check if totalDistance is a valid number and greater than 0
-            if (typeof totalDistance === 'number' && totalDistance > 0) {
-               // Note: We don't get the count from this specific function
-               dataContext = `Data for ${userName}: Total ${workoutType} distance for timeframe '${timeframe}' was ${totalDistance.toFixed(1)} km. Use this data to answer.`;
-            } else {
-               // Handle case where distance is 0 (or potentially NaN/undefined, though caught by check)
-               dataContext = `Data for ${userName}: No ${workoutType} workouts with distance were found for timeframe '${timeframe}'. Inform the user.`;
+          if (userId) {
+            try {
+              await dbConnect(); // Ensure DB connection
+              // Call the repository function - it returns a number or throws an error
+              const totalDistance: number = await getWorkoutDistanceForDateRange(
+                userId,
+                workoutType,
+                dateRange.start,
+                dateRange.end
+              );
+              console.log("[CHAT] Total distance fetched:", totalDistance);
+              
+              // Check if totalDistance is a valid number and greater than 0
+              if (typeof totalDistance === 'number' && totalDistance > 0) {
+                 // Note: We don't get the count from this specific function
+                 dataContext = `Data for ${userName}: Total ${workoutType} distance for timeframe '${timeframe}' was ${totalDistance.toFixed(1)} km. Use this data to answer.`;
+              } else {
+                 // Handle case where distance is 0 (or potentially NaN/undefined, though caught by check)
+                 dataContext = `Data for ${userName}: No ${workoutType} workouts with distance were found for timeframe '${timeframe}'. Inform the user.`;
+              }
+            } catch (dbError) {
+               console.error("[CHAT] Database error fetching distance:", dbError);
+               dataContext = `Error fetching workout data for ${timeframe}. Inform the user an error occurred.`;
             }
-          } catch (dbError) {
-             console.error("[CHAT] Database error fetching distance:", dbError);
-             dataContext = `Error fetching workout data for ${timeframe}. Inform the user an error occurred.`;
+          } else {
+              console.error("[CHAT] Cannot fetch distance, userId is undefined after authentication check.");
+              // Optionally set context indicating user ID issue, or keep default
           }
         } else {
             console.log("[CHAT] Could not determine date range from timeframe:", timeframe);
@@ -229,17 +228,48 @@ RESPONSE GUIDELINES:
 - Do not invent data. Only state what is in the CONTEXT or generally known based on the schema.
 - Use markdown formatting (bold, italics, lists).`;
 
-    console.log("[CHAT] Calling Anthropic API with system prompt:", systemPrompt); // Log the prompt
+    console.log("[CHAT] Calling Grok API with system prompt:", systemPrompt); // Log the prompt
     
-    const response = await client.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 1024,
-      temperature: 0.7,
-      system: systemPrompt,
-      messages: messagesForAnthropicApi,
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+        console.error("[CHAT] GROK_API_KEY not configured.");
+        return new Response("AI service is unavailable due to configuration issues.", { status: 503 });
+    }
+
+    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+            { role: 'system', content: systemPrompt },
+            ...messagesForAnthropicApi
+        ],
+        max_tokens: 1024,
+        temperature: 0.7,
+        stream: false,
+      })
     });
 
-    const aiResponse = getTextFromResponse(response.content);
+    if (!fetchResponse.ok) {
+      const errorBody = await fetchResponse.text();
+      console.error(`[CHAT] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+      return new Response("Sorry, there was an error communicating with the AI.", { status: 502 });
+    }
+
+    const data = await fetchResponse.json();
+    console.log("[CHAT] Grok Raw Response:", data);
+
+    let aiResponse: string | null = null;
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        aiResponse = data.choices[0].message.content.trim();
+    } else {
+        console.warn("[CHAT] Unexpected Grok response structure:", data);
+    }
+
     console.log("[CHAT] AI Response generated.");
 
     return new Response(aiResponse || "Sorry, I couldn't generate a response.", {
@@ -265,7 +295,7 @@ RESPONSE GUIDELINES:
     }
     if (
       userErrorMessage.includes("API key") ||
-      userErrorMessage.includes("Anthropic")
+      userErrorMessage.includes("Grok")
     ) {
       userErrorMessage =
         "An unexpected error occurred while communicating with the AI service.";

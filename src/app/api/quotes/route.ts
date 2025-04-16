@@ -32,11 +32,6 @@ interface UserType {
   age?: number;
 }
 
-// Initialize Anthropic client
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 // Basic quotes cache for when we can't use AI
 const fallbackQuotes = [
   "Consistency matters more than intensity.",
@@ -123,7 +118,7 @@ function getTextFromResponse(content: any): string | undefined {
   return undefined;
 }
 
-// Use Anthropic to generate a personalized quote
+// Use Grok to generate a personalized quote
 async function generateAIQuote(context: {
   nickname?: string;
   workoutCount?: number;
@@ -136,7 +131,9 @@ async function generateAIQuote(context: {
   forceRefresh?: boolean;
 }) {
   try {
-    if (!process.env.ANTHROPIC_API_KEY) {
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+      console.log("[generateAIQuote] Grok API key not configured");
       return null;
     }
 
@@ -158,97 +155,98 @@ async function generateAIQuote(context: {
     const promptType =
       promptTypes[Math.floor(Math.random() * promptTypes.length)];
 
-    // Create a prompt with user context
-    let prompt = `Generate a short ${promptType} for a fitness app user (max 100 chars).`;
+    let systemPrompt = `Act as a friendly fitness coach. Provide a brief, motivational, and personalized quote/tip (max 100 chars).
 
-    // If we have a nickname, explicitly tell the model to use it
+Style Guidelines:
+1. Use the user's exact name (provided in context) if available.
+2. STRICTLY keep the response under 100 characters.
+3. DO NOT use greetings (e.g., "Hi Name,"). Start directly with the advice.
+4. Be specific and relevant to the user context provided.
+5. Use natural, conversational language.
+6. Vary the tone: sometimes encouraging, sometimes a gentle challenge, sometimes practical advice.
+7. Frame it as a question sometimes to encourage reflection.
+8. DO NOT use markdown formatting or quotation marks around the final output. Just return the plain text quote.`;
+
+    let userContextPrompt = "Generate a quote based on this context:";
+
     if (context.nickname) {
-      prompt += `\n\nUser name: ${context.nickname}`;
+      userContextPrompt += `\n- User name: ${context.nickname}`;
     }
-
-    // Add a simple timestamp to force uniqueness
-    const timestamp = Date.now();
-
-    prompt += "\n\nContext:";
     if (context.workoutCount !== undefined) {
-      prompt += `\n- Workouts: ${context.workoutCount}`;
-      prompt += `\n- Level: ${
-        context.workoutCount === 0
-          ? "New user"
-          : context.workoutCount < 5
-            ? "Beginner"
-            : context.workoutCount < 20
-              ? "Regular"
-              : "Dedicated"
-      }`;
+      userContextPrompt += `\n- Workout Count: ${context.workoutCount}`;
+      const level = context.workoutCount === 0 ? "New user" : context.workoutCount < 5 ? "Beginner" : context.workoutCount < 20 ? "Regular" : "Dedicated";
+      userContextPrompt += `\n- Dedication Level: ${level}`;
     }
-
     if (context.recentWorkoutTypes?.length) {
-      prompt += `\n- Recent workouts: ${context.recentWorkoutTypes.join(", ")}`;
-      // Add some workout-specific context
-      const workoutType = context.recentWorkoutTypes[0]?.toLowerCase();
-      if (
-        workoutType?.includes("strength") ||
-        workoutType?.includes("weight")
-      ) {
-        prompt += `\n- Preference: Strength training`;
-      } else if (
-        workoutType?.includes("cardio") ||
-        workoutType?.includes("run")
-      ) {
-        prompt += `\n- Preference: Cardio`;
-      } else if (
-        workoutType?.includes("yoga") ||
-        workoutType?.includes("stretch")
-      ) {
-        prompt += `\n- Preference: Flexibility`;
-      }
+      userContextPrompt += `\n- Recent workout types: ${context.recentWorkoutTypes.join(", ")}`;
+      const primaryType = context.recentWorkoutTypes[0]?.toLowerCase();
+      if (primaryType?.includes("strength") || primaryType?.includes("weight")) userContextPrompt += `\n- Likely Preference: Strength`;
+      else if (primaryType?.includes("cardio") || primaryType?.includes("run") || primaryType?.includes("cycle")) userContextPrompt += `\n- Likely Preference: Cardio`;
+      else if (primaryType?.includes("yoga") || primaryType?.includes("stretch")) userContextPrompt += `\n- Likely Preference: Flexibility`;
     }
-
-    if (context.timeOfDay) prompt += `\n- Time: ${context.timeOfDay}`;
-    if (context.dayOfWeek) prompt += `\n- Day: ${context.dayOfWeek}`;
-    if (context.isWeekend !== undefined)
-      prompt += `\n- Weekend: ${context.isWeekend ? "Yes" : "No"}`;
-
+    if (context.timeOfDay) userContextPrompt += `\n- Time of Day: ${context.timeOfDay}`;
+    if (context.dayOfWeek) userContextPrompt += `\n- Day of Week: ${context.dayOfWeek}`;
+    if (context.isWeekend !== undefined) userContextPrompt += `\n- Is Weekend: ${context.isWeekend}`;
     if (context.weather) {
-      prompt += `\n- Weather: ${context.weather.condition}, ${context.weather.temp}°C`;
+      userContextPrompt += `\n- Current Weather: ${context.weather.condition}, ${context.weather.temp}°C`;
     }
 
-    // Add consistent style directive for all quotes
-    prompt +=
-      "\n\nStyle: Sometimes frame as a question to encourage reflection";
+    userContextPrompt += `\n\nQuote Type to Generate: ${promptType}`; // Add selected type for AI context
 
-    // Call Anthropic
-    const response = await client.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 75,
-      temperature: 0.7,
-      system: `Act as a fitness coach. Provide brief, motivational advice. 
+    console.log(`[generateAIQuote] Sending request to Grok with context for ${context.nickname || 'user'}`);
 
-1. Use client's exact name if provided
-2. Keep to 100 characters max
-3. No greetings - start with advice
-4. Be specific to context
-5. Use natural language
-6. Vary between encouraging and challenging`,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+    // Call Grok API
+    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContextPrompt }
+        ],
+        max_tokens: 50, // Reduced max_tokens to better enforce ~100 char limit (response includes prompt tokens sometimes)
+        temperature: 0.8, // Slightly higher temp for more quote variety
+        stream: false,
+      })
     });
 
-    const generatedQuote = getTextFromResponse(response.content)?.trim();
+    if (!fetchResponse.ok) {
+      const errorBody = await fetchResponse.text();
+      console.error(`[generateAIQuote] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+      return null;
+    }
 
-    if (generatedQuote && generatedQuote.length <= 150) {
-      // Remove any quotation marks from the beginning and end of the quote
-      return generatedQuote.replace(/^["'](.*)["']$/, "$1");
+    const data = await fetchResponse.json();
+    console.log("[generateAIQuote] Grok Raw Response:", data);
+
+    let generatedQuote: string | null = null;
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        generatedQuote = data.choices[0].message.content.trim();
+    } else {
+        console.warn("[generateAIQuote] Unexpected Grok response structure:", data);
+        return null;
+    }
+
+    if (generatedQuote) {
+      // Basic cleanup: remove surrounding quotes and trim again
+      const cleanedQuote = generatedQuote.replace(/^["'\s]+|["'\s]+$/g, '');
+
+      if (cleanedQuote.length > 0 && cleanedQuote.length <= 150) { // Allow slightly longer for safety
+        console.log(`[generateAIQuote] Generated quote: "${cleanedQuote}"`);
+        return cleanedQuote;
+      } else {
+          console.warn(`[generateAIQuote] Generated quote too long or empty after cleaning: "${cleanedQuote}" (Original: "${generatedQuote}")`);
+          return null; // Fallback if quote is too long or empty
+      }
     }
 
     return null;
   } catch (error) {
-    console.error("Error generating quote with Anthropic:", error);
+    console.error("Error generating quote with Grok:", error);
     return null;
   }
 }

@@ -26,6 +26,7 @@ import { EditWorkoutForm } from "@/components/forms/edit-workout-form"
 import { format } from "date-fns"
 import { Pencil } from "lucide-react"
 import { IWorkout } from "@/lib/db/models/workout"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 // Define the expected exercise input structure based on createWorkout signature
 type ExerciseInput = {
@@ -43,6 +44,7 @@ export default function WorkoutPlannerPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Form state
   const [workoutName, setWorkoutName] = useState("")
@@ -59,6 +61,7 @@ export default function WorkoutPlannerPage() {
         setWorkouts(data)
       } catch (error) {
         console.error("Failed to load workouts:", error)
+        setError("Failed to load workouts. Please try again later.")
       } finally {
         setIsLoading(false)
       }
@@ -140,6 +143,7 @@ export default function WorkoutPlannerPage() {
       setIsCreateDialogOpen(false)
     } catch (error) {
       console.error("Failed to create workout:", error)
+      setError("Failed to create workout. Please try again later.")
     } finally {
       setIsLoading(false)
     }
@@ -155,6 +159,7 @@ export default function WorkoutPlannerPage() {
       setWorkouts(workouts.filter((workout) => workout._id !== id))
     } catch (error) {
       console.error("Failed to delete workout:", error)
+      setError("Failed to delete workout. Please try again later.")
     } finally {
       setIsLoading(false)
     }
@@ -168,6 +173,18 @@ export default function WorkoutPlannerPage() {
       day: "numeric",
       year: "numeric",
     })
+  }
+
+  if (isLoading) {
+    return <LoadingIndicator />
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
   }
 
   return (
@@ -312,11 +329,7 @@ export default function WorkoutPlannerPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
-            ) : workoutsForSelectedDate.length === 0 ? (
+            {workoutsForSelectedDate.length === 0 ? (
               <div className="text-center py-8">
                 <LucideDumbbell className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
                 <h3 className="mt-4 text-lg font-medium">No workouts planned</h3>

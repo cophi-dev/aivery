@@ -1,24 +1,24 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+// import Anthropic from "@anthropic-ai/sdk"; // REMOVED
 
 // Helper function to safely extract text from Claude response content
-function getTextFromResponse(content: any): string | undefined {
-  if (!content || !Array.isArray(content) || content.length === 0) {
-    return undefined;
-  }
-
-  const firstBlock = content[0];
-
-  // Handle different content block types safely
-  if (firstBlock && typeof firstBlock === "object") {
-    if ("text" in firstBlock) {
-      return firstBlock.text as string;
-    }
-  }
-
-  return undefined;
-}
+// function getTextFromResponse(content: any): string | undefined { // REMOVED - Not needed for Grok
+//   if (!content || !Array.isArray(content) || content.length === 0) {
+//     return undefined;
+//   }
+//
+//   const firstBlock = content[0];
+//
+//   // Handle different content block types safely
+//   if (firstBlock && typeof firstBlock === "object") {
+//     if ("text" in firstBlock) {
+//       return firstBlock.text as string;
+//     }
+//   }
+//
+//   return undefined;
+// }
 
 // Define exercise data type
 interface ExerciseDetails {
@@ -26,10 +26,10 @@ interface ExerciseDetails {
   muscleGroups: string[];
 }
 
-// Initialize Anthropic client
-const anthropic = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
+// Initialize Anthropic client // REMOVED
+// const anthropic = process.env.ANTHROPIC_API_KEY // REMOVED
+//   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) // REMOVED
+//   : null; // REMOVED
 
 // Common exercises database
 const COMMON_EXERCISES: Record<string, ExerciseDetails> = {
@@ -84,49 +84,104 @@ const COMMON_EXERCISES: Record<string, ExerciseDetails> = {
   },
 };
 
-// Infer exercise details using AI
-async function inferExerciseDetails(exerciseName: string) {
-  if (!anthropic) {
-    console.log("Anthropic API key not configured");
+// Infer exercise details using AI (Now using Grok)
+async function inferExerciseDetails(exerciseName: string): Promise<ExerciseDetails | null> { // Adjusted return type
+  const grokApiKey = process.env.GROK_API_KEY;
+  if (!grokApiKey) {
+    console.log("[inferExerciseDetails] Grok API key not configured");
     return null;
   }
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
-      max_tokens: 150,
-      system: `Act as a fitness expert identifying exercise details.
+    const systemPrompt = `Act as a fitness expert identifying exercise details.
 
-OUTPUT (JSON):
+OUTPUT ONLY THE FOLLOWING JSON STRUCTURE, NOTHING ELSE:
 {
-  "description": "Brief exercise description",
-  "muscleGroups": ["primary", "secondary"]
+  "description": "Brief exercise description (1-2 sentences max)",
+  "muscleGroups": ["primary_muscle", "secondary_muscle_1", "secondary_muscle_2"]
 }
 
-- Keep descriptions to 1-2 sentences
-- Use anatomically correct muscle groups
-- Focus on execution and benefits`,
-      messages: [
-        {
-          role: "user",
-          content: `Exercise: ${exerciseName}`,
-        },
-      ],
-      temperature: 0.3,
+- Use anatomically correct muscle groups (e.g., 'pectoralis major', 'latissimus dorsi', 'quadriceps femoris').
+- Be concise.`;
+
+    const userPrompt = `Exercise: ${exerciseName}`;
+
+    console.log(`[inferExerciseDetails] Sending request to Grok for: "${exerciseName}"`);
+
+    // const response = await anthropic.messages.create({ // REMOVED
+    //   model: "claude-3-5-sonnet-20240620", // REMOVED
+    //   max_tokens: 150, // REMOVED
+    //   system: systemPrompt, // REMOVED
+    //   messages: [ // REMOVED
+    //     { // REMOVED
+    //       role: "user", // REMOVED
+    //       content: `Exercise: ${exerciseName}`, // REMOVED
+    //     }, // REMOVED
+    //   ], // REMOVED
+    //   temperature: 0.3, // REMOVED
+    // }); // REMOVED
+
+    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${grokApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'grok-3-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: 150,
+        temperature: 0.3, // Keep slight variability for descriptions
+        stream: false,
+        // response_format: { type: "json_object" }, // Attempt to enforce JSON if Grok supports it
+      })
     });
 
-    const result = getTextFromResponse(response.content);
-    if (result) {
+    if (!fetchResponse.ok) {
+        const errorBody = await fetchResponse.text();
+        console.error(`[inferExerciseDetails] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+        return null;
+    }
+
+    const data = await fetchResponse.json();
+    console.log("[inferExerciseDetails] Grok Raw Response:", data);
+
+    // const result = getTextFromResponse(response.content); // REMOVED
+    let resultText: string | null = null;
+    if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        resultText = data.choices[0].message.content.trim();
+    } else {
+        console.warn("[inferExerciseDetails] Unexpected Grok response structure:", data);
+        return null;
+    }
+
+    if (resultText) {
       try {
-        return JSON.parse(result);
+        // Sometimes the model might still wrap the JSON in markdown, try to extract
+        const jsonMatch = resultText.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
+        const jsonToParse = jsonMatch ? jsonMatch[1] : resultText;
+
+        const parsedResult: ExerciseDetails = JSON.parse(jsonToParse);
+        // Basic validation
+        if (parsedResult && typeof parsedResult.description === 'string' && Array.isArray(parsedResult.muscleGroups)) {
+             console.log(`[inferExerciseDetails] Successfully parsed Grok result for "${exerciseName}"`);
+             return parsedResult;
+        } else {
+            console.error("[inferExerciseDetails] Parsed JSON has incorrect structure:", parsedResult);
+            return null;
+        }
       } catch (e) {
-        console.error("Failed to parse AI response:", e);
+        console.error(`[inferExerciseDetails] Failed to parse Grok JSON response for "${exerciseName}":`, e);
+        console.error("[inferExerciseDetails] Raw response text:", resultText);
         return null;
       }
     }
     return null;
   } catch (error) {
-    console.error("Error calling Anthropic:", error);
+    console.error(`[inferExerciseDetails] Error calling Grok for "${exerciseName}":`, error);
     return null;
   }
 }

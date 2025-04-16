@@ -110,10 +110,12 @@ export function absoluteUrl(path: string): string {
 }
 
 // Estimate weight for common bodyweight exercises
-export const estimateBodyweightForExercise = (exerciseName: string): number => {
-  // Default estimated bodyweight in kg if nothing else applies
-  const defaultBodyweight = 75; // Adjusted default
-
+// Modified to accept userWeight
+export const estimateBodyweightForExercise = (exerciseName: string, userWeight?: number | null): number => {
+  // Use provided userWeight if available and valid, otherwise use a default
+  // Fallback to 75kg if user weight is not provided or invalid
+  const baseWeight = (userWeight && userWeight > 0) ? userWeight : 75;
+  
   // Common bodyweight exercises with percentage of bodyweight used
   const bodyweightExercises: Record<string, number> = {
     // Higher percentage
@@ -144,8 +146,9 @@ export const estimateBodyweightForExercise = (exerciseName: string): number => {
   // Check if the exercise name contains any of the known bodyweight exercises
   for (const [exerciseKey, percentage] of Object.entries(bodyweightExercises)) {
     if (normalizedName.includes(exerciseKey)) {
-      // console.log(`[Volume Calc Util] Matched exercise: ${normalizedName} with key: ${exerciseKey}. Applying ${percentage * 100}% of ${defaultBodyweight}kg.`);
-      return Math.round(defaultBodyweight * percentage);
+      // Use the baseWeight (actual user weight if provided, else default)
+      // console.log(`[Volume Calc Util] Matched exercise: ${normalizedName} with key: ${exerciseKey}. Applying ${percentage * 100}% of ${baseWeight}kg.`);
+      return Math.round(baseWeight * percentage);
     }
   }
 
