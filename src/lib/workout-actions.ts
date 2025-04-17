@@ -2226,3 +2226,61 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
   }
 }
 // --- END NEW FUNCTION ---
+
+// Define the specific return type for the dashboard PRs
+type DashboardPREntry = {
+  _id: string;
+  exerciseName: string;
+  value: number;
+  unit: string;
+  date: string; // ISO string date
+  workoutId: string | null;
+};
+
+/**
+ * Fetches a sample of recent exercise PRs for the dashboard.
+ */
+export async function fetchDashboardExercisePRs(limit = 3): Promise<DashboardPREntry[]> {
+  console.log(`[fetchDashboardExercisePRs] Fetching up to ${limit} recent PRs...`);
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      console.warn("[fetchDashboardExercisePRs] User not authenticated.");
+      return [];
+    }
+    const userId = user.id;
+
+    await dbConnect();
+
+    // Fetch PRs using lean
+    const prs = await ExercisePRModel.find({ userId: new Types.ObjectId(userId) })
+      .sort({ date: -1 }) // Sort by PR date descending
+      .limit(limit)
+      .select('exerciseName value unit date workoutId _id') // Explicitly select _id
+      .lean<IExercisePR[]>(); // Use lean for plain objects
+
+    // Serialize the results, ensuring date is handled correctly
+    const serializedPRs: DashboardPREntry[] = prs.map(pr => {
+      // Runtime check for safety, although select should guarantee it
+      if (!pr._id || !pr.date) {
+        console.warn("[fetchDashboardExercisePRs] Skipping PR due to missing _id or date:", pr);
+        return null; // Filter out invalid entries later
+      }
+      return {
+        _id: (pr._id as Types.ObjectId).toString(), // Assert _id is ObjectId
+        exerciseName: pr.exerciseName,
+        value: pr.value,
+        unit: pr.unit,
+        date: pr.date.toISOString(), // Convert date to ISO string
+        workoutId: pr.workoutId?.toString() ?? null, // Convert workoutId to string safely
+      };
+    }).filter((pr): pr is DashboardPREntry => pr !== null); // Filter out any null entries
+
+    console.log(`[fetchDashboardExercisePRs] Found and serialized ${serializedPRs.length} PRs.`);
+    return serializedPRs;
+
+  } catch (error) {
+    console.error("[fetchDashboardExercisePRs] Error fetching PRs:", error);
+    return []; // Return empty array on error
+  }
+}

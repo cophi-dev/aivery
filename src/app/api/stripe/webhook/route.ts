@@ -5,6 +5,8 @@ import { headers } from 'next/headers';
 import dbConnect from '@/lib/db/mongodb'; // Import the Mongoose connection function
 import User from '@/lib/db/models/user'; // Import the User model using lowercase path
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering
+
 // Ensure secrets are defined
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY is not set.');
