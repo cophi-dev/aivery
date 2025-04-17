@@ -685,15 +685,26 @@ export async function syncStravaActivity(userId: string, activityId: string) {
     console.log(`Prepared workout data for activity ${activityId}:`, JSON.stringify(workoutData).substring(0, 500) + "...");
 
     // --- Upsert Workout Document --- (Keep existing logic)
-    const savedWorkout = await WorkoutModel.findOneAndUpdate(
-      { userId: workoutData.userId, source: "strava", sourceId: activityId },
-      { $set: workoutData },
-      { new: true, upsert: true, runValidators: true }
-    );
-    console.log(`Upserted Workout document ${savedWorkout._id} for Strava activity ${activityId}`);
-
+    console.log(`[syncStravaActivity] Attempting to upsert Workout document for activity ${activityId}...`);
+    let savedWorkout;
+    try {
+        savedWorkout = await WorkoutModel.findOneAndUpdate(
+          { userId: workoutData.userId, source: "strava", sourceId: activityId },
+          { $set: workoutData },
+          { new: true, upsert: true, runValidators: true }
+        );
+        if (!savedWorkout) {
+          console.error(`[syncStravaActivity] WorkoutModel.findOneAndUpdate returned null/undefined despite upsert:true for activity ${activityId}`);
+          throw new Error(`Workout upsert failed unexpectedly for activity ${activityId}`);
+        }
+        console.log(`[syncStravaActivity] Upserted Workout document ${savedWorkout._id} for Strava activity ${activityId}`);
+    } catch (workoutUpsertError) {
+        console.error(`[syncStravaActivity] Error during WorkoutModel.findOneAndUpdate for activity ${activityId}:`, workoutUpsertError);
+        throw workoutUpsertError;
+    }
     // --- ADDED: Create/Update WorkoutExercise --- 
     // 1. Find the canonical Exercise document based on mappedType
+    console.log(`[syncStravaActivity] Finding canonical Exercise for mapped type: ${mappedType}`);
     let exercise = await ExerciseModel.findOne({ 
       // Try matching common variations for the mapped type
       name: { $regex: new RegExp(`^${mappedType}$`, 'i') } 
@@ -731,14 +742,26 @@ export async function syncStravaActivity(userId: string, activityId: string) {
     };
 
     // 3. Upsert WorkoutExercise document
-    const savedWorkoutExercise = await WorkoutExerciseModel.findOneAndUpdate(
-      { workoutId: savedWorkout._id, exerciseId: exercise._id }, // Find based on workout and exercise link
-      { $set: workoutExerciseData },
-      { new: true, upsert: true, runValidators: true }
-    );
-    console.log(`Upserted WorkoutExercise document ${savedWorkoutExercise._id} linking workout ${savedWorkout._id} to exercise ${exercise._id}`);
-
+    console.log(`[syncStravaActivity] Attempting to upsert WorkoutExercise document for workout ${savedWorkout._id}...`);
+    let savedWorkoutExercise;
+    try {
+        savedWorkoutExercise = await WorkoutExerciseModel.findOneAndUpdate(
+          { workoutId: savedWorkout._id, exerciseId: exercise._id }, // Find based on workout and exercise link
+          { $set: workoutExerciseData },
+          { new: true, upsert: true, runValidators: true }
+        );
+        if (!savedWorkoutExercise) {
+          console.error(`[syncStravaActivity] WorkoutExerciseModel.findOneAndUpdate returned null/undefined despite upsert:true for workout ${savedWorkout._id}`);
+           throw new Error(`WorkoutExercise upsert failed unexpectedly for workout ${savedWorkout._id}`);
+        }
+        console.log(`[syncStravaActivity] Upserted WorkoutExercise document ${savedWorkoutExercise._id} linking workout ${savedWorkout._id} to exercise ${exercise._id}`);
+    } catch (workoutExerciseUpsertError) {
+        console.error(`[syncStravaActivity] Error during WorkoutExerciseModel.findOneAndUpdate for workout ${savedWorkout._id}:`, workoutExerciseUpsertError);
+        throw workoutExerciseUpsertError;
+    }
     // --- END ADDED SECTION --- 
+
+    console.log(`[syncStravaActivity] Successfully completed sync process for activity ${activityId}.`);
 
   } catch (error) {
     console.error(`Error syncing Strava activity ${activityId} for user ${userId}:`, error);
