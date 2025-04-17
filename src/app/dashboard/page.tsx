@@ -154,8 +154,7 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Pass exercisePRs to the component */}
-                        <PersonalRecordsCard 
-                            topPRs={metrics.topPRs} // Keep passing old data for now if needed
+                        <PersonalRecordsCard
                             exercisePRs={metrics.exercisePRs} // <-- Pass new data
                         />
                     </>
