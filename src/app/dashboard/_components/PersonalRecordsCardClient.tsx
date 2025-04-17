@@ -1,21 +1,27 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Zap } from "lucide-react";
+import { Zap, ChevronRight } from "lucide-react";
 import { format } from "date-fns"; // For formatting the date
+import Link from "next/link"; // Import Link for navigation
+// Import the new PR type
+import type { DashboardPREntry } from "@/lib/workout-actions";
 
-// Define the structure of a PR entry passed from the server
+// Remove or update the old PersonalRecord interface if topPRs is removed
+/*
 interface PersonalRecord {
   exerciseName: string;
   weight: number;
   date: string; // Date string (ISO format expected from server)
 }
+*/
 
 interface PersonalRecordsCardProps {
-  topPRs: PersonalRecord[]; // Array of top PRs
+  // topPRs: PersonalRecord[]; // Keep or remove based on final decision
+  exercisePRs?: DashboardPREntry[]; // <-- Add new prop (make optional initially)
 }
 
-export function PersonalRecordsCard({ topPRs }: PersonalRecordsCardProps) {
+export function PersonalRecordsCard({ exercisePRs = [] }: PersonalRecordsCardProps) { // Use exercisePRs, default to empty array
   return (
     <Card>
       <CardHeader className="text-center">
@@ -25,22 +31,39 @@ export function PersonalRecordsCard({ topPRs }: PersonalRecordsCardProps) {
         <CardDescription>Your best recent lifts</CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-center">
-        {topPRs.length > 0 ? (
-          topPRs.map((pr) => (
-            <div key={pr.exerciseName} className="text-sm border-b border-border/50 pb-2 last:border-b-0 sm:last:border-b-0">
-              <p className="font-medium truncate">{pr.exerciseName}</p>
-              <p className="text-muted-foreground">
-                <span className="font-semibold text-foreground">{pr.weight} kg</span>
-                {pr.date && (
-                    <span className="text-xs"> on {format(new Date(pr.date), 'MMM d, yyyy')}</span>
+        {exercisePRs.length > 0 ? (
+          exercisePRs.map((pr) => {
+            const prContent = (
+              <>
+                <p className="font-medium truncate">{pr.exerciseName}</p>
+                <p className="text-muted-foreground">
+                  <span className="font-semibold text-foreground">{pr.value} {pr.unit}</span>
+                  {pr.date && (
+                      <span className="text-xs"> on {format(new Date(pr.date), 'MMM d, yyyy')}</span>
+                  )}
+                </p>
+              </>
+            );
+
+            return (
+              <div key={pr._id} className="text-sm border-b border-border/50 pb-2 last:border-b-0 sm:last:border-b-0">
+                {pr.workoutId ? (
+                  // Change href to use /workouts/ (plural)
+                  <Link href={`/workouts/${pr.workoutId}`} className="block group hover:text-primary transition-colors">
+                    {prContent}
+                    <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </Link>
+                ) : (
+                  // Render content without Link if no workoutId
+                  prContent
                 )}
-              </p>
-            </div>
-          ))
+              </div>
+            );
+          })
         ) : (
-          <p className="text-sm text-muted-foreground sm:col-span-2">No PRs recorded yet.</p>
+          <p className="text-sm text-muted-foreground sm:col-span-2">No specific PRs recorded recently.</p>
         )}
       </CardContent>
     </Card>
   );
-} 
+}

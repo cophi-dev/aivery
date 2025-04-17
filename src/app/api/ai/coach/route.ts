@@ -1110,20 +1110,21 @@ export async function POST(req: NextRequest) {
             }
 
             const goals = user.aiPreferences?.fitnessGoals || "No specific goals provided.";
-            const summaries = user.performanceSummary || {}; // Use empty object if missing
-            const overallPRs = user.personalRecords || {}; // Use empty object if missing
+            // const summaries = user.performanceSummary || {}; // No longer needed for prompt
+            // const overallPRs = user.personalRecords || {}; // No longer needed for prompt
 
-            // --- Format Exercise PRs for Prompt --- START
+            // --- Format Exercise PRs for Prompt (Limit to 5) --- 
             let exercisePRsString = "No specific exercise PRs recorded recently.";
             if (exercisePRs && exercisePRs.length > 0) {
-                exercisePRsString = "Recent Exercise Personal Records:\n";
-                exercisePRsString += exercisePRs.map(pr => 
+                exercisePRsString = "Recent Exercise Personal Records (Max 5 Shown):\n";
+                exercisePRsString += exercisePRs.slice(0, 5).map(pr => 
                     `- ${pr.exerciseName}: ${pr.value} ${pr.unit} (on ${format(new Date(pr.date), 'yyyy-MM-dd')})`
                 ).join('\n');
             }
             // --- Format Exercise PRs for Prompt --- END
 
-            // --- Format Overall Summaries/PRs for Prompt --- START
+            // --- Remove Overall Summaries/PRs formatting --- START
+            /* 
             let overallSummaryString = "Overall Performance Summary:\n";
             overallSummaryString += `- Total Workouts: ${summaries.overallTotals?.count ?? 'N/A'}\n`;
             overallSummaryString += `- Total Duration: ${summaries.overallTotals?.duration ? formatDuration(summaries.overallTotals.duration) : 'N/A'}\n`;
@@ -1134,25 +1135,27 @@ export async function POST(req: NextRequest) {
             overallSummaryString += `- Longest Run: ${overallPRs.longestRun ? formatDistance(overallPRs.longestRun.value) + ' on ' + format(new Date(overallPRs.longestRun.date), 'yyyy-MM-dd') : 'N/A'}\n`;
             overallSummaryString += `- Fastest 5k Pace: ${overallPRs.fastest5kPace ? formatPace(overallPRs.fastest5kPace.value) + ' on ' + format(new Date(overallPRs.fastest5kPace.date), 'yyyy-MM-dd') : 'N/A'}\n`; // Assuming value is sec/meter
             overallSummaryString += `- Max Strength Workout Volume: ${overallPRs.maxStrengthVolume ? Math.round(overallPRs.maxStrengthVolume.value) + 'kg on ' + format(new Date(overallPRs.maxStrengthVolume.date), 'yyyy-MM-dd') : 'N/A'}\n`;
-            // --- Format Overall Summaries/PRs for Prompt --- END
+            */
+            // --- Remove Overall Summaries/PRs formatting --- END
 
-            // Fetch recent workout history (simple list)
-            console.log(`[API /coach] Fetching recent workout history for user: ${userId}`);
-            const recentWorkouts = await getRecentWorkouts(userId, 10); // Fetch last 10
+            // Fetch recent workout history (Limit to 5)
+            console.log(`[API /coach] Fetching recent workout history (limit 5) for user: ${userId}`);
+            // Fetch only the last 5 workouts
+            const recentWorkouts = await getRecentWorkouts(userId, 5); 
             let historyString = "No recent workout history available.";
             if (recentWorkouts && recentWorkouts.length > 0) {
-                historyString = "Recent Workout History (last 10):\n";
+                historyString = "Recent Workout History (Last 5):\n"; // Update title
                 historyString += recentWorkouts.map(w => 
                     `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.name || w.type} (${formatDuration(w.duration)})`
                 ).join('\n');
             }
 
-            // 2. Construct the system prompt including goals, history, and summaries/PRs
-            const systemPrompt = `\\nYou are Aivery, an expert fitness coach tasked with generating a personalized workout plan for ${userName}.\\n\\nUser's Goal:\\n${goals}\\n\\n${overallSummaryString}\\n\\n${exercisePRsString}\\n\\n${historyString}\\n\\nBased ONLY on the information above (goals, summaries, PRs, recent history), generate a concise, actionable 1-week workout plan. Present the plan clearly, perhaps day-by-day or by workout type. Ensure the plan aligns with the user's goals and considers their recent activity and performance levels. Avoid asking clarifying questions; generate the best plan possible with the given data. Focus on the PLAN itself.`;
+            // 2. Construct the system prompt (REMOVING overallSummaryString)
+            const systemPrompt = `\\nYou are Aivery, an expert fitness coach generating a 1-week workout plan for ${userName}.\\n\\nUser Goal:\\n${goals}\\n\\n${exercisePRsString}\\n\\n${historyString}\\n\\nBased ONLY on the information above (goal, exercise PRs, recent history), generate a concise, actionable 1-week workout plan. Align with the goal and consider recent activity/performance. Avoid questions; generate the best plan possible. Focus on the PLAN.`;
 
             console.log("[API /coach] Sending plan generation prompt to Grok...");
-            // 3. Call the AI model (using a function like generateResponseFromSystemPrompt)
-            const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName); // Pass original user query too
+            // 3. Call the AI model
+            const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName); 
 
             // 4. Return the generated plan
             console.log("[API /coach] Plan generation successful.");

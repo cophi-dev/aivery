@@ -15,6 +15,8 @@ import { SpotlightCards } from "./_components/SpotlightCardsClient";
 import { PersonalRecordsCard } from "./_components/PersonalRecordsCardClient"; 
 import { QuickActionsCard } from "./_components/QuickActionsCardClient";
 import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assuming a loading indicator component
+// Import the type for exercise PRs
+import type { DashboardPREntry } from "@/lib/workout-actions";
 
 // Define a type for the metrics data (adjust based on actual structure)
 interface DashboardMetrics {
@@ -24,8 +26,8 @@ interface DashboardMetrics {
     strengthVolumePrevious7Days: number;
     cardioDurationPrevious7Days: number;
     cardioDistancePrevious7Days: number;
-    topPRs: any[]; // Define more specific type if possible
-    // Add any other metrics returned by the API
+    topPRs: any[]; // Old PRs, can be removed if not used by PersonalRecordsCardClient anymore
+    exercisePRs: DashboardPREntry[]; // <-- Add new field
 }
 
 // Placeholder type/interface for a chat message
@@ -151,8 +153,10 @@ export default function DashboardPage() {
                             <QuickActionsCard sendAiMessage={handleSendAiMessage} /> 
                         </div>
 
+                        {/* Pass exercisePRs to the component */}
                         <PersonalRecordsCard 
-                            topPRs={metrics.topPRs}
+                            topPRs={metrics.topPRs} // Keep passing old data for now if needed
+                            exercisePRs={metrics.exercisePRs} // <-- Pass new data
                         />
                     </>
                 ) : (

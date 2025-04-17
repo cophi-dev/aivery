@@ -29,7 +29,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
 import { formatDistance, formatDuration, formatDate as formatDateUtil } from "@/lib/utils"
-import { fetchPrDataAction } from "@/app/actions/workoutActions"
+import { fetchDashboardExercisePRs, type DashboardPREntry } from "@/lib/workout-actions"
 
 // Define types for sorting
 type SortField = "date" | "name" | "type" | "intensity" | "duration" | "volume";
@@ -46,15 +46,6 @@ interface WorkoutStats {
 
 interface WorkoutListViewProps {
   initialWorkouts: WorkoutData[]
-}
-
-// Define types for PR data
-interface ExercisePrData {
-  benchPress?: { value: number; unit: string; date: Date } | null;
-  pullups?: { value: number; unit: string; date: Date } | null;
-}
-interface PacePrData {
-  fastest5k?: { pace: number; date: Date; workoutId: string } | null;
 }
 
 // Simple error boundary class component
@@ -141,83 +132,59 @@ const formatPaceDisplay = (pace: number | undefined | null): string => {
 };
 
 export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProps) {
-  // Initialize all state hooks at the top level
-  const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
-  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>([]);
+  // State Initialization
+  const [workouts, setWorkouts] = useState<WorkoutData[]>(initialWorkouts || []); // Initialize with prop
+  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>(initialWorkouts || []); // Initialize with prop
   const [error, setError] = useState<string | null>(null);
   const [showStatsView, setShowStatsView] = useState<boolean>(true);
-  
-  // Filter state
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const [intensityFilter, setIntensityFilter] = useState<string>("all")
   const [startDateString, setStartDateString] = useState<string>("")
   const [endDateString, setEndDateString] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState("")
-  
-  // Sorting state
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
-  
-  // PR state
-  const [exercisePRs, setExercisePRs] = useState<any>({});
-  const [pacePRs, setPacePRs] = useState<PacePrData>({});
+  const [dashboardPRs, setDashboardPRs] = useState<DashboardPREntry[]>([]);
   const [loadingPRs, setLoadingPRs] = useState(true);
   
-  // Get unique workout types
+  // Memoized values and callbacks
   const workoutTypes = useMemo(() => 
       Array.from(new Set(initialWorkouts.map(w => w.type).filter(Boolean)))
       .sort(), 
   [initialWorkouts]);
   
-  // Parse date strings to Date objects
-  const startDate = startDateString ? new Date(startDateString) : undefined
-  const endDate = endDateString ? new Date(endDateString) : undefined
-  
-  // Get workout distance safely (prioritize cardioDetails)
   const getWorkoutDistance = useCallback((workout: WorkoutData): number => {
     try {
-      // Prioritize cardioDetails.distance (should be in km)
       if (workout.cardioDetails?.distance !== undefined && typeof workout.cardioDetails.distance === 'number') {
         return workout.cardioDetails.distance;
       }
-      // Fallback to top-level distance if it exists and is a number (less likely)
       if (typeof workout.distance === 'number') {
         console.warn(`Workout ${workout._id}: Using top-level distance ${workout.distance}. Is this expected?`);
         return workout.distance;
       }
-      // Maybe check workoutExercises as a last resort?
-      // const exerciseDistance = workout.workoutExercises?.[0]?.distance;
-      // if (typeof exerciseDistance === 'number') return exerciseDistance / 1000; // Convert from meters
-      
     } catch (e) {
       console.error("Error getting workout distance:", e);
     }
-    return 0; // Default to 0 if no reliable distance found
+    return 0; 
   }, []);
 
-  // Get workout volume based on type
   const getWorkoutVolume = useCallback((workout: WorkoutData): { value: number, unit: string } => {
     try {
       const typeLower = workout.type?.toLowerCase();
       if (typeLower === "running" || typeLower === "run" || typeLower === "cycling" || typeLower === "swim") {
-        // For cardio, return distance in km
         return { 
           value: getWorkoutDistance(workout),
           unit: "km" 
         };
       } else if (typeLower === "strength") {
-        // For strength, use calculatedVolume if available, otherwise calculate
         if (typeof workout.calculatedVolume === 'number' && workout.calculatedVolume > 0) {
           return { value: workout.calculatedVolume, unit: "kg" };
         }
-        
-        // Calculate volume from workoutExercises if calculatedVolume isn't usable
         let totalVolume = 0;
         if (workout.workoutExercises && Array.isArray(workout.workoutExercises)) {
           workout.workoutExercises.forEach((exercise) => {
             if (exercise && Array.isArray(exercise.sets)) {
                exercise.sets.forEach((set) => {
-                 // Ensure weight and reps are numbers before multiplying
                  const weight = typeof set.weight === 'number' ? set.weight : 0;
                  const reps = typeof set.reps === 'number' ? set.reps : 0;
                  totalVolume += weight * reps;
@@ -230,20 +197,15 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     } catch (e) {
       console.error("Error getting workout volume:", e);
     }
-    // Default for unknown types or errors
     return { value: 0, unit: "units" }; 
   }, [getWorkoutDistance]);
-
-  // Define applyFiltersAndSort using useCallback
+  
   const applyFiltersAndSort = useCallback(() => {
-    console.log("Applying filters and sort...");
-    let processedWorkouts = [...workouts];
-
+    let processedWorkouts = [...workouts]; // Use main `workouts` state
     // Apply Type Filter
     if (typeFilter !== "all") {
       processedWorkouts = processedWorkouts.filter(w => w.type === typeFilter);
     }
-
     // Apply Search Query Filter
     if (searchQuery) {
       const lowerQuery = searchQuery.toLowerCase();
@@ -252,85 +214,58 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         (w.notes && w.notes.toLowerCase().includes(lowerQuery))
       );
     }
-
     // Apply Sorting
-    processedWorkouts.sort((a, b) => {
+    processedWorkouts.sort((a, b) => { 
       let valA: any, valB: any;
-
       if (sortField === 'date') {
          try {
            valA = new Date(a.date).getTime();
            valB = new Date(b.date).getTime();
-           if (isNaN(valA)) valA = 0; // Handle invalid dates
+           if (isNaN(valA)) valA = 0;
            if (isNaN(valB)) valB = 0;
-         } catch {
-           valA = 0; valB = 0;
-         }
+         } catch { valA = 0; valB = 0; }
       } else if (sortField === 'volume') {
         valA = getWorkoutVolume(a).value;
         valB = getWorkoutVolume(b).value;
       } else {
-        // Handle other sortable fields (e.g., duration, name)
         valA = a[sortField as keyof WorkoutData];
         valB = b[sortField as keyof WorkoutData];
       }
-
-      // Comparison logic
       if (valA === undefined || valA === null) return sortDirection === 'asc' ? -1 : 1;
       if (valB === undefined || valB === null) return sortDirection === 'asc' ? 1 : -1;
-
       if (typeof valA === 'string' && typeof valB === 'string') {
         return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       } else {
-        // Numeric comparison (handles dates converted to numbers, volume, duration)
         return sortDirection === 'asc' ? (valA < valB ? -1 : 1) : (valB < valA ? -1 : 1);
       }
     });
-
-    console.log("Filtered/Sorted workouts:", processedWorkouts.length);
     setFilteredWorkouts(processedWorkouts);
   }, [workouts, typeFilter, searchQuery, sortField, sortDirection, getWorkoutVolume]);
-  
-  // Initialize workouts state and fetch PRs using Server Action
+
+  // Effects
   useEffect(() => {
-    console.log("Initial effect: Setting workouts from initialWorkouts");
-    setWorkouts(initialWorkouts || []); 
-
-    // Fetch PR data using the Server Action
+    // Fetch PRs once on mount
     const fetchPRs = async () => {
-      console.log("Fetching PRs via server action..."); 
       setLoadingPRs(true);
-      setError(null); // Clear previous errors
+      setError(null);
       try {
-        const result = await fetchPrDataAction();
-
-        if (result.success && result.exercisePRs && result.pacePRs) {
-          console.log("Server Action Success: Received PRs", result);
-          setExercisePRs(result.exercisePRs);
-          setPacePRs(result.pacePRs);
-        } else {
-          console.error("Server Action Error:", result.error);
-          setError(result.error || "Could not load Personal Records.");
-        }
-      } catch (err) {
-        // Catch potential network errors or unexpected issues calling the action
-        console.error("Error calling fetchPrDataAction:", err);
+        const prData = await fetchDashboardExercisePRs();
+        setDashboardPRs(prData);
+      } catch (err) { 
+        console.error("Error calling fetchDashboardExercisePRs:", err);
         setError("An unexpected error occurred while loading PRs.");
+        setDashboardPRs([]);
       } finally {
         setLoadingPRs(false);
       }
     };
-
     fetchPRs();
-    // Initial workouts loaded, PR fetch initiated
-  }, [initialWorkouts]); // Only re-run when initialWorkouts change
-  
-  // Apply filters and sorting whenever dependencies change
+  }, []);
+
   useEffect(() => {
-     console.log("Filter/Sort Effect Triggered"); // Debug log
-     // This effect now correctly depends on the memoized callback
-     applyFiltersAndSort();
-  }, [applyFiltersAndSort]); // Dependency array ONLY includes the stable callback
+    // Apply filters/sort whenever relevant state changes
+    applyFiltersAndSort();
+  }, [applyFiltersAndSort]); // Depend only on the stable callback
   
   // Handle sorting
   const handleSort = (field: SortField) => {
@@ -497,7 +432,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
         {error && errorContent}
         
         {/* Workout Stats - Enhanced for better visibility */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {/* Total Workouts */} 
           <Card className="border-border/50">
             <CardHeader className="pb-2">
@@ -538,30 +473,46 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               <div className="text-2xl font-bold">{workoutStats.favoriteType}</div>
             </CardContent>
           </Card>
-          {/* Fastest 5k */}
-          <Card className="border-border/50 hover:border-primary/40 transition-colors duration-150">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Fastest 5k Pace</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingPRs ? (
-                <p className="text-sm text-muted-foreground">Loading...</p>
-              ) : pacePRs.fastest5k && pacePRs.fastest5k.workoutId ? (
-                <Link href={`/workouts/${pacePRs.fastest5k.workoutId}`} className="block group">
-                  <div className="text-2xl font-bold group-hover:text-primary transition-colors">
-                    {formatPaceDisplay(pacePRs.fastest5k.pace)}
-                    <span className="text-lg"> /km</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    on {formatDate(pacePRs.fastest5k.date)}
-                    <ChevronRight className="inline-block h-3 w-3 ml-1 group-hover:translate-x-0.5 transition-transform" />
-                  </p>
-                </Link>
-              ) : (
-                <p className="text-sm text-muted-foreground">No data</p>
-              )}
-            </CardContent>
-          </Card>
+          
+          {/* --- NEW Exercise PR Cards --- START */} 
+          {loadingPRs ? (
+            <Card className="border-border/50"><CardContent className="pt-6"><p className="text-sm text-muted-foreground text-center">Loading PRs...</p></CardContent></Card>
+          ) : dashboardPRs.length > 0 ? (
+            dashboardPRs.map((pr) => (
+              <Card key={pr._id} className="border-border/50 hover:border-primary/40 transition-colors duration-150">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground truncate" title={pr.exerciseName}>{pr.exerciseName}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {pr.workoutId ? (
+                    <Link href={`/workout/${pr.workoutId}`} className="block group">
+                      <div className="text-xl sm:text-2xl font-bold group-hover:text-primary transition-colors">
+                        {pr.value} <span className="text-lg">{pr.unit}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        on {formatDate(pr.date)}
+                        <ChevronRight className="inline-block h-3 w-3 ml-1 group-hover:translate-x-0.5 transition-transform" />
+                      </p>
+                    </Link>
+                  ) : (
+                    // Render without link if no workoutId
+                    <>
+                      <div className="text-xl sm:text-2xl font-bold">
+                        {pr.value} <span className="text-lg">{pr.unit}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        on {formatDate(pr.date)}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card className="border-border/50"><CardContent className="pt-6"><p className="text-sm text-muted-foreground text-center">No PRs found</p></CardContent></Card>
+          )}
+          {/* --- NEW Exercise PR Cards --- END */} 
+
         </div>
         
         {/* Results info and compact filters */}

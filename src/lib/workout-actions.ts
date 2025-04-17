@@ -2228,7 +2228,7 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
 // --- END NEW FUNCTION ---
 
 // Define the specific return type for the dashboard PRs
-type DashboardPREntry = {
+export type DashboardPREntry = { // <-- Added export
   _id: string;
   exerciseName: string;
   value: number;
@@ -2238,10 +2238,11 @@ type DashboardPREntry = {
 };
 
 /**
- * Fetches a sample of recent exercise PRs for the dashboard.
+ * Fetches a *random sample* of exercise PRs for the dashboard.
  */
-export async function fetchDashboardExercisePRs(limit = 3): Promise<DashboardPREntry[]> {
-  console.log(`[fetchDashboardExercisePRs] Fetching up to ${limit} recent PRs...`);
+// Update default limit to 4
+export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPREntry[]> { 
+  console.log(`[fetchDashboardExercisePRs] Fetching ${limit} random PRs...`);
   try {
     const user = await getCurrentUser();
     if (!user?.id) {
@@ -2252,35 +2253,46 @@ export async function fetchDashboardExercisePRs(limit = 3): Promise<DashboardPRE
 
     await dbConnect();
 
-    // Fetch PRs using lean
-    const prs = await ExercisePRModel.find({ userId: new Types.ObjectId(userId) })
-      .sort({ date: -1 }) // Sort by PR date descending
-      .limit(limit)
-      .select('exerciseName value unit date workoutId _id') // Explicitly select _id
-      .lean<IExercisePR[]>(); // Use lean for plain objects
-
-    // Serialize the results, ensuring date is handled correctly
-    const serializedPRs: DashboardPREntry[] = prs.map(pr => {
-      // Runtime check for safety, although select should guarantee it
-      if (!pr._id || !pr.date) {
-        console.warn("[fetchDashboardExercisePRs] Skipping PR due to missing _id or date:", pr);
-        return null; // Filter out invalid entries later
+    // Use aggregation with $sample instead of sort/limit
+    const prs = await ExercisePRModel.aggregate([
+      { $match: { userId: new Types.ObjectId(userId) } }, // Match the user
+      { $sample: { size: limit } }, // Randomly sample 'limit' documents
+      {
+        // Project only the necessary fields
+        $project: {
+          _id: 1, // Need _id for serialization
+          exerciseName: 1,
+          value: 1,
+          unit: 1,
+          date: 1,
+          workoutId: 1,
+        }
       }
-      return {
-        _id: (pr._id as Types.ObjectId).toString(), // Assert _id is ObjectId
-        exerciseName: pr.exerciseName,
-        value: pr.value,
-        unit: pr.unit,
-        date: pr.date.toISOString(), // Convert date to ISO string
-        workoutId: pr.workoutId?.toString() ?? null, // Convert workoutId to string safely
-      };
-    }).filter((pr): pr is DashboardPREntry => pr !== null); // Filter out any null entries
+    ]).exec(); 
 
-    console.log(`[fetchDashboardExercisePRs] Found and serialized ${serializedPRs.length} PRs.`);
-    return serializedPRs;
+    // Aggregation returns plain JS objects. Need to handle potential missing fields.
+    const serializedPRs: DashboardPREntry[] = prs.map((pr: any) => { // Use any for initial mapping flexibility
+       // Perform runtime checks for required fields before creating the object
+       if (!pr?._id || !pr?.exerciseName || pr?.value === undefined || !pr?.unit || !pr?.date || !(pr.date instanceof Date)) {
+           console.warn("[fetchDashboardExercisePRs] Skipping aggregated PR due to missing/invalid fields:", pr);
+           return null; // Mark as invalid
+       }
+       // Construct the final object safely
+       return {
+         _id: pr._id.toString(), // Safe to call toString() if _id exists
+         exerciseName: pr.exerciseName,
+         value: pr.value,
+         unit: pr.unit,
+         date: pr.date.toISOString(), // Safe to call if date is a valid Date object
+         workoutId: pr?.workoutId?.toString() ?? null, // Safely handle optional workoutId
+       };
+     }).filter((pr): pr is DashboardPREntry => pr !== null); // Type predicate to filter out nulls
+
+    console.log(`[fetchDashboardExercisePRs] Found and serialized ${serializedPRs.length} random PRs.`);
+    return serializedPRs; // This now correctly returns DashboardPREntry[]
 
   } catch (error) {
     console.error("[fetchDashboardExercisePRs] Error fetching PRs:", error);
-    return []; // Return empty array on error
+    return []; 
   }
 }
