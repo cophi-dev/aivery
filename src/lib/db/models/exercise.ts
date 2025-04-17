@@ -9,6 +9,7 @@ export interface IExercise extends Document {
   instructions?: string
   createdAt: Date
   updatedAt: Date
+  trackMaxReps?: boolean
 }
 
 const ExerciseSchema: Schema = new Schema(
@@ -24,6 +25,7 @@ const ExerciseSchema: Schema = new Schema(
     },
     equipment: { type: [String] },
     instructions: { type: String },
+    trackMaxReps: { type: Boolean, default: false },
   },
   { timestamps: true },
 )

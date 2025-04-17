@@ -22,8 +22,10 @@ import WorkoutModel, { type IWorkout, type ICardioDetails } from "@/lib/db/model
 import { format } from 'date-fns'
 import { estimateBodyweightForExercise } from "@/lib/utils"
 import { Document } from 'mongoose'
-import UserModel from '@/lib/db/models/user'
+import UserModel, { IUser } from '@/lib/db/models/user'
 import SetModel from "@/lib/db/models/set";
+import dbConnect from '@/lib/db/mongoose'; // Ensure dbConnect is imported
+import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR';
 
 // Define an interface for the input set structure expected by createWorkout
 export interface InputSetData {
@@ -436,11 +438,25 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     const userId = user.id;
     console.log('User authenticated:', userId);
 
-    // --- Connect to DB --- 
-    console.log('Connecting to database...');
-    const dbConnect = (await import("@/lib/db/mongoose")).default;
+    // --- Fetch User Weight for Volume Calculation ---
+    let userWeight: number | null = null;
+    try {
+      // Ensure we connect before fetching user weight
+      const localDbConnect = (await import("@/lib/db/mongoose")).default; 
+      await localDbConnect();
+      const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
+      if (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) {
+        userWeight = userDoc.weight;
+      }
+      console.log(`[CreateWorkout] User weight for volume calc: ${userWeight || 'N/A'} kg`);
+    } catch (err) {
+      console.error("[CreateWorkout] Error fetching user weight:", err);
+    }
+    // --- End Fetch User Weight ---
+    
+    // --- Connect to DB (if not already connected) --- 
     await dbConnect();
-    console.log('Database connected');
+    console.log('Database connection confirmed for workout creation');
 
     // --- Create Workout Document --- 
     console.log('Formatting workout document data...');
@@ -504,24 +520,16 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
         }
     }
 
-    // Calculate total volume for strength workouts
-    let totalVolume = 0;
-    if (workoutType === 'strength' && workoutData.exercises && Array.isArray(workoutData.exercises)) {
-        workoutData.exercises.forEach(exercise => {
-            if (exercise.sets && Array.isArray(exercise.sets)) {
-                exercise.sets.forEach(set => {
-                    const weight = typeof set.weight === 'number' ? set.weight : 0;
-                    const reps = typeof set.reps === 'number' ? set.reps : 0;
-                    // Use simple weight * reps for consistency
-                    totalVolume += weight * reps;
-                });
-            }
-        });
-        workoutDocData.calculatedVolume = totalVolume;
-        console.log(`Calculated total volume for new strength workout: ${totalVolume}kg`);
-    } else {
-        // Ensure volume is 0 for non-strength workouts or those without exercises
-        workoutDocData.calculatedVolume = 0;
+    // Initialize calculatedVolume (will be overwritten if strength)
+    workoutDocData.calculatedVolume = 0; 
+    
+    // Calculate total volume for strength workouts USING HELPER
+    if (workoutType === 'strength') {
+        workoutDocData.calculatedVolume = calculateWorkoutVolumeWithBodyweight(
+            workoutData.exercises,
+            userWeight // Pass the fetched user weight
+        );
+        console.log(`Calculated total volume for new strength workout (incl. bodyweight): ${workoutDocData.calculatedVolume}kg`);
     }
 
     // Filter out undefined fields before saving (optional, Mongoose handles undefined)
@@ -629,6 +637,14 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     // ... other paths
     console.log('Paths revalidated');
 
+    // --- Update User Summaries ---
+    if (savedWorkout) {
+      await updateUserWorkoutSummaries(userId);
+      // Also update Exercise PRs (process only this new workout)
+      await updateExercisePRs(userId, savedWorkout._id.toString());
+    }
+    // --- End Update User Summaries ---
+
     return savedWorkout!.toObject();
 
   } catch (error) {
@@ -713,46 +729,43 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
         // Create a type-safe object for the update
         const workoutUpdateData: Partial<IWorkout> = { ...workoutUpdateDataInput };
 
+        // --- Fetch User Weight for Volume Calculation ---
+        let userWeight: number | null = null;
+        try {
+          const localDbConnect = (await import("@/lib/db/mongoose")).default;
+          await localDbConnect(); // Ensure connection
+          const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
+          if (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) {
+            userWeight = userDoc.weight;
+          }
+          console.log(`[UpdateWorkout] User weight for volume calc: ${userWeight || 'N/A'} kg`);
+        } catch (err) {
+          console.error("[UpdateWorkout] Error fetching user weight:", err);
+        }
+        // --- End Fetch User Weight ---
+
         // Recalculate total volume if type is strength and exercises are provided
         let updatedVolume: number | undefined = undefined;
         if (workoutUpdateData.type === 'strength' && incomingExercises !== undefined) {
-            updatedVolume = 0; // Start calculation only if relevant
-            // Use incomingExercises if available, otherwise fetch existing to recalculate
-            const exercisesToCalculate = incomingExercises || []; 
-            // Note: If incomingExercises is undefined but type *is* strength, we might 
-            // want to fetch existing exercises to ensure volume is recalculated correctly.
-            // For now, we only recalculate if exercises are part of the update.
-            
-            exercisesToCalculate.forEach(exercise => {
-                if (exercise.sets && Array.isArray(exercise.sets)) {
-                    exercise.sets.forEach(set => {
-                        const weight = typeof set.weight === 'number' ? set.weight : 0;
-                        const reps = typeof set.reps === 'number' ? set.reps : 0;
-                        updatedVolume! += weight * reps;
-                    });
-                }
-            });
+            updatedVolume = calculateWorkoutVolumeWithBodyweight(incomingExercises, userWeight);
             workoutUpdateData.calculatedVolume = updatedVolume;
-            console.log(`Recalculated volume for updated strength workout: ${updatedVolume}kg`);
+            console.log(`Recalculated volume for updated strength workout (using incoming): ${updatedVolume}kg`);
         } else if (workoutUpdateData.type && workoutUpdateData.type !== 'strength') {
-            // Explicitly set volume to 0 if type is changed to non-strength
             workoutUpdateData.calculatedVolume = 0;
             console.log(`Workout type changed to non-strength, setting calculatedVolume to 0.`);
         } else if (workoutUpdateData.type === 'strength' && incomingExercises === undefined) {
-            // If type is strength but exercises aren't in payload, recalculate from existing
-            // This handles cases where only workout metadata (like name/date) is changed
             console.log("Recalculating volume from existing exercises as type is strength and no exercises provided in update...");
-            const existingWorkoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutId }).lean();
-            updatedVolume = 0;
-            existingWorkoutExercises.forEach(exercise => {
-                 if (exercise.sets && Array.isArray(exercise.sets)) {
-                    exercise.sets.forEach(set => {
-                        const weight = typeof set.weight === 'number' ? set.weight : 0;
-                        const reps = typeof set.reps === 'number' ? set.reps : 0;
-                        updatedVolume! += weight * reps;
-                    });
-                }
-            });
+            // Fetch existing exercises (consider only fetching necessary fields)
+            const existingWorkoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutId }).lean(); 
+            // Adapt structure for helper if needed, or pass lean result if compatible
+            // Assuming structure is [{ name: string, sets: [...] }, ...]
+            // If structure differs (e.g., uses exerciseId.name), we need to map it first.
+            // For now, assume direct compatibility or simple mapping:
+            const exercisesForHelper = existingWorkoutExercises.map(ex => ({ 
+                name: (ex as any).name || (ex as any).exerciseId?.name, // Handle potential name differences
+                sets: (ex as any).sets 
+            }));
+            updatedVolume = calculateWorkoutVolumeWithBodyweight(exercisesForHelper, userWeight);
             workoutUpdateData.calculatedVolume = updatedVolume;
             console.log(`Recalculated volume from existing exercises: ${updatedVolume}kg`);
         }
@@ -915,6 +928,14 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
 
         console.log(`updateWorkoutAction completed for workout ID: ${workoutId}`);
         // Return the updated main workout document (consider if populated data is needed)
+
+        // --- Update User Summaries ---
+        await updateUserWorkoutSummaries(userId);
+        // --- End Update User Summaries ---
+
+        // Also update Exercise PRs (process only this updated workout)
+        await updateExercisePRs(userId, workoutId);
+
         return updatedWorkout.toObject(); // Return plain object
 
   } catch (error: any) {
@@ -972,6 +993,10 @@ export async function deleteWorkout(id: string): Promise<void> {
       { $pull: { workouts: id } } // Use the string ID
     );
     console.log(`Removed workout from user list.`);
+
+    // --- Update User Summaries ---
+    await updateUserWorkoutSummaries(userId);
+    // --- End Update User Summaries ---
 
     // 5. Revalidate paths
     revalidatePath("/calendar")
@@ -1306,6 +1331,14 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
 
     // Update user's workouts array
     await updateUserWorkouts(data.userId, workout._id);
+
+    // --- Update User Summaries ---
+    if (workout) {
+      await updateUserWorkoutSummaries(data.userId);
+      // Also update Exercise PRs (process only this new workout)
+      await updateExercisePRs(data.userId, workout._id.toString());
+    }
+    // --- End Update User Summaries ---
 
     return workout;
   } catch (error) {
@@ -1793,3 +1826,403 @@ async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Pr
   }
 }
 
+/**
+ * Calculates and updates the performanceSummary and overall personalRecords
+ * fields for a given user based on their workout history.
+ *
+ * @param userId - The ID of the user to update.
+ */
+export async function updateUserWorkoutSummaries(userId: string): Promise<void> {
+  if (!userId) {
+    console.error('[updateUserWorkoutSummaries] No userId provided.');
+    return;
+  }
+  console.log(`[Summ] Starting overall summary update for user: ${userId}`);
+
+  try {
+    await dbConnect();
+
+    // 1. Fetch User Weight (needed for overall volume calc PR)
+    let userWeight: number | null = null;
+    try {
+      const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
+      userWeight = (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) ? userDoc.weight : null;
+    } catch (err) { console.error(`[Summ] Error fetching user weight for ${userId}:`, err); }
+
+    // 2. Fetch all necessary workout data for the user
+    // Fetch fields needed for overall summaries AND overall PRs
+    const workouts: any[] = await WorkoutModel.find({ userId: new Types.ObjectId(userId) })
+      .select('_id date type duration distance calculatedVolume cardioDetails') // Keep selection minimal for summaries
+      .sort({ date: -1 }) // Sort desc for lastWorkoutDate
+      .lean();
+
+    console.log(`[Summ] Fetched ${workouts.length} workouts for user ${userId}.`);
+
+    if (workouts.length === 0) {
+      console.log(`[Summ] No workouts found for user ${userId}. Resetting summaries.`);
+      await UserModel.updateOne(
+         { _id: new Types.ObjectId(userId) },
+         {
+           $set: {
+             performanceSummary: { overallTotals: {}, lastWorkoutDate: undefined },
+             // Reset overall PRs too
+             personalRecords: { longestRun: undefined, fastest5kPace: undefined, maxStrengthVolume: undefined }
+           }
+         }
+       );
+      return;
+    }
+
+    // 3. Initialize summary variables
+    let overallDistance = 0; // km
+    let overallDuration = 0; // seconds
+    let overallVolume = 0;   // kg
+    const overallCount = workouts.length;
+    let lastWorkoutDate = workouts[0].date; // Latest workout
+
+    let overallLongestRun = { value: 0, date: new Date(0) };
+    let overallFastest5kPace = { value: Infinity, date: new Date(0) };
+    let overallMaxStrengthVolume = { value: 0, date: new Date(0) }; // Calculated based on CORRECTED logic
+
+    // 4. Iterate and calculate overall summaries and overall PRs
+    for (const workout of workouts) {
+      const workoutDate = workout.date instanceof Date ? workout.date : new Date(0);
+      const workoutType = workout.type?.toLowerCase() || 'other';
+
+      // Accumulate Duration & Distance
+      const duration = workout.duration ?? 0;
+      overallDuration += duration;
+      const distance = workout.cardioDetails?.distance ?? workout.distance ?? 0;
+      overallDistance += distance;
+
+      // Accumulate Accurate Volume & Check Max Volume PR
+      if (workoutType === 'strength') {
+         // We need exercises/sets for accurate volume - fetch them if needed OR use stored calculatedVolume if we assume it's accurate
+         // Let's *assume* calculatedVolume IS NOW ACCURATE (post-backfill) for this overall summary
+         const volume = workout.calculatedVolume ?? 0;
+         overallVolume += volume;
+         if (volume > overallMaxStrengthVolume.value) {
+             overallMaxStrengthVolume = { value: volume, date: workoutDate };
+         }
+      }
+
+      // Check Cardio PRs
+      if (workoutType === 'running' || workoutType === 'run') {
+        if (distance > overallLongestRun.value) {
+          overallLongestRun = { value: distance, date: workoutDate };
+        }
+        if (distance >= 5 && duration > 0) {
+          const pace = duration / (distance * 1000); // s/m
+          if (pace < overallFastest5kPace.value) {
+            overallFastest5kPace = { value: pace, date: workoutDate };
+          }
+        }
+      }
+    }
+
+    console.log(`[Summ] Calculated Totals - Count: ${overallCount}, Dist: ${overallDistance.toFixed(2)}km, Dur: ${overallDuration}s, Vol: ${overallVolume}kg`);
+
+    // 5. Update User Document with Overall Summaries & Overall PRs
+    const userUpdateData: Record<string, any> = {
+      // ... (set performanceSummary fields) ...
+       'performanceSummary.overallTotals.distance': overallDistance,
+       'performanceSummary.overallTotals.duration': overallDuration,
+       'performanceSummary.overallTotals.volume': overallVolume,
+       'performanceSummary.overallTotals.count': overallCount,
+       'performanceSummary.lastWorkoutDate': lastWorkoutDate,
+       // Update overall PRs
+       'personalRecords.longestRun': overallLongestRun.value > 0 ? overallLongestRun : undefined,
+       'personalRecords.fastest5kPace': overallFastest5kPace.value !== Infinity ? overallFastest5kPace : undefined,
+       'personalRecords.maxStrengthVolume': overallMaxStrengthVolume.value > 0 ? overallMaxStrengthVolume : undefined,
+    };
+    Object.keys(userUpdateData)
+      .filter(key => key.startsWith('personalRecords.') && userUpdateData[key] === undefined)
+      .forEach(key => delete userUpdateData[key]);
+
+    await UserModel.updateOne({ _id: new Types.ObjectId(userId) }, { $set: userUpdateData });
+    console.log(`[Summ] Successfully updated user summary for: ${userId}`);
+
+  } catch (error) {
+    console.error(`[Summ] Error updating summaries for user ${userId}:`, error);
+  } finally {
+    return; // Ensure void return
+  }
+}
+
+// --- Helper Function for Volume Calculation ---
+// Ensure this helper function is defined correctly
+function calculateWorkoutVolumeWithBodyweight(
+  exercises: Array<{ name?: string | null; exerciseName?: string | null; sets?: Array<{ weight?: number; reps?: number }> | null }> | null | undefined,
+  userWeight: number | null
+): number {
+  if (!exercises || !Array.isArray(exercises)) {
+    return 0;
+  }
+  let totalVolume = 0;
+  exercises.forEach(exercise => {
+    const exerciseName = exercise?.exerciseName || exercise?.name || '';
+    if (!exerciseName) { return; }
+    if (exercise.sets && Array.isArray(exercise.sets)) {
+      exercise.sets.forEach(set => {
+        const reps = typeof set.reps === 'number' && set.reps > 0 ? set.reps : 0;
+        if (reps === 0) return;
+        const estimatedWeight = estimateBodyweightForExercise(exerciseName, userWeight);
+        const externalWeight = typeof set.weight === 'number' && set.weight > 0 ? set.weight : 0;
+        let weightForVolume = estimatedWeight;
+        if (externalWeight > 0) { weightForVolume += externalWeight; }
+        if (weightForVolume > 0) { totalVolume += weightForVolume * reps; }
+      });
+    }
+  });
+  return totalVolume;
+}
+// --- END HELPER FUNCTION ---
+
+// --- Define types for populated lean data --- START
+interface LeanSet {
+  _id: Types.ObjectId;
+  weight?: number;
+  reps?: number;
+  duration?: number;
+  distance?: number;
+  notes?: string;
+  order?: number;
+}
+
+interface LeanExercise {
+  _id: Types.ObjectId;
+  name: string;
+  category: "strength" | "cardio" | "flexibility";
+  equipment?: string[];
+  trackMaxReps?: boolean; // Include the flag
+}
+
+interface LeanWorkoutExercise {
+  _id: Types.ObjectId;
+  workoutId: Types.ObjectId;
+  exerciseId: LeanExercise | null; // Populated exercise
+  order?: number;
+  notes?: string;
+  sets?: LeanSet[]; // Populated sets
+  duration?: number;
+  distance?: number;
+}
+
+interface LeanWorkout {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  name?: string;
+  date?: Date; // Expecting Date object after lean
+  duration?: number;
+  distance?: number;
+  intensity?: string;
+  type?: string;
+  notes?: string;
+  completed?: boolean;
+  completedAt?: Date;
+  source?: string;
+  sourceId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  calculatedVolume?: number;
+  cardioDetails?: ICardioDetails;
+  records?: any[]; // Keep records loosely typed for now
+  exercises?: LeanWorkoutExercise[]; // Populated exercises
+}
+// --- Define types for populated lean data --- END
+
+// --- NEW FUNCTION for Exercise PRs ---
+/**
+ * Calculates and updates exercise-specific PRs for a user.
+ * Can optionally process only a specific workout.
+ *
+ * @param userId - The ID of the user to update PRs for.
+ * @param specificWorkoutId - Optional. If provided, only process this workout. Otherwise, process all.
+ */
+export async function updateExercisePRs(userId: string, specificWorkoutId?: string): Promise<void> {
+  await dbConnect();
+  console.log(`[updateExercisePRs] Starting for user: ${userId}, specific workout: ${specificWorkoutId || 'all'}`);
+
+  try {
+    const userObjectId = new Types.ObjectId(userId);
+    // Use lean and type assertion for user
+    let user = await UserModel.findById(userObjectId).lean<IUser>(); 
+    if (!user) {
+      console.error(`[updateExercisePRs] User not found: ${userId}`);
+      return;
+    }
+    // Correct field name: user.weight
+    const userWeight = (typeof user.weight === 'number' && user.weight > 0) ? user.weight : null;
+
+    // Filter workouts: specific workout ID or all completed workouts for the user
+    const workoutQuery: any = { userId: userObjectId, completed: true };
+    if (specificWorkoutId && Types.ObjectId.isValid(specificWorkoutId)) {
+      workoutQuery._id = new Types.ObjectId(specificWorkoutId);
+      console.log(`[updateExercisePRs] Querying for specific workout: ${specificWorkoutId}`);
+    } else {
+      console.log(`[updateExercisePRs] Querying for all completed workouts for user: ${userId}`);
+    }
+
+    // Fetch workouts and populate, using safe type assertion
+    const workouts = await WorkoutModel.find(workoutQuery)
+      .sort({ date: 1 }) // Process chronologically to find latest PR
+      .populate<{
+          exercises: Array<LeanWorkoutExercise & {
+              exerciseId: LeanExercise | null;
+              sets: LeanSet[];
+          }>;
+      }>({
+        path: 'exercises',
+        options: { sort: { order: 1 } }, // Sort exercises by order
+        populate: [
+          {
+            path: 'exerciseId',
+            model: ExerciseModel,
+            select: 'name category equipment trackMaxReps' // Ensure trackMaxReps is selected
+          },
+          {
+            path: 'sets',
+            model: SetModel,
+            options: { sort: { order: 1 } } // Sort sets by order
+          }
+        ]
+      })
+      .lean() as unknown as LeanWorkout[]; // <-- Use safe assertion
+
+    if (!workouts || workouts.length === 0) {
+      console.log(`[updateExercisePRs] No workouts found matching criteria.`);
+      return;
+    }
+
+    console.log(`[updateExercisePRs] Processing ${workouts.length} workouts...`);
+
+    // Store potential PRs found during processing - Key: `${exerciseId}_${unit}`
+    const potentialPRs: Record<string, Partial<IExercisePR> & { value: number; date: Date }> = {};
+
+    for (const workout of workouts) {
+      if (!workout.exercises || workout.exercises.length === 0 || !workout.date) continue;
+      const workoutDate = workout.date; // Already a Date object from .lean()
+      const workoutId = workout._id;
+
+      for (const exercise of workout.exercises) {
+        if (!exercise.exerciseId || !exercise.exerciseId.name || !exercise.exerciseId._id) continue; // Skip if exercise details missing
+
+        const exerciseId = exercise.exerciseId._id;
+        const exerciseName = exercise.exerciseId.name;
+        const exerciseTrackMaxReps = exercise.exerciseId.trackMaxReps ?? false;
+
+        let currentMaxWeight = 0;
+        let currentMaxReps = 0;
+        // let currentVolume = 0; // Volume PR calculation can be added later if needed
+        // let calculatedORM = 0; // ORM calculation can be added later if needed
+
+        if (exercise.sets && exercise.sets.length > 0) {
+          for (const set of exercise.sets) {
+            const setWeight = set.weight ?? 0;
+            const setReps = set.reps ?? 0;
+
+            // Determine effective weight for PR check (external or estimated bodyweight)
+            let effectiveWeight = 0;
+            if (setWeight > 0) {
+              effectiveWeight = setWeight; // Use actual weight if provided
+            } else if (setReps > 0) {
+              // Only estimate bodyweight if weight is 0 AND reps are > 0
+              effectiveWeight = estimateBodyweightForExercise(exerciseName, userWeight);
+            }
+
+            // Update max weight achieved in this workout for this exercise
+            if (setReps > 0 && effectiveWeight > currentMaxWeight) {
+              currentMaxWeight = effectiveWeight;
+            }
+
+            // Update max reps achieved in this workout for this exercise
+            // This applies regardless of weight for bodyweight exercises
+            if (setReps > currentMaxReps) {
+              currentMaxReps = setReps;
+            }
+
+            // Potential future place for Volume and ORM calculation per set
+            // currentVolume += effectiveWeight * setReps;
+            // if (setReps > 0 && effectiveWeight > 0) {
+            //   const setORM = effectiveWeight / (1.0278 - 0.0278 * setReps); // Brzycki
+            //   if (setORM > calculatedORM) calculatedORM = setORM;
+            // }
+          }
+        }
+
+        // --- Check and Stage Max Weight PR --- 
+        if (currentMaxWeight > 0) {
+          const prKey = `${exerciseId.toString()}_kg`; // Using 'kg' as the standard unit for weight PRs
+          const existingPR = potentialPRs[prKey];
+
+          if (!existingPR || currentMaxWeight > existingPR.value || (currentMaxWeight === existingPR.value && workoutDate > existingPR.date)) {
+            potentialPRs[prKey] = {
+              userId: userObjectId,
+              exerciseId: exerciseId,
+              exerciseName: exerciseName,
+              value: currentMaxWeight,
+              unit: 'kg',
+              date: workoutDate,
+              workoutId: workoutId,
+            };
+            // console.log(`[ExPR Update] Staging Max Weight PR for ${exerciseName}: ${currentMaxWeight}kg on ${workoutDate.toISOString()}`);
+          }
+        }
+
+        // --- Check and Stage Max Reps PR --- 
+        // Only track max reps if the flag is set AND we recorded reps > 0
+        if (exerciseTrackMaxReps && currentMaxReps > 0) {
+          const prKey = `${exerciseId.toString()}_reps`;
+          const existingPR = potentialPRs[prKey];
+
+          if (!existingPR || currentMaxReps > existingPR.value || (currentMaxReps === existingPR.value && workoutDate > existingPR.date)) {
+            potentialPRs[prKey] = {
+              userId: userObjectId,
+              exerciseId: exerciseId,
+              exerciseName: exerciseName,
+              value: currentMaxReps,
+              unit: 'reps',
+              date: workoutDate,
+              workoutId: workoutId,
+            };
+            // console.log(`[ExPR Update] Staging Max Reps PR for ${exerciseName}: ${currentMaxReps} reps on ${workoutDate.toISOString()}`);
+          }
+        }
+
+        // --- Check and Stage Volume PR --- (Placeholder)
+        // if (currentVolume > 0) { ... }
+
+        // --- Check and Stage ORM PR --- (Placeholder)
+        // if (calculatedORM > 0) { ... }
+
+      } // End loop through exercises
+    } // End loop through workouts
+
+    // Batch update/insert PRs from the staged potentialPRs
+    const bulkOps = Object.values(potentialPRs).map(prData => ({
+      updateOne: {
+        filter: {
+          userId: prData.userId,
+          exerciseId: prData.exerciseId,
+          unit: prData.unit // Compound key includes unit
+        },
+        update: { $set: prData }, // Set the entire staged PR data
+        upsert: true
+      }
+    }));
+
+    if (bulkOps.length > 0) {
+      console.log(`[updateExercisePRs] Performing ${bulkOps.length} bulk PR operations for user ${userId}...`);
+      const result = await ExercisePRModel.bulkWrite(bulkOps);
+      console.log(`[updateExercisePRs] Bulk write result:`, JSON.stringify(result));
+      console.log(`[updateExercisePRs] Successfully updated/inserted ${result.upsertedCount + result.modifiedCount} exercise PRs for user ${userId}.`);
+    } else {
+      console.log(`[updateExercisePRs] No new potential PRs identified for user ${userId}.`);
+    }
+
+  } catch (error) {
+    console.error(`[updateExercisePRs] Error processing exercise PRs for user ${userId}:`, error);
+    // Decide on error handling: re-throw, log, or return status
+  }
+}
+// --- END NEW FUNCTION ---

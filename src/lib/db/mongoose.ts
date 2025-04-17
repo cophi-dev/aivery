@@ -1,10 +1,10 @@
 import mongoose, { Mongoose } from "mongoose"
 
-const MONGODB_URI = process.env.MONGODB_URI
-
-if (!MONGODB_URI) {
-  throw new Error("Please define the MONGODB_URI environment variable inside .env")
-}
+// Remove top-level check
+// const MONGODB_URI = process.env.MONGODB_URI
+// if (!MONGODB_URI) {
+//   throw new Error("Please define the MONGODB_URI environment variable inside .env")
+// }
 
 // Define an interface for the mongoose cache
 interface MongooseCache {
@@ -20,14 +20,23 @@ declare global {
 // Use the interface for the cached variable
 let cached: MongooseCache | undefined = global.mongooseCache
 
-if (!cached) {
-  cached = global.mongooseCache = { conn: null, promise: null }
-}
+// Remove initialization from module scope
+// if (!cached) {
+//   cached = global.mongooseCache = { conn: null, promise: null }
+// }
 
 async function dbConnect(): Promise<Mongoose> {
+  // Initialize cache inside the function if needed
   if (!cached) {
-    console.error("Mongoose cache initialization failed unexpectedly.");
-    throw new Error("Mongoose cache initialization failed.");
+    console.log("Initializing Mongoose cache...");
+    cached = global.mongooseCache = { conn: null, promise: null };
+  }
+
+  // Add check inside the function
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (!MONGODB_URI) {
+    console.error("MONGODB_URI not found in environment variables.");
+    throw new Error("Please define the MONGODB_URI environment variable.");
   }
   
   console.log('Connecting to MongoDB...');
@@ -43,9 +52,10 @@ async function dbConnect(): Promise<Mongoose> {
     }
 
     console.log('Creating new MongoDB connection...');
-    console.log('MongoDB URI:', MONGODB_URI!.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@')); // Log URI with hidden credentials
+    // Use the MONGODB_URI fetched inside the function
+    console.log('MongoDB URI:', MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@')); 
     
-    cached.promise = mongoose.connect(MONGODB_URI!, opts).then((mongooseInstance) => {
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongooseInstance) => {
       console.log('MongoDB connected successfully');
       return mongooseInstance
     })

@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     }
     if (!user.stripeCustomerId) {
       console.error(`[Stripe Portal] User ${userId} does not have a Stripe Customer ID.`);
-      return new NextResponse('Stripe Customer ID not found for this user.', { status: 400 });
+      return NextResponse.json({ error: 'Stripe Customer ID not found for this user.' }, { status: 400 });
     }
     const stripeCustomerId = user.stripeCustomerId;
     console.log(`[Stripe Portal] Found Stripe Customer ID: ${stripeCustomerId} for user ${userId}`);

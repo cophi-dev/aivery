@@ -31,6 +31,22 @@ export interface IUser extends Document {
   stripeSubscriptionId?: string
   stripeSubscriptionStatus?: string
   planExpiresAt?: Date
+
+  // New Summary Fields
+  performanceSummary?: {
+    overallTotals?: {
+      distance?: number; // km
+      duration?: number; // seconds
+      volume?: number;   // kg (for strength)
+      count?: number;    // number of workouts
+    };
+    lastWorkoutDate?: Date;
+  };
+  personalRecords?: {
+    longestRun?: { value: number; date: Date }; // km
+    fastest5kPace?: { value: number; date: Date }; // seconds per meter
+    maxStrengthVolume?: { value: number; date: Date }; // kg
+  };
 }
 
 const AiPreferencesSchema = new Schema({
@@ -40,6 +56,31 @@ const AiPreferencesSchema = new Schema({
   fitnessGoals: { type: String },
   dietaryPreferences: { type: String }
 }, { _id: false })
+
+// --- NEW SCHEMAS for Summaries ---
+const OverallTotalsSchema = new Schema({
+  distance: { type: Number, default: 0 }, // km
+  duration: { type: Number, default: 0 }, // seconds
+  volume: { type: Number, default: 0 },   // kg (for strength)
+  count: { type: Number, default: 0 },    // number of workouts
+}, { _id: false })
+
+const PerformanceSummarySchema = new Schema({
+  overallTotals: { type: OverallTotalsSchema, default: () => ({}) },
+  lastWorkoutDate: { type: Date }
+}, { _id: false })
+
+const RecordSchema = new Schema({
+  value: { type: Number },
+  date: { type: Date }
+}, { _id: false })
+
+const PersonalRecordsSchema = new Schema({
+  longestRun: { type: RecordSchema },        // km
+  fastest5kPace: { type: RecordSchema },    // seconds per meter
+  maxStrengthVolume: { type: RecordSchema } // kg
+}, { _id: false })
+// --- END NEW SCHEMAS ---
 
 const UserSchema: Schema = new Schema(
   {
@@ -80,7 +121,18 @@ const UserSchema: Schema = new Schema(
       sparse: true
     },
     stripeSubscriptionStatus: { type: String }, // e.g., 'active', 'canceled', 'past_due'
-    planExpiresAt: { type: Date }
+    planExpiresAt: { type: Date },
+
+    // --- Add New Summary Fields to Schema ---
+    performanceSummary: { 
+      type: PerformanceSummarySchema,
+      default: () => ({})
+    },
+    personalRecords: {
+      type: PersonalRecordsSchema,
+      default: () => ({})
+    }
+    // --- End New Summary Fields ---
   },
   { timestamps: true },
 )
