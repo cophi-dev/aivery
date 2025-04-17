@@ -980,7 +980,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${grokApiKey}` },
       body: JSON.stringify({
-        model: 'grok-3-mini-latest', // <-- Changed to Mini model
+        model: 'grok-3-mini-fast-beta', // <-- Changed to fast-beta model
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userQuery }
