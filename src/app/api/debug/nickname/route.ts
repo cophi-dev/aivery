@@ -6,6 +6,9 @@ import dbConnect from "@/lib/db/mongodb";
 import User from "@/lib/db/models/user";
 import { getToken } from "next-auth/jwt";
 
+// Explicitly mark this route as dynamic
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // Get user session
