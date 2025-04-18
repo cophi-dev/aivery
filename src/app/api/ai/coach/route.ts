@@ -2,32 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
-// Revert back to path alias for dateUtils import
-// import { calculateDateRange } from "@/lib/utils/dateUtils";
-import { calculateDateRange } from "./dateUtils"; // Use local import
-// import { db } from "@/lib/db"; // Placeholder for actual db import
-// import Anthropic from "@anthropic-ai/sdk"; // Import Anthropic SDK
-import { ObjectId } from 'mongodb'; // Import ObjectId
-// Mongoose imports
+import { calculateDateRange } from "./dateUtils"; 
+import { ObjectId } from 'mongodb'; 
 import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
-import User, { IUser } from '@/lib/db/models/user'; // <-- Import User model AND IUser type
-import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR'; // <-- Add ExercisePR import
-import { Types } from 'mongoose'; // <-- Add Types import
-import { capitalizeFirstLetter } from "@/lib/utils"; // Import capitalizeFirstLetter
-// import { Prisma } from "@prisma/client"; // Remove unused Prisma types import
-import { startOfWeek, endOfWeek, format } from "date-fns"; // <-- Import startOfWeek, endOfWeek, format
-import { subDays, subMonths, subWeeks, subYears } from "date-fns";
-// Removed incorrect WorkoutListItem import and duplicate IWorkout import
-
-// Import the function needed for initial workout analysis
-import { fetchWorkoutForAI } from "@/lib/workout-actions";
-// REMOVE the local type alias for ExtendedPeriodType
-// import type { ExtendedPeriodType } from "./dateUtils"; // Import the extended type 
-import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository"; // Import function to get history
+import User, { IUser } from '@/lib/db/models/user'; 
+import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR'; 
+import { Types } from 'mongoose'; 
+import { capitalizeFirstLetter } from "@/lib/utils"; 
+import { startOfDay } from "date-fns"; // Import startOfDay
+import { format, /* Other date-fns imports if needed */ } from "date-fns"; 
+import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository"; 
+import { fetchWorkoutForAI } from "@/lib/workout-actions"; // Re-add this import
 
 // Explicitly mark this route as dynamic
 export const dynamic = 'force-dynamic';
+
+// Define the daily token limit
+const DAILY_GROK_TOKEN_LIMIT = 500000;
 
 // Define valid intents
 const ValidIntents = z.enum([
@@ -1012,735 +1004,767 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
   }
 }
 
-// --- MAIN POST HANDLER ---
-export async function POST(req: NextRequest) {
-  console.log("--- [AI Coach Request Received] ---");
-  const startTime = Date.now();
-  let session: any;
-  let user: IUser | null = null; // Define user variable
-  let userId: string | undefined;
-  let userName = "User"; // Default username
-  let userPreferences: IUser['aiPreferences'] | null = null;
-
-  try {
-    // 1. Authentication and User Data
-    console.log("[POST] Authenticating user...");
-    session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      console.warn("[POST] User not authenticated.");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    userId = session.user.id;
-    // Add null/undefined check for userId to satisfy TypeScript
-    if (!userId) {
-      console.error("[POST] userId is unexpectedly undefined after session check.");
-      return NextResponse.json({ error: "Internal Server Error: User ID missing" }, { status: 500 });
-    }
-    console.log(`[POST] User authenticated: ${userId}`);
-
-    // Ensure DB connection
-    await dbConnect();
-
-    // Fetch user details including preferences
-    user = await User.findById(userId).select('name aiPreferences').lean<IUser>();
-    if (user) {
-      userName = user.name || userName;
-      userPreferences = user.aiPreferences || null;
-      console.log(`[POST] Fetched user details for: ${userName}`);
-    } else {
-      console.warn(`[POST] Could not fetch user details for ID: ${userId}`);
-    }
-
-    // --- Fetch Exercise PRs --- START
-    let exercisePRs: IExercisePR[] = [];
-    try {
-      console.log(`[POST] Fetching exercise PRs for user: ${userId}...`);
-      exercisePRs = await ExercisePRModel.find({ userId: new Types.ObjectId(userId) })
-        .sort({ date: -1 }) // Sort by date PR was achieved (most recent first)
-        .limit(15) // Limit to the top 15 most recent PRs
-        .lean<IExercisePR[]>();
-      console.log(`[POST] Found ${exercisePRs.length} exercise PRs.`);
-    } catch (prError) {
-      console.error(`[POST] Error fetching exercise PRs for user ${userId}:`, prError);
-      // Continue without PRs if fetching fails
-    }
-    // --- Fetch Exercise PRs --- END
-
-    // 2. Request Body Parsing and Variable Initialization
-    console.log("[POST] Parsing request body...");
-    const body = await req.json();
-    const { query, history = [], context } = body;
-    console.log(`[POST] Parsed - Query: "${query}" | History Len: ${history.length} | Context:`, context);
-
-    // Validate query
-    if (!query || typeof query !== 'string') {
-      return NextResponse.json({ error: "Invalid query provided" }, { status: 400 });
-    }
-
-    // Initialize other needed variables
-    const userDisplayName = userName; // Use the fetched userName 
-    let dataContext = ""; // Initialize as empty string
-    let dateRangeString = ""; // Initialize as empty string
-
-    // Check for initial workout context
-    if (context && context.type === 'initial_workout' && context.workoutId) {
-      // ... logic for initial workout insight ...
-    }
-    
-    // 3. AI Query Analysis
-    // ... rest of POST function uses query, history, userName, exercisePRs etc.
-
-    // 3. Connect to Database
+// --- Rate Limit Check Helper Function ---
+// REMINDER: Apply this pre-check pattern (call checkRateLimit)
+//           before *any* new Grok API call is made in this route or related functions.
+async function checkRateLimit(userId: string): Promise<{ proceed: boolean; dailyUsage: number; lastReset: Date | null }> {
     await dbConnect(); // Ensure DB connection
+    // ... existing code ...
+    // --- End Rate Limit Check Helper Function ---
 
-    // **** SPECIAL HANDLING FOR PLAN GENERATION REQUEST **** 
-    // Note: The client now only sends requestType = 'generate_plan' and the userQuery.
-    // The backend constructs the full system prompt including history and goals.
-    if (context?.requestType === 'generate_plan') { 
-        console.log(`[API /coach] Detected plan generation request.`);
+    // --- Token Update Helper Function ---
+    // REMINDER: Apply this post-update pattern (call updateTokenUsage)
+    //           after *any* Grok API call successfully returns usage data.
+    async function updateTokenUsage(userId: string, grokUsageData: any): Promise<void> {
+        if (!grokUsageData) return;
+
+        const tokensUsed = grokUsageData.total_tokens || (
+            (grokUsageData.prompt_tokens || 0) +
+            (grokUsageData.completion_tokens || 0)
+            // Add other usage fields if Grok provides them
+        );
+
+        if (tokensUsed > 0) {
+            console.log(`[COACH_RATE_LIMIT] Updating usage for user ${userId}. Adding ${tokensUsed} tokens.`);
+            // Use await to ensure the update completes or handle potential errors
+            try {
+                await User.updateOne({ _id: userId }, { $inc: { dailyGrokTokenUsage: tokensUsed } });
+            } catch (err) {
+                console.error("[COACH_RATE_LIMIT] Failed to update usage count in DB:", err);
+            }
+        }
+    }
+    // --- End Token Update Helper Function ---
+
+    // --- MAIN POST HANDLER ---
+    export async function POST(req: NextRequest) {
+      console.log("--- [AI Coach Request Received] ---");
+      const startTime = Date.now();
+      let session;
+      let user: IUser | null = null; // Define user variable
+      let userId: string | undefined;
+      let userName = "User"; // Default username
+      let userPreferences: IUser['aiPreferences'] | null = null;
+
+      try {
+        // 1. Authentication and User Data
+        console.log("[POST] Authenticating user...");
+        session = await getServerSession(authOptions);
+        if (!session?.user?.id) {
+          console.warn("[POST] User not authenticated.");
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        userId = session.user.id;
+        // Add null/undefined check for userId to satisfy TypeScript
+        if (!userId) {
+          console.error("[POST] userId is unexpectedly undefined after session check.");
+          return NextResponse.json({ error: "Internal Server Error: User ID missing" }, { status: 500 });
+        }
+        console.log(`[POST] User authenticated: ${userId}`);
+
+        // Ensure DB connection
+        await dbConnect();
+
+        // Fetch user details including preferences
+        user = await User.findById(userId).select('name aiPreferences').lean<IUser>();
+        if (user) {
+          userName = user.name || userName;
+          userPreferences = user.aiPreferences || null;
+          console.log(`[POST] Fetched user details for: ${userName}`);
+        } else {
+          console.warn(`[POST] Could not fetch user details for ID: ${userId}`);
+        }
+
+        // --- Fetch Exercise PRs --- START
+        let exercisePRs: IExercisePR[] = [];
         try {
-            // 1. Fetch user goals AND summaries AND FORMAT PRs
-            console.log(`[API /coach] Fetching user data (goals, summaries) for user: ${userId}`);
-            const user = await User.findById(userId)
-                .select('aiPreferences.fitnessGoals performanceSummary personalRecords') // Select summaries
-                .lean<Pick<IUser, 'aiPreferences' | 'performanceSummary' | 'personalRecords'> | null>();
-
-            if (!user) {
-                throw new Error('User data not found for plan generation.');
-            }
-
-            const goals = user.aiPreferences?.fitnessGoals || "No specific goals provided.";
-            // const summaries = user.performanceSummary || {}; // No longer needed for prompt
-            // const overallPRs = user.personalRecords || {}; // No longer needed for prompt
-
-            // --- Format Exercise PRs for Prompt (Limit to 5) --- 
-            let exercisePRsString = "No specific exercise PRs recorded recently.";
-            if (exercisePRs && exercisePRs.length > 0) {
-                exercisePRsString = "Recent Exercise Personal Records (Max 5 Shown):\n";
-                exercisePRsString += exercisePRs.slice(0, 5).map(pr => 
-                    `- ${pr.exerciseName}: ${pr.value} ${pr.unit} (on ${format(new Date(pr.date), 'yyyy-MM-dd')})`
-                ).join('\n');
-            }
-            // --- Format Exercise PRs for Prompt --- END
-
-            // --- Remove Overall Summaries/PRs formatting --- START
-            /* 
-            let overallSummaryString = "Overall Performance Summary:\n";
-            overallSummaryString += `- Total Workouts: ${summaries.overallTotals?.count ?? 'N/A'}\n`;
-            overallSummaryString += `- Total Duration: ${summaries.overallTotals?.duration ? formatDuration(summaries.overallTotals.duration) : 'N/A'}\n`;
-            overallSummaryString += `- Total Volume (Strength): ${summaries.overallTotals?.volume ? Math.round(summaries.overallTotals.volume) + 'kg' : 'N/A'}\n`;
-            overallSummaryString += `- Total Distance (Cardio): ${summaries.overallTotals?.distance ? formatDistance(summaries.overallTotals.distance) : 'N/A'}\n`;
-            overallSummaryString += `- Last Workout: ${summaries.lastWorkoutDate ? format(new Date(summaries.lastWorkoutDate), 'yyyy-MM-dd') : 'N/A'}\n`;
-            overallSummaryString += "Overall Personal Records:\n";
-            overallSummaryString += `- Longest Run: ${overallPRs.longestRun ? formatDistance(overallPRs.longestRun.value) + ' on ' + format(new Date(overallPRs.longestRun.date), 'yyyy-MM-dd') : 'N/A'}\n`;
-            overallSummaryString += `- Fastest 5k Pace: ${overallPRs.fastest5kPace ? formatPace(overallPRs.fastest5kPace.value) + ' on ' + format(new Date(overallPRs.fastest5kPace.date), 'yyyy-MM-dd') : 'N/A'}\n`; // Assuming value is sec/meter
-            overallSummaryString += `- Max Strength Workout Volume: ${overallPRs.maxStrengthVolume ? Math.round(overallPRs.maxStrengthVolume.value) + 'kg on ' + format(new Date(overallPRs.maxStrengthVolume.date), 'yyyy-MM-dd') : 'N/A'}\n`;
-            */
-            // --- Remove Overall Summaries/PRs formatting --- END
-
-            // Fetch recent workout history (Limit to 5)
-            console.log(`[API /coach] Fetching recent workout history (limit 5) for user: ${userId}`);
-            // Fetch only the last 5 workouts
-            const recentWorkouts = await getRecentWorkouts(userId, 5); 
-            let historyString = "No recent workout history available.";
-            if (recentWorkouts && recentWorkouts.length > 0) {
-                historyString = "Recent Workout History (Last 5):\n"; // Update title
-                historyString += recentWorkouts.map(w => 
-                    `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.name || w.type} (${formatDuration(w.duration)})`
-                ).join('\n');
-            }
-
-            // 2. Construct the system prompt (REMOVING overallSummaryString)
-            const systemPrompt = `\\nYou are Aivery, an expert fitness coach generating a 1-week workout plan for ${userName}.\\n\\nUser Goal:\\n${goals}\\n\\n${exercisePRsString}\\n\\n${historyString}\\n\\nBased ONLY on the information above (goal, exercise PRs, recent history), generate a concise, actionable 1-week workout plan. Align with the goal and consider recent activity/performance. Avoid questions; generate the best plan possible. Focus on the PLAN.`;
-
-            console.log("[API /coach] Sending plan generation prompt to Grok...");
-            // 3. Call the AI model
-            const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName); 
-
-            // 4. Return the generated plan
-            console.log("[API /coach] Plan generation successful.");
-            const endTime = Date.now();
-            console.log(`--- [AI Coach Request Completed - Plan] Latency: ${endTime - startTime}ms ---`);
-            return NextResponse.json({ response: planResponse });
-
-        } catch (planError: any) {
-          // ... error handling ...
+          console.log(`[POST] Fetching exercise PRs for user: ${userId}...`);
+          exercisePRs = await ExercisePRModel.find({ userId: new Types.ObjectId(userId) })
+            .sort({ date: -1 }) // Sort by date PR was achieved (most recent first)
+            .limit(15) // Limit to the top 15 most recent PRs
+            .lean<IExercisePR[]>();
+          console.log(`[POST] Found ${exercisePRs.length} exercise PRs.`);
+        } catch (prError) {
+          console.error(`[POST] Error fetching exercise PRs for user ${userId}:`, prError);
+          // Continue without PRs if fetching fails
         }
-    } 
-    // **** END SPECIAL HANDLING FOR PLAN GENERATION ****
+        // --- Fetch Exercise PRs --- END
 
-    // --- Default query processing if not plan generation ---
-    // ... rest of POST function ...
+        // 2. Request Body Parsing and Variable Initialization
+        console.log("[POST] Parsing request body...");
+        const body = await req.json();
+        const { query, history = [], context } = body;
+        console.log(`[POST] Parsed - Query: "${query}" | History Len: ${history.length} | Context:`, context);
 
-    // 5. Normal Query Analysis (If not a special request)
-    console.log("[API /coach] Proceeding with normal query analysis...");
-
-    // Check for simple keyword explanation request (move this logic here)
-    const keywordMatch = query.match(/^What is (.*)?$/i);
-    if (keywordMatch && keywordMatch[1]) {
-        const keyword = keywordMatch[1];
-        const explanationQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
-        // Directly call Grok or another LLM for explanation
-        const explanation = await getDirectTextResponse(explanationQuery); // Assuming this function calls the LLM
-        if (explanation) {
-             return NextResponse.json({ response: explanation, data: null });
+        // Validate query
+        if (!query || typeof query !== 'string') {
+          return NextResponse.json({ error: "Invalid query provided" }, { status: 400 });
         }
-        // Fall through to standard analysis if direct explanation fails
-    }
+
+        // Initialize other needed variables
+        const userDisplayName = userName; // Use the fetched userName 
+        let dataContext = ""; // Initialize as empty string
+        let dateRangeString = ""; // Initialize as empty string
+
+        // Check for initial workout context
+        if (context && context.type === 'initial_workout' && context.workoutId) {
+          // ... logic for initial workout insight ...
+        }
+        
+        // 3. AI Query Analysis
+        // ... rest of POST function uses query, history, userName, exercisePRs etc.
+
+        // 3. Connect to Database
+        await dbConnect(); // Ensure DB connection
+
+        // **** SPECIAL HANDLING FOR PLAN GENERATION REQUEST **** 
+        // Note: The client now only sends requestType = 'generate_plan' and the userQuery.
+        // The backend constructs the full system prompt including history and goals.
+        if (context?.requestType === 'generate_plan') { 
+            console.log(`[API /coach] Detected plan generation request.`);
+            try {
+                // 1. Fetch user goals AND summaries AND FORMAT PRs
+                console.log(`[API /coach] Fetching user data (goals, summaries) for user: ${userId}`);
+                const user = await User.findById(userId)
+                    .select('aiPreferences.fitnessGoals performanceSummary personalRecords') // Select summaries
+                    .lean<Pick<IUser, 'aiPreferences' | 'performanceSummary' | 'personalRecords'> | null>();
+
+                if (!user) {
+                    throw new Error('User data not found for plan generation.');
+                }
+
+                const goals = user.aiPreferences?.fitnessGoals || "No specific goals provided.";
+                // const summaries = user.performanceSummary || {}; // No longer needed for prompt
+                // const overallPRs = user.personalRecords || {}; // No longer needed for prompt
+
+                // --- Format Exercise PRs for Prompt (Limit to 5) --- 
+                let exercisePRsString = "No specific exercise PRs recorded recently.";
+                if (exercisePRs && exercisePRs.length > 0) {
+                    exercisePRsString = "Recent Exercise Personal Records (Max 5 Shown):\n";
+                    exercisePRsString += exercisePRs.slice(0, 5).map(pr => 
+                        `- ${pr.exerciseName}: ${pr.value} ${pr.unit} (on ${format(new Date(pr.date), 'yyyy-MM-dd')})`
+                    ).join('\n');
+                }
+                // --- Format Exercise PRs for Prompt --- END
+
+                // --- Remove Overall Summaries/PRs formatting --- START
+                /* 
+                let overallSummaryString = "Overall Performance Summary:\n";
+                overallSummaryString += `- Total Workouts: ${summaries.overallTotals?.count ?? 'N/A'}\n`;
+                overallSummaryString += `- Total Duration: ${summaries.overallTotals?.duration ? formatDuration(summaries.overallTotals.duration) : 'N/A'}\n`;
+                overallSummaryString += `- Total Volume (Strength): ${summaries.overallTotals?.volume ? Math.round(summaries.overallTotals.volume) + 'kg' : 'N/A'}\n`;
+                overallSummaryString += `- Total Distance (Cardio): ${summaries.overallTotals?.distance ? formatDistance(summaries.overallTotals.distance) : 'N/A'}\n`;
+                overallSummaryString += `- Last Workout: ${summaries.lastWorkoutDate ? format(new Date(summaries.lastWorkoutDate), 'yyyy-MM-dd') : 'N/A'}\n`;
+                overallSummaryString += "Overall Personal Records:\n";
+                overallSummaryString += `- Longest Run: ${overallPRs.longestRun ? formatDistance(overallPRs.longestRun.value) + ' on ' + format(new Date(overallPRs.longestRun.date), 'yyyy-MM-dd') : 'N/A'}\n`;
+                overallSummaryString += `- Fastest 5k Pace: ${overallPRs.fastest5kPace ? formatPace(overallPRs.fastest5kPace.value) + ' on ' + format(new Date(overallPRs.fastest5kPace.date), 'yyyy-MM-dd') : 'N/A'}\n`; // Assuming value is sec/meter
+                overallSummaryString += `- Max Strength Workout Volume: ${overallPRs.maxStrengthVolume ? Math.round(overallPRs.maxStrengthVolume.value) + 'kg on ' + format(new Date(overallPRs.maxStrengthVolume.date), 'yyyy-MM-dd') : 'N/A'}\n`;
+                */
+                // --- Remove Overall Summaries/PRs formatting --- END
+
+                // Fetch recent workout history (Limit to 5)
+                console.log(`[API /coach] Fetching recent workout history (limit 5) for user: ${userId}`);
+                // Fetch only the last 5 workouts
+                const recentWorkouts = await getRecentWorkouts(userId, 5); 
+                let historyString = "No recent workout history available.";
+                if (recentWorkouts && recentWorkouts.length > 0) {
+                    historyString = "Recent Workout History (Last 5):\n"; // Update title
+                    historyString += recentWorkouts.map(w => 
+                        `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.name || w.type} (${formatDuration(w.duration)})`
+                    ).join('\n');
+                }
+
+                // 2. Construct the system prompt (REMOVING overallSummaryString)
+                const systemPrompt = `\\nYou are Aivery, an expert fitness coach generating a 1-week workout plan for ${userName}.\\n\\nUser Goal:\\n${goals}\\n\\n${exercisePRsString}\\n\\n${historyString}\\n\\nBased ONLY on the information above (goal, exercise PRs, recent history), generate a concise, actionable 1-week workout plan. Align with the goal and consider recent activity/performance. Avoid questions; generate the best plan possible. Focus on the PLAN.`;
+
+                console.log("[API /coach] Sending plan generation prompt to Grok...");
+                // 3. Call the AI model
+                const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName); 
+
+                // 4. Return the generated plan
+                console.log("[API /coach] Plan generation successful.");
+                const endTime = Date.now();
+                console.log(`--- [AI Coach Request Completed - Plan] Latency: ${endTime - startTime}ms ---`);
+                return NextResponse.json({ response: planResponse });
+
+            } catch (planError: any) {
+              // ... error handling ...
+            }
+        } 
+        // **** END SPECIAL HANDLING FOR PLAN GENERATION ****
+
+        // --- Default query processing if not plan generation ---
+        // ... rest of POST function ...
+
+        // 5. Normal Query Analysis (If not a special request)
+        console.log("[API /coach] Proceeding with normal query analysis...");
+
+        // Check for simple keyword explanation request (move this logic here)
+        const keywordMatch = query.match(/^What is (.*)?$/i);
+        if (keywordMatch && keywordMatch[1]) {
+            const keyword = keywordMatch[1];
+            const explanationQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
+            // Directly call Grok or another LLM for explanation
+            const explanation = await getDirectTextResponse(explanationQuery); // Assuming this function calls the LLM
+            if (explanation) {
+                 return NextResponse.json({ response: explanation, data: null });
+            }
+            // Fall through to standard analysis if direct explanation fails
+        }
 
 
-    const analysis = await analyzeUserQuery(query, history);
-    console.log("Query Analysis Result:", analysis);
+        const analysis = await analyzeUserQuery(query, history);
+        console.log("Query Analysis Result:", analysis);
 
-    // Validate analysis result
-    const validation = QueryAnalysisSchema.safeParse(analysis);
-    if (!validation.success) {
-        console.error("Invalid analysis structure:", validation.error);
-        return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
-    }
+        // Validate analysis result
+        const validation = QueryAnalysisSchema.safeParse(analysis);
+        if (!validation.success) {
+            console.error("Invalid analysis structure:", validation.error);
+            return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
+        }
 
-    const { intent, entities, response_suggestion } = validation.data;
+        const { intent, entities, response_suggestion } = validation.data;
 
-    // Use suggestion if provided and intent is simple or unknown
-    if (response_suggestion && (intent === 'unknown' /*|| intent === 'simple_greeting' etc.*/ )) {
-        return NextResponse.json({ response: response_suggestion });
-    }
+        // Use suggestion if provided and intent is simple or unknown
+        if (response_suggestion && (intent === 'unknown' /*|| intent === 'simple_greeting' etc.*/ )) {
+            return NextResponse.json({ response: response_suggestion });
+        }
 
-    // 2. Backend Logic Routing based on Intent
-    let responseData: any = null;
-    let responseText = "";
+        // 2. Backend Logic Routing based on Intent
+        let responseData: any = null;
+        let responseText = "";
 
-    // Calculate date range if a period is specified
-    let dateRangeResult: { start_date?: string; end_date?: string; period_description: string } | null = null;
-    const period = entities?.period; // Type here is now inferred as the extended type from Zod
-    if (period) {
-      // calculateDateRange now accepts the extended period type
-      dateRangeResult = calculateDateRange(period); // This call should now be type-correct
-    }
+        // Calculate date range if a period is specified
+        let dateRangeResult: { start_date?: string; end_date?: string; period_description: string } | null = null;
+        const period = entities?.period; // Type here is now inferred as the extended type from Zod
+        if (period) {
+          // calculateDateRange now accepts the extended period type
+          dateRangeResult = calculateDateRange(period); // This call should now be type-correct
+        }
 
-    // Prioritize explicit dates from AI if available
-    const startDate = entities?.explicit_start_date ?? dateRangeResult?.start_date;
-    const endDate = entities?.explicit_end_date ?? dateRangeResult?.end_date;
+        // Prioritize explicit dates from AI if available
+        const startDate = entities?.explicit_start_date ?? dateRangeResult?.start_date;
+        const endDate = entities?.explicit_end_date ?? dateRangeResult?.end_date;
 
-    const qualifier = entities?.record_qualifier;
-    const identifier = entities?.workout_identifier;
-    const limit = entities?.limit;
+        const qualifier = entities?.record_qualifier;
+        const identifier = entities?.workout_identifier;
+        const limit = entities?.limit;
 
-    // Switch based on intent... (rest of the switch statement remains the same)
-    switch (intent) {
-      case "get_total_metric":
-        if (!entities?.metric) { responseText = "Please specify which metric you want the total for (e.g., distance, duration)."; break; }
-        const total = await fetchTotalMetricForPeriod(
-          userId,
-          entities.metric,
-          entities.workout_type ?? "any",
-          startDate,
-          endDate
-        );
-        responseData = { total };
-        responseText = generateTotalResponse(
-          total,
-          entities.metric,
-          entities.workout_type ?? "any",
-          entities.period, 
-          startDate, 
-          endDate,  
-          userDisplayName // Pass userName
-        );
-        break;
-
-      case "get_average_metric":
-        if (!entities?.metric) { responseText = "Please specify which metric you want the average for (e.g., pace, duration)."; break; }
-        const average = await fetchAverageMetricForPeriod(
-          userId,
-          entities.metric,
-          entities.workout_type ?? "any",
-          startDate,
-          endDate
-        );
-        responseData = { average, metric: entities.metric, unit: getUnitForMetric(entities.metric, true), period: entities.period, workoutType: entities.workout_type };
-        if (average !== null) {
-           responseText = generateAverageResponse(
-             average,
-             entities.metric,
-             entities.workout_type ?? "any",
-             entities.period, 
-             startDate, 
-             endDate,  
-             userDisplayName // Pass userName
-           );
-         } else {
-            // Handle null average case with personality
-            const typeDesc = describeWorkoutType(entities.workout_type ?? "any");
-            const periodDesc = describePeriod(entities.period, startDate, endDate);
-            responseText = `Hmm ${userDisplayName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
-         }
-        break;
-
-      case "get_record":
-         if (!entities?.metric || !entities?.workout_type) { responseText = "Please specify a metric and a workout type to find a record."; break; }
-         const record = await fetchRecordMetric(
-             userId,
-             entities.metric,
-             entities.workout_type,
-             entities.record_qualifier
-         );
-         responseData = { record };
-         if (record) {
-            responseText = generateRecordResponse(
-                record.value,
-                record.date,
-                entities.metric,
-                entities.workout_type,
-                entities.record_qualifier,
-                userDisplayName // Pass userName
-            );
-         } else {
-            responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${userDisplayName}. Keep pushing for those PBs! 🚀`;
-         }
-         break;
-
-       case "list_workouts":
-         if (!startDate && !endDate && !entities?.period) { 
-             responseText = "Please specify a time period (like last week or July 2024) to list workouts."; 
-             // Set data to empty array for consistency if parameters are missing
-             responseData = { workouts: [] }; 
-             break; 
-         }
-         const workouts = await listWorkouts(
-             userId,
-             entities?.workout_type ?? "any",
-             startDate,
-             endDate,
-             entities?.limit
-         );
-         responseData = { workouts }; // Send the raw workout array
-         if (workouts.length > 0) {
-            // Generate a simple text message, frontend will handle display
-             const typeDesc = describeWorkoutType(entities?.workout_type);
-             const periodDesc = describePeriod(entities?.period, startDate, endDate);
-             responseText = `Okay ${userDisplayName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
-         } else {
-             // Use the potentially more specific describePeriod
-             const periodDesc = describePeriod(entities?.period, startDate, endDate);
-             responseText = `I couldn't find any workouts ${entities?.workout_type && entities.workout_type !== 'any' ? `for ${entities.workout_type}` : ''} ${periodDesc}.`;
-         }
-         break;
-
-      case "get_workout_details":
-         if (!entities?.workout_identifier) { responseText = "I need something to identify the workout you're asking about, like a date (e.g., 'my run last Tuesday')."; break; }
-         const details = await fetchWorkoutDetails(userId, entities.workout_identifier, entities?.workout_type);
-         responseData = { details };
-         if (details) {
-            responseText = generateDetailsResponse(details, userDisplayName); // Pass userName
-         } else {
-            responseText = `Sorry ${userDisplayName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
-         }
-         break;
-
-      case "compare_metric":
-          if (!entities?.metric || !entities?.period || (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date))) {
-               responseText = `To compare, ${userDisplayName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
-               break; 
-          }
-          
-          // Calculate range for the first period (always uses 'period')
-          const period1Range = calculateDateRange(entities.period);
-
-          // Determine range for the second period: prioritize explicit dates over comparison_period
-          let period2StartDate = entities.explicit_start_date;
-          let period2EndDate = entities.explicit_end_date;
-          let period2Label = entities.comparison_period;
-          let period2Description = '';
-
-          if (!period2StartDate || !period2EndDate) {
-              // If no explicit dates, use comparison_period
-              if (entities.comparison_period) {
-                const period2RangeCalc = calculateDateRange(entities.comparison_period);
-                period2StartDate = period2RangeCalc.start_date;
-                period2EndDate = period2RangeCalc.end_date;
-                // Keep period2Label as the enum value
-              } else {
-                // Should not happen due to initial check, but safeguard
-                responseText = `Something went wrong determining the second period for comparison, ${userDisplayName}.`;
-                break;
-              }
-          } else {
-             // Explicit dates provided, override period2Label for description purposes
-             period2Label = undefined; // Indicate explicit dates were used
-             period2Description = describePeriod(undefined, period2StartDate, period2EndDate); // Generate desc from dates
-          }
-
-          const comparison = await compareMetricBetweenPeriods(
+        // Switch based on intent... (rest of the switch statement remains the same)
+        switch (intent) {
+          case "get_total_metric":
+            if (!entities?.metric) { responseText = "Please specify which metric you want the total for (e.g., distance, duration)."; break; }
+            const total = await fetchTotalMetricForPeriod(
               userId,
               entities.metric,
               entities.workout_type ?? "any",
-              { start_date: period1Range.start_date, end_date: period1Range.end_date },
-              // Use the determined start/end dates for period 2
-              { start_date: period2StartDate, end_date: period2EndDate } 
-          );
-          responseData = { comparison };
-          responseText = generateCompareResponse(
-              comparison.value1,
-              comparison.value2,
+              startDate,
+              endDate
+            );
+            responseData = { total };
+            responseText = generateTotalResponse(
+              total,
               entities.metric,
               entities.workout_type ?? "any",
-              entities.period, // Label for period 1
-              period2Label, // Label for period 2 (if used)
-              period2Description, // Description if explicit dates used
-              userDisplayName 
-          );
-          break;
+              entities.period, 
+              startDate, 
+              endDate,  
+              userDisplayName // Pass userName
+            );
+            break;
 
-      case "unknown":
-      default:
-         responseText = response_suggestion || `Sorry ${userDisplayName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
-        break;
-    }
+          case "get_average_metric":
+            if (!entities?.metric) { responseText = "Please specify which metric you want the average for (e.g., pace, duration)."; break; }
+            const average = await fetchAverageMetricForPeriod(
+              userId,
+              entities.metric,
+              entities.workout_type ?? "any",
+              startDate,
+              endDate
+            );
+            responseData = { average, metric: entities.metric, unit: getUnitForMetric(entities.metric, true), period: entities.period, workoutType: entities.workout_type };
+            if (average !== null) {
+               responseText = generateAverageResponse(
+                 average,
+                 entities.metric,
+                 entities.workout_type ?? "any",
+                 entities.period, 
+                 startDate, 
+                 endDate,  
+                 userDisplayName // Pass userName
+               );
+             } else {
+                // Handle null average case with personality
+                const typeDesc = describeWorkoutType(entities.workout_type ?? "any");
+                const periodDesc = describePeriod(entities.period, startDate, endDate);
+                responseText = `Hmm ${userDisplayName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
+             }
+            break;
 
-    // Prepend AI suggestion if available and intent wasn't 'unknown'
-    if (response_suggestion && intent !== "unknown") {
-      // Add a separator or just concatenate based on desired flow
-      responseText = `${response_suggestion.trim()} ... ${responseText}`;
-      // Alternative: responseText = response_suggestion + "\n\n" + responseText;
-    }
+          case "get_record":
+             if (!entities?.metric || !entities?.workout_type) { responseText = "Please specify a metric and a workout type to find a record."; break; }
+             const record = await fetchRecordMetric(
+                 userId,
+                 entities.metric,
+                 entities.workout_type,
+                 entities.record_qualifier
+             );
+             responseData = { record };
+             if (record) {
+                responseText = generateRecordResponse(
+                    record.value,
+                    record.date,
+                    entities.metric,
+                    entities.workout_type,
+                    entities.record_qualifier,
+                    userDisplayName // Pass userName
+                );
+             } else {
+                responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${userDisplayName}. Keep pushing for those PBs! 🚀`;
+             }
+             break;
 
-    console.log("Final Generated Response:", responseText);
-    // 3. Return Response
-    return NextResponse.json({
-      response: responseText,
-      data: responseData,
-      analysis: validation.data
-    });
+           case "list_workouts":
+             if (!startDate && !endDate && !entities?.period) { 
+                 responseText = "Please specify a time period (like last week or July 2024) to list workouts."; 
+                 // Set data to empty array for consistency if parameters are missing
+                 responseData = { workouts: [] }; 
+                 break; 
+             }
+             const workouts = await listWorkouts(
+                 userId,
+                 entities?.workout_type ?? "any",
+                 startDate,
+                 endDate,
+                 entities?.limit
+             );
+             responseData = { workouts }; // Send the raw workout array
+             if (workouts.length > 0) {
+                // Generate a simple text message, frontend will handle display
+                 const typeDesc = describeWorkoutType(entities?.workout_type);
+                 const periodDesc = describePeriod(entities?.period, startDate, endDate);
+                 responseText = `Okay ${userDisplayName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
+             } else {
+                 // Use the potentially more specific describePeriod
+                 const periodDesc = describePeriod(entities?.period, startDate, endDate);
+                 responseText = `I couldn't find any workouts ${entities?.workout_type && entities.workout_type !== 'any' ? `for ${entities.workout_type}` : ''} ${periodDesc}.`;
+             }
+             break;
 
-  } catch (error: any) {
-    console.error("[API /coach] Internal Server Error:", error);
-    // Provide a user-friendly error message
-    return NextResponse.json(
-      {
-        response: "Sorry, the AI coach encountered an unexpected issue. Please try again later.",
-        data: null,
-        // Optionally include error details in development only
-        // error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-      },
-      { status: 500 }
-    );
-  }
-}
+          case "get_workout_details":
+             if (!entities?.workout_identifier) { responseText = "I need something to identify the workout you're asking about, like a date (e.g., 'my run last Tuesday')."; break; }
+             const details = await fetchWorkoutDetails(userId, entities.workout_identifier, entities?.workout_type);
+             responseData = { details };
+             if (details) {
+                responseText = generateDetailsResponse(details, userDisplayName); // Pass userName
+             } else {
+                responseText = `Sorry ${userDisplayName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
+             }
+             break;
 
+          case "compare_metric":
+              if (!entities?.metric || !entities?.period || (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date))) {
+                   responseText = `To compare, ${userDisplayName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
+                   break; 
+              }
+              
+              // Calculate range for the first period (always uses 'period')
+              const period1Range = calculateDateRange(entities.period);
 
-// --- Response Generation Helper Functions ---
-// These functions format the data into user-friendly strings.
-// They also handle unit conversions for display (e.g., seconds -> min, meters -> km).
+              // Determine range for the second period: prioritize explicit dates over comparison_period
+              let period2StartDate = entities.explicit_start_date;
+              let period2EndDate = entities.explicit_end_date;
+              let period2Label = entities.comparison_period;
+              let period2Description = '';
 
-function formatDuration(seconds: number): string {
-    const totalSecondsRounded = Math.round(seconds); // Round the total seconds first
-    if (totalSecondsRounded < 60) return `${totalSecondsRounded} sec`; // Use rounded seconds
-    const minutes = Math.floor(totalSecondsRounded / 60);
-    const remainingSeconds = totalSecondsRounded % 60;
-    if (remainingSeconds === 0) return `${minutes} min`;
-    return `${minutes}m ${remainingSeconds}s`; // Use rounded remaining seconds
-}
+              if (!period2StartDate || !period2EndDate) {
+                  // If no explicit dates, use comparison_period
+                  if (entities.comparison_period) {
+                    const period2RangeCalc = calculateDateRange(entities.comparison_period);
+                    period2StartDate = period2RangeCalc.start_date;
+                    period2EndDate = period2RangeCalc.end_date;
+                    // Keep period2Label as the enum value
+                  } else {
+                    // Should not happen due to initial check, but safeguard
+                    responseText = `Something went wrong determining the second period for comparison, ${userDisplayName}.`;
+                    break;
+                  }
+              } else {
+                 // Explicit dates provided, override period2Label for description purposes
+                 period2Label = undefined; // Indicate explicit dates were used
+                 period2Description = describePeriod(undefined, period2StartDate, period2EndDate); // Generate desc from dates
+              }
 
-function formatDistance(kilometers: number): string {
-    if (kilometers < 1) return `${(kilometers * 1000).toFixed(0)} m`; // Display as meters if less than 1 km
-    return `${kilometers.toFixed(2)} km`; // Display as km >= 1
-}
+              const comparison = await compareMetricBetweenPeriods(
+                  userId,
+                  entities.metric,
+                  entities.workout_type ?? "any",
+                  { start_date: period1Range.start_date, end_date: period1Range.end_date },
+                  // Use the determined start/end dates for period 2
+                  { start_date: period2StartDate, end_date: period2EndDate } 
+              );
+              responseData = { comparison };
+              responseText = generateCompareResponse(
+                  comparison.value1,
+                  comparison.value2,
+                  entities.metric,
+                  entities.workout_type ?? "any",
+                  entities.period, // Label for period 1
+                  period2Label, // Label for period 2 (if used)
+                  period2Description, // Description if explicit dates used
+                  userDisplayName 
+              );
+              break;
 
-function formatPace(paceSecondsPerMeter: number): string {
-    if (paceSecondsPerMeter <= 0) return "N/A";
-    const paceMinutesPerKm = (paceSecondsPerMeter * 1000) / 60;
-    const minutes = Math.floor(paceMinutesPerKm);
-    const seconds = Math.round((paceMinutesPerKm - minutes) * 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
-}
+          case "unknown":
+          default:
+             responseText = response_suggestion || `Sorry ${userDisplayName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
+            break;
+        }
 
-function formatSpeed(speedMetersPerSecond: number): string {
-     if (speedMetersPerSecond <= 0) return "N/A";
-     const speedKmPerHour = speedMetersPerSecond * 3.6;
-     return `${speedKmPerHour.toFixed(1)} km/h`;
-}
+        // Prepend AI suggestion if available and intent wasn't 'unknown'
+        if (response_suggestion && intent !== "unknown") {
+          // Add a separator or just concatenate based on desired flow
+          responseText = `${response_suggestion.trim()} ... ${responseText}`;
+          // Alternative: responseText = response_suggestion + "\n\n" + responseText;
+        }
 
-function getUnitForMetric(metric: z.infer<typeof ValidMetrics>, isAverage: boolean = false): string {
-    switch(metric) {
-        case 'distance': return 'km';
-        case 'duration': return 'min'; // Usually display duration total/avg in minutes
-        case 'pace': return '/km'; // Display pace as min/km
-        case 'speed': return 'km/h';
-        case 'calories': return 'kcal';
-        case 'count': return 'workouts';
-        case 'elevation': return 'm';
-        default: return '';
-    }
-}
-
-function formatValue(value: number | null, metric: z.infer<typeof ValidMetrics>): string {
-     if (value === null || value === undefined) return "N/A";
-     switch(metric) {
-         case 'distance': return formatDistance(value);
-         case 'duration': return formatDuration(value);
-         case 'pace': return formatPace(value);
-         case 'speed': return formatSpeed(value);
-         case 'calories': return `${Math.round(value)} kcal`;
-         case 'count': return `${value}`; // Just the number for count
-         case 'elevation': return `${Math.round(value)} m`;
-         default: return value.toFixed(1); // Default formatting
-     }
-}
-
-// Define the extended period type explicitly for clarity in function signatures
-type ExtendedPeriodType = z.infer<typeof ValidPeriods>; // This now includes 'next_week'
-
-function describePeriod(period?: ExtendedPeriodType, startDate?: string, endDate?: string): string { // Use the imported type
-    if (startDate && endDate) {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const startDateString = `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()}`;
-        const endDateString = `${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`; 
-        return `between ${startDateString} and ${endDateString}`;
-    }
-    if (period === 'next_week') return "next week"; 
-    if (period) return period.replace(/_/g, ' ');
-    return "overall";
-}
-
-function describeWorkoutType(workoutType?: z.infer<typeof ValidWorkoutTypes>): string {
-    return workoutType && workoutType !== 'any' ? `${workoutType} ` : '';
-}
-
-
-function generateTotalResponse(
-    totalValue: number | null,
-    metric: z.infer<typeof ValidMetrics>,
-    workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period: ExtendedPeriodType | undefined, // Use the imported type
-    startDate: string | undefined,
-    endDate: string | undefined,
-    userName: string // Add userName parameter
-): string {
-    const typeDesc = describeWorkoutType(workoutType);
-    const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
-
-    if (totalValue === null || totalValue === 0) {
-        return `Hey ${userName}, I checked for ${typeDesc}workouts ${periodDesc}, but it seems there wasn't any ${metric} logged for that time. Keep logging those sessions! 👍`;
-    }
-
-    const formattedValue = formatValue(totalValue, metric);
-    // Add more specific encouragement based on metric
-    let encouragement = "Keep up the great work! 💪";
-    if (metric === 'distance') encouragement = "That's some serious mileage! Awesome job! 🏃‍♀️💨";
-    if (metric === 'duration') encouragement = "Great consistency! Keep putting in the time! ⏰";
-    if (metric === 'count') encouragement = `That's ${formattedValue} sessions logged! Fantastic dedication! ✨`;
-
-    return `Alright ${userName}, digging into your ${typeDesc}workouts ${periodDesc}, your total ${metric} was ${formattedValue}! ${encouragement}`;
-}
-
-function generateAverageResponse(
-    average: number | null,
-    metric: z.infer<typeof ValidMetrics>,
-    workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period: ExtendedPeriodType | undefined, // Use the imported type
-    startDate: string | undefined,
-    endDate: string | undefined,
-    userName: string // Add userName
-): string {
-    const formattedValue = formatValue(average, metric);
-    const typeDesc = describeWorkoutType(workoutType);
-    const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
-
-    if (average === null) {
-        // Handle null average case with personality
-        return `Hmm ${userName}, I couldn't calculate the average ${metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data for that period?`;
-    }
-
-    // Add personality
-    if (metric === 'pace') {
-        return `Nice one, ${userName}! Your average ${typeDesc}pace ${periodDesc} was ${formattedValue}. Looking steady! 👀`;
-    } else if (metric === 'speed') {
-        return `Zoom! 🚀 Your average ${typeDesc}speed ${periodDesc} was ${formattedValue}, ${userName}. Keep flying!`;
-    } else {
-        return `Okay ${userName}, looking at the numbers, your average ${typeDesc}${metric} ${periodDesc} came out to ${formattedValue}. Solid work!`;
-    }
-}
-
-function generateRecordResponse(
-    value: number | null,
-    date: string | null,
-    metric: z.infer<typeof ValidMetrics>,
-    workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    qualifier: string | undefined,
-    userName: string // Add userName
-): string {
-    if (value === null) {
-        return `Couldn't find that specific record for ${metric} (${workoutType || 'any workout'}), ${userName}. Keep pushing for those PBs! 🚀`;
-    }
-    const formattedValue = formatValue(value, metric);
-    const typeDesc = describeWorkoutType(workoutType);
-    const dateStr = date ? new Date(date).toLocaleDateString() : "an unknown date";
-
-    let recordDesc = '';
-    let intro = `New record alert, ${userName}! 🔔`;
-    let emoji = '🏆';
-
-    if (metric === 'distance') { recordDesc = 'longest'; intro = `Wow ${userName}, serious distance!`; emoji = '🏃‍♂️💨'; }
-    else if (metric === 'duration') { recordDesc = 'longest'; intro = `Epic session, ${userName}!`; emoji = '⏱️'; }
-    else if (metric === 'pace') { recordDesc = `fastest ${qualifier ? qualifier + ' ' : ''}`; intro = `Blazing fast, ${userName}!`; emoji = '⚡'; }
-    else { recordDesc = `highest ${metric}`; } // Default assumption
-
-    return `${intro} Your ${recordDesc} ${typeDesc}${metric === 'pace' ? 'pace ' : ''}was ${formattedValue}, achieved on ${dateStr}. That's a personal best! ${emoji}`; 
-}
-
-function generateListResponse(
-    workouts: WorkoutListItem[],
-    workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period: ExtendedPeriodType | undefined, // Use the imported type
-    startDate: string | undefined,
-    endDate: string | undefined,
-    limit?: number,
-    userName?: string // Add userName parameter
-): string {
-    const typeDesc = describeWorkoutType(workoutType);
-    const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
-    const name = userName || 'there'; // Default if needed
-
-    if (workouts.length === 0) {
-        return `Hmm ${name}, I couldn't find any ${typeDesc}workouts logged ${periodDesc}. Let's get some in soon!`;
-    }
-
-    const count = workouts.length;
-    const limitReached = limit && count >= limit;
-
-    let response = `Okay ${name}, you asked about ${typeDesc}workouts ${periodDesc}. Here ${limitReached ? `are the latest ${count}` : count === 1 ? 'is the one I found' : `are the ${count} I found`}:\n\n`;
-
-    response += workouts.map(w => {
-        const dateStr = new Date(w.date).toLocaleDateString();
-        // Use helper functions for formatting and handle nulls
-        const formattedDistance = w.distance ? formatDistance(w.distance) : 'N/A';
-        const formattedDuration = w.duration ? formatDuration(w.duration) : 'N/A';
-        const formattedCalories = w.calories ? `${Math.round(w.calories)} kcal` : 'N/A'; 
-
-        // Create a more structured markdown string
-        let workoutString = `*   **${dateStr}: ${w.name || w.type}**\n`;
-        workoutString += `    *   Duration: ${formattedDuration}\n`;
-        workoutString += `    *   Distance: ${formattedDistance}\n`;
-        workoutString += `    *   Calories: ${formattedCalories}`;
-        // Removed the less structured single line return
-        return workoutString;
-    }).join('\n\n'); // Add extra newline between workout entries
-
-    return response;
-}
-
-
-function generateDetailsResponse(details: WorkoutDetailItem, userName: string): string { // Add userName
-    const dateStr = new Date(details.date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-    const name = userName || 'there'; // Default if needed
-    
-    // Start with a more conversational tone
-    let response = `Alright ${name}, let's break down your ${details.type} workout from ${dateStr}:
-`;
-    response += `*   **Workout Name:** ${details.name || `(${capitalizeFirstLetter(details.type)} Workout)`}
-`; // Use markdown for structure, provide default if unnamed
-
-    const mainMetrics = [];
-    if (details.duration) response += `*   **Duration:** ${formatDuration(details.duration)}
-`;
-    if (details.distance) response += `*   **Distance:** ${formatDistance(details.distance)}
-`;
-    if (details.calories) response += `*   **Calories Burned:** ≈${details.calories} kcal
-`;
-    if (details.intensity) response += `*   **Intensity:** ${details.intensity}
-`;
-
-    // Add exercise details if available (assuming strength)
-    if (details.exercises && details.exercises.length > 0) {
-        response += `\n*   **Exercises:**\n`;
-        details.exercises.forEach(ex => {
-            response += `    *   **${ex.exercise?.name ?? 'Unknown Exercise'}:** `; // Bold exercise name (Corrected access)
-            if (ex.sets && ex.sets.length > 0) {
-                const setStrings = ex.sets.map(set => {
-                    let setStr = ``;
-                    if (set.reps) setStr += `${set.reps} reps`;
-                    if (set.weight) setStr += ` x ${set.weight} kg`;
-                    // Remove unsupported fields from set string
-                    // if (set.duration) setStr += ` for ${formatDuration(set.duration)}`; 
-                    // if (set.distance) setStr += ` at ${formatDistance(set.distance)}`;
-                    return setStr.trim();
-                }).filter(Boolean);
-                response += setStrings.join(', ');
-            } else {
-                response += `(No sets logged)`;
-            }
-            response += `\n`;
+        console.log("Final Generated Response:", responseText);
+        // 3. Return Response
+        return NextResponse.json({
+          response: responseText,
+          data: responseData,
+          analysis: validation.data
         });
-    }
-    
-    // Add notes if available
-    if (details.notes) {
-        response += `\n*   **Notes:** ${details.notes}\n`;
-    }
 
-    response += `\nHow did this session feel, ${name}? Anything specific you'd like to discuss about it?`; // Add follow-up
-
-    return response;
-}
-
-
-function generateCompareResponse(
-    value1: number | null,
-    value2: number | null,
-    metric: z.infer<typeof ValidMetrics>,
-    workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
-    period1Label: z.infer<typeof ValidPeriods>, // Label for period 1
-    period2Label: z.infer<typeof ValidPeriods> | undefined, // Label for period 2 (if period enum used)
-    period2DescriptionFromDates: string | undefined, // Description if explicit dates used
-    userName: string 
-): string {
-    const formattedValue1 = formatValue(value1, metric);
-    const formattedValue2 = formatValue(value2, metric);
-    const typeDesc = describeWorkoutType(workoutType);
-    // Describe periods based on provided labels or generated description
-    const period1Desc = period1Label.replace(/_/g, ' ');
-    const period2Desc = period2DescriptionFromDates ? period2DescriptionFromDates.replace(/^in |^during /i, '') // Use generated desc if available
-                       : period2Label ? period2Label.replace(/_/g, ' ') // Otherwise use label
-                       : 'the second period'; // Fallback
-    const name = userName || 'there';
-
-    if (value1 === null || value2 === null) {
-        let missingPeriods = [];
-        if (value1 === null) missingPeriods.push(period1Desc);
-        if (value2 === null) missingPeriods.push(period2Desc);
-        return `Hmm ${name}, I seem to be missing the data for ${typeDesc}${metric} in ${missingPeriods.join(' or ')} to make that comparison. Maybe log some more workouts?`;
+      } catch (error: any) {
+        console.error("[API /coach] Internal Server Error:", error);
+        // Provide a user-friendly error message
+        return NextResponse.json(
+          {
+            response: "Sorry, the AI coach encountered an unexpected issue. Please try again later.",
+            data: null,
+            // Optionally include error details in development only
+            // error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+          },
+          { status: 500 }
+        );
+      }
     }
 
-    const change = value1 - value2;
-    const percentageChange = value2 !== 0 ? (change / value2) * 100 : 0;
 
-    let comparisonText = `Okay ${name}, let's compare your ${typeDesc}${metric} for ${period1Desc} versus ${period2Desc}:\n`;
-    comparisonText += `*   **${period1Desc}:** ${formattedValue1}\n`;
-    comparisonText += `*   **${period2Desc}:** ${formattedValue2}\n\n`;
+    // --- Response Generation Helper Functions ---
+    // These functions format the data into user-friendly strings.
+    // They also handle unit conversions for display (e.g., seconds -> min, meters -> km).
 
-    if (change === 0) {
-        comparisonText += `Looks like your ${metric} stayed exactly the same between these periods! Consistent work! 👍`;
-    } else {
-        const direction = change > 0 ? "an increase" : "a decrease";
-        const emoji = change > 0 ? "📈" : "📉";
-        comparisonText += `That's ${direction} of ${formatValue(Math.abs(change), metric)} (${percentageChange.toFixed(1)}%) ${emoji}.`;
+    function formatDuration(seconds: number): string {
+        const totalSecondsRounded = Math.round(seconds); // Round the total seconds first
+        if (totalSecondsRounded < 60) return `${totalSecondsRounded} sec`; // Use rounded seconds
+        const minutes = Math.floor(totalSecondsRounded / 60);
+        const remainingSeconds = totalSecondsRounded % 60;
+        if (remainingSeconds === 0) return `${minutes} min`;
+        return `${minutes}m ${remainingSeconds}s`; // Use rounded remaining seconds
     }
 
-    return comparisonText;
-}
+    function formatDistance(kilometers: number): string {
+        if (kilometers < 1) return `${(kilometers * 1000).toFixed(0)} m`; // Display as meters if less than 1 km
+        return `${kilometers.toFixed(2)} km`; // Display as km >= 1
+    }
 
-function createHighlightPrompt(userName: string, workout: Partial<IWorkout>) {
-    // Convert workout data to a string format, handling potential undefined fields
-    let workoutDetails = `Workout Type: ${workout.type || 'N/A'}`;
-    if (workout.duration) workoutDetails += `\nDuration: ${(workout.duration / 60).toFixed(1)} minutes`;
-    if (workout.distance) workoutDetails += `\nDistance: ${workout.distance.toFixed(2)} km`;
-    if (workout.calculatedVolume) workoutDetails += `\nTotal Volume: ${workout.calculatedVolume.toFixed(0)} kg`; // Use calculatedVolume
-    if (workout.notes) workoutDetails += `\nNotes: ${workout.notes}`; 
+    function formatPace(paceSecondsPerMeter: number): string {
+        if (paceSecondsPerMeter <= 0) return "N/A";
+        const paceMinutesPerKm = (paceSecondsPerMeter * 1000) / 60;
+        const minutes = Math.floor(paceMinutesPerKm);
+        const seconds = Math.round((paceMinutesPerKm - minutes) * 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
+    }
 
-    // Construct the system prompt
-    return `You are Aivery, a fitness coach AI. Your task is to generate a **single, concise, positive, and encouraging highlight statement** (max 20 words) for the user based on their completed workout. 
+    function formatSpeed(speedMetersPerSecond: number): string {
+         if (speedMetersPerSecond <= 0) return "N/A";
+         const speedKmPerHour = speedMetersPerSecond * 3.6;
+         return `${speedKmPerHour.toFixed(1)} km/h`;
+    }
+
+    function getUnitForMetric(metric: z.infer<typeof ValidMetrics>, isAverage: boolean = false): string {
+        switch(metric) {
+            case 'distance': return 'km';
+            case 'duration': return 'min'; // Usually display duration total/avg in minutes
+            case 'pace': return '/km'; // Display pace as min/km
+            case 'speed': return 'km/h';
+            case 'calories': return 'kcal';
+            case 'count': return 'workouts';
+            case 'elevation': return 'm';
+            default: return '';
+        }
+    }
+
+    function formatValue(value: number | null, metric: z.infer<typeof ValidMetrics>): string {
+         if (value === null || value === undefined) return "N/A";
+         switch(metric) {
+             case 'distance': return formatDistance(value);
+             case 'duration': return formatDuration(value);
+             case 'pace': return formatPace(value);
+             case 'speed': return formatSpeed(value);
+             case 'calories': return `${Math.round(value)} kcal`;
+             case 'count': return `${value}`; // Just the number for count
+             case 'elevation': return `${Math.round(value)} m`;
+             default: return value.toFixed(1); // Default formatting
+         }
+    }
+
+    // Define the extended period type explicitly for clarity in function signatures
+    type ExtendedPeriodType = z.infer<typeof ValidPeriods>; // This now includes 'next_week'
+
+    function describePeriod(period?: ExtendedPeriodType, startDate?: string, endDate?: string): string { // Use the imported type
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const startDateString = `${start.getUTCMonth() + 1}/${start.getUTCDate()}/${start.getUTCFullYear()}`;
+            const endDateString = `${end.getUTCMonth() + 1}/${end.getUTCDate()}/${end.getUTCFullYear()}`; 
+            return `between ${startDateString} and ${endDateString}`;
+        }
+        if (period === 'next_week') return "next week"; 
+        if (period) return period.replace(/_/g, ' ');
+        return "overall";
+    }
+
+    function describeWorkoutType(workoutType?: z.infer<typeof ValidWorkoutTypes>): string {
+        return workoutType && workoutType !== 'any' ? `${workoutType} ` : '';
+    }
+
+
+    function generateTotalResponse(
+        totalValue: number | null,
+        metric: z.infer<typeof ValidMetrics>,
+        workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
+        period: ExtendedPeriodType | undefined, // Use the imported type
+        startDate: string | undefined,
+        endDate: string | undefined,
+        userName: string // Add userName parameter
+    ): string {
+        const typeDesc = describeWorkoutType(workoutType);
+        const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
+
+        if (totalValue === null || totalValue === 0) {
+            return `Hey ${userName}, I checked for ${typeDesc}workouts ${periodDesc}, but it seems there wasn't any ${metric} logged for that time. Keep logging those sessions! 👍`;
+        }
+
+        const formattedValue = formatValue(totalValue, metric);
+        // Add more specific encouragement based on metric
+        let encouragement = "Keep up the great work! 💪";
+        if (metric === 'distance') encouragement = "That's some serious mileage! Awesome job! 🏃‍♀️💨";
+        if (metric === 'duration') encouragement = "Great consistency! Keep putting in the time! ⏰";
+        if (metric === 'count') encouragement = `That's ${formattedValue} sessions logged! Fantastic dedication! ✨`;
+
+        return `Alright ${userName}, digging into your ${typeDesc}workouts ${periodDesc}, your total ${metric} was ${formattedValue}! ${encouragement}`;
+    }
+
+    function generateAverageResponse(
+        average: number | null,
+        metric: z.infer<typeof ValidMetrics>,
+        workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
+        period: ExtendedPeriodType | undefined, // Use the imported type
+        startDate: string | undefined,
+        endDate: string | undefined,
+        userName: string // Add userName
+    ): string {
+        const formattedValue = formatValue(average, metric);
+        const typeDesc = describeWorkoutType(workoutType);
+        const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
+
+        if (average === null) {
+            // Handle null average case with personality
+            return `Hmm ${userName}, I couldn't calculate the average ${metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data for that period?`;
+        }
+
+        // Add personality
+        if (metric === 'pace') {
+            return `Nice one, ${userName}! Your average ${typeDesc}pace ${periodDesc} was ${formattedValue}. Looking steady! 👀`;
+        } else if (metric === 'speed') {
+            return `Zoom! 🚀 Your average ${typeDesc}speed ${periodDesc} was ${formattedValue}, ${userName}. Keep flying!`;
+        } else {
+            return `Okay ${userName}, looking at the numbers, your average ${typeDesc}${metric} ${periodDesc} came out to ${formattedValue}. Solid work!`;
+        }
+    }
+
+    function generateRecordResponse(
+        value: number | null,
+        date: string | null,
+        metric: z.infer<typeof ValidMetrics>,
+        workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
+        qualifier: string | undefined,
+        userName: string // Add userName
+    ): string {
+        if (value === null) {
+            return `Couldn't find that specific record for ${metric} (${workoutType || 'any workout'}), ${userName}. Keep pushing for those PBs! 🚀`;
+        }
+        const formattedValue = formatValue(value, metric);
+        const typeDesc = describeWorkoutType(workoutType);
+        const dateStr = date ? new Date(date).toLocaleDateString() : "an unknown date";
+
+        let recordDesc = '';
+        let intro = `New record alert, ${userName}! 🔔`;
+        let emoji = '🏆';
+
+        if (metric === 'distance') { recordDesc = 'longest'; intro = `Wow ${userName}, serious distance!`; emoji = '🏃‍♂️💨'; }
+        else if (metric === 'duration') { recordDesc = 'longest'; intro = `Epic session, ${userName}!`; emoji = '⏱️'; }
+        else if (metric === 'pace') { recordDesc = `fastest ${qualifier ? qualifier + ' ' : ''}`; intro = `Blazing fast, ${userName}!`; emoji = '⚡'; }
+        else { recordDesc = `highest ${metric}`; } // Default assumption
+
+        return `${intro} Your ${recordDesc} ${typeDesc}${metric === 'pace' ? 'pace ' : ''}was ${formattedValue}, achieved on ${dateStr}. That's a personal best! ${emoji}`; 
+    }
+
+    function generateListResponse(
+        workouts: WorkoutListItem[],
+        workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
+        period: ExtendedPeriodType | undefined, // Use the imported type
+        startDate: string | undefined,
+        endDate: string | undefined,
+        limit?: number,
+        userName?: string // Add userName parameter
+    ): string {
+        const typeDesc = describeWorkoutType(workoutType);
+        const periodDesc = describePeriod(period, startDate, endDate); // describePeriod now accepts the type
+        const name = userName || 'there'; // Default if needed
+
+        if (workouts.length === 0) {
+            return `Hmm ${name}, I couldn't find any ${typeDesc}workouts logged ${periodDesc}. Let's get some in soon!`;
+        }
+
+        const count = workouts.length;
+        const limitReached = limit && count >= limit;
+
+        let response = `Okay ${name}, you asked about ${typeDesc}workouts ${periodDesc}. Here ${limitReached ? `are the latest ${count}` : count === 1 ? 'is the one I found' : `are the ${count} I found`}:\n\n`;
+
+        response += workouts.map(w => {
+            const dateStr = new Date(w.date).toLocaleDateString();
+            // Use helper functions for formatting and handle nulls
+            const formattedDistance = w.distance ? formatDistance(w.distance) : 'N/A';
+            const formattedDuration = w.duration ? formatDuration(w.duration) : 'N/A';
+            const formattedCalories = w.calories ? `${Math.round(w.calories)} kcal` : 'N/A'; 
+
+            // Create a more structured markdown string
+            let workoutString = `*   **${dateStr}: ${w.name || w.type}**\n`;
+            workoutString += `    *   Duration: ${formattedDuration}\n`;
+            workoutString += `    *   Distance: ${formattedDistance}\n`;
+            workoutString += `    *   Calories: ${formattedCalories}`;
+            // Removed the less structured single line return
+            return workoutString;
+        }).join('\n\n'); // Add extra newline between workout entries
+
+        return response;
+    }
+
+
+    function generateDetailsResponse(details: WorkoutDetailItem, userName: string): string { // Add userName
+        const dateStr = new Date(details.date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        const name = userName || 'there'; // Default if needed
+        
+        // Start with a more conversational tone
+        let response = `Alright ${name}, let's break down your ${details.type} workout from ${dateStr}:
+    `;
+        response += `*   **Workout Name:** ${details.name || `(${capitalizeFirstLetter(details.type)} Workout)`}
+    `; // Use markdown for structure, provide default if unnamed
+
+        const mainMetrics = [];
+        if (details.duration) response += `*   **Duration:** ${formatDuration(details.duration)}
+    `;
+        if (details.distance) response += `*   **Distance:** ${formatDistance(details.distance)}
+    `;
+        if (details.calories) response += `*   **Calories Burned:** ≈${details.calories} kcal
+    `;
+        if (details.intensity) response += `*   **Intensity:** ${details.intensity}
+    `;
+
+        // Add exercise details if available (assuming strength)
+        if (details.exercises && details.exercises.length > 0) {
+            response += `\n*   **Exercises:**\n`;
+            details.exercises.forEach(ex => {
+                response += `    *   **${ex.exercise?.name ?? 'Unknown Exercise'}:** `; // Bold exercise name (Corrected access)
+                if (ex.sets && ex.sets.length > 0) {
+                    const setStrings = ex.sets.map(set => {
+                        let setStr = ``;
+                        if (set.reps) setStr += `${set.reps} reps`;
+                        if (set.weight) setStr += ` x ${set.weight} kg`;
+                        // Remove unsupported fields from set string
+                        // if (set.duration) setStr += ` for ${formatDuration(set.duration)}`; 
+                        // if (set.distance) setStr += ` at ${formatDistance(set.distance)}`;
+                        return setStr.trim();
+                    }).filter(Boolean);
+                    response += setStrings.join(', ');
+                } else {
+                    response += `(No sets logged)`;
+                }
+                response += `\n`;
+            });
+        }
+        
+        // Add notes if available
+        if (details.notes) {
+            response += `\n*   **Notes:** ${details.notes}\n`;
+        }
+
+        response += `\nHow did this session feel, ${name}? Anything specific you'd like to discuss about it?`; // Add follow-up
+
+        return response;
+    }
+
+
+    function generateCompareResponse(
+        value1: number | null,
+        value2: number | null,
+        metric: z.infer<typeof ValidMetrics>,
+        workoutType: z.infer<typeof ValidWorkoutTypes> | undefined,
+        period1Label: z.infer<typeof ValidPeriods>, // Label for period 1
+        period2Label: z.infer<typeof ValidPeriods> | undefined, // Label for period 2 (if period enum used)
+        period2DescriptionFromDates: string | undefined, // Description if explicit dates used
+        userName: string 
+    ): string {
+        const formattedValue1 = formatValue(value1, metric);
+        const formattedValue2 = formatValue(value2, metric);
+        const typeDesc = describeWorkoutType(workoutType);
+        // Describe periods based on provided labels or generated description
+        const period1Desc = period1Label.replace(/_/g, ' ');
+        const period2Desc = period2DescriptionFromDates ? period2DescriptionFromDates.replace(/^in |^during /i, '') // Use generated desc if available
+                           : period2Label ? period2Label.replace(/_/g, ' ') // Otherwise use label
+                           : 'the second period'; // Fallback
+        const name = userName || 'there';
+
+        if (value1 === null || value2 === null) {
+            let missingPeriods = [];
+            if (value1 === null) missingPeriods.push(period1Desc);
+            if (value2 === null) missingPeriods.push(period2Desc);
+            return `Hmm ${name}, I seem to be missing the data for ${typeDesc}${metric} in ${missingPeriods.join(' or ')} to make that comparison. Maybe log some more workouts?`;
+        }
+
+        const change = value1 - value2;
+        const percentageChange = value2 !== 0 ? (change / value2) * 100 : 0;
+
+        let comparisonText = `Okay ${name}, let's compare your ${typeDesc}${metric} for ${period1Desc} versus ${period2Desc}:\n`;
+        comparisonText += `*   **${period1Desc}:** ${formattedValue1}\n`;
+        comparisonText += `*   **${period2Desc}:** ${formattedValue2}\n\n`;
+
+        if (change === 0) {
+            comparisonText += `Looks like your ${metric} stayed exactly the same between these periods! Consistent work! 👍`;
+        } else {
+            const direction = change > 0 ? "an increase" : "a decrease";
+            const emoji = change > 0 ? "📈" : "📉";
+            comparisonText += `That's ${direction} of ${formatValue(Math.abs(change), metric)} (${percentageChange.toFixed(1)}%) ${emoji}.`;
+        }
+
+        return comparisonText;
+    }
+
+    function createHighlightPrompt(userName: string, workout: Partial<IWorkout>) {
+        // Convert workout data to a string format, handling potential undefined fields
+        let workoutDetails = `Workout Type: ${workout.type || 'N/A'}`;
+        if (workout.duration) workoutDetails += `\nDuration: ${(workout.duration / 60).toFixed(1)} minutes`;
+        if (workout.distance) workoutDetails += `\nDistance: ${workout.distance.toFixed(2)} km`;
+        if (workout.calculatedVolume) workoutDetails += `\nTotal Volume: ${workout.calculatedVolume.toFixed(0)} kg`; // Use calculatedVolume
+        if (workout.notes) workoutDetails += `\nNotes: ${workout.notes}`; 
+
+        // Construct the system prompt
+        return `You are Aivery, a fitness coach AI. Your task is to generate a **single, concise, positive, and encouraging highlight statement** (max 20 words) for the user based on their completed workout. 
 
 DATABASE SCHEMA OVERVIEW (Key Fields for Context):
 - UserData: _id, email, name, image, aiPreferences { location, fitnessGoals, trainingPreferences, ... }, height, weight, age, gender, ...
@@ -1762,4 +1786,4 @@ INSTRUCTIONS:
 5. Do NOT include specific numbers unless it's a notable achievement (like a PR, which you won't know, so avoid specifics).
 6. Do NOT ask questions.
 7. Only output the highlight statement itself, no extra text.`;
-} 
+    } 

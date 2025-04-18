@@ -796,15 +796,12 @@ export default function NewWorkoutPage() {
                  <Select 
                     value={workoutType} 
                     onValueChange={(value) => setWorkoutType(value as WorkoutTypeOption)}
-                    // disabled={isEditing} // Maybe allow changing type even when editing? Or disable?
                  >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select activity type..." />
                   </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-800">
+                  <SelectContent>
                     {Object.entries(workoutTypeDisplayNames)
-                      // Optionally filter out 'strength' if needed
-                      // .filter(([key]) => key !== 'strength')
                       .map(([value, displayName]) => (
                         <SelectItem key={value} value={value}>{displayName}</SelectItem>
                     ))}

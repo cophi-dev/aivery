@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import StravaProvider from "next-auth/providers/strava"
 import { compare } from "bcryptjs"
 import dbConnect from "@/lib/db/mongodb"
-import UserModel from "@/lib/db/models/user"
+import UserModel, { IUser } from "@/lib/db/models/user"
 import { serializeMongoDoc } from "@/lib/db/utils"
 import mongoose from 'mongoose'
 
@@ -152,82 +152,62 @@ export const authOptions: NextAuthOptions = {
       }
     },
     async session({ session, token }) {
+      // Restore original logic
       try {
         if (token) {
            session.accessToken = token.accessToken as string | undefined;
            session.provider = token.provider as string | undefined;
         }
         
-        // Keep session minimal
         if (session.user && token) {
+          // Base assignment from token
           session.user.id = token.id as string
           session.user.name = token.name as string
           session.user.email = token.email as string
-          
-          // If we have the image in the token, use it
           if (token.picture) {
             session.user.image = token.picture as string
           }
-          
-          // If we have the nickname in the token, use it
           if (token.nickname) {
             session.user.nickname = token.nickname as string
-            console.log(`[AUTH] Added nickname to session from token: ${session.user.nickname}`);
           }
           
-          // Verify we have an ID
-          if (!session.user.id) {
-            console.error("Session missing user ID after setting");
-            // Return cleared session object on error
-            return { ...session, user: { id: '', email: '', name: '' } };
+          // Verify ID before DB query
+          if (!session.user.id || !mongoose.Types.ObjectId.isValid(session.user.id)) {
+             console.error("[SESSION CALLBACK] Invalid or missing user ID:", session.user.id);
+             return { ...session, user: { id: '', name: '', email: '' }, expires: session.expires }; 
           }
 
-          // --- Temporarily Commented Out DB Call ---
-          /*
-          // Verify user still exists in database and get latest image and nickname
-          console.log(`[SESSION CALLBACK] Attempting dbConnect for user ID: ${session.user.id}`);
+          // Restore DB Call with type safety
           await dbConnect();
-          console.log(`[SESSION CALLBACK] dbConnect finished. Querying UserModel for _id: ${session.user.id}`);
-          const userDoc = await UserModel.findOne({ _id: new mongoose.Types.ObjectId(session.user.id) }); 
+          const userDoc = await UserModel.findOne({ _id: new mongoose.Types.ObjectId(session.user.id) }).lean() as IUser | null; 
           
           if (!userDoc) {
-            console.error("[SIMPLIFIED QUERY] User no longer exists in database:", session.user.id);
-            // Return cleared session object on error
-            return { ...session, user: { id: '', email: '', name: '' } };
+            console.error("[SESSION CALLBACK] User no longer exists:", session.user.id);
+            return { ...session, user: { id: '', name: '', email: '' }, expires: session.expires };
           }
-          console.log("[SIMPLIFIED QUERY] Found userDoc:", userDoc._id.toString()); // Log success
-          
-          // Manually extract needed fields from the full document
-          const user = {
-            _id: userDoc._id,
-            image: userDoc.image,
-            nickname: userDoc.nickname
-            // Add other fields if needed, accessing them directly from userDoc
-          };
           
           // Update session with latest image and nickname from database
-          if (user) { // This check might be redundant now but safe
-            if (user.image) {
-              session.user.image = user.image;
-            }
+          if (userDoc.image) {
+            session.user.image = userDoc.image;
+          }
             
-            // Always use the most up-to-date nickname from the database
-            if ((userDoc as any).nickname) {
-              const nickname = (userDoc as any).nickname;
-              if (nickname !== session.user.nickname) {
-                console.log(`[AUTH] Updating nickname in session from ${session.user.nickname} to ${nickname}`);
-                session.user.nickname = nickname;
-              }
+          if (userDoc.nickname) {
+            if (userDoc.nickname !== session.user.nickname) {
+              session.user.nickname = userDoc.nickname;
+            }
+          } else {
+            // Remove nickname from session if it no longer exists in DB
+            if (session.user.nickname) {
+               delete session.user.nickname;
             }
           }
-          */
-          // --- End Commented Out ---
         }
+        // Return the final session object
         return session;
       } catch (error) {
         console.error("Error in session callback:", error);
-        // Return cleared session object on error
-        return { ...session, user: { id: '', email: '', name: '' } };
+        // Return original session object on error
+        return session; 
       }
     }
   },
@@ -263,7 +243,6 @@ export const authOptions: NextAuthOptions = {
       },
     },
   },
-  debug: true, // Enable debug mode temporarily to diagnose issues
   secret: process.env.NEXTAUTH_SECRET
 }
 

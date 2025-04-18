@@ -136,22 +136,6 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="120x120" href="/icons/apple-icon-120x120.png" /> 
         */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  const theme = localStorage.getItem('aivery-theme');
-                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                    document.documentElement.classList.add('dark');
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                  }
-                } catch (_) {}
-              })();
-            `,
-          }}
-        />
       </head>
       <body className={`${poppins.variable} ${inter.variable} ${dmSerif.variable} font-sans antialiased`} suppressHydrationWarning>
         {/* Initial Load Splash Screen */}
@@ -167,8 +151,8 @@ export default async function RootLayout({
           
           <ThemeProvider
             attribute="class"
-            defaultTheme="light"
-            enableSystem={false}
+            defaultTheme="system"
+            enableSystem
             storageKey="aivery-theme"
             disableTransitionOnChange
           >

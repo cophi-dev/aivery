@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback, useTransition } from "react"
-import { useSession } from "next-auth/react"
+import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser, Loader2, RefreshCw, LucideAlertCircle, Sparkles } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { LucideBell, LucideLogOut, LucideMoon, LucideSun, LucideUser, Loader2, RefreshCw, LucideAlertCircle, Sparkles, Trash2 } from "lucide-react"
 import { StravaImport } from "@/components/strava-import"
 import { useToast } from "@/components/ui/use-toast"
 import { useTheme } from "next-themes"
@@ -54,6 +65,8 @@ export default function SettingsPage() {
   const [showCropDialog, setShowCropDialog] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [isLoadingUserData, setIsLoadingUserData] = useState(true)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
 
   // Split the name into first and last name with proper default handling
   const [firstName, setFirstName] = useState('');
@@ -120,10 +133,6 @@ export default function SettingsPage() {
 
   // Add state to track the active tab
   const [activeTab, setActiveTab] = useState("profile")
-
-  // Add Strava Sync State - Comment out
-  // const [isSyncingStrava, setIsSyncingStrava] = useState(false);
-  // const [syncStravaError, setSyncStravaError] = useState<string | null>(null);
 
   // Define workout types for deletion
   const workoutTypes = [
@@ -862,54 +871,50 @@ export default function SettingsPage() {
     });
   }, [session?.user?.email, userData.email, profileChanges.email]);
 
-  // --- Strava Sync Handler --- Comment out entire function
-  /*
-  const handleSyncStrava = async () => {
-    setIsSyncingStrava(true);
-    setSyncStravaError(null);
-
+  // Function to handle account deletion
+  const handleDeleteAccount = async () => {
+    setIsDeletingAccount(true);
     try {
-      // First verify Strava connection - but don't block on it
-      try {
-        const stravaCheck = await fetchWithAuth('/api/strava-status');
-        const stravaStatus = await stravaCheck.json();
-        
-        if (!stravaCheck.ok || (!stravaStatus.connected && !stravaStatus.forcedValid)) {
-          // Still proceed if validation fails, just show a warning
-          console.warn('Strava connection validation failed, but proceeding anyway');
-          toast({ 
-            title: "Warning", 
-            description: "Your Strava connection validation failed, but we'll try syncing anyway",
-            variant: "default"
-          });
-        }
-      } catch (validationError) {
-        console.error("Error validating Strava connection:", validationError);
-        // Continue anyway - don't block
-      }
-      
-      // Attempt the sync regardless of validation result
-      const response = await fetchWithAuth('/api/strava/sync-recent', {
-        method: 'POST',
+      const response = await fetch('/api/user/delete', {
+        method: 'DELETE',
       });
 
-      const result = await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to start Strava sync');
+        throw new Error(data.message || 'Failed to delete account');
       }
 
-      toast({ title: "Strava Sync Started", description: "Your recent activities will be imported shortly." });
+      toast({
+        title: "Account Deleted",
+        description: "Your account and all associated data have been permanently deleted.",
+      });
 
-    } catch (error: any) {
-      console.error("Strava sync error:", error);
-      setSyncStravaError(error.message || 'An unexpected error occurred during sync.');
-      toast({ title: "Strava Sync Failed", description: error.message || 'Could not start sync.', variant: "destructive" });
-    } finally {
-      setIsSyncingStrava(false);
+      // Sign the user out and redirect (e.g., to homepage)
+      await signOut({ redirect: true, callbackUrl: '/' });
+
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred while deleting your account.",
+        variant: "destructive",
+      });
+      setIsDeletingAccount(false); // Reset loading state on error
+      setIsDeleteDialogOpen(false); // Close dialog on error
     }
+    // No need to set setIsDeletingAccount(false) on success because the user is navigated away
   };
-  */
+
+  // Check if loading data before rendering
+  if (isLoadingUserData) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-2">Loading settings...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8 max-w-6xl">
@@ -1148,23 +1153,41 @@ export default function SettingsPage() {
                         Permanently delete your account and all associated data. This action cannot be undone.
                       </p>
                     </div>
-                    <Button 
-                      variant="destructive"
-                      size="sm"
-                      className="w-full sm:w-auto"
-                      onClick={() => {
-                        const confirmed = window.confirm(
-                          "Are you sure you want to delete your account? This will remove all your data and cannot be undone."
-                        );
-                        
-                        if (confirmed) {
-                          // Here we would handle account deletion - temporarily just show an alert
-                          alert("Account deletion is temporarily disabled. Please contact support to delete your account.");
-                        }
-                      }}
-                    >
-                      Delete Account
-                    </Button>
+                    <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" disabled={isDeletingAccount}>
+                          {isDeletingAccount ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="mr-2 h-4 w-4" />
+                          )}
+                          Delete My Account
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete your
+                            account, including all your workouts, preferences, integrations,
+                            and personal records. Are you sure you want to proceed?
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={isDeletingAccount}>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleDeleteAccount}
+                            disabled={isDeletingAccount}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            {isDeletingAccount ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : null}
+                            Yes, Delete My Account
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               </CardContent>

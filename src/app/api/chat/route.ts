@@ -1,6 +1,6 @@
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
-import User from "@/lib/db/models/user"; // Assuming User model is needed for personalization
+import User, { IUser } from "@/lib/db/models/user"; // Import IUser
 import dbConnect from "@/lib/db/mongodb"; // If needed for user lookup
 import { getWorkoutDistanceForDateRange } from "@/lib/db/repositories/workoutRepository"; // Re-import repository function
 import {
@@ -14,8 +14,10 @@ import {
   subMonths,
   subYears,
   parse,
+  startOfDay // Import startOfDay
 } from "date-fns"; // Import date-fns functions
 import { getServerSession } from "next-auth"; // RE-ADD import
+import mongoose from 'mongoose'; // Import mongoose
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
@@ -25,6 +27,9 @@ export const runtime = "nodejs";
 
 // Allow responses up to 30 seconds
 export const maxDuration = 30;
+
+// Define the daily token limit
+const DAILY_GROK_TOKEN_LIMIT = 500000;
 
 // Helper function to safely extract text from Claude response content
 function getTextFromResponse(content: any): string | undefined {
@@ -107,7 +112,8 @@ export async function POST(req: Request) {
   let session;
   let userId: string | undefined;
   let userName: string | undefined = "User";
-  let dataContext = "No specific data provided for this query."; // Default context
+  let dataContext = "No specific data provided for this query.";
+  let grokUsageData: any = null; // To store usage from Grok response
 
   try {
     session = await getServerSession(authOptions);
@@ -117,6 +123,67 @@ export async function POST(req: Request) {
     }
     userId = session.user.id;
     userName = session.user.name || "User";
+    
+    // --- Rate Limit Check ---
+    // REMINDER: Apply this pre-check pattern (fetch usage, check limit, handle reset)
+    //           before *any* new Grok API call is made in this route.
+    await dbConnect(); // Connect DB first
+    let dailyUsage = 0;
+    let lastReset: Date | null = null;
+    let proceedWithAICall = false;
+    
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+        console.error("[CHAT_RATE_LIMIT] Invalid User ID for lookup:", userId);
+        // Handle appropriately - maybe return an error or default context
+        // For now, we prevent AI call
+    } else {
+        const userDoc = await User.findById(userId)
+          .select("dailyGrokTokenUsage lastGrokUsageReset")
+          .lean() as Pick<IUser, 'dailyGrokTokenUsage' | 'lastGrokUsageReset'> | null;
+
+        if (userDoc) {
+            dailyUsage = userDoc.dailyGrokTokenUsage || 0;
+            lastReset = userDoc.lastGrokUsageReset || null;
+            const todayStart = startOfDay(new Date());
+
+            // Check if reset is needed
+            if (!lastReset || lastReset < todayStart) {
+              console.log(`[CHAT_RATE_LIMIT] Resetting token usage for user ${userId}.`);
+              dailyUsage = 0;
+              lastReset = todayStart;
+              // Update DB immediately (fire-and-forget)
+              User.updateOne({ _id: userId }, { $set: { dailyGrokTokenUsage: 0, lastGrokUsageReset: todayStart } })
+                .catch(err => console.error("[CHAT_RATE_LIMIT] Failed to update reset date in DB:", err));
+            }
+
+            // Check if user is under the limit (estimate needed)
+            // Chat is hard to estimate perfectly. Let's use a simple check:
+            // If usage is already near the limit, block. Otherwise, allow and count later.
+            if (dailyUsage < DAILY_GROK_TOKEN_LIMIT) {
+              proceedWithAICall = true;
+              console.log(`[CHAT_RATE_LIMIT] User ${userId} under limit (${dailyUsage}/${DAILY_GROK_TOKEN_LIMIT}). Proceeding.`);
+            } else {
+              console.log(`[CHAT_RATE_LIMIT] User ${userId} EXCEEDED limit (${dailyUsage}/${DAILY_GROK_TOKEN_LIMIT}). Blocking AI call.`);
+              proceedWithAICall = false;
+              // Return rate limit exceeded response
+              return NextResponse.json(
+                 { error: "Daily AI usage limit reached. Please contact hi@aivery.com for assistance." },
+                 { status: 429 } // HTTP 429 Too Many Requests
+              );
+            }
+        } else {
+            console.warn(`[CHAT_RATE_LIMIT] User document not found for ID: ${userId}. Allowing call but cannot track usage.`);
+            proceedWithAICall = true; // Allow call but log warning
+        }
+    }
+    
+    // If check failed or limit exceeded, we would have already returned 429
+    if (!proceedWithAICall) {
+        // This should theoretically not be reached if limit exceeded due to early return
+        console.error("[CHAT] AI call blocked unexpectedly after rate limit logic.");
+        return new Response("Internal server error related to rate limiting.", { status: 500 });
+    }
+    // --- End Rate Limit Check ---
 
     console.log("[CHAT] API Key Loaded:", !!process.env.GROK_API_KEY);
 
@@ -261,6 +328,7 @@ RESPONSE GUIDELINES:
     }
 
     const data = await fetchResponse.json();
+    grokUsageData = data.usage; // Capture usage data
     console.log("[CHAT] Grok Raw Response:", data);
 
     let aiResponse: string | null = null;
@@ -272,9 +340,24 @@ RESPONSE GUIDELINES:
 
     console.log("[CHAT] AI Response generated.");
 
-    return new Response(aiResponse || "Sorry, I couldn't generate a response.", {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    // --- Update Token Usage ---
+    // REMINDER: Apply this post-update pattern (get tokens used, increment DB count)
+    //           after *any* Grok API call successfully returns usage data.
+    if (userId && grokUsageData) {
+      const tokensUsed = grokUsageData.total_tokens || (
+                         (grokUsageData.prompt_tokens || 0) + 
+                         (grokUsageData.completion_tokens || 0) + 
+                         (grokUsageData.completion_tokens_details?.reasoning_tokens || 0)
+                       );
+      if (tokensUsed > 0) {
+        console.log(`[CHAT_RATE_LIMIT] Updating usage for user ${userId}. Adding ${tokensUsed} tokens.`);
+        User.updateOne({ _id: userId }, { $inc: { dailyGrokTokenUsage: tokensUsed } })
+          .catch(err => console.error("[CHAT_RATE_LIMIT] Failed to update usage count in DB:", err));
+      }
+    }
+    // --- End Update Token Usage ---
+
+    return NextResponse.json({ response: aiResponse || "Sorry, I couldn't generate a response." });
   } catch (error: any) {
     console.error("Chat API Error:", error);
 

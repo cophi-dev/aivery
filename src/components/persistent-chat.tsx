@@ -15,6 +15,21 @@ type ChatMessage = {
   content: string;
 }
 
+// --- Rate Limit Message Variations ---
+const rateLimitVariations = [
+  { title: "AI Coach Needs a Cooldown!", body: 'You\'ve maxed out your AI chat reps for today! Time for the coach to recover. Hit up <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a> to discuss upgrading your training plan.' },
+  { title: "Coach's Taking a Rest Day!", body: 'You\'ve hit your daily limit for AI coaching insights. Even AIs need rest! Need more session time? Email us at <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+  { title: "Quick Water Break!", body: 'The AI coach needs a quick hydration break! You\'ve used your AI chat credits for the day. Reach out to <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a> for a refill.' },
+  { title: "Max Effort Reached!", body: 'Wow, you crushed your daily AI interaction limit! That\'s max effort! For unlimited coaching power, drop a line to <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+  { title: "Spotter Tapped Out!", body: 'Your AI coach needs a spot – you\'ve hit the daily rep limit! To add more weight (or chats!), contact <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+  { title: "End of Set!", body: 'That\'s all the AI coaching sets we can handle today! Ready for the next round tomorrow, or email <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a> to unlock more.' },
+  { title: "Coach's Fuel Low!", body: 'The AI needs refueling! You\'ve hit today\'s chat limit. Get a bigger energy tank by emailing <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+  { title: "Today's AI Workout Complete!", body: 'You\'ve finished your AI coach reps for the day. Awesome job! Want to train longer? Contact <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+  { title: "Time to Go Pro?", body: 'You\'ve hit the daily limit for free coaching tips. Ready to upgrade your fitness game? Email <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+  { title: "Towel Time!", body: 'Whew! The AI coach is toweling off after a great session! Daily chat limit reached. For unlimited training access, email <a href="mailto:hi@aivery.com" class="underline">hi@aivery.com</a>.' },
+];
+// --- End Rate Limit Message Variations ---
+
 // Helper to get a random welcome message for variety
 function getRandomWelcomeMessage(): string {
   const welcomeMessages = [
@@ -30,11 +45,11 @@ function getRandomWelcomeMessage(): string {
 
 export function PersistentChat() {
   const [isOpen, setIsOpen] = useState(false)
-  // Initialize with a welcome message
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  // const [chatId] = useState(`chat-${Date.now()}`) // No longer needed for the new endpoint
+  const [isRateLimited, setIsRateLimited] = useState(false); // State for rate limit status
+  const [rateLimitMessage, setRateLimitMessage] = useState<{ title: string; body: JSX.Element | null }>({ title: '', body: null }); // State for the displayed rate limit message
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { data: session } = useSession()
@@ -75,65 +90,87 @@ export function PersistentChat() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (input.trim() === "") return
+    if (input.trim() === "" || isRateLimited) return // Prevent submission if rate limited
     
-    // Add user message
-    const userMessage = {
-      id: `user-${Date.now()}`,
-      role: "user" as const,
-      content: input
-    }
+    const userMessage = { id: `user-${Date.now()}`, role: "user" as const, content: input }
+    const currentInput = input; // Store input before clearing
     
     setMessages(prev => [...prev, userMessage])
     setInput("")
     setIsLoading(true)
     
     try {
-      // Call the NEW chat API endpoint
-      const response = await fetch('/api/ai/coach', { // <--- UPDATED ENDPOINT
+      const response = await fetch('/api/ai/coach', { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          query: input // <--- UPDATED BODY: Send only the query
-          // messages: [...messages, userMessage], // No longer sending history
-          // chatId // No longer needed
-        }),
+        body: JSON.stringify({ query: currentInput }), // Send the stored input
       })
 
+      // --- Check for Rate Limit --- 
+      if (response.status === 429) {
+          const errorData = await response.json();
+          console.warn("[Chat] Rate limit hit:", errorData.error);
+
+          // Select a random variation
+          const randomIndex = Math.floor(Math.random() * rateLimitVariations.length);
+          const selectedVariation = rateLimitVariations[randomIndex];
+
+          // Create JSX for the body with the link
+          const bodyParts = selectedVariation.body.split(/<a.*?<\/a>/);
+          const linkMatch = selectedVariation.body.match(/<a href="(.*?)" class="(.*?)">(.*?)<\/a>/);
+
+          let bodyJsx: JSX.Element | null = null;
+          if (linkMatch) {
+              bodyJsx = (
+                  <p>
+                      {bodyParts[0]}
+                      <a href={linkMatch[1]} className={linkMatch[2]}>{linkMatch[3]}</a>
+                      {bodyParts[1]}
+                  </p>
+              );
+          } else {
+              // Fallback if link parsing fails (shouldn't happen with current variations)
+              bodyJsx = <p>{selectedVariation.body}</p>;
+          }
+
+          setRateLimitMessage({ title: selectedVariation.title, body: bodyJsx });
+          setIsRateLimited(true); // Set rate limited state
+          setInput(currentInput); // Restore input field content
+          setIsLoading(false); // Stop loading indicator
+          return; // Stop further processing
+      }
+      // --- End Rate Limit Check ---
+
       if (!response.ok) {
-        // Attempt to get error details from response body
         let errorDetails = 'Failed to get response';
         try {
             const errorData = await response.json();
-            errorDetails = errorData.error || errorDetails;
+            errorDetails = errorData.error || `Server responded with status ${response.status}`;
         } catch (parseError) {
-            // Ignore if parsing fails, use default message
+             errorDetails = `Server responded with status ${response.status}`;
         }
         throw new Error(errorDetails);
       }
+      
+      // If response is OK, reset rate limit state (in case it was set previously)
+      setIsRateLimited(false);
 
-      // Get the JSON response
-      const result = await response.json(); // <--- GET JSON RESPONSE
-      const aiContent = result.response; // <--- Extract the 'response' field
+      const result = await response.json(); 
+      const aiContent = result.response;
 
-      console.log("AI Coach API Response Data:", result.data); // Log data for debugging
-      console.log("AI Coach Analysis:", result.analysis); // Log analysis for debugging
-
-      // Add the AI response with parsed content
       setMessages(prev => [...prev, {
         id: `ai-${Date.now()}`,
         role: "assistant",
-        content: aiContent || "I seem to be speechless! Please try asking differently." // Use extracted content
+        content: aiContent || "I seem to be speechless! Please try asking differently."
       }])
     } catch (error) {
-      console.error("Chat API Error:", error); // Log the actual error
-      // Add an error message
+      console.error("Chat API Error:", error);
       setMessages(prev => [...prev, {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Please try again.'}` // Show error message
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Please try again.'}`
       }])
     } finally {
       setIsLoading(false)
@@ -199,6 +236,13 @@ export function PersistentChat() {
                   </div>
                 </div>
               )}
+              {isRateLimited && rateLimitMessage.body && ( // Check if rateLimitMessage.body exists
+                <div className="p-3 my-2 rounded-md border border-destructive bg-destructive/10 text-sm text-destructive text-center">
+                   <p className="font-medium">{rateLimitMessage.title}</p>
+                   {/* Render the JSX body directly */}
+                   {rateLimitMessage.body} 
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
@@ -211,11 +255,11 @@ export function PersistentChat() {
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
+              placeholder={isRateLimited ? "Daily limit reached" : "Type your message..."}
               className="flex-1"
-              disabled={isLoading}
+              disabled={isLoading || isRateLimited} // Disable input when loading or rate limited
             />
-            <Button type="submit" size="icon" disabled={isLoading || input.trim() === ""}>
+            <Button type="submit" size="icon" disabled={isLoading || input.trim() === "" || isRateLimited}>
               <Send className="h-4 w-4" />
             </Button>
           </form>

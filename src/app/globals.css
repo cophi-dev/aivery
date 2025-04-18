@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -43,6 +44,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
+*/
 
 @layer base {
   :root {

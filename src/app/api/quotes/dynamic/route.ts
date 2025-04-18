@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongodb";
-import User from "@/lib/db/models/user";
-import { format } from "date-fns";
+import User, { IUser } from "@/lib/db/models/user";
+import { format, startOfDay } from "date-fns";
 import { getCollection } from "@/lib/db/mongodb";
 import { ObjectId } from "mongodb";
 import { getToken } from "next-auth/jwt";
@@ -69,6 +69,9 @@ function getTextFromResponse(content: any): string | undefined {
   return undefined;
 }
 
+// Define the daily token limit
+const DAILY_GROK_TOKEN_LIMIT = 500000;
+
 // Use Grok to generate a personalized quote
 async function generateAIQuote(context: {
   nickname?: string;
@@ -80,12 +83,12 @@ async function generateAIQuote(context: {
   isWeekend?: boolean;
   weather?: any;
   forceRefresh?: boolean;
-}) {
+}) : Promise<{ quote: string | null; usage: any | null }> {
   try {
     const grokApiKey = process.env.GROK_API_KEY;
     if (!grokApiKey) {
       console.log("[generateAIQuote-dynamic] Grok API key not configured");
-      return null;
+      return { quote: null, usage: null };
     }
 
     const promptTypes = [
@@ -144,20 +147,6 @@ Style Guidelines:
 
     console.log(`[generateAIQuote-dynamic] Sending request to Grok with context for ${context.nickname || 'user'}`);
 
-    // Call Grok API
-    // const response = await client.messages.create({ // REMOVED
-    //   model: "claude-3-5-haiku-20241022", // REMOVED
-    //   max_tokens: 75, // REMOVED
-    //   temperature: 0.7, // REMOVED
-    //   system: systemPrompt, // REMOVED
-    //   messages: [ // REMOVED
-    //     { // REMOVED
-    //       role: "user", // REMOVED
-    //       content: prompt, // REMOVED
-    //     }, // REMOVED
-    //   ], // REMOVED
-    // }); // REMOVED
-
     const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -170,8 +159,8 @@ Style Guidelines:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContextPrompt }
         ],
-        max_tokens: 50, // Keep short
-        temperature: 0.9, // Higher temp for more dynamic variety
+        max_tokens: 500, // Increased value significantly
+        temperature: 0.9, 
         stream: false,
       })
     });
@@ -179,36 +168,36 @@ Style Guidelines:
     if (!fetchResponse.ok) {
       const errorBody = await fetchResponse.text();
       console.error(`[generateAIQuote-dynamic] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
-      return null;
+      return { quote: null, usage: null };
     }
 
     const data = await fetchResponse.json();
+    const usage = data.usage; // Capture usage details
     console.log("[generateAIQuote-dynamic] Grok Raw Response:", data);
 
-    // const generatedQuote = getTextFromResponse(response.content)?.trim(); // REMOVED
     let generatedQuote: string | null = null;
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
         generatedQuote = data.choices[0].message.content.trim();
     } else {
         console.warn("[generateAIQuote-dynamic] Unexpected Grok response structure:", data);
-        return null;
+        return { quote: null, usage: usage }; // Return usage even on structure error
     }
 
     if (generatedQuote) {
       const cleanedQuote = generatedQuote.replace(/^["'\s]+|["'\s]+$/g, '');
       if (cleanedQuote.length > 0 && cleanedQuote.length <= 150) {
         console.log(`[generateAIQuote-dynamic] Generated quote: "${cleanedQuote}"`);
-        return cleanedQuote;
+        return { quote: cleanedQuote, usage: usage }; // Return quote and usage
       } else {
         console.warn(`[generateAIQuote-dynamic] Generated quote too long or empty: "${cleanedQuote}" (Original: "${generatedQuote}")`);
-        return null;
+        return { quote: null, usage: usage }; // Return usage even if quote is invalid
       }
     }
 
-    return null;
+    return { quote: null, usage: usage }; // Return usage if no quote generated
   } catch (error) {
     console.error("Error generating quote with Grok:", error);
-    return null;
+    return { quote: null, usage: null }; // Return null on major error
   }
 }
 
@@ -218,6 +207,16 @@ Style Guidelines:
  * No caching is done
  */
 export async function GET(request: NextRequest) {
+  let sessionUserId: string | null = null;
+  let userNickname: string | null = null;
+  let userWorkoutCount: number = 0;
+  let userRecentWorkoutTypes: string[] = [];
+  let userActivityLevel: string = "new";
+  let dailyUsage: number = 0;
+  let lastReset: Date | null = null;
+  let proceedWithAICall = false; // Flag to control AI call
+  let grokUsageData: any = null; // To store usage from Grok response
+
   try {
     // Add cache control headers to prevent caching
     const headers = new Headers();
@@ -279,64 +278,78 @@ export async function GET(request: NextRequest) {
     const token = await getToken({ req: request });
     const session = await getServerSession(authOptions);
 
-    // Attempt to generate an AI quote
-    let aiQuote = null;
+    sessionUserId = token?.id || null;
+    
+    if (sessionUserId) {
+      await dbConnect();
+      // Fetch user including rate limit fields, cast to IUser
+      const userDoc = await User.findById(sessionUserId)
+        .select("nickname name dailyGrokTokenUsage lastGrokUsageReset")
+        .lean() as IUser | null; // Cast here
+
+      if (userDoc) {
+        userNickname = userDoc.nickname || userDoc.name || null;
+        dailyUsage = userDoc.dailyGrokTokenUsage || 0;
+        lastReset = userDoc.lastGrokUsageReset || null;
+
+        const todayStart = startOfDay(new Date());
+
+        // Check if reset is needed
+        if (!lastReset || lastReset < todayStart) {
+          console.log(`[RateLimit] Resetting token usage for user ${sessionUserId}. Previous reset: ${lastReset}`);
+          dailyUsage = 0;
+          lastReset = todayStart;
+          // Update DB immediately for reset (can be fire-and-forget)
+          User.updateOne({ _id: sessionUserId }, { $set: { dailyGrokTokenUsage: 0, lastGrokUsageReset: todayStart } })
+            .catch(err => console.error("[RateLimit] Failed to update reset date in DB:", err));
+        }
+
+        // Check if user is under the limit BEFORE making the call
+        // Estimate token usage for this call (prompt ~250 + max_output ~500 = 750)
+        const estimatedCallTokens = 750; 
+        if (dailyUsage + estimatedCallTokens <= DAILY_GROK_TOKEN_LIMIT) {
+          proceedWithAICall = true;
+          console.log(`[RateLimit] User ${sessionUserId} under limit (${dailyUsage}/${DAILY_GROK_TOKEN_LIMIT}). Proceeding with AI call.`);
+          // Fetch context needed for the prompt only if proceeding
+          const workoutsCollection = await getCollection("workouts");
+          const recentWorkouts = await workoutsCollection
+            .find({ userId: new ObjectId(sessionUserId) })
+            .sort({ date: -1 })
+            .limit(5)
+            .project({ type: 1 })
+            .toArray();
+          userWorkoutCount = await workoutsCollection.countDocuments({ userId: new ObjectId(sessionUserId) });
+          userActivityLevel = userWorkoutCount > 20 ? "active" : userWorkoutCount > 5 ? "regular" : "new";
+          userRecentWorkoutTypes = recentWorkouts.map((w) => w.type).filter((value, index, self) => self.indexOf(value) === index);
+
+        } else {
+          console.log(`[RateLimit] User ${sessionUserId} EXCEEDED limit (${dailyUsage}/${DAILY_GROK_TOKEN_LIMIT}). Skipping AI call.`);
+          proceedWithAICall = false;
+        }
+      }
+    }
+
+    // Attempt to generate an AI quote ONLY if allowed
+    let aiQuoteResult: { quote: string | null; usage: any | null } = { quote: null, usage: null };
     let quoteSource = "fallback";
 
-    if (session?.user?.id) {
+    if (proceedWithAICall && sessionUserId) { 
       try {
-        // Get the user's data for personalization
-        await dbConnect();
-        const userId = session.user.id;
-
-        // Get the user's recent workouts for context
-        const workoutsCollection = await getCollection("workouts");
-        const recentWorkouts = await workoutsCollection
-          .find({ userId: new ObjectId(userId) })
-          .sort({ date: -1 })
-          .limit(5)
-          .toArray();
-
-        // Get user's workout count
-        const workoutCount = await workoutsCollection.countDocuments({
-          userId: new ObjectId(userId),
-        });
-
-        // Get user's activity level based on workout frequency
-        let activityLevel = "new";
-        if (workoutCount > 20) activityLevel = "active";
-        else if (workoutCount > 5) activityLevel = "regular";
-
-        // Get recent workout types
-        const recentWorkoutTypes = recentWorkouts
-          .map((w) => w.type)
-          .filter((value, index, self) => self.indexOf(value) === index); // unique values
-
-        // Load user data to get nickname
-        const userDoc = await User.findById(userId)
-          .select("nickname name")
-          .lean();
-        const nickname = userDoc
-          ? (userDoc as any).nickname || (userDoc as any).name || null
-          : null;
-
-        // Generate a quote with context
-        aiQuote = await generateAIQuote({
-          nickname,
-          workoutCount,
-          recentWorkoutTypes,
-          activityLevel,
+        aiQuoteResult = await generateAIQuote({
+          nickname: userNickname ?? undefined, // Handle null case
+          workoutCount: userWorkoutCount,
+          recentWorkoutTypes: userRecentWorkoutTypes,
+          activityLevel: userActivityLevel,
           timeOfDay: getTimeBasedGreeting(),
           dayOfWeek: getDayOfWeek(),
           isWeekend: isWeekend(),
           forceRefresh: true,
         });
+        grokUsageData = aiQuoteResult.usage; // Store usage data
 
-        if (aiQuote) {
+        if (aiQuoteResult.quote) {
           quoteSource = "ai";
-          console.log(
-            `[QUOTES-DYNAMIC] Generated AI quote for user: ${nickname}`,
-          );
+          console.log(`[QUOTES-DYNAMIC] Generated AI quote for user: ${userNickname}`);
         }
       } catch (error) {
         console.error("Error generating AI quote:", error);
@@ -344,22 +357,39 @@ export async function GET(request: NextRequest) {
     }
 
     // Use the AI quote if available, otherwise use a fallback
-    let quote = aiQuote;
+    let quote = aiQuoteResult.quote;
 
-    // If no AI quote or AI quote matches the last one, use a fallback quote
-    if (!quote || (lastQuote && quote === lastQuote)) {
-      // Get available quotes, excluding the last used one
-      let availableQuotes = [...FALLBACK_QUOTES];
+    if (!quote) { // If AI failed or was skipped due to limit
+        // Get available quotes, excluding the last used one
+        let availableQuotes = [...FALLBACK_QUOTES];
 
-      if (lastQuote) {
-        availableQuotes = FALLBACK_QUOTES.filter((q) => q !== lastQuote);
+        if (lastQuote) {
+          availableQuotes = FALLBACK_QUOTES.filter((q) => q !== lastQuote);
+        }
+
+        // Simple random selection
+        const index = Math.floor(Date.now() % availableQuotes.length);
+        quote = availableQuotes[index];
+
+        quoteSource = "static";
+    }
+    
+    // AFTER potentially getting a quote, update usage count if AI was called and successful
+    if (quoteSource === 'ai' && sessionUserId && grokUsageData) {
+      // Prioritize total_tokens reported by API, fall back to sum if needed
+      const tokensUsed = grokUsageData.total_tokens || (
+                         (grokUsageData.prompt_tokens || 0) + 
+                         (grokUsageData.completion_tokens || 0) + 
+                         (grokUsageData.completion_tokens_details?.reasoning_tokens || 0)
+                       );
+                         
+      if (tokensUsed > 0) {
+         console.log(`[RateLimit] Updating usage for user ${sessionUserId}. Adding ${tokensUsed} tokens.`);
+         User.updateOne({ _id: sessionUserId }, { $inc: { dailyGrokTokenUsage: tokensUsed } })
+           .catch(err => console.error("[RateLimit] Failed to update usage count in DB:", err));
+      } else {
+         console.warn("[RateLimit] AI call succeeded but reported 0 tokens used?", grokUsageData);
       }
-
-      // Simple random selection
-      const index = Math.floor(Date.now() % availableQuotes.length);
-      quote = availableQuotes[index];
-
-      quoteSource = "static";
     }
 
     // Add a cache-busting timestamp to the quote (invisible to user)

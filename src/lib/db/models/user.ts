@@ -47,6 +47,10 @@ export interface IUser extends Document {
     fastest5kPace?: { value: number; date: Date }; // seconds per meter
     maxStrengthVolume?: { value: number; date: Date }; // kg
   };
+
+  // New Rate Limiting Fields
+  dailyGrokTokenUsage?: number
+  lastGrokUsageReset?: Date
 }
 
 const AiPreferencesSchema = new Schema({
@@ -131,8 +135,18 @@ const UserSchema: Schema = new Schema(
     personalRecords: {
       type: PersonalRecordsSchema,
       default: () => ({})
-    }
+    },
     // --- End New Summary Fields ---
+
+    // --- Add New Rate Limiting Fields ---
+    dailyGrokTokenUsage: {
+      type: Number,
+      default: 0
+    },
+    lastGrokUsageReset: {
+      type: Date
+    }
+    // --- End New Rate Limiting Fields ---
   },
   { timestamps: true },
 )
