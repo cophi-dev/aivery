@@ -1,76 +1,62 @@
-import { put, type PutCommandOptions } from '@vercel/blob';
-import { NextResponse, NextRequest } from 'next/server';
+import { handleBlobUpload, type HandleBlobUploadBody } from "@vercel/blob/server";
+import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-// Ensure Node.js runtime for stream/buffer handling
-export const runtime = 'nodejs';
+// Simple runtime check to ensure correct environment if needed
+export const runtime = 'edge'; // Can use edge or nodejs
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  const filename = request.headers.get('x-vercel-filename') || 'strava-archive.zip';
-  const contentType = request.headers.get('content-type') || 'application/zip';
-
-  // Validate content type
-  if (contentType !== 'application/zip') {
-    return NextResponse.json(
-      { error: `Unsupported content type: ${contentType}. Must be application/zip.` },
-      { status: 400 },
-    );
-  }
+export async function POST(request: Request): Promise<NextResponse> {
+  const body = (await request.json()) as HandleBlobUploadBody;
 
   try {
-    // 1. Check authentication
+    // --- 1. Authentication Check ---
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
+    // --- End Authentication Check ---
 
-    // 2. Generate a unique pathname
-    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const pathname = `strava-imports/${userId}/${Date.now()}-${safeFilename}`;
+    // --- 2. Use handleBlobUpload helper ---
+    const jsonResponse = await handleBlobUpload({
+      body,
+      request,
+      // Prefix uploads with user ID for organization and security
+      pathname: `strava-imports/${userId}/${body.pathname}`, 
+      // Define options:
+      options: {
+        access: 'public', // Must match client access level
+        // Add any other server-side constraints if needed
+        // For example, max file size:
+        // maxSize: 10 * 1024 * 1024, // 10 MB
+      },
+      // Optional: Disallow uploads if file already exists (avoids overwrites)
+      // Cannot be used with `addRandomSuffix: true` (which is default)
+      // handleUpload: async ({ pathname, error }) => {
+      //   if (error?.code === 'BLOB_ALREADY_EXISTS') {
+      //     throw new Error('File already exists. Please rename and try again.');
+      //   }
+      // },
+      
+      // Before completion, you could add metadata or perform checks
+      // onBeforeComplete: async ({ pathname /*, clientPayload */ }) => {
+      //   console.log('blob upload completed', pathname);
+      // },
+    });
+    // --- End handleBlobUpload ---
 
-    console.log(`Handling upload for user ${userId} to path: ${pathname}`);
-
-    // 3. Get the request body stream/buffer
-    // Check if request.blob() exists (newer Next.js/Web standard)
-    let bodyStream: ReadableStream | Buffer;
-    if (typeof request.blob === 'function') {
-        const blobData = await request.blob();
-        bodyStream = blobData.stream(); // Get a ReadableStream from the Blob
-    } else if (request.body) {
-        // Fallback for environments where .blob() isn't available but .body is
-        bodyStream = request.body as unknown as ReadableStream; // Cast if necessary
-    } else {
-        // Last resort: try reading the buffer directly (might load all into memory)
-        console.warn("Request.body stream not available, attempting to read buffer directly.");
-        bodyStream = Buffer.from(await request.arrayBuffer());
-    }
-    
-    if (!bodyStream) {
-         return NextResponse.json({ error: 'Could not read request body.' }, { status: 400 });
-    }
-
-    // 4. Upload the stream/buffer using the basic put command
-    const putOptions: PutCommandOptions = {
-      contentType: contentType,
-      access: 'public', 
-      addRandomSuffix: false,
-      // token: process.env.BLOB_READ_WRITE_TOKEN 
-    };
-    const blob = await put(pathname, bodyStream, putOptions);
-
-    console.log('Upload successful:', blob.pathname, blob.url);
-
-    // 5. Return the blob details (needed by the client helper)
-    return NextResponse.json(blob);
-
+    // 3. Return the successful response from the helper
+    // The client component (`upload(...)`) uses this response (containing the token/URL)
+    return NextResponse.json(jsonResponse);
   } catch (error) {
-    console.error("Error handling direct blob upload:", error);
-    const message = error instanceof Error ? error.message : 'Internal Server Error';
+    console.error("Error in handle-blob-upload:", error);
+    // Provide a user-friendly error message
+    const message = (error instanceof Error && error.message) || 'Could not handle file upload.';
     return NextResponse.json(
-      { error: `Upload failed: ${message}` },
-      { status: 500 }, // Use 500 for server-side errors during upload
+      { error: message },
+      // Use 400 for client errors (like failed checks), 500 for unexpected server errors
+      { status: (error as any)?.statusCode || 500 } 
     );
   }
 } 
