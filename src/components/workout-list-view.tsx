@@ -614,48 +614,46 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               const typeStyle = getWorkoutTypeStyle(workout.type);
               const volume = getWorkoutVolume(workout);
               return (
-                <Link href={`/workouts/${workout._id}`} key={workout._id} className="block group">
-                  <Card className="hover:border-primary/40 transition-colors duration-150 border-border/50">
-                    <CardContent className="p-4 flex justify-between items-center">
-                      {/* Left Side: Date & Type */} 
-                      <div className="flex items-center gap-3">
-                         <Badge variant="outline" className={`flex items-center gap-1.5 px-2 py-1 text-xs h-7 ${typeStyle.colorClasses}`}>
-                           <span className="flex items-center gap-1.5">
-                             {typeStyle.icon}
-                             <span className="font-medium">
-                               {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
-                             </span>
+                <Card key={workout._id} className="hover:border-primary/40 transition-colors duration-150 border-border/50">
+                  <CardContent className="p-4 flex justify-between items-center">
+                    {/* Left Side: Date & Type */} 
+                    <div className="flex items-center gap-3">
+                       <Badge variant="outline" className={`flex items-center gap-1.5 px-2 py-1 text-xs h-7 ${typeStyle.colorClasses}`}>
+                         <span className="flex items-center gap-1.5">
+                           {typeStyle.icon}
+                           <span className="font-medium">
+                             {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
                            </span>
-                         </Badge>
-                         <div>
-                           <div className="font-medium text-sm group-hover:text-primary transition-colors">
-                             {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
-                           </div>
-                           <div className="text-xs text-muted-foreground">
-                             {formatDate(new Date(workout.date))}
-                           </div>
+                         </span>
+                       </Badge>
+                       <div>
+                         <div className="font-medium text-sm group-hover:text-primary transition-colors">
+                           {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
                          </div>
-                      </div>
-                      
-                      {/* Right Side: Metrics & Arrow */}
-                      <div className="flex items-center gap-4">
-                         <div className="flex flex-col items-end text-xs">
-                           <div className="flex items-center gap-1">
-                             <Clock className="h-3 w-3 text-muted-foreground" /> 
-                             {formatDuration(workout.duration)}
-                           </div>
-                           {volume.value > 0 && (
-                             <div className="flex items-center gap-1 mt-0.5">
-                               {volume.unit === 'km' ? <Ruler className="h-3 w-3 text-muted-foreground"/> : <Dumbbell className="h-3 w-3 text-muted-foreground" />}
-                               {volume.value.toFixed(volume.unit === 'km' ? 1 : 0)} {volume.unit}
-                             </div>
-                           )}
+                         <div className="text-xs text-muted-foreground">
+                           {formatDate(new Date(workout.date))}
                          </div>
-                         <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                       </div>
+                    </div>
+                    
+                    {/* Right Side: Metrics & Arrow */}
+                    <div className="flex items-center gap-4">
+                       <div className="flex flex-col items-end text-xs">
+                         <div className="flex items-center gap-1">
+                           <Clock className="h-3 w-3 text-muted-foreground" /> 
+                           {formatDuration(workout.duration)}
+                         </div>
+                         {volume.value > 0 && (
+                           <div className="flex items-center gap-1 mt-0.5">
+                             {volume.unit === 'km' ? <Ruler className="h-3 w-3 text-muted-foreground"/> : <Dumbbell className="h-3 w-3 text-muted-foreground" />}
+                             {volume.value.toFixed(volume.unit === 'km' ? 1 : 0)} {volume.unit}
+                           </div>
+                         )}
+                       </div>
+                       <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </CardContent>
+                </Card>
               );
             })
           ) : (
