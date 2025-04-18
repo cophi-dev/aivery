@@ -30,6 +30,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
 import { formatDistance, formatDuration, formatDate as formatDateUtil } from "@/lib/utils"
 import { fetchDashboardExercisePRs, type DashboardPREntry } from "@/lib/workout-actions"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 // Define types for sorting
 type SortField = "date" | "name" | "type" | "intensity" | "duration" | "volume";
@@ -45,7 +46,7 @@ interface WorkoutStats {
 }
 
 interface WorkoutListViewProps {
-  initialWorkouts: WorkoutData[]
+  // initialWorkouts: WorkoutData[] // <-- Remove this
 }
 
 // Simple error boundary class component
@@ -131,12 +132,14 @@ const formatPaceDisplay = (pace: number | undefined | null): string => {
   return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 };
 
-export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProps) {
-  console.log(`[WorkoutListView] Received initialWorkouts prop with ${initialWorkouts?.length ?? 0} items. Newest ID: ${initialWorkouts?.[0]?._id}`);
+export default function WorkoutListView(/* { initialWorkouts }: WorkoutListViewProps */) {
+  // Remove initialWorkouts console log
+  // console.log(`[WorkoutListView] Received initialWorkouts prop with ${initialWorkouts?.length ?? 0} items. Newest ID: ${initialWorkouts?.[0]?._id}`);
 
-  // State Initialization
-  const [workouts, setWorkouts] = useState<WorkoutData[]>(initialWorkouts || []); // Initialize with prop
-  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>(initialWorkouts || []); // Initialize with prop
+  // State Initialization - Initialize workouts as empty array
+  const [workouts, setWorkouts] = useState<WorkoutData[]>([]); 
+  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>([]); 
+  const [isLoading, setIsLoading] = useState<boolean>(true); // Add loading state
   const [error, setError] = useState<string | null>(null);
   const [showStatsView, setShowStatsView] = useState<boolean>(true);
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -149,11 +152,40 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const [dashboardPRs, setDashboardPRs] = useState<DashboardPREntry[]>([]);
   const [loadingPRs, setLoadingPRs] = useState(true);
   
+  // --- Add useEffect for Data Fetching --- 
+  useEffect(() => {
+    const fetchWorkouts = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        console.log("[WorkoutListView] Fetching workouts from /api/workouts...");
+        const response = await fetch("/api/workouts");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch workouts: ${response.statusText}`);
+        }
+        const data: WorkoutData[] = await response.json();
+        console.log(`[WorkoutListView] Fetched ${data.length} workouts.`);
+        setWorkouts(data);
+        setFilteredWorkouts(data); // Initialize filtered workouts too
+      } catch (err: any) {
+        console.error("Error fetching workouts:", err);
+        setError(err.message || "Failed to load workouts.");
+        setWorkouts([]);
+        setFilteredWorkouts([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchWorkouts();
+  }, []); // Empty dependency array means run once on mount
+  // --- End useEffect --- 
+
   // Memoized values and callbacks
   const workoutTypes = useMemo(() => 
-      Array.from(new Set(initialWorkouts.map(w => w.type).filter(Boolean)))
+      Array.from(new Set(workouts.map(w => w.type).filter(Boolean))) // Use workouts state
       .sort(), 
-  [initialWorkouts]);
+  [workouts]); // Depend on workouts state
   
   const getWorkoutDistance = useCallback((workout: WorkoutData): number => {
     try {
@@ -245,24 +277,13 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   }, [workouts, typeFilter, searchQuery, sortField, sortDirection, getWorkoutVolume]);
 
   // Effects
+  // Remove the PR fetching if it's not needed here or fetch it alongside workouts
+  /*
   useEffect(() => {
     // Fetch PRs once on mount
-    const fetchPRs = async () => {
-      setLoadingPRs(true);
-      setError(null);
-      try {
-        const prData = await fetchDashboardExercisePRs();
-        setDashboardPRs(prData);
-      } catch (err) { 
-        console.error("Error calling fetchDashboardExercisePRs:", err);
-        setError("An unexpected error occurred while loading PRs.");
-        setDashboardPRs([]);
-      } finally {
-        setLoadingPRs(false);
-      }
-    };
-    fetchPRs();
+    // ... (existing PR fetching logic) ...
   }, []);
+  */
 
   useEffect(() => {
     // Apply filters/sort whenever relevant state changes
@@ -427,7 +448,17 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
     }
   }, [workouts]);
   
-  // Always render the full component structure, conditionally show error content if needed
+  // --- Add Loading State Handling --- 
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center py-10">
+        <LoadingIndicator />
+      </div>
+    );
+  }
+  // --- End Loading State --- 
+
+  // Main return
   return (
     <WorkoutListErrorBoundary>
       <div>
@@ -487,7 +518,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
                 </CardHeader>
                 <CardContent>
                   {pr.workoutId ? (
-                    <Link href={`/workout/${pr.workoutId}`} className="block group">
+                    <Link href={`/workouts/${pr.workoutId}`} className="block group">
                       <div className="text-xl sm:text-2xl font-bold group-hover:text-primary transition-colors">
                         {pr.value} <span className="text-lg">{pr.unit}</span>
                       </div>

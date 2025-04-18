@@ -2,17 +2,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LucidePlus } from "lucide-react"
 import Link from "next/link"
-import { getWorkoutsByUserId } from "@/lib/db/repositories/workoutRepository"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import WorkoutListView from "@/components/workout-list-view"
-import type { WorkoutData } from "@/types/db"
 import { VERSION } from "../version"
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-export const fetchCache = 'force-no-store'
+// Caching behaviour is now handled by the client component
+// export const dynamic = 'force-dynamic'
+// export const revalidate = 0
+// export const fetchCache = 'force-no-store'
 
 export default async function WorkoutsPage() {
   // Get user session
@@ -31,9 +29,10 @@ export default async function WorkoutsPage() {
   }
 
   try {
-    // Fetch workouts for the authenticated user
-    const workouts = await getWorkoutsByUserId(session.user.id);
-    console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
+    // --- Remove data fetching --- 
+    // const workouts = await getWorkoutsByUserId(session.user.id);
+    // console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
+    // --- End Remove --- 
     
     return (
       <div className="container mx-auto px-4 py-8">
@@ -60,7 +59,7 @@ export default async function WorkoutsPage() {
             <CardTitle>Workouts</CardTitle>
           </CardHeader>
           <CardContent>
-            <WorkoutListView initialWorkouts={workouts as WorkoutData[]} />
+            <WorkoutListView />
           </CardContent>
         </Card>
       </div>
