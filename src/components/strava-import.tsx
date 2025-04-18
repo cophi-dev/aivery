@@ -20,6 +20,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { formatDuration } from "@/lib/utils"
 import { InlineSpinner } from "@/components/ui/inline-spinner"
 import { Save } from "lucide-react"
+import { upload } from '@vercel/blob/client'
 
 interface ImportStats {
   count: number;
@@ -422,14 +423,15 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
 
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!file) {
-      setError("Please select a file first.");
-      return;
+    if (!fileInputRef.current?.files || fileInputRef.current.files.length === 0) {
+        setError("Please select a file first.");
+        return;
     }
+    const file = fileInputRef.current.files[0]; // Get the file from the ref
 
     // Reset state for new upload
     setIsProcessing(true);
-    setUploadStatus("Preparing upload...");
+    setUploadStatus("Starting upload...");
     setError(null);
     setProgress(0);
     setUploadStats(null);
@@ -437,73 +439,42 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     setImportStatus(null);
     stopPolling();
 
-    const filename = file.name; // Use the original filename
-
     try {
-        // 1. Get the presigned URL from our backend
-        console.log('[Upload] Requesting presigned URL for:', filename);
-        const presignResponse = await fetch('/api/strava/upload-client', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: filename })
-        });
-
-        if (!presignResponse.ok) {
-            const errorData = await presignResponse.json().catch(() => ({ error: 'Failed to get upload URL: ' + presignResponse.statusText }));
-            throw new Error(errorData.error || 'Could not get upload URL from server.');
-        }
-
-        const { url: presignedUrl, pathname: finalPathname } = await presignResponse.json();
-        console.log('[Upload] Received presigned URL:', presignedUrl);
-        console.log('[Upload] Final Blob Pathname:', finalPathname);
-
-        if (!presignedUrl || !finalPathname) {
-            throw new Error('Server did not return a valid upload URL or pathname.');
-        }
-
-        // 2. Upload the file directly to Vercel Blob using the presigned URL
+        // 1. Use the @vercel/blob/client upload helper
+        console.log('[Upload] Starting upload via client helper for:', file.name);
         setUploadStatus("Uploading file...");
-        // Use XMLHttpRequest for progress tracking (fetch doesn't support upload progress easily)
-        await new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', presignedUrl, true);
-            xhr.setRequestHeader('Content-Type', file.type); // Set correct content type
-
-            xhr.upload.onprogress = (event) => {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    setProgress(percentComplete);
-                    setUploadStatus(`Uploading... ${percentComplete}%`);
-                }
-            };
-
-            xhr.onload = () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    setProgress(100);
-                    setUploadStatus("File uploaded. Starting import process...");
-                    console.log('[Upload] File successfully uploaded to Blob via presigned URL.');
-                    resolve();
+        
+        const newBlob = await upload(file.name, file, {
+            access: 'public', // Matches the server handler logic
+            // Point to the new server handler route
+            handleUploadUrl: '/api/strava/handle-blob-upload',
+            // Pass necessary options or metadata if needed
+            // clientPayload: JSON.stringify({ someData: 'value' }), 
+            // Try accessing event.percentage
+            onUploadProgress: (event) => {
+                // Assuming the progress percentage is on event.percentage
+                const progressPercent = event.percentage;
+                // Add a check to ensure it's a number before setting state
+                if (typeof progressPercent === 'number') {
+                    setProgress(progressPercent);
+                    setUploadStatus(`Uploading... ${progressPercent}%`);
                 } else {
-                    console.error('[Upload] Blob upload failed:', xhr.statusText, xhr.responseText);
-                    reject(new Error(`Upload failed: ${xhr.statusText || 'Network Error'}`));
+                     console.warn("Indeterminate progress or unexpected event structure:", event);
+                     // setUploadStatus('Uploading...');
                 }
-            };
-
-            xhr.onerror = () => {
-                console.error('[Upload] Blob upload failed (Network Error).');
-                reject(new Error('Network error during upload.'));
-            };
-
-            xhr.send(file);
+            },
         });
 
-        // 3. Trigger Backend Import Process using the final pathname
-        console.log('Triggering backend import process with pathname:', finalPathname);
+        console.log('[Upload] Client upload complete:', newBlob);
+        setUploadStatus("File uploaded. Starting import process...");
+
+        // 2. Trigger Backend Import Process using the returned pathname
+        console.log('Triggering backend import process with pathname:', newBlob.pathname);
         const importResponse = await fetch('/api/strava/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                blobPathname: finalPathname, // Send the final pathname
+                blobPathname: newBlob.pathname, // Use the pathname from the client upload response
                 originalFilename: file.name
             })
         });
@@ -520,7 +491,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             throw new Error(importData.message || 'Backend did not return a valid processing ID.');
         }
 
-        // 4. Start Polling
+        // 3. Start Polling
         startPolling(importData.processingId);
 
     } catch (err: any) {
@@ -537,7 +508,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             description: errorMessage,
         });
     }
-  }, [file, toast, startPolling]); // Added startPolling dependency
+  }, [toast, startPolling]); 
 
   // --- UI Rendering Logic ---
   const getProgressPercent = () => {
