@@ -46,22 +46,22 @@ async function handler(req: NextRequest) {
 
     // --- Continue with processing --- 
     try {
-        // Parse the body string, potentially twice if double-encoded
-        const requestBodyString = await req.text(); 
+        // Log the raw body string BEFORE parsing
+        console.log("[RAW BODY STRING]:", requestBodyString);
+
         let parsedBody: any;
         try {
             parsedBody = JSON.parse(requestBodyString);
-            // Check if the result of the first parse is still a string
             if (typeof parsedBody === 'string') {
                 console.log("[DEBUG] Body seems double-encoded, parsing again...");
                 parsedBody = JSON.parse(parsedBody);
             }
         } catch (parseError) {
-            console.error("Failed to parse request body:", requestBodyString, parseError);
+            console.error("Failed to parse request body. Raw string was:", requestBodyString, parseError);
             return NextResponse.json({ success: false, error: "Invalid request body format" }, { status: 400 });
         }
         
-        const body = parsedBody; // Use the final parsed object
+        const body = parsedBody; 
 
         // Now assign variables from the correctly parsed body object
         processingId = body.processingId;
