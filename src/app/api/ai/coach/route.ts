@@ -128,10 +128,40 @@ interface HistoryMessage {
   content: string;
 }
 
+// --- Token Update Helper Function ---
+// REMINDER: Call this after *any* Grok API call successfully returns usage data.
+async function updateTokenUsage(userId: string | undefined, grokUsageData: any): Promise<void> {
+    if (!userId || !grokUsageData) {
+        console.warn("[COACH_RATE_LIMIT] Cannot update usage: Missing userId or usage data.");
+        return;
+    }
+
+    // Calculate tokens used (adjust if Grok's usage object structure differs)
+    const tokensUsed = grokUsageData.total_tokens || (
+        (grokUsageData.prompt_tokens || 0) +
+        (grokUsageData.completion_tokens || 0)
+        // Potentially add other fields like reasoning_tokens if applicable
+    );
+
+    if (tokensUsed > 0) {
+        console.log(`[COACH_RATE_LIMIT] Updating usage for user ${userId}. Adding ${tokensUsed} tokens.`);
+        try {
+            // Ensure DB connection (might be redundant if called after other DB ops, but safe)
+            await dbConnect();
+            await User.updateOne({ _id: userId }, { $inc: { dailyGrokTokenUsage: tokensUsed } });
+        } catch (err) {
+            console.error(`[COACH_RATE_LIMIT] Failed to update usage count in DB for user ${userId}:`, err);
+        }
+    } else {
+         console.log(`[COACH_RATE_LIMIT] No tokens used or usage data invalid for user ${userId}. Skipping update.`);
+    }
+}
+// --- End Token Update Helper Function ---
+
 /**
  * Generates an initial insightful message for a specific workout.
  */
-async function generateInitialWorkoutInsight(workoutId: string, userName: string): Promise<string> {
+async function generateInitialWorkoutInsight(workoutId: string, userName: string, userId: string): Promise<string> { // <-- Added userId
   try {
     // Ensure Grok API key is available
     const grokApiKey = process.env.GROK_API_KEY;
@@ -202,6 +232,9 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
     const data = await response.json();
     console.log("[generateInitialWorkoutInsight] Grok Raw Response:", data);
 
+    // <<< UPDATE TOKEN USAGE >>>
+    await updateTokenUsage(userId, data.usage);
+
     let insightText = "Okay, let's look at that workout. What stands out to you?"; // Fallback
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
         insightText = data.choices[0].message.content.trim();
@@ -221,7 +254,7 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
 /**
  * Analyzes the user's fitness query using Grok API.
  */
-async function analyzeUserQuery(query: string, history: HistoryMessage[]): Promise<QueryAnalysis> {
+async function analyzeUserQuery(query: string, history: HistoryMessage[], userId: string): Promise<QueryAnalysis> { // <-- Added userId
   const schemaString = getQueryAnalysisSchemaString();
   const grokApiKey = process.env.GROK_API_KEY;
 
@@ -302,6 +335,9 @@ CURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this fo
 
     const data = await response.json();
     console.log("Grok Raw Response:", data);
+
+    // <<< UPDATE TOKEN USAGE >>>
+    await updateTokenUsage(userId, data.usage);
 
     let analysisJsonString = "";
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
@@ -850,7 +886,7 @@ async function compareMetricBetweenPeriods(
 }
 
 // --- Helper Function to Get Direct AI Text Response ---
-async function getDirectTextResponse(query: string): Promise<string | null> {
+async function getDirectTextResponse(query: string, userId: string): Promise<string | null> { // <-- Added userId
     const grokApiKey = process.env.GROK_API_KEY;
     if (!grokApiKey) {
         console.error("[getDirectTextResponse] GROK_API_KEY not configured.");
@@ -888,6 +924,9 @@ async function getDirectTextResponse(query: string): Promise<string | null> {
         const data = await response.json();
         console.log("Direct Grok Raw Response:", data);
 
+        // <<< UPDATE TOKEN USAGE >>>
+        await updateTokenUsage(userId, data.usage);
+
         if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
             return data.choices[0].message.content.trim();
         } else {
@@ -904,7 +943,7 @@ async function getDirectTextResponse(query: string): Promise<string | null> {
 /**
  * Calls the AI model to generate a detailed workout analysis based on a system prompt and user query.
  */
-async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: string, userName: string): Promise<string> {
+async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: string, userName: string, userId: string): Promise<string> { // <-- Added userId
   const grokApiKey = process.env.GROK_API_KEY;
   if (!grokApiKey) {
     console.error("[generateWorkoutAnalysisResponse] GROK_API_KEY not configured.");
@@ -943,6 +982,9 @@ async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: 
     const data = await response.json();
     // console.log("[generateWorkoutAnalysisResponse] Grok Raw Response:", data); // Optional: Log raw response
 
+    // <<< UPDATE TOKEN USAGE >>>
+    await updateTokenUsage(userId, data.usage);
+
     let analysisText = `Sorry ${userName}, I couldn't generate the analysis properly.`; // Fallback
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
       analysisText = data.choices[0].message.content.trim();
@@ -960,7 +1002,7 @@ async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: 
 }
 
 // Renaming for clarity, but same function as generateWorkoutAnalysisResponse
-async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string): Promise<string> {
+async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string): Promise<string> { // <-- Added userId
   // This is essentially the same implementation as generateWorkoutAnalysisResponse
   // We can potentially merge them later if the parameters (temp, max_tokens) are the same.
   const grokApiKey = process.env.GROK_API_KEY;
@@ -990,6 +1032,10 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
       throw new Error(`Grok API request failed with status ${response.status}`);
     }
     const data = await response.json();
+
+    // <<< UPDATE TOKEN USAGE >>>
+    await updateTokenUsage(userId, data.usage);
+
     let generatedText = `Sorry ${userName}, I couldn\'t generate the response properly.`; 
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
       generatedText = data.choices[0].message.content.trim();
@@ -1078,6 +1124,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         // Check for initial workout context
         if (context && context.type === 'initial_workout' && context.workoutId) {
           // ... logic for initial workout insight ...
+          // Make sure to pass userId if generateInitialWorkoutInsight is called here
         }
         
         // 3. AI Query Analysis
@@ -1148,7 +1195,8 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
 
                 console.log("[API /coach] Sending plan generation prompt to Grok...");
                 // 3. Call the AI model
-                const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName); 
+                // Pass userId to the generation function
+                const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId); 
 
                 // 4. Return the generated plan
                 console.log("[API /coach] Plan generation successful.");
@@ -1174,7 +1222,8 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
             const keyword = keywordMatch[1];
             const explanationQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
             // Directly call Grok or another LLM for explanation
-            const explanation = await getDirectTextResponse(explanationQuery); // Assuming this function calls the LLM
+            // Pass userId to the direct response function
+            const explanation = await getDirectTextResponse(explanationQuery, userId); 
             if (explanation) {
                  return NextResponse.json({ response: explanation, data: null });
             }
@@ -1182,7 +1231,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         }
 
 
-        const analysis = await analyzeUserQuery(query, history);
+        const analysis = await analyzeUserQuery(query, history, userId);
         console.log("Query Analysis Result:", analysis);
 
         // Validate analysis result
@@ -1219,6 +1268,9 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         const identifier = entities?.workout_identifier;
         const limit = entities?.limit;
 
+        // Re-assert userDisplayName for clarity within the switch scope if needed
+        const currentUserName = userDisplayName; 
+
         // Switch based on intent... (rest of the switch statement remains the same)
         switch (intent) {
           case "get_total_metric":
@@ -1238,7 +1290,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
               entities.period, 
               startDate, 
               endDate,  
-              userDisplayName // Pass userName
+              currentUserName // Use the re-asserted variable
             );
             break;
 
@@ -1260,13 +1312,13 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                  entities.period, 
                  startDate, 
                  endDate,  
-                 userDisplayName // Pass userName
+                 currentUserName // Use the re-asserted variable
                );
              } else {
                 // Handle null average case with personality
                 const typeDesc = describeWorkoutType(entities.workout_type ?? "any");
                 const periodDesc = describePeriod(entities.period, startDate, endDate);
-                responseText = `Hmm ${userDisplayName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
+                responseText = `Hmm ${currentUserName}, I couldn't calculate the average ${entities.metric} for your ${typeDesc}workouts ${periodDesc}. Maybe there wasn't enough data?`;
              }
             break;
 
@@ -1286,10 +1338,10 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                     entities.metric,
                     entities.workout_type,
                     entities.record_qualifier,
-                    userDisplayName // Pass userName
+                    currentUserName // Use the re-asserted variable
                 );
              } else {
-                responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${userDisplayName}. Keep pushing for those PBs! 🚀`;
+                responseText = `Couldn't find that specific record for ${entities.metric} (${entities.workout_type}), ${currentUserName}. Keep pushing for those PBs! 🚀`;
              }
              break;
 
@@ -1312,7 +1364,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 // Generate a simple text message, frontend will handle display
                  const typeDesc = describeWorkoutType(entities?.workout_type);
                  const periodDesc = describePeriod(entities?.period, startDate, endDate);
-                 responseText = `Okay ${userDisplayName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
+                 responseText = `Okay ${currentUserName}, here are the ${typeDesc}workouts I found ${periodDesc}.`;
              } else {
                  // Use the potentially more specific describePeriod
                  const periodDesc = describePeriod(entities?.period, startDate, endDate);
@@ -1325,15 +1377,15 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
              const details = await fetchWorkoutDetails(userId, entities.workout_identifier, entities?.workout_type);
              responseData = { details };
              if (details) {
-                responseText = generateDetailsResponse(details, userDisplayName); // Pass userName
+                responseText = generateDetailsResponse(details, currentUserName); // Use the re-asserted variable
              } else {
-                responseText = `Sorry ${userDisplayName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
+                responseText = `Sorry ${currentUserName}, I couldn't find the details for the workout identified by '${entities.workout_identifier}'${entities?.workout_type ? ` of type ${entities.workout_type}` : ''}. Maybe try describing it differently?`;
              }
              break;
 
           case "compare_metric":
               if (!entities?.metric || !entities?.period || (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date))) {
-                   responseText = `To compare, ${userDisplayName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
+                   responseText = `To compare, ${currentUserName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
                    break; 
               }
               
@@ -1355,7 +1407,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                     // Keep period2Label as the enum value
                   } else {
                     // Should not happen due to initial check, but safeguard
-                    responseText = `Something went wrong determining the second period for comparison, ${userDisplayName}.`;
+                    responseText = `Something went wrong determining the second period for comparison, ${currentUserName}.`;
                     break;
                   }
               } else {
@@ -1381,13 +1433,13 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                   entities.period, // Label for period 1
                   period2Label, // Label for period 2 (if used)
                   period2Description, // Description if explicit dates used
-                  userDisplayName 
+                  currentUserName 
               );
               break;
 
           case "unknown":
           default:
-             responseText = response_suggestion || `Sorry ${userDisplayName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
+             responseText = response_suggestion || `Sorry ${currentUserName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
             break;
         }
 
