@@ -417,42 +417,64 @@ export async function connectStrava(userId: string, authCode: string) {
 
 // Helper function to get a valid access token
 export async function getValidAccessToken(userId: string) {
+  console.log(`[getValidAccessToken] Getting token for user ${userId}...`);
   const collection = await getCollection(INTEGRATIONS_COLLECTION);
+  console.log(`[getValidAccessToken] Fetched integrations collection.`);
   const integration = await collection.findOne({
     userId: new ObjectId(userId),
     provider: "strava",
   });
+  console.log(`[getValidAccessToken] Found integration: ${integration ? integration._id : 'null'}`);
 
   if (!integration) {
+    console.error(`[getValidAccessToken] Strava integration not found for user ${userId}`);
     throw new Error("Strava integration not found");
   }
 
   // Check if token is expired
   const now = new Date();
   const expiresAt = new Date(integration.expiresAt);
+  console.log(`[getValidAccessToken] Checking token expiry: Now=${now.toISOString()}, ExpiresAt=${expiresAt.toISOString()}`);
 
   if (expiresAt <= now) {
     // Token is expired, refresh it
-    console.log("Refreshing expired Strava token");
-    const refreshData = await refreshToken(integration.refreshToken);
+    console.log(`[getValidAccessToken] Token expired. Refreshing...`);
+    let refreshData;
+    try {
+      refreshData = await refreshToken(integration.refreshToken);
+      console.log(`[getValidAccessToken] Token refreshed successfully.`);
+    } catch (refreshError) {
+      console.error(`[getValidAccessToken] Error refreshing Strava token for user ${userId}:`, refreshError);
+      throw refreshError; // Re-throw
+    }
 
     // Update the tokens in the database
-    await collection.updateOne(
-      { _id: integration._id },
-      {
-        $set: {
-          accessToken: refreshData.access_token,
-          refreshToken: refreshData.refresh_token,
-          expiresAt: new Date(refreshData.expires_at * 1000),
-          updatedAt: new Date(),
-        },
-      }
-    );
-
+    try {
+      console.log(`[getValidAccessToken] Attempting to update tokens in DB for integration ${integration._id}...`);
+      await collection.updateOne(
+        { _id: integration._id },
+        {
+          $set: {
+            accessToken: refreshData.access_token,
+            refreshToken: refreshData.refresh_token,
+            expiresAt: new Date(refreshData.expires_at * 1000),
+            updatedAt: new Date(),
+          },
+        }
+      );
+      console.log(`[getValidAccessToken] Successfully updated tokens in DB for integration ${integration._id}.`);
+    } catch (dbUpdateError) {
+      console.error(`[getValidAccessToken] Error updating refreshed tokens in DB for user ${userId}:`, dbUpdateError);
+      // Should we throw here? Maybe the refresh worked but DB update failed.
+      // For now, let's return the new token but log the error.
+      // throw dbUpdateError; 
+    }
+    
     return refreshData.access_token;
   }
 
   // Token is still valid
+  console.log(`[getValidAccessToken] Token is still valid for user ${userId}.`);
   return integration.accessToken;
 }
 
@@ -640,6 +662,17 @@ export async function syncStravaActivity(userId: string, activityId: string) {
     // Map Strava activity type to our internal type
     const mappedType = mapStravaType(activity.type, activity.sport_type);
     console.log(`Mapped Strava type '${activity.type}/${activity.sport_type}' to internal type '${mappedType}'`);
+
+    // <-- Add Sanity Check for Unrealistic Distance -->
+    const MAX_REASONABLE_DISTANCE_METERS = 100000; // 100km
+    const distanceInMeters = activity.distance || 0;
+    // Check for runs, walks, hikes, rides (adjust types as needed)
+    if (['running', 'cycling', 'walking', 'hiking'].includes(mappedType) && distanceInMeters > MAX_REASONABLE_DISTANCE_METERS) {
+      console.warn(`[syncStravaActivity] Skipping activity ${activityId} due to unrealistic distance: ${distanceInMeters}m (> ${MAX_REASONABLE_DISTANCE_METERS}m). Mapped Type: ${mappedType}`);
+      // Return successfully to acknowledge the webhook, but don't save the workout
+      return; 
+    }
+    // <-- End Sanity Check -->
 
     // Prepare workout data for saving (existing logic)
     const workoutData: any = {
