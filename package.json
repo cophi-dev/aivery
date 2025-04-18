@@ -63,6 +63,7 @@
     "gpxparser": "^3.0.8",
     "jszip": "^3.10.1",
     "lucide-react": "^0.483.0",
+    "mime": "^4.0.7",
     "mongodb": "^6.15.0",
     "mongoose": "^8.12.1",
     "next": "14.1.0",
