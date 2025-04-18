@@ -5,6 +5,7 @@ import { createCardioWorkout } from "@/lib/workout-actions";
 import { revalidatePath } from "next/cache";
 import { transformStravaActivity } from "@/lib/services/stravaService";
 import { getDatabase } from '@/lib/db/mongodb';
+import { Buffer } from 'buffer';
 
 // Keep runtime (Node.js needed for file handling)
 export const runtime = 'nodejs';
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     // Get form data
     const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const file = formData.get('file') as File | null;
     
     if (!file) {
       return NextResponse.json({ 
@@ -92,32 +93,42 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const fileBuffer = Buffer.from(arrayBuffer);
+    // Explicitly cast to ArrayBuffer to resolve type issue
+    const fileBuffer = Buffer.from(await file.arrayBuffer() as ArrayBuffer);
     
     // Process file based on type
-    let workout = null;
+    let workout: any = null;
     if (fileName.endsWith('.gpx')) {
-      // Import helper functions from the import route
-      const { processGpxFile } = await import('../import/route');
+      // Import helper function from the new service file
+      const { processGpxFile } = await import('@/lib/services/stravaArchiveService');
       workout = await processGpxFile(fileBuffer, fileName);
     } else if (fileName.endsWith('.fit') || fileName.endsWith('.fit.gz')) {
-      // Import helper functions from the import route
-      const { processFitFile } = await import('../import/route');
-      workout = await processFitFile(fileBuffer, fileName);
+      // Import helper function from the new service file
+      const { processFitFile } = await import('@/lib/services/stravaArchiveService');
+      // Handle potential .gz decompression if processFitFile doesn't do it internally
+      let contentToProcess = fileBuffer;
+      if (fileName.endsWith('.fit.gz')) {
+        const { promisify } = await import('util');
+        const { gunzip } = await import('zlib');
+        const gunzipAsync = promisify(gunzip);
+        try {
+          contentToProcess = await gunzipAsync(fileBuffer);
+          console.log(`Decompressed .fit.gz file. New size: ${contentToProcess.length}`);
+        } catch (unzipError) {
+          console.error(`Failed to decompress ${fileName}:`, unzipError);
+          throw new Error(`Failed to decompress .fit.gz file.`);
+        }
+      }
+      workout = await processFitFile(contentToProcess, fileName);
     } else if (fileName.endsWith('.tcx')) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "TCX files are not yet supported for direct upload." 
-      }, { status: 400 });
+      // Revert to simply rejecting TCX files for now
+      console.warn(`TCX file type is not yet supported for manual upload: ${fileName}`);
+      return NextResponse.json({ success: false, error: "TCX files are not yet supported for manual upload." }, { status: 400 });
     }
     
     if (!workout) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Could not extract workout data from the file" 
-      }, { status: 400 });
+      console.error(`Processing function returned null for ${fileName}`);
+      return NextResponse.json({ success: false, error: "Failed to process file content." }, { status: 500 });
     }
     
     // Transform workout data
