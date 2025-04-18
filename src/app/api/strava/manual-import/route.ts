@@ -103,15 +103,15 @@ export async function POST(request: NextRequest) {
       const { processGpxFile } = await import('@/lib/services/stravaArchiveService');
       workout = await processGpxFile(fileBuffer, fileName);
     } else if (fileName.endsWith('.fit') || fileName.endsWith('.fit.gz')) {
-      // Import helper function from the new service file
       const { processFitFile } = await import('@/lib/services/stravaArchiveService');
-      // Handle potential .gz decompression if processFitFile doesn't do it internally
-      let contentToProcess = fileBuffer;
+      // Explicitly type contentToProcess as Buffer
+      let contentToProcess: Buffer = fileBuffer; 
       if (fileName.endsWith('.fit.gz')) {
         const { promisify } = await import('util');
         const { gunzip } = await import('zlib');
         const gunzipAsync = promisify(gunzip);
         try {
+          // Result of gunzipAsync should be assignable to Buffer
           contentToProcess = await gunzipAsync(fileBuffer);
           console.log(`Decompressed .fit.gz file. New size: ${contentToProcess.length}`);
         } catch (unzipError) {
