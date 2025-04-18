@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-// Simple runtime check to ensure correct environment if needed
-export const runtime = 'edge'; // Can use edge or nodejs
+// Use Node.js runtime as dependencies require it (e.g., for auth)
+export const runtime = 'nodejs';
 
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleBlobUploadBody;
