@@ -6,6 +6,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import WorkoutListView from "@/components/workout-list-view"
 import { VERSION } from "../version"
+import { getWorkoutsByUserId } from "@/lib/db/repositories/workoutRepository"
+import type { WorkoutData } from "@/types/db"
 
 // Caching behaviour is now handled by the client component
 // export const dynamic = 'force-dynamic'
@@ -29,10 +31,9 @@ export default async function WorkoutsPage() {
   }
 
   try {
-    // --- Remove data fetching --- 
-    // const workouts = await getWorkoutsByUserId(session.user.id);
-    // console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
-    // --- End Remove --- 
+    // Fetch workouts on the server
+    const workouts: WorkoutData[] = await getWorkoutsByUserId(session.user.id);
+    console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
     
     return (
       <div className="container mx-auto px-4 py-8">
@@ -59,7 +60,7 @@ export default async function WorkoutsPage() {
             <CardTitle>Workouts</CardTitle>
           </CardHeader>
           <CardContent>
-            <WorkoutListView />
+            <WorkoutListView initialWorkouts={workouts} />
           </CardContent>
         </Card>
       </div>
