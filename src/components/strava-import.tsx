@@ -307,6 +307,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     const fileList = event.target.files;
     if (fileList && fileList.length > 0) {
       const selected = fileList[0];
+      console.log('[handleFileChange] File selected:', selected.name, selected.size);
       // Check file type first
       if (!selected.name.endsWith('.zip')) {
         toast({
@@ -332,8 +333,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       }
 
       setFile(selected);
+      console.log('[handleFileChange] File state set:', selected.name);
     } else {
       // If user cancels file selection
+      console.log('[handleFileChange] File selection cancelled or no file.');
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }, [toast]);
@@ -345,7 +348,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     console.log(`[Polling] Fetching status for ${currentProcessingId}...`);
     try {
       const response = await fetch(`/api/strava/import-status?processingId=${currentProcessingId}`);
-      if (!response.ok) {
+            if (!response.ok) {
         // Handle non-2xx responses (e.g., 404 if ID not found yet)
         if (response.status === 404) {
              console.warn(`[Polling] Status not found yet for ${currentProcessingId}, will retry.`);
@@ -421,14 +424,22 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   }, []);
   // --- END POLLING LOGIC ---
 
+  // Use the file state variable directly
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!fileInputRef.current?.files || fileInputRef.current.files.length === 0) {
-        setError("Please select a file first.");
-        return;
+    
+    // Check if the file state is set
+    if (!file) { 
+      console.error('[handleUpload] Exiting: No file in state.');
+      setError("Please select a file first.");
+      // Use 'destructive' variant for the toast
+      toast({ title: "No File Selected", description: "Please choose a ZIP file to upload.", variant: "destructive" }); 
+      return;
     }
-    const file = fileInputRef.current.files[0]; // Get the file from the ref
 
+    // Proceed using the file from state
+    console.log('[handleUpload] Proceeding with file from state:', file.name);
+    
     // Reset state for new upload
     setIsProcessing(true);
     setUploadStatus("Starting upload...");
@@ -440,27 +451,20 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     stopPolling();
 
     try {
-        // 1. Use the @vercel/blob/client upload helper
+        // 1. Use the @vercel/blob/client upload helper with the file from state
         console.log('[Upload] Starting upload via client helper for:', file.name);
         setUploadStatus("Uploading file...");
         
         const newBlob = await upload(file.name, file, {
             access: 'public', // Matches the server handler logic
-            // Point to the new server handler route
             handleUploadUrl: '/api/strava/handle-blob-upload',
-            // Pass necessary options or metadata if needed
-            // clientPayload: JSON.stringify({ someData: 'value' }), 
-            // Try accessing event.percentage
             onUploadProgress: (event) => {
-                // Assuming the progress percentage is on event.percentage
                 const progressPercent = event.percentage;
-                // Add a check to ensure it's a number before setting state
                 if (typeof progressPercent === 'number') {
                     setProgress(progressPercent);
                     setUploadStatus(`Uploading... ${progressPercent}%`);
                 } else {
                      console.warn("Indeterminate progress or unexpected event structure:", event);
-                     // setUploadStatus('Uploading...');
                 }
             },
         });
@@ -474,10 +478,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                blobPathname: newBlob.pathname, // Use the pathname from the client upload response
-                originalFilename: file.name
+                blobPathname: newBlob.pathname,
+                originalFilename: file.name // Use file from state
             })
-        });
+          });
           
         if (!importResponse.ok) {
             const errorData = await importResponse.json().catch(() => ({ error: 'Import initiation failed with status ' + importResponse.status }));
@@ -508,7 +512,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             description: errorMessage,
         });
     }
-  }, [toast, startPolling]); 
+  }, [toast, startPolling, file]); // file is a dependency as it's used directly
 
   // --- UI Rendering Logic ---
   const getProgressPercent = () => {
