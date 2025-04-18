@@ -115,7 +115,7 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
     await dbConnect()
     
     const workoutDocs = await WorkoutModel.find({ userId: new ObjectId(userId) })
-      .sort({ createdAt: -1 })
+      .sort({ date: -1 })
       .select({
         _id: 1,
         name: 1,
@@ -128,11 +128,18 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
         'cardioDetails.distance': 1, // Preferred cardio distance
         'workoutExercises.sets.weight': 1, // For volume calculation fallback
         'workoutExercises.sets.reps': 1,   // For volume calculation fallback
-        createdAt: 1 // Needed for the sort
+        createdAt: 1 // Keep createdAt in select if needed elsewhere, though not sorting by it now
       })
       .limit(limit)
       .lean()
       .exec() as any[];
+    
+    // --- DEBUG LOGGING START ---
+    console.log(`[getWorkoutsByUserId] DB Query Result Count: ${workoutDocs.length}`);
+    if (workoutDocs.length > 0) {
+      console.log(`[getWorkoutsByUserId] DB Query - First few workout IDs: ${workoutDocs.slice(0, 5).map(d => d._id?.toString()).join(', ')}`);
+    }
+    // --- DEBUG LOGGING END ---
     
     // Process documents to ensure they're safe for client components
     // This mapping is still useful for serialization (toString, toISOString)

@@ -620,9 +620,11 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
                       {/* Left Side: Date & Type */} 
                       <div className="flex items-center gap-3">
                          <Badge variant="outline" className={`flex items-center gap-1.5 px-2 py-1 text-xs h-7 ${typeStyle.colorClasses}`}>
-                           {typeStyle.icon}
-                           <span className="font-medium">
-                             {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
+                           <span className="flex items-center gap-1.5">
+                             {typeStyle.icon}
+                             <span className="font-medium">
+                               {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
+                             </span>
                            </span>
                          </Badge>
                          <div>
