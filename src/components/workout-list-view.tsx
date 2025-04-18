@@ -165,6 +165,36 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   }, [initialWorkouts]);
   // --- End useEffect ---
 
+  // --- Add useEffect for client-side fetching if no initial data ---
+  useEffect(() => {
+    // Only fetch if initialWorkouts was not provided and we are currently loading
+    if (!initialWorkouts && isLoading) {
+      const fetchWorkouts = async () => {
+        try {
+          console.log('[WorkoutListView] No initial workouts, fetching from API...');
+          const response = await fetch('/api/workouts');
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data: WorkoutData[] = await response.json();
+          console.log(`[WorkoutListView] Fetched ${data.length} workouts from API.`);
+          setWorkouts(data);
+          setFilteredWorkouts(data);
+          setError(null);
+        } catch (err: any) {
+          console.error("[WorkoutListView] Error fetching workouts:", err);
+          setError(err.message || "Failed to load workouts.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      fetchWorkouts();
+    }
+    // Run only once on mount if initialWorkouts is absent
+  }, [initialWorkouts, isLoading]); 
+  // --- End client-side fetch useEffect ---
+
   // Memoized values and callbacks
   const workoutTypes = useMemo(() => 
       Array.from(new Set(workouts.map(w => w.type).filter(Boolean))) // Use workouts state
