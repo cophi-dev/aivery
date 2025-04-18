@@ -428,50 +428,86 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
 
     // Reset state for new upload
-    setIsProcessing(true); // Set processing early for UI feedback
-    setUploadStatus("Uploading file...");
+    setIsProcessing(true);
+    setUploadStatus("Preparing upload...");
     setError(null);
     setProgress(0);
     setUploadStats(null);
     setProcessingId(null);
     setImportStatus(null);
-    stopPolling(); // Ensure no old polling is running
+    stopPolling();
 
-    const filename = encodeURIComponent(file.name);
-    const userId = uuidv4(); // Replace with actual user ID if available/needed for path uniqueness
-    const blobPathname = `strava-imports/${userId}/${Date.now()}-${filename}`;
+    const filename = file.name; // Use the original filename
 
     try {
-        // --- Upload to Vercel Blob ---
-        const uploadResponse = await fetch(`/api/strava/upload?filename=${blobPathname}`, {
+        // 1. Get the presigned URL from our backend
+        console.log('[Upload] Requesting presigned URL for:', filename);
+        const presignResponse = await fetch('/api/strava/upload-client', {
             method: 'POST',
-            body: file,
-            headers: {
-                // Add any necessary headers, like auth if needed by the upload endpoint
-            },
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: filename })
         });
 
-        if (!uploadResponse.ok) {
-            const errorData = await uploadResponse.json().catch(() => ({ error: 'Upload failed with status ' + uploadResponse.status }));
-            throw new Error(errorData.error || 'Failed to upload file to storage.');
+        if (!presignResponse.ok) {
+            const errorData = await presignResponse.json().catch(() => ({ error: 'Failed to get upload URL: ' + presignResponse.statusText }));
+            throw new Error(errorData.error || 'Could not get upload URL from server.');
         }
 
-        const blobData = await uploadResponse.json();
-        console.log('File uploaded successfully to Blob:', blobData);
-        setProgress(100); // Mark upload as complete
-        setUploadStatus("File uploaded. Starting import process...");
+        const { url: presignedUrl, pathname: finalPathname } = await presignResponse.json();
+        console.log('[Upload] Received presigned URL:', presignedUrl);
+        console.log('[Upload] Final Blob Pathname:', finalPathname);
 
-        // --- Trigger Backend Import Process ---
-        console.log('Triggering backend import process with blob pathname:', blobData.pathname);
+        if (!presignedUrl || !finalPathname) {
+            throw new Error('Server did not return a valid upload URL or pathname.');
+        }
+
+        // 2. Upload the file directly to Vercel Blob using the presigned URL
+        setUploadStatus("Uploading file...");
+        // Use XMLHttpRequest for progress tracking (fetch doesn't support upload progress easily)
+        await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', presignedUrl, true);
+            xhr.setRequestHeader('Content-Type', file.type); // Set correct content type
+
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = Math.round((event.loaded / event.total) * 100);
+                    setProgress(percentComplete);
+                    setUploadStatus(`Uploading... ${percentComplete}%`);
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    setProgress(100);
+                    setUploadStatus("File uploaded. Starting import process...");
+                    console.log('[Upload] File successfully uploaded to Blob via presigned URL.');
+                    resolve();
+                } else {
+                    console.error('[Upload] Blob upload failed:', xhr.statusText, xhr.responseText);
+                    reject(new Error(`Upload failed: ${xhr.statusText || 'Network Error'}`));
+                }
+            };
+
+            xhr.onerror = () => {
+                console.error('[Upload] Blob upload failed (Network Error).');
+                reject(new Error('Network error during upload.'));
+            };
+
+            xhr.send(file);
+        });
+
+        // 3. Trigger Backend Import Process using the final pathname
+        console.log('Triggering backend import process with pathname:', finalPathname);
         const importResponse = await fetch('/api/strava/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                blobPathname: blobData.pathname, // Send the pathname returned by the upload endpoint
+            body: JSON.stringify({ 
+                blobPathname: finalPathname, // Send the final pathname
                 originalFilename: file.name
             })
         });
-
+          
         if (!importResponse.ok) {
             const errorData = await importResponse.json().catch(() => ({ error: 'Import initiation failed with status ' + importResponse.status }));
             throw new Error(errorData.error || 'Failed to start backend import process.');
@@ -484,25 +520,22 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             throw new Error(importData.message || 'Backend did not return a valid processing ID.');
         }
 
-        // --- Start Polling ---
-        startPolling(importData.processingId); // Pass the ID to start polling
-
-        // Do NOT show immediate completion message here
-        // setUploadStatus("Import process started. You can check progress below.");
-        // setUploadStats({ count: 0, totalFiles: importData.totalFiles }); // Show initial total
+        // 4. Start Polling
+        startPolling(importData.processingId);
 
     } catch (err: any) {
-      console.error("Upload/Import Error:", err);
-      const errorMessage = err.message || "An unknown error occurred during upload or import.";
-      setError(errorMessage);
-      setUploadStatus(''); 
-      setIsProcessing(false); // Ensure processing stops on error
-      stopPolling();
-      toast({
-        variant: "destructive",
-        title: "Import Failed",
-        description: errorMessage,
-      });
+        console.error("Upload/Import Error:", err);
+        const errorMessage = err.message || "An unknown error occurred during upload or import.";
+        setError(errorMessage);
+        setUploadStatus(''); // Clear status on error
+        setIsProcessing(false); // Ensure processing stops on error
+        setProgress(0); // Reset progress
+        stopPolling();
+        toast({
+            variant: "destructive",
+            title: "Import Failed",
+            description: errorMessage,
+        });
     }
   }, [file, toast, startPolling]); // Added startPolling dependency
 
