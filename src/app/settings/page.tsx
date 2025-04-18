@@ -251,7 +251,7 @@ export default function SettingsPage() {
       }
       
       // Update session to reflect any changes
-      updateSession()
+      // updateSession() // <-- Comment out this line
       
     } catch (error) {
       console.error("Error loading user data:", error)
@@ -1429,7 +1429,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Full Data Archive Import</Label>
                   {/* Existing StravaImport component if needed */}
-                  <StravaImport /> 
+                  <StravaImport />
                 </div>
               </div>
             </CardContent>
