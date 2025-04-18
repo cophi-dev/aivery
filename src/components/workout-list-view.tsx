@@ -132,6 +132,8 @@ const formatPaceDisplay = (pace: number | undefined | null): string => {
 };
 
 export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProps) {
+  console.log(`[WorkoutListView] Received initialWorkouts prop with ${initialWorkouts?.length ?? 0} items. Newest ID: ${initialWorkouts?.[0]?._id}`);
+
   // State Initialization
   const [workouts, setWorkouts] = useState<WorkoutData[]>(initialWorkouts || []); // Initialize with prop
   const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>(initialWorkouts || []); // Initialize with prop

@@ -33,6 +33,7 @@ export default async function WorkoutsPage() {
   try {
     // Fetch workouts for the authenticated user
     const workouts = await getWorkoutsByUserId(session.user.id);
+    console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
     
     return (
       <div className="container mx-auto px-4 py-8">
