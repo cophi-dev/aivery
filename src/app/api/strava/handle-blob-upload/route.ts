@@ -6,16 +6,6 @@ import { authOptions } from '@/lib/auth';
 // Ensure Node.js runtime for stream/buffer handling
 export const runtime = 'nodejs';
 
-// Increase body size limit for this route specifically
-// Note: This might require Vercel Pro/Enterprise for limits > 4.5MB
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb', // Allow up to 10MB for Strava archives
-    },
-  },
-};
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const filename = request.headers.get('x-vercel-filename') || 'strava-archive.zip';
   const contentType = request.headers.get('content-type') || 'application/zip';
