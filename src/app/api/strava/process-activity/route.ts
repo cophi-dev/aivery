@@ -46,7 +46,24 @@ async function handler(req: NextRequest) {
 
     // --- Continue with processing --- 
     try {
-        const body = JSON.parse(requestBodyString); 
+        // Parse the body string, potentially twice if double-encoded
+        const requestBodyString = await req.text(); 
+        let parsedBody: any;
+        try {
+            parsedBody = JSON.parse(requestBodyString);
+            // Check if the result of the first parse is still a string
+            if (typeof parsedBody === 'string') {
+                console.log("[DEBUG] Body seems double-encoded, parsing again...");
+                parsedBody = JSON.parse(parsedBody);
+            }
+        } catch (parseError) {
+            console.error("Failed to parse request body:", requestBodyString, parseError);
+            return NextResponse.json({ success: false, error: "Invalid request body format" }, { status: 400 });
+        }
+        
+        const body = parsedBody; // Use the final parsed object
+
+        // Now assign variables from the correctly parsed body object
         processingId = body.processingId;
         const userId = body.userId;
         activityFileBlobPathname = body.activityFileBlobPathname; 
@@ -64,8 +81,8 @@ async function handler(req: NextRequest) {
         const logIdentifier = activityFileBlobPathname ? activityFileBlobPathname.split('/').pop() : 'unknown_file';
 
         if (!processingId || !userId || !activityFileBlobPathname || !originalArchiveBlobPathname) {
-            console.error("Missing required fields in job payload - Body was:", JSON.stringify(body)); // Log full body again for context
-            return NextResponse.json({ success: false, error: "Invalid job payload" }, { status: 400 });
+             console.error("Missing required fields after parsing - Parsed Body was:", JSON.stringify(body));
+             return NextResponse.json({ success: false, error: "Invalid job payload" }, { status: 400 });
         }
 
         console.log(`Processing job for: ${logIdentifier}`, { processingId, userId });
