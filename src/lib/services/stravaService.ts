@@ -632,6 +632,9 @@ export async function syncStravaActivity(userId: string, activityId: string) {
       throw new Error(`Invalid activity data received from Strava for activity ID ${activityId}`);
     }
 
+    // <-- Add log for raw activity data -->
+    console.log(`[syncStravaActivity] Raw Strava activity data for ${activityId}:`, JSON.stringify(activity)); 
+
     console.log(`Fetched Strava activity ${activityId} details. Type: ${activity.type}, Sport Type: ${activity.sport_type}`);
 
     // Map Strava activity type to our internal type
@@ -764,7 +767,8 @@ export async function syncStravaActivity(userId: string, activityId: string) {
     console.log(`[syncStravaActivity] Successfully completed sync process for activity ${activityId}.`);
 
   } catch (error) {
-    console.error(`Error syncing Strava activity ${activityId} for user ${userId}:`, error);
+    // <-- Log the full error object -->
+    console.error(`[syncStravaActivity] Error during sync process for activity ${activityId} (User: ${userId}):`, error);
     throw error; // Re-throw error to be caught by the webhook handler
   }
 }
