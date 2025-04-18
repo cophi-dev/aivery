@@ -46,18 +46,25 @@ async function handler(req: NextRequest) {
 
     // --- Continue with processing --- 
     try {
-        // Parse the body *after* verification
         const body = JSON.parse(requestBodyString); 
         processingId = body.processingId;
         const userId = body.userId;
-        activityFileBlobPathname = body.activityFileBlobPathname; // Get the specific activity file path
-        originalArchiveBlobPathname = body.originalArchiveBlobPathname; // Get original archive path
+        activityFileBlobPathname = body.activityFileBlobPathname; 
+        originalArchiveBlobPathname = body.originalArchiveBlobPathname;
+
+        // === Add detailed logging before the check ===
+        console.log(`[DEBUG] Checking payload fields:`);
+        console.log(`[DEBUG] processingId: ${processingId} (Type: ${typeof processingId})`);
+        console.log(`[DEBUG] userId: ${userId} (Type: ${typeof userId})`);
+        console.log(`[DEBUG] activityFileBlobPathname: ${activityFileBlobPathname} (Type: ${typeof activityFileBlobPathname})`);
+        console.log(`[DEBUG] originalArchiveBlobPathname: ${originalArchiveBlobPathname} (Type: ${typeof originalArchiveBlobPathname})`);
+        // === End detailed logging ===
 
         // Use activityFileBlobPathname for logging the specific file being processed
         const logIdentifier = activityFileBlobPathname ? activityFileBlobPathname.split('/').pop() : 'unknown_file';
 
         if (!processingId || !userId || !activityFileBlobPathname || !originalArchiveBlobPathname) {
-            console.error("Missing required fields in job payload:", body);
+            console.error("Missing required fields in job payload - Body was:", JSON.stringify(body)); // Log full body again for context
             return NextResponse.json({ success: false, error: "Invalid job payload" }, { status: 400 });
         }
 
