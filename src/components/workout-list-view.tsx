@@ -45,8 +45,9 @@ interface WorkoutStats {
   favoriteType: string;
 }
 
+// Define props interface
 interface WorkoutListViewProps {
-  // initialWorkouts: WorkoutData[] // <-- Remove this
+  initialWorkouts: WorkoutData[];
 }
 
 // Simple error boundary class component
@@ -132,14 +133,14 @@ const formatPaceDisplay = (pace: number | undefined | null): string => {
   return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 };
 
-export default function WorkoutListView(/* { initialWorkouts }: WorkoutListViewProps */) {
+export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProps) {
   // Remove initialWorkouts console log
   // console.log(`[WorkoutListView] Received initialWorkouts prop with ${initialWorkouts?.length ?? 0} items. Newest ID: ${initialWorkouts?.[0]?._id}`);
 
-  // State Initialization - Initialize workouts as empty array
-  const [workouts, setWorkouts] = useState<WorkoutData[]>([]); 
-  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>([]); 
-  const [isLoading, setIsLoading] = useState<boolean>(true); // Add loading state
+  // State Initialization - Use initialWorkouts for initial state
+  const [workouts, setWorkouts] = useState<WorkoutData[]>(initialWorkouts || []);
+  const [filteredWorkouts, setFilteredWorkouts] = useState<WorkoutData[]>(initialWorkouts || []);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialWorkouts); // Set loading based on prop presence
   const [error, setError] = useState<string | null>(null);
   const [showStatsView, setShowStatsView] = useState<boolean>(true);
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -152,34 +153,17 @@ export default function WorkoutListView(/* { initialWorkouts }: WorkoutListViewP
   const [dashboardPRs, setDashboardPRs] = useState<DashboardPREntry[]>([]);
   const [loadingPRs, setLoadingPRs] = useState(true);
   
-  // --- Add useEffect for Data Fetching --- 
+  // --- Add useEffect to update state if initialWorkouts prop changes ---
   useEffect(() => {
-    const fetchWorkouts = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        console.log("[WorkoutListView] Fetching workouts from /api/workouts...");
-        const response = await fetch("/api/workouts");
-        if (!response.ok) {
-          throw new Error(`Failed to fetch workouts: ${response.statusText}`);
-        }
-        const data: WorkoutData[] = await response.json();
-        console.log(`[WorkoutListView] Fetched ${data.length} workouts.`);
-        setWorkouts(data);
-        setFilteredWorkouts(data); // Initialize filtered workouts too
-      } catch (err: any) {
-        console.error("Error fetching workouts:", err);
-        setError(err.message || "Failed to load workouts.");
-        setWorkouts([]);
-        setFilteredWorkouts([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchWorkouts();
-  }, []); // Empty dependency array means run once on mount
-  // --- End useEffect --- 
+    if (initialWorkouts) {
+      console.log(`[WorkoutListView] Prop update: Received ${initialWorkouts.length} workouts.`);
+      setWorkouts(initialWorkouts);
+      setFilteredWorkouts(initialWorkouts);
+      setIsLoading(false); // Data received, no longer loading
+      setError(null); // Clear any previous errors
+    }
+  }, [initialWorkouts]);
+  // --- End useEffect ---
 
   // Memoized values and callbacks
   const workoutTypes = useMemo(() => 
@@ -219,6 +203,7 @@ export default function WorkoutListView(/* { initialWorkouts }: WorkoutListViewP
           workout.workoutExercises.forEach((exercise) => {
             if (exercise && Array.isArray(exercise.sets)) {
                exercise.sets.forEach((set) => {
+                 // Ensure weight and reps are numbers, default to 0 if not
                  const weight = typeof set.weight === 'number' ? set.weight : 0;
                  const reps = typeof set.reps === 'number' ? set.reps : 0;
                  totalVolume += weight * reps;
@@ -448,11 +433,12 @@ export default function WorkoutListView(/* { initialWorkouts }: WorkoutListViewP
     }
   }, [workouts]);
   
-  // --- Add Loading State Handling --- 
+  // --- Update Loading State Handling ---
   if (isLoading) {
     return (
       <div className="flex justify-center items-center py-10">
         <LoadingIndicator />
+        <span className="ml-2 text-muted-foreground">Loading workouts...</span>
       </div>
     );
   }
