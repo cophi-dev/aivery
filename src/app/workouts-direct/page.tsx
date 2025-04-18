@@ -58,7 +58,7 @@ export default async function WorkoutsDirectPage() {
             <CardTitle>Workouts</CardTitle>
           </CardHeader>
           <CardContent>
-            <WorkoutListView initialWorkouts={workouts as WorkoutData[]} />
+            <WorkoutListView />
           </CardContent>
         </Card>
       </div>

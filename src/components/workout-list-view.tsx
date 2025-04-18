@@ -47,7 +47,7 @@ interface WorkoutStats {
 
 // Define props interface
 interface WorkoutListViewProps {
-  initialWorkouts: WorkoutData[];
+  initialWorkouts?: WorkoutData[]; // Make prop optional
 }
 
 // Simple error boundary class component
