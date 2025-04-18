@@ -105,6 +105,8 @@ export const authOptions: NextAuthOptions = {
           // Add user ID to token
           token.id = user.id;
           
+          // --- Temporarily Commented Out DB Call ---
+          /*
           // Get complete user data including nickname
           await dbConnect();
           const userData = await UserModel.findById(user.id).select('nickname').lean();
@@ -116,10 +118,14 @@ export const authOptions: NextAuthOptions = {
               console.log(`[AUTH] Added nickname to token: ${token.nickname}`);
             }
           }
+          */
+          // --- End Commented Out ---
         }
         
         // Always verify/update the nickname in the token on any token update after sign-in
         if (token.id && trigger !== "signIn") {
+          // --- Temporarily Commented Out DB Call ---
+          /*
           try {
             await dbConnect();
             const freshUserData = await UserModel.findById(token.id).select('nickname').lean();
@@ -135,6 +141,8 @@ export const authOptions: NextAuthOptions = {
           } catch (error) {
             console.error("[AUTH] Error refreshing nickname in token:", error);
           }
+          */
+          // --- End Commented Out ---
         }
         
         return token;
@@ -174,6 +182,8 @@ export const authOptions: NextAuthOptions = {
             return { ...session, user: { id: '', email: '', name: '' } };
           }
 
+          // --- Temporarily Commented Out DB Call ---
+          /*
           // Verify user still exists in database and get latest image and nickname
           console.log(`[SESSION CALLBACK] Attempting dbConnect for user ID: ${session.user.id}`);
           await dbConnect();
@@ -210,6 +220,8 @@ export const authOptions: NextAuthOptions = {
               }
             }
           }
+          */
+          // --- End Commented Out ---
         }
         return session;
       } catch (error) {

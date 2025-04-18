@@ -171,7 +171,7 @@ export async function GET(req: NextRequest) {
               // Adding a simple user message to trigger the system prompt processing
               { role: 'user', content: `Generate a workout highlight for ${userName}.` }
             ],
-            max_tokens: 300, // Max length for highlight (Increased from 150)
+            max_tokens: 1000, // Max length for highlight (Increased from 500)
             temperature: 0.8, // Allow some creativity
             stream: false,
           })
@@ -272,7 +272,7 @@ export async function POST(req: NextRequest) {
           // Adding a simple user message to trigger the system prompt processing
           { role: 'user', content: `Generate a workout highlight for ${userName}.` }
         ],
-        max_tokens: 300, // Max length for highlight (Increased from 150)
+        max_tokens: 1000, // Max length for highlight (Increased from 500)
         temperature: 0.8, // Allow some creativity
         stream: false,
       })

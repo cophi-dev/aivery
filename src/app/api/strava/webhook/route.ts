@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncStravaActivity, findUserByStravaAthleteId } from "@/lib/services/stravaService";
 import { WEBHOOK_VERIFY_TOKEN } from "@/lib/strava/webhook";
+import { revalidatePath } from 'next/cache';
 
 // This is the verification token we'll configure in Strava
 // Should be a random string, but we'll hardcode for now
@@ -104,6 +105,16 @@ export async function POST(request: NextRequest) {
               }
             );
             console.log(`Marked webhook event for activity ${activityId} as processed.`);
+            
+            // --- Revalidate the workouts path --- 
+            try {
+              revalidatePath('/workouts');
+              console.log(`Revalidated path: /workouts`);
+            } catch (revalidateError) {
+              console.error(`Error revalidating /workouts path:`, revalidateError);
+            }
+            // --- End Revalidation --- 
+
           } catch (updateError) {
             console.error(`Error updating webhook event status for activity ${activityId}:`, updateError);
             // Continue even if update fails, the core sync worked.
