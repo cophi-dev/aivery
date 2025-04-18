@@ -21,6 +21,7 @@ import { formatDuration } from "@/lib/utils"
 import { InlineSpinner } from "@/components/ui/inline-spinner"
 import { Save } from "lucide-react"
 import { upload } from '@vercel/blob/client'
+import { useSession } from "next-auth/react"
 
 interface ImportStats {
   count: number;
@@ -82,6 +83,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null); // Stores the latest status from the API
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store the interval ID
   // --- END NEW STATE ---
+
+  const { data: session } = useSession(); // Get session data
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -428,19 +431,29 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     
-    // Check if the file state is set
     if (!file) { 
       console.error('[handleUpload] Exiting: No file in state.');
       setError("Please select a file first.");
-      // Use 'destructive' variant for the toast
       toast({ title: "No File Selected", description: "Please choose a ZIP file to upload.", variant: "destructive" }); 
       return;
     }
+    
+    // --- Get userId from session for path prefixing --- 
+    if (!session?.user?.id) {
+      console.error('[handleUpload] Exiting: User session not available.');
+      setError("Authentication error. Please refresh and try again.");
+      toast({ title: "Authentication Error", description: "Could not get user ID from session.", variant: "destructive" });
+      return;
+    }
+    const userId = session.user.id;
+    // --- Construct the full desired pathname --- 
+    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const pathname = `strava-imports/${userId}/${Date.now()}-${safeFilename}`;
+    console.log(`[handleUpload] Requesting upload to pathname: ${pathname}`);
+    // ---------------------------------------------
 
-    // Proceed using the file from state
     console.log('[handleUpload] Proceeding with file from state:', file.name);
     
-    // Reset state for new upload
     setIsProcessing(true);
     setUploadStatus("Starting upload...");
     setError(null);
@@ -451,12 +464,12 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     stopPolling();
 
     try {
-        // 1. Use the @vercel/blob/client upload helper with the file from state
-        console.log('[Upload] Starting upload via client helper for:', file.name);
+        // --- Pass the constructed pathname to upload() ---
+        console.log('[Upload] Starting upload via client helper for path:', pathname);
         setUploadStatus("Uploading file...");
         
-        const newBlob = await upload(file.name, file, {
-            access: 'public', // Matches the server handler logic
+        const newBlob = await upload(pathname, file, { // Use the constructed pathname
+            access: 'public',
             handleUploadUrl: '/api/strava/handle-blob-upload',
             onUploadProgress: (event) => {
                 const progressPercent = event.percentage;
@@ -468,6 +481,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                 }
             },
         });
+        // --------------------------------------------------
 
         console.log('[Upload] Client upload complete:', newBlob);
         setUploadStatus("File uploaded. Starting import process...");
@@ -512,7 +526,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             description: errorMessage,
         });
     }
-  }, [toast, startPolling, file]); // file is a dependency as it's used directly
+  }, [toast, startPolling, file, session]); // file is a dependency as it's used directly
 
   // --- UI Rendering Logic ---
   const getProgressPercent = () => {

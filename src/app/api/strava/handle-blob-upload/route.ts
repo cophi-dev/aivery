@@ -1,4 +1,4 @@
-import { handleBlobUpload, type HandleBlobUploadBody } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -7,7 +7,7 @@ import { authOptions } from '@/lib/auth';
 export const runtime = 'nodejs';
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const body = (await request.json()) as HandleBlobUploadBody;
+  const body = (await request.json()) as HandleUploadBody;
 
   try {
     // --- 1. Authentication Check ---
@@ -15,48 +15,34 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const userId = session.user.id;
+    // We might need userId later if adding DB logic in onUploadCompleted
+    const userId = session.user.id; 
     // --- End Authentication Check ---
 
-    // --- 2. Use handleBlobUpload helper ---
-    const jsonResponse = await handleBlobUpload({
+    // --- 2. Use handleUpload helper ---
+    const jsonResponse = await handleUpload({
       body,
       request,
-      // Prefix uploads with user ID for organization and security
-      pathname: `strava-imports/${userId}/${body.pathname}`, 
-      // Define options:
-      options: {
-        access: 'public', // Must match client access level
-        // Add any other server-side constraints if needed
-        // For example, max file size:
-        // maxSize: 10 * 1024 * 1024, // 10 MB
+      onBeforeGenerateToken: async (pathname /*, clientPayload */) => {
+        // Pathname comes from client, just validate user is authenticated (done above)
+        console.log(`[handleBlobUpload] Generating token for client-requested path: ${pathname}`);
+        // Return minimal options required by the type
+        return { }; // Return empty object if no specific server constraints needed
       },
-      // Optional: Disallow uploads if file already exists (avoids overwrites)
-      // Cannot be used with `addRandomSuffix: true` (which is default)
-      // handleUpload: async ({ pathname, error }) => {
-      //   if (error?.code === 'BLOB_ALREADY_EXISTS') {
-      //     throw new Error('File already exists. Please rename and try again.');
-      //   }
-      // },
-      
-      // Before completion, you could add metadata or perform checks
-      // onBeforeComplete: async ({ pathname /*, clientPayload */ }) => {
-      //   console.log('blob upload completed', pathname);
-      // },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        console.log('Client blob upload completed:', blob.pathname);
+      },
     });
-    // --- End handleBlobUpload ---
+    // --- End handleUpload ---
 
-    // 3. Return the successful response from the helper
-    // The client component (`upload(...)`) uses this response (containing the token/URL)
+    // 3. Return the successful response
     return NextResponse.json(jsonResponse);
   } catch (error) {
     console.error("Error in handle-blob-upload:", error);
-    // Provide a user-friendly error message
     const message = (error instanceof Error && error.message) || 'Could not handle file upload.';
     return NextResponse.json(
       { error: message },
-      // Use 400 for client errors (like failed checks), 500 for unexpected server errors
-      { status: (error as any)?.statusCode || 500 } 
+      { status: (error as any)?.statusCode || 500 }
     );
   }
 } 
