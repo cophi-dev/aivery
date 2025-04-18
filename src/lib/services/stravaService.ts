@@ -355,8 +355,24 @@ export async function connectStrava(userId: string, authCode: string) {
     // Exchange auth code for tokens using Strava's OAuth API
     const tokenData = await exchangeCodeForToken(authCode);
     
-    // Store the tokens in the database
-    const collection = await getCollection(INTEGRATIONS_COLLECTION)
+    // Fetch the integrations collection
+    const collection = await getCollection(INTEGRATIONS_COLLECTION);
+
+    // --- ADDED CHECK FOR EXISTING ATHLETE ID --- 
+    if (tokenData.athlete?.id) {
+      const existingAthleteLink = await collection.findOne({
+        provider: "strava",
+        athleteId: tokenData.athlete.id
+      });
+
+      if (existingAthleteLink && existingAthleteLink.userId.toString() !== userId) {
+        // Found this athlete ID linked to a DIFFERENT user
+        console.error(`Strava connection attempt failed: Athlete ID ${tokenData.athlete.id} is already linked to user ${existingAthleteLink.userId.toString()}. Current user is ${userId}.`);
+        // TODO: Consider linking to a specific error page/message
+        throw new Error(`This Strava account is already linked to a different Aivery user.`);
+      }
+    }
+    // --- END ADDED CHECK ---
 
     // Check if integration already exists
     const existingIntegration = await collection.findOne({
