@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const userId = session.user.id;
     console.log('User authenticated:', userId);
 
-    const body = await request.json();
+        const body = await request.json();
     const blobPathname = body.blobPathname;
     const originalFilename = body.originalFilename;
     if (!blobPathname || typeof blobPathname !== 'string') {
@@ -141,7 +141,7 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
     if (totalFiles === 0) {
         console.warn("No activity files found in the extracted archive.");
         try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
-        return {
+  return {
             processingId: null, // No ID needed if no files
             totalFiles: 0,
             message: "No activity files (.fit, .gpx, .tcx) found in the provided archive."
@@ -252,12 +252,12 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
        finalStatus = (enqueuedCount === 0) ? 'enqueue_failed' : 'queued_with_errors';
        // Update errorFiles in DB with relative paths of failed enqueues
        processingState.errorFiles = failedEnqueueFilesData.map(f => f.relativePath);
-    } else {
+        } else {
        processingState.errorFiles = []; // Ensure errorFiles is empty if all succeed
     }
 
     try {
-      const db = await getDatabase();
+    const db = await getDatabase();
       await db.collection('strava_import_state').updateOne(
         { processingId: processingId },
         // Update status and the potentially modified errorFiles list
@@ -291,7 +291,7 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
     console.error('Error in processZipFileMoreReliably:', error);
     // Ensure temp dir is cleaned up on any major error during the process
     try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
-    throw error; 
+    throw error;
   }
 }
 

@@ -5,7 +5,7 @@ import { head, del } from '@vercel/blob';
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 import { Buffer } from 'buffer'; // Ensure Buffer is available
-import { processFitFile, processGpxFile } from '@/lib/services/stravaArchiveService';
+import { processFitFile, processGpxFile, processTcxFile, ProcessedActivityData } from '@/lib/services/stravaArchiveService';
 import { transformStravaActivity } from '@/lib/services/stravaService'; // Assuming this exists
 import { createCardioWorkout } from '@/lib/workout-actions'; // Assuming this exists
 
@@ -167,7 +167,7 @@ async function handler(req: NextRequest) {
         const actualFileType = isGzipped ? lowerFilePath.slice(0, -3) : lowerFilePath; 
         
         // 4. Process the extracted file buffer
-        let processedActivityData: any = null;
+        let processedActivityData: ProcessedActivityData | null = null;
         try {
             // Pass the relative path (for logging/ID generation) and the buffer
             const fileNameForProcessing = fileCheckIdentifier; 
@@ -178,13 +178,8 @@ async function handler(req: NextRequest) {
                  console.log(`Processing as GPX file: ${fileNameForProcessing}`);
                  processedActivityData = await processGpxFile(fileBuffer, fileNameForProcessing);
             } else if (actualFileType.endsWith('.tcx')) {
-                 console.warn(`TCX file processing not yet implemented, skipping: ${fileNameForProcessing}`);
-                 // Revert to using 'as any' for $push
-                 await db.collection('strava_import_state').updateOne(
-                    { processingId: processingId },
-                    { $push: { processedFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
-                 );
-                 return NextResponse.json({ success: true, message: `TCX processing skipped for ${fileCheckIdentifier}` });
+                 console.log(`Processing as TCX file: ${fileNameForProcessing}`);
+                 processedActivityData = await processTcxFile(fileBuffer, fileNameForProcessing);
             } else {
                  console.warn(`Unsupported file type skipped: ${fileNameForProcessing}`);
                  // Revert to using 'as any' for $push
@@ -218,7 +213,7 @@ async function handler(req: NextRequest) {
         // 5. Transform and Save Workout
         try {
              console.log(`Transforming activity data for: ${fileCheckIdentifier}`);
-             const workoutData = transformStravaActivity(processedActivityData);
+             const workoutData = transformStravaActivity(processedActivityData as any);
              
              console.log(`Saving workout to DB for user ${userId}, file: ${fileCheckIdentifier}`);
              const workoutInput = { userId: userId, ...workoutData };

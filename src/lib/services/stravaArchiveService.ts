@@ -1,6 +1,10 @@
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 import { Buffer } from 'buffer';
+import * as FitFileParser from 'fit-file-parser';
+import { parseStringPromise } from 'xml2js';
+import { calculateDistance } from '@/lib/utils';
+import { Parser as TcxParser, Activity as TcxActivity, Trackpoint as TcxTrackpoint } from 'tcx-js';
 // We need FitFileParser and xml2js potentially
 // import FitFileParser from 'fit-file-parser'; // Or the correct import based on usage
 // import xml2js from 'xml2js'; // Or the correct import based on usage
@@ -206,7 +210,19 @@ export function extractStravaIdFromFilename(filename: string): string | undefine
 }
 
 // Define interface for processed activity data structure returned by parsers
-interface ProcessedActivityData {
+interface RecordData {
+  timestamp: Date;
+  heart_rate?: number;
+  distance?: number;
+  speed?: number;
+  altitude?: number;
+  latitude?: number;
+  longitude?: number;
+  cadence?: number;
+  power?: number;
+}
+
+export interface ProcessedActivityData {
   id: string;
   name: string;
   type: string;
@@ -223,7 +239,7 @@ interface ProcessedActivityData {
   max_cadence?: number;
   average_power?: number;
   max_power?: number;
-  records?: Array<{ timestamp: Date, [key: string]: any }>; // Array of record objects
+  records?: Array<RecordData>; // Array of record objects
   notes?: string;
   sport?: string;
   subSport?: string;
@@ -233,8 +249,7 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
   try {
     console.log(`Processing FIT file: ${fileName}, size: ${content.length} bytes`);
     
-    const fitFileParserModule = await import('fit-file-parser');
-    const FitParserConstructor = fitFileParserModule.default;
+    const FitParserConstructor = FitFileParser.default;
     if (typeof FitParserConstructor !== 'function') {
       throw new Error('Failed to load FitParser constructor.');
     }
@@ -361,55 +376,51 @@ export async function processFitFile(content: Buffer, fileName: string): Promise
 
 export async function processGpxFile(content: Buffer, fileName: string): Promise<ProcessedActivityData | null> {
   try {
-    console.log(`Processing GPX file: ${fileName}, size: ${content.length} bytes`);
-    const xml2js = await import('xml2js');
-    const parser = new xml2js.Parser({ explicitArray: false });
-    const gpxData = await parser.parseStringPromise(content.toString('utf-8'));
+    const gpxString = content.toString('utf-8');
+    console.log(`Parsing GPX file: ${fileName}`);
+    const fallbackDate = new Date(); // Use current date as fallback if no time found
+
+    // Parse XML
+    const gpxData = await parseStringPromise(gpxString, { explicitArray: false, ignoreAttrs: false, mergeAttrs: true });
     
-    if (!gpxData.gpx || !gpxData.gpx.trk) {
-      console.warn(`No track data found in GPX file: ${fileName}`);
-      return null;
-    }
-    
-    const track = gpxData.gpx.trk;
-    const trackName = track.name || '';
-    let trackPoints: any[] = [];
-    // Correctly extract track points from potentially nested segments
-    if (track.trkseg) {
-        if (Array.isArray(track.trkseg)) {
-            trackPoints = track.trkseg.reduce((p: any[], seg: any) => p.concat(Array.isArray(seg.trkpt) ? seg.trkpt : (seg.trkpt ? [seg.trkpt] : [])), []);
-        } else if (track.trkseg.trkpt) {
-            trackPoints = Array.isArray(track.trkseg.trkpt) ? track.trkseg.trkpt : [track.trkseg.trkpt];
-        }
+    // Basic validation
+    if (!gpxData || !gpxData.gpx) {
+        console.warn(`Invalid GPX structure in ${fileName}: Missing <gpx> root`);
+        return null;
     }
 
+    const gpxRoot = gpxData.gpx;
+    const metadata = gpxRoot.metadata || {};
+    let trackPoints: any[] = [];
+    let trackName = 'GPX Track'; // Default track name
+    
+    // Find track points (can be under <trk> or <rte>)
+    if (gpxRoot.trk) {
+        const track = Array.isArray(gpxRoot.trk) ? gpxRoot.trk[0] : gpxRoot.trk;
+        trackName = track.name || trackName;
+        if (track.trkseg?.trkpt) {
+            trackPoints = Array.isArray(track.trkseg.trkpt) ? track.trkseg.trkpt : [track.trkseg.trkpt];
+        } else if (track.trkpt) { // Sometimes points are directly under <trk>
+            trackPoints = Array.isArray(track.trkpt) ? track.trkpt : [track.trkpt];
+        }
+    } else if (gpxRoot.rte?.rtept) {
+        trackPoints = Array.isArray(gpxRoot.rte.rtept) ? gpxRoot.rte.rtept : [gpxRoot.rte.rtept];
+    } else if (gpxRoot.wpt) { // Handle files with only waypoints as a fallback
+        trackPoints = Array.isArray(gpxRoot.wpt) ? gpxRoot.wpt : [gpxRoot.wpt];
+    }
+    
     if (trackPoints.length === 0) {
       console.warn(`No track points found in GPX file: ${fileName}`);
       return null;
     }
     
-    // --- Calculate Core Metrics --
-    const currentTime = new Date();
-    let fallbackDate = new Date(); // Default to now
-    // Try to get a better fallback date from filename ID
-    const idMatchFile = fileName.match(/(\d{10,})/); // Look for timestamp-like ID
-    if (idMatchFile) {
-        try {
-            const potentialTs = parseInt(idMatchFile[1]);
-            const potentialDate = new Date(potentialTs * 1000);
-            if (potentialDate < currentTime && potentialDate > new Date('2005-01-01')) {
-                fallbackDate = potentialDate;
-            }
-        } catch {}
-    }
-
+    // Determine start/end time from points if available
     let startTime: Date = fallbackDate;
     let endTime: Date = new Date(fallbackDate.getTime()); // Init end time same as start
     let validTimeCount = 0;
     let earliestTime = Infinity;
     let latestTime = -Infinity;
 
-    // Determine start/end time from points if available
     trackPoints.forEach(p => {
         try {
             if (p.time) {
@@ -428,28 +439,21 @@ export async function processGpxFile(content: Buffer, fileName: string): Promise
         endTime = new Date(latestTime);
     } else {
         console.log(`No valid time points in GPX, using fallback start date: ${startTime.toISOString()}`);
-        // Estimate end time if no valid points (e.g., assume 1 hour, or calculate later if distance exists)
-        endTime = new Date(startTime.getTime() + 3600 * 1000); 
+        endTime = new Date(startTime.getTime() + 3600 * 1000); // Estimate 1 hour duration
     }
     
     let totalDistance = 0; // meters
     let totalElevationGain = 0; // meters
     let sport = 'other';
     let heartRates: number[] = [];
-    
-    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-        if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return 0;
-        const R = 6371e3; const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
-        const Δφ = (lat2-lat1) * Math.PI/180, Δλ = (lon2-lon1) * Math.PI/180;
-        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    };
+    const detailedRecords: RecordData[] = [];
     
     // Calculate distance, elevation, HR from points
     if (trackPoints.length > 1) {
       for (let i = 1; i < trackPoints.length; i++) {
         const prev = trackPoints[i-1], curr = trackPoints[i];
         if (prev.$ && curr.$ && prev.$.lat && prev.$.lon && curr.$.lat && curr.$.lon) {
+            // Use the imported calculateDistance
             totalDistance += calculateDistance(parseFloat(prev.$.lat), parseFloat(prev.$.lon), parseFloat(curr.$.lat), parseFloat(curr.$.lon));
         }
         if (prev.ele && curr.ele) {
@@ -471,6 +475,27 @@ export async function processGpxFile(content: Buffer, fileName: string): Promise
                 }
             } catch {}
         }
+        // Add point to detailed records (populate with available data)
+        let hrForRecord: number | undefined;
+        try { 
+            const ext = curr.extensions;
+            let hrStr: string | undefined;
+            if (ext && ext['gpxtpx:TrackPointExtension'] && ext['gpxtpx:TrackPointExtension']['gpxtpx:hr']) {
+                hrStr = ext['gpxtpx:TrackPointExtension']['gpxtpx:hr'];
+            }
+            if (hrStr) {
+                const parsedHr = parseInt(hrStr, 10);
+                if (!isNaN(parsedHr) && parsedHr > 0 && parsedHr < 300) hrForRecord = parsedHr;
+            }
+        } catch {}
+
+        detailedRecords.push({
+            timestamp: curr.time ? new Date(curr.time) : new Date(startTime.getTime() + (i * (endTime.getTime() - startTime.getTime()) / trackPoints.length)), // Estimate time if missing
+            latitude: curr.$?.lat ? parseFloat(curr.$.lat) : undefined,
+            longitude: curr.$?.lon ? parseFloat(curr.$.lon) : undefined,
+            altitude: curr.ele ? parseFloat(curr.ele) : undefined,
+            heart_rate: hrForRecord
+        });
       }
       // Determine sport type
       const checkName = (fileName + ' ' + trackName).toLowerCase();
@@ -489,52 +514,28 @@ export async function processGpxFile(content: Buffer, fileName: string): Promise
     const stravaIdMatch = extractStravaIdFromFilename(fileName);
     const id = stravaIdMatch || `gpx_${Date.now()}`;
     
-    // Create detailed records (timestamp is crucial)
-    const detailedRecords = trackPoints.map((p: any, i: number) => {
-        let ts = startTime; // Default to start time
-        try { 
-            if (p.time) { 
-                const pt = new Date(p.time); 
-                // Check if date is valid and within a reasonable range (e.g., not 1970)
-                if(!isNaN(pt.getTime()) && pt.getFullYear() > 1980) ts = pt; 
-            } else if (validTimeCount === 0 && totalElapsedTime > 0 && trackPoints.length > 1) {
-                 // If no time data at all, distribute points linearly over estimated duration
-                 ts = new Date(startTime.getTime() + Math.round(i * (totalElapsedTime * 1000 / (trackPoints.length -1))));
-            }
-        } catch {}
-        
-        let hr: number | undefined;
-        try { 
-            const ext = p.extensions;
-            let hrStr: string | undefined;
-            if (ext && ext['gpxtpx:TrackPointExtension'] && ext['gpxtpx:TrackPointExtension']['gpxtpx:hr']) {
-                 hrStr = ext['gpxtpx:TrackPointExtension']['gpxtpx:hr'];
-            }
-            if (hrStr) {
-                const parsedHr = parseInt(hrStr, 10);
-                if (!isNaN(parsedHr) && parsedHr > 0 && parsedHr < 300) hr = parsedHr;
-            }
-        } catch {}
-
-        return {
-             timestamp: ts,
-             heart_rate: hr,
-             latitude: p.$?.lat ? parseFloat(p.$.lat) : undefined,
-             longitude: p.$?.lon ? parseFloat(p.$.lon) : undefined,
-             altitude: p.ele ? parseFloat(p.ele) : undefined
-         };
-    }).filter(r => r.latitude !== undefined && r.longitude !== undefined); // Filter out records without coordinates
+    // Add the first point to detailed records if not added in loop
+    if (detailedRecords.length === 0 && trackPoints.length > 0) {
+        const firstPoint = trackPoints[0];
+         detailedRecords.push({
+             timestamp: startTime,
+             latitude: firstPoint.$?.lat ? parseFloat(firstPoint.$.lat) : undefined,
+             longitude: firstPoint.$?.lon ? parseFloat(firstPoint.$.lon) : undefined,
+             altitude: firstPoint.ele ? parseFloat(firstPoint.ele) : undefined,
+             // HR for first point might be missing
+         });
+    }
 
     let activityName = generateActivityName({ distance: totalDistance, elapsed_time: totalElapsedTime, sport: sport }, startTime, sport);
     activityName += (stravaIdMatch ? ` (Strava: ${stravaIdMatch})` : '');
     
     const transformedActivity: ProcessedActivityData = {
       id: id, name: activityName, type: sport, start_date: startTime.toISOString(),
-      elapsed_time: totalElapsedTime, distance: totalDistance, total_elevation_gain: totalElevationGain,
+      elapsed_time: totalElapsedTime, distance: totalDistance, total_elevation_gain: totalElevationGain > 0 ? totalElevationGain : undefined,
       has_heartrate: heartRates.length > 0, average_heartrate: avgHeartRate, max_heartrate: maxHeartRate,
       average_speed: avgSpeed,
       records: detailedRecords,
-      notes: generateActivityNotes(gpxData.gpx.metadata, startTime, fileName),
+      notes: generateActivityNotes(metadata, startTime, fileName),
       sport: sport
     };
     
@@ -547,10 +548,157 @@ export async function processGpxFile(content: Buffer, fileName: string): Promise
   }
 }
 
-// --- Unused/Out of Place Functions (commented out) ---
+// --- NEW TCX PROCESSING FUNCTION ---
+export async function processTcxFile(content: Buffer, fileName: string): Promise<ProcessedActivityData | null> {
+  try {
+    // tcx-js expects a file path, not a buffer. We need to write to a temporary file or find another way.
+    // Let's try parsing the buffer directly if possible, otherwise, we might need a workaround.
+    // Since tcx-js is based on xml2js or similar, it might accept a string.
+    const tcxString = content.toString('utf-8');
+    
+    // Re-check tcx-js docs/source. It seems the JuanIrache fork might still rely on fs.
+    // Okay, the constructor `new Parser(infile)` suggests it needs a path.
+    // Workaround: Use xml2js directly to parse the string, mimicking tcx-js structure if needed.
+    
+    console.log(`Parsing TCX file: ${fileName}`);
+    const xmlData = await parseStringPromise(tcxString, { explicitArray: false, ignoreAttrs: false, mergeAttrs: true });
 
-// function calculateIntensityFromSession(session: any): "Low" | "Medium" | "High" { ... }
-// interface FitActivity { ... } // Defined ProcessedActivityData instead
-// function extractActivityFromRecords(data: any): FitActivity | null { ... }
-// async function createBaseExerciseForType(type: string): Promise<void> { ... }
-// async function parseGPX(gpxString: string): Promise<any> { ... } 
+    if (!xmlData?.TrainingCenterDatabase?.Activities?.Activity) {
+        console.warn(`Invalid TCX structure in ${fileName}: Missing Activity`);
+        return null;
+    }
+
+    const activity = xmlData.TrainingCenterDatabase.Activities.Activity;
+    const sport = activity?.$?.Sport || 'other';
+    const startTime = new Date(activity?.Id || Date.now()); // Use activity ID as start time if available
+
+    let allTrackpoints: any[] = [];
+    const laps = Array.isArray(activity.Lap) ? activity.Lap : (activity.Lap ? [activity.Lap] : []);
+
+    for (const lap of laps) {
+        if (lap.Track?.Trackpoint) {
+            const points = Array.isArray(lap.Track.Trackpoint) ? lap.Track.Trackpoint : [lap.Track.Trackpoint];
+            allTrackpoints = allTrackpoints.concat(points);
+        }
+    }
+
+    if (allTrackpoints.length === 0) {
+        console.warn(`No trackpoints found in TCX file: ${fileName}`);
+        return null;
+    }
+
+    // Sort trackpoints by time just in case
+    allTrackpoints.sort((a, b) => new Date(a.Time).getTime() - new Date(b.Time).getTime());
+
+    const firstPoint = allTrackpoints[0];
+    const lastPoint = allTrackpoints[allTrackpoints.length - 1];
+    const actualStartTime = new Date(firstPoint.Time);
+    const endTime = new Date(lastPoint.Time);
+    const totalElapsedTime = Math.max(1, (endTime.getTime() - actualStartTime.getTime()) / 1000);
+    
+    let totalDistance = 0;
+    let totalElevationGain = 0;
+    const heartRates: number[] = [];
+    const speeds: number[] = [];
+    const cadences: number[] = [];
+    const powers: number[] = [];
+    const detailedRecords: RecordData[] = [];
+
+    for (let i = 0; i < allTrackpoints.length; i++) {
+        const point = allTrackpoints[i];
+        const record: RecordData = {
+            timestamp: new Date(point.Time),
+            latitude: point.Position?.LatitudeDegrees ? parseFloat(point.Position.LatitudeDegrees) : undefined,
+            longitude: point.Position?.LongitudeDegrees ? parseFloat(point.Position.LongitudeDegrees) : undefined,
+            altitude: point.AltitudeMeters ? parseFloat(point.AltitudeMeters) : undefined,
+            distance: point.DistanceMeters ? parseFloat(point.DistanceMeters) : undefined,
+            heart_rate: point.HeartRateBpm?.Value ? parseInt(point.HeartRateBpm.Value, 10) : undefined,
+            cadence: point.Cadence ? parseInt(point.Cadence, 10) : undefined,
+            // Speed might be in Extensions/TPX
+            // Power might be in Extensions/TPX
+        };
+
+        // Check for extensions (commonly TPX for speed/cadence/power)
+        const extensions = point.Extensions?.['ns3:TPX'] || point.Extensions?.TPX;
+        if (extensions) {
+            if (extensions['ns3:Speed']) record.speed = parseFloat(extensions['ns3:Speed']);
+            else if (extensions.Speed) record.speed = parseFloat(extensions.Speed);
+            
+            if (extensions['ns3:RunCadence'] && !record.cadence) record.cadence = parseInt(extensions['ns3:RunCadence'], 10);
+            else if (extensions.RunCadence && !record.cadence) record.cadence = parseInt(extensions.RunCadence, 10);
+
+            if (extensions['ns3:Watts']) record.power = parseInt(extensions['ns3:Watts'], 10);
+            else if (extensions.Watts) record.power = parseInt(extensions.Watts, 10);
+        }
+        
+        // Calculate distance delta and elevation gain if position exists
+        if (i > 0 && record.latitude && record.longitude) {
+            const prevPoint = detailedRecords[detailedRecords.length - 1]; // Get previous processed record
+            if (prevPoint.latitude && prevPoint.longitude) {
+                const distDelta = calculateDistance(prevPoint.latitude, prevPoint.longitude, record.latitude, record.longitude);
+                // Use cumulative distance from file if available and seems valid, otherwise sum deltas
+                if (record.distance !== undefined && record.distance > (totalDistance || 0)) {
+                    totalDistance = record.distance; // Trust file's cumulative distance
+                } else {
+                    totalDistance += distDelta;
+                }
+            }
+            if (record.altitude && prevPoint.altitude && record.altitude > prevPoint.altitude) {
+                totalElevationGain += (record.altitude - prevPoint.altitude);
+            }
+        }
+        
+        detailedRecords.push(record);
+
+        // Collect stats
+        if (record.heart_rate && record.heart_rate > 0) heartRates.push(record.heart_rate);
+        if (record.speed && record.speed > 0) speeds.push(record.speed);
+        if (record.cadence && record.cadence > 0) cadences.push(record.cadence);
+        if (record.power && record.power > 0) powers.push(record.power);
+    }
+    
+    // Calculate averages/max
+    const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((s, v) => s + v, 0) / heartRates.length) : undefined;
+    const maxHeartRate = heartRates.length > 0 ? Math.max(...heartRates) : undefined;
+    const avgSpeed = speeds.length > 0 ? speeds.reduce((s, v) => s + v, 0) / speeds.length : (totalDistance / totalElapsedTime);
+    const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : avgSpeed * 1.2; // Estimate max if not available
+    const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((s, v) => s + v, 0) / cadences.length) : undefined;
+    const maxCadence = cadences.length > 0 ? Math.max(...cadences) : undefined;
+    const avgPower = powers.length > 0 ? Math.round(powers.reduce((s, v) => s + v, 0) / powers.length) : undefined;
+    const maxPower = powers.length > 0 ? Math.max(...powers) : undefined;
+
+    const mappedType = mapStravaType(sport);
+    const stravaId = extractStravaIdFromFilename(fileName);
+    let activityName = generateActivityName({ distance: totalDistance, elapsed_time: totalElapsedTime, sport: sport }, actualStartTime, mappedType);
+    activityName += (stravaId ? ` (Strava: ${stravaId})` : '');
+
+    const transformedActivity: ProcessedActivityData = {
+        id: stravaId || `tcx_${Date.now()}`,
+        name: activityName,
+        type: mappedType,
+        start_date: actualStartTime.toISOString(),
+        elapsed_time: totalElapsedTime,
+        distance: totalDistance,
+        total_elevation_gain: totalElevationGain > 0 ? totalElevationGain : undefined,
+        has_heartrate: !!avgHeartRate,
+        average_heartrate: avgHeartRate,
+        max_heartrate: maxHeartRate,
+        average_speed: avgSpeed,
+        max_speed: maxSpeed,
+        average_cadence: avgCadence,
+        max_cadence: maxCadence,
+        average_power: avgPower,
+        max_power: maxPower,
+        records: detailedRecords,
+        notes: generateActivityNotes({}, actualStartTime, fileName), // TCX doesn't usually have a top-level description
+        sport: sport,
+    };
+
+    console.log(`Processed TCX file ${fileName}, returning data for ${transformedActivity.id}`);
+    return transformedActivity;
+
+  } catch (error) {
+    console.error(`Error processing TCX file ${fileName}:`, error);
+    throw error; // Re-throw to be caught by the worker
+  }
+} 

@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { formatDistanceStrict, formatDuration as formatDurationFns, differenceInSeconds, isValid } from 'date-fns';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -164,3 +165,29 @@ export function formatPace(pace: number | null): string {
   const seconds = Math.round((pace - minutes) * 60);
   return `${minutes}:${seconds.toString().padStart(2, '0')} min/km`;
 };
+
+// --- NEW: Calculate Distance Helper ---
+/**
+ * Calculates the distance between two geographical points using the Haversine formula.
+ * @param lat1 Latitude of the first point in degrees.
+ * @param lon1 Longitude of the first point in degrees.
+ * @param lat2 Latitude of the second point in degrees.
+ * @param lon2 Longitude of the second point in degrees.
+ * @returns The distance in meters.
+ */
+export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return 0;
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI / 180; // φ, λ in radians
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // in metres
+}
+// --- END NEW ---

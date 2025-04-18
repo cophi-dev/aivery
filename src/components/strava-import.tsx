@@ -34,6 +34,21 @@ interface StravaImportProps {
   onImportComplete?: () => void;
 }
 
+// --- NEW: Define structure for import status polling response ---
+interface ImportStatusResponse {
+  processingId: string;
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'queued_with_errors';
+  totalFiles: number;
+  processedFilesCount: number;
+  importedFilesCount: number;
+  errorFilesCount: number;
+  errorFiles?: string[]; // Optional list of failed filenames
+  createdAt: string; // ISO string
+  lastUpdated: string; // ISO string
+  originalFilename?: string;
+}
+// --- END NEW ---
+
 export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [file, setFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -59,6 +74,13 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
   const [uploadStats, setUploadStats] = useState<ImportStats | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // --- NEW STATE FOR POLLING ---
+  const [isProcessing, setIsProcessing] = useState(false); // Tracks if an import is actively being processed
+  const [processingId, setProcessingId] = useState<string | null>(null); // Stores the ID of the current import process
+  const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null); // Stores the latest status from the API
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store the interval ID
+  // --- END NEW STATE ---
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -315,478 +337,193 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
   }, [toast]);
 
+  // --- POLLING LOGIC ---
+  const fetchStatus = useCallback(async (currentProcessingId: string) => {
+    if (!currentProcessingId) return;
+
+    console.log(`[Polling] Fetching status for ${currentProcessingId}...`);
+    try {
+      const response = await fetch(`/api/strava/import-status?processingId=${currentProcessingId}`);
+      if (!response.ok) {
+        // Handle non-2xx responses (e.g., 404 if ID not found yet)
+        if (response.status === 404) {
+             console.warn(`[Polling] Status not found yet for ${currentProcessingId}, will retry.`);
+             // Keep existing status or set to 'pending'
+             setImportStatus(prev => prev || { status: 'pending', totalFiles: 0 } as any);
+             return; // Don't throw, just wait for next poll
+        }
+        throw new Error(`Status fetch failed: ${response.statusText}`);
+      }
+      const data: ImportStatusResponse = await response.json();
+      setImportStatus(data);
+      console.log("[Polling] Received status:", data);
+
+      // Check for completion or failure to stop polling
+      if (data.status === 'completed' || data.status === 'failed' || data.status === 'queued_with_errors') {
+        console.log(`[Polling] Status is ${data.status}, stopping polling for ${currentProcessingId}.`);
+        stopPolling();
+        setIsProcessing(false);
+        setProcessingId(null); // Clear processing ID once done
+        if (onImportComplete && data.status === 'completed') {
+             onImportComplete(); // Notify parent if needed
+        }
+        // Update final upload status message based on result
+        if (data.status === 'completed') {
+            setUploadStatus(`Import complete! Successfully processed ${data.importedFilesCount} of ${data.totalFiles} activities.`);
+        } else if (data.status === 'failed') {
+            setUploadStatus(`Import failed. Please check server logs.`);
+            setError('The import process encountered a critical error.');
+        } else { // queued_with_errors
+            setUploadStatus(`Import finished with errors. Imported ${data.importedFilesCount}, Errors: ${data.errorFilesCount}.`);
+            // Consider showing error file list if data.errorFiles exists
+        }
+      }
+    } catch (err) {
+      console.error("[Polling] Error fetching status:", err);
+      // Optionally stop polling on fetch errors, or let it retry
+      // stopPolling();
+      // setIsProcessing(false);
+      // setError("Failed to get import status.");
+      // setUploadStatus("Error fetching status.");
+    }
+  }, [onImportComplete]); // Added onImportComplete dependency
+
+  const startPolling = useCallback((id: string) => {
+    // Clear any existing interval first
+    stopPolling();
+
+    setProcessingId(id);
+    setIsProcessing(true);
+    setImportStatus({ status: 'queued', totalFiles: 0 } as any); // Initial status
+    setUploadStatus("Import started, processing activities..."); // User feedback
+
+    // Fetch immediately once
+    fetchStatus(id);
+
+    // Then poll every 5 seconds
+    pollingIntervalRef.current = setInterval(() => fetchStatus(id), 5000);
+  }, [fetchStatus]); // Added fetchStatus dependency
+
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+      console.log("[Polling] Polling stopped.");
+    }
+  };
+
+  // Effect to cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+  // --- END POLLING LOGIC ---
+
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Prevent standard form submission
+    event.preventDefault();
     if (!file) {
-      toast({ title: "No file selected", description: "Please select a ZIP file to upload.", variant: "destructive" });
+      setError("Please select a file first.");
       return;
     }
 
-    setIsLoading(true);
-    setProgress(0);
+    // Reset state for new upload
+    setIsProcessing(true); // Set processing early for UI feedback
+    setUploadStatus("Uploading file...");
     setError(null);
+    setProgress(0);
     setUploadStats(null);
-    setUploadStatus('Preparing upload...');
+    setProcessingId(null);
+    setImportStatus(null);
+    stopPolling(); // Ensure no old polling is running
 
-    console.log(`=== Starting file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) ===`);
-    
-    let blobPathname = ''; // Variable to hold the final pathname
+    const filename = encodeURIComponent(file.name);
+    const userId = uuidv4(); // Replace with actual user ID if available/needed for path uniqueness
+    const blobPathname = `strava-imports/${userId}/${Date.now()}-${filename}`;
 
     try {
-      // Generate a unique ID for this upload
-      const timestamp = Date.now();
-      const fileId = `${timestamp}-${uuidv4()}`;
-      
-      // Determine chunk size - 2MB per chunk to stay well under the 4.5MB limit
-      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      
-      console.log(`Uploading file in ${totalChunks} chunks of ${CHUNK_SIZE / (1024 * 1024)}MB each`);
-      setUploadStatus(`Preparing to upload in ${totalChunks} chunks...`);
-      
-      // Track which chunks have been successfully uploaded
-      const uploadedChunks = new Set<number>();
-      
-      // STEP 1: Upload each chunk - these are stored directly without assembly
-      setUploadStatus(`Step 1/2: Uploading chunks...`);
-      // Upload each chunk SEQUENTIALLY with delays between chunks
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        // Add a small delay between chunks to avoid race conditions
-        if (chunkIndex > 0) {
-          setUploadStatus(`Waiting before sending next chunk...`);
-          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between chunks
-        }
-        
-        // Calculate the start and end bytes for this chunk
-        const start = chunkIndex * CHUNK_SIZE;
-        const end = Math.min(file.size, start + CHUNK_SIZE);
-        
-        // Slice the file to get this chunk
-        const chunk = file.slice(start, end);
-        
-        // Update progress and status
-        const chunkProgress = Math.round((chunkIndex / totalChunks) * 50); // First 50% is for uploads
-        setProgress(5 + chunkProgress);
-        setUploadStatus(`Uploading chunk ${chunkIndex + 1}/${totalChunks}...`);
-        
-        // Create FormData for this chunk
-        const formData = new FormData();
-        formData.append('chunk', chunk);
-        formData.append('chunkIndex', chunkIndex.toString());
-        formData.append('totalChunks', totalChunks.toString());
-        formData.append('fileId', fileId);
-        formData.append('fileName', file.name);
-        
-        // Include the blobPath from previous chunk responses
-        if (blobPathname) {
-          formData.append('blobPath', blobPathname);
-        }
-        
-        // Try uploading this chunk with retries
-        let retries = 3;
-        let success = false;
-        let lastError = null;
-        
-        while (retries > 0 && !success) {
-          try {
-            // Upload this chunk
-            const response = await fetch('/api/strava/chunked-upload', {
-        method: 'POST',
-              body: formData
-            });
-            
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`Error uploading chunk ${chunkIndex}:`, errorText);
-              throw new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks}: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            
-            if (!result.success) {
-              throw new Error(result.error || `Failed to process chunk ${chunkIndex + 1}/${totalChunks}`);
-            }
-            
-            // Store the blobPath for all chunks (it should be consistent for all chunks)
-            blobPathname = result.blobPath;
-            
-            // Mark as successful and record this chunk as uploaded
-            success = true;
-            uploadedChunks.add(chunkIndex);
-          } catch (e) {
-            console.error(`Error uploading chunk ${chunkIndex + 1}/${totalChunks}, retries left: ${retries - 1}`, e);
-            lastError = e;
-            retries--;
-            // If retries left, wait a bit before trying again
-            if (retries > 0) {
-              setUploadStatus(`Retrying chunk ${chunkIndex + 1}/${totalChunks}...`);
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-          }
-        }
-        
-        // If all retries failed for this chunk, throw the last error
-        if (!success) {
-          throw lastError || new Error(`Failed to upload chunk ${chunkIndex + 1}/${totalChunks} after multiple attempts`);
-        }
-      }
-      
-      // Verify all chunks were uploaded before proceeding
-      const missingChunks = [];
-      for (let i = 0; i < totalChunks; i++) {
-        if (!uploadedChunks.has(i)) {
-          missingChunks.push(i + 1); // 1-based index for messages
-        }
-      }
-      
-      if (missingChunks.length > 0) {
-        throw new Error(`Upload incomplete. Missing chunks: ${missingChunks.join(', ')}`);
-      }
-      
-      // STEP 2: Once all chunks are uploaded, request assembly
-      setProgress(60);
-      setUploadStatus(`Step 2/2: Assembling file from chunks...`);
-      
-      // Send a special "complete" request to assemble the file
-      const completeFormData = new FormData();
-      completeFormData.append('complete', 'true');
-      completeFormData.append('fileId', fileId);
-      completeFormData.append('fileName', file.name);
-      completeFormData.append('blobPath', blobPathname);
-      completeFormData.append('totalChunks', totalChunks.toString());
-      
-      console.log(`Sending completion request to assemble ${totalChunks} chunks...`);
-      
-      // Allow more time for assembly and with retries
-      let assemblyRetries = 2;
-      let assemblySuccess = false;
-      let assemblyError = null;
-      
-      while (assemblyRetries > 0 && !assemblySuccess) {
-        try {
-          const assemblyResponse = await fetch('/api/strava/chunked-upload', {
+        // --- Upload to Vercel Blob ---
+        const uploadResponse = await fetch(`/api/strava/upload?filename=${blobPathname}`, {
             method: 'POST',
-            body: completeFormData
-          });
-          
-          if (!assemblyResponse.ok) {
-            // Try to get detailed error if available
-            let errorDetail = '';
-            try {
-              const errorJson = await assemblyResponse.json();
-              errorDetail = errorJson.error || `Server responded with status ${assemblyResponse.status}`;
-              
-              // If specific chunks are missing, we can retry the upload for those chunks
-              if (errorJson.missingChunks && Array.isArray(errorJson.missingChunks) && errorJson.missingChunks.length > 0) {
-                errorDetail += ` Missing chunks: ${errorJson.missingChunks.join(', ')}`;
-                // Here we could implement logic to re-upload specific chunks
-              }
-            } catch (e) {
-              errorDetail = await assemblyResponse.text();
-            }
-            
-            throw new Error(`Failed to assemble file: ${errorDetail}`);
-          }
-          
-          const assemblyResult = await assemblyResponse.json();
-          
-          if (!assemblyResult.success) {
-            throw new Error(assemblyResult.error || 'Unknown error during file assembly');
-          }
-          
-          // Update the blobPathname with the completed file path
-          blobPathname = assemblyResult.blobPath;
-          assemblySuccess = true;
-          
-          console.log(`Assembly complete. Final file at: ${blobPathname}`);
-        } catch (e) {
-          console.error(`Error during file assembly, retries left: ${assemblyRetries - 1}`, e);
-          assemblyError = e;
-          assemblyRetries--;
-          
-          if (assemblyRetries > 0) {
-            setUploadStatus(`Retrying file assembly...`);
-            // Wait longer between assembly retries
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-      }
-      
-      if (!assemblySuccess) {
-        throw assemblyError || new Error('Failed to assemble file after multiple attempts');
-      }
-      
-      setProgress(80);
-      setUploadStatus('Assembly complete. Now processing file...');
-      
-      // --- Process the uploaded file ---
-      console.log('Sending POST request to /api/strava/import with blob pathname:', blobPathname);
-
-      // Step 1: Send the blob path to the extraction endpoint
-      setUploadStatus('Starting file extraction...');
-      const processResponse = await fetch('/api/strava/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ blobPathname, originalFilename: file.name })
-      });
-      
-      if (!processResponse.ok) {
-        const responseText = await processResponse.text();
-        console.error(`Import API failed with status ${processResponse.status}:`, responseText);
-        
-        let errorMsg = `Processing failed: Server responded with status ${processResponse.status}.`;
-        try {
-          const errorJson = JSON.parse(responseText);
-          errorMsg = `Processing failed: ${errorJson.error || errorJson.message || responseText}`;
-        } catch {
-          errorMsg = `Processing failed: ${responseText}`;
-        }
-        throw new Error(errorMsg);
-      }
-
-      const extractionData = await processResponse.json();
-      console.log('Extraction API Response:', extractionData);
-
-      if (!extractionData.success) {
-        throw new Error(extractionData.error || "Failed to extract files from archive");
-      }
-      
-      setProgress(40);
-      setUploadStatus('File extraction complete. Starting batch processing...');
-      
-      // Step 2: Process files in batches
-      const { processingId, totalFiles, batchSize = 10 } = extractionData;
-      
-      if (!processingId) {
-        throw new Error("Missing processing ID from server response");
-      }
-      
-      // Show the batch progress
-      setUploadStatus(`Processing ${totalFiles} files in batches...`);
-      
-      let batchIndex = 0;
-      let totalProcessed = 0;
-      let totalImported = 0;
-      let totalErrors = 0;
-      const activityTypesCounts: Record<string, number> = {};
-      let consecutiveErrors = 0;
-      let accumulatedDistance = 0; // Add accumulator for distance
-      let accumulatedDuration = 0; // Add accumulator for duration
-      
-      // Process batches until we're done or hit an error
-      let isComplete = false;
-      
-      // Add a safety timeout to prevent infinite loops
-      const startTime = Date.now();
-      const MAX_PROCESSING_TIME = 10 * 60 * 1000; // 10 minutes max total processing time
-      
-      while (!isComplete && (Date.now() - startTime) < MAX_PROCESSING_TIME) {
-        try {
-          setUploadStatus(`Processing batch ${batchIndex + 1}: ${Math.min(batchIndex * batchSize + batchSize, totalFiles)} of ${totalFiles} files...`);
-          setProgress(40 + Math.round((batchIndex * batchSize) / totalFiles * 50));
-          
-          // Use a timeout for each batch request to avoid long-running requests
-          const batchPromise = fetch('/api/strava/process-batch', {
-            method: 'POST',
+            body: file,
             headers: {
-              'Content-Type': 'application/json',
+                // Add any necessary headers, like auth if needed by the upload endpoint
             },
-            body: JSON.stringify({ 
-              processingId,
-              batchIndex,
-              batchSize 
-            })
-          });
-          
-          // Set a timeout of 55 seconds for each batch
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error("Batch processing timed out after 55 seconds")), 55000);
-          });
-          
-          // Race the batch request against the timeout
-          const batchResponse = await Promise.race([batchPromise, timeoutPromise]) as Response;
-          
-          if (!batchResponse.ok) {
-            throw new Error(`Batch ${batchIndex} processing failed: ${batchResponse.status}`);
-          }
-          
-          const batchData = await batchResponse.json();
-          console.log(`Batch ${batchIndex} completed:`, batchData);
-          
-          if (!batchData.success) {
-            throw new Error(batchData.error || `Failed to process batch ${batchIndex}`);
-          }
-          
-          // Reset consecutive errors counter on success
-          consecutiveErrors = 0;
-          
-          // Update counters
-          totalProcessed += batchData.processed || 0;
-          totalImported += batchData.imported || 0;
-          totalErrors += batchData.errors || 0;
-          
-          // Add batch distance and duration to accumulators
-          accumulatedDistance += batchData.batchTotalDistance || 0; 
-          accumulatedDuration += batchData.batchTotalDuration || 0;
-          
-          // Update activity type counts
-          if (batchData.activityTypes) {
-            Object.entries(batchData.activityTypes).forEach(([type, count]) => {
-              activityTypesCounts[type] = (activityTypesCounts[type] || 0) + (count as number);
-            });
-          }
-          
-          // Check if we have more batches
-          if (batchData.nextBatch !== null) {
-            batchIndex = batchData.nextBatch;
-          } else {
-            isComplete = true;
-          }
-          
-          // Show progress
-          const progress = batchData.progress;
-          if (progress) {
-            setUploadStatus(`Processed ${progress.processed} of ${progress.total} files (${progress.imported} imported, ${progress.errors} errors)`);
-          }
-        } catch (batchError: any) {
-          console.error('Error processing batch:', batchError);
-          
-          // Increment consecutive errors counter
-          consecutiveErrors++;
-          
-          // Check if we have an authentication error
-          if (batchError.message?.includes('Authentication') || batchError.message?.includes('Unauthorized')) {
-            throw new Error("Authentication error during processing. Please try again.");
-          }
-          
-          // Handle timeout specifically
-          if (batchError.message?.includes('timed out')) {
-            console.warn(`Batch ${batchIndex} timed out. Moving to next batch...`);
-            // Don't count all files as errors, we'll check progress on the next batch
-            batchIndex++; // Move to next batch
-            continue;
-          }
-          
-          // For other errors, we can try to continue with the next batch
-          totalErrors += 1; // Only increment by 1 for the batch error, not all files
-          batchIndex++; // Move to next batch
-          
-          // But if we've had 3 consecutive batch failures, stop
-          if (consecutiveErrors >= 3) {
-            throw new Error(`Multiple batch processing errors (${consecutiveErrors} consecutive failures). Last error: ${batchError.message}`);
-          }
-          
-          // Show warning about errors but continue
-          toast({
-            title: "Processing Warning",
-            description: `Encountered an error in batch ${batchIndex}, but continuing with remaining batches.`,
-            variant: "destructive",
-            duration: 5000,
-          });
-        }
-      }
-      
-      // Check if we timed out on the overall process
-      if (!isComplete && (Date.now() - startTime) >= MAX_PROCESSING_TIME) {
-        throw new Error(`Overall processing timed out after ${MAX_PROCESSING_TIME/60000} minutes. Some files may not have been imported.`);
-      }
-      
-      setProgress(95);
-      setUploadStatus('Processing complete. Finalizing results...');
-      
-      // Get final status
-      try {
-        const finalStatusResponse = await fetch(`/api/strava/batch-status?processingId=${processingId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          }
         });
-        
-        if (finalStatusResponse.ok) {
-          const finalStatus = await finalStatusResponse.json();
-          console.log('Final import status:', finalStatus);
-          
-          if (finalStatus.success && finalStatus.stats) {
-            // Update with accurate stats if available
-            totalProcessed = finalStatus.stats.processed || totalProcessed;
-            totalImported = finalStatus.stats.imported || totalImported;
-            totalErrors = finalStatus.stats.errors || totalErrors;
-            
-            if (finalStatus.stats.activityTypes) {
-              Object.entries(finalStatus.stats.activityTypes).forEach(([type, count]) => {
-                activityTypesCounts[type] = count as number;
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error getting final status:', error);
-        // Continue with the stats we have
-      }
-      
-      // Final completion
-      console.log(`[StravaImport] Final accumulated stats before setting state:`, {
-        distance: accumulatedDistance,
-        duration: accumulatedDuration,
-        count: totalImported,
-        types: activityTypesCounts
-      });
-      const summaryStats: ImportStats = {
-        count: totalImported,
-        types: activityTypesCounts,
-        earliestDate: '', // We don't have this info from batch processing
-        latestDate: '',
-        totalDistance: accumulatedDistance, // Use accumulated distance
-        totalDuration: accumulatedDuration, // Use accumulated duration
-      };
-      setUploadStats(summaryStats);
-      
-      let description = `Processed ${totalProcessed} files, successfully imported ${totalImported} workouts.`;
-      if (totalErrors > 0) {
-        description += ` ${totalErrors} file(s) could not be imported. Check logs for details.`;
-      }
-      
-      toast({
-        title: "Import Complete",
-        description: description,
-        duration: 8000,
-      });
-      
-      setUploadStatus('Import completed successfully.');
-      setProgress(100);
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      if (onImportComplete) onImportComplete();
 
-    } catch (error) {
-      // --- Error handling (catches errors from all steps) ---
-      console.error('Upload process error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred during the import process.';
-      toast({
-        title: "Import Error",
-        description: errorMessage,
-        variant: "destructive"
-      });
-      setError(errorMessage);
-      setUploadStatus(`Error: ${errorMessage}`);
-      setProgress(0); 
-      // Attempt cleanup if blobPathname was obtained but process failed
-      if (blobPathname) {
-          console.log("Attempting cleanup due to error in upload process...");
-          fetch('/api/strava/cleanup-blob', { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pathname: blobPathname })
-          }).catch(err => console.error("Failed to trigger blob cleanup after overall process error:", err));
+        if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json().catch(() => ({ error: 'Upload failed with status ' + uploadResponse.status }));
+            throw new Error(errorData.error || 'Failed to upload file to storage.');
         }
-      // --- End of error handling ---
-    } finally {
-      setIsLoading(false);
+
+        const blobData = await uploadResponse.json();
+        console.log('File uploaded successfully to Blob:', blobData);
+        setProgress(100); // Mark upload as complete
+        setUploadStatus("File uploaded. Starting import process...");
+
+        // --- Trigger Backend Import Process ---
+        console.log('Triggering backend import process with blob pathname:', blobData.pathname);
+        const importResponse = await fetch('/api/strava/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                blobPathname: blobData.pathname, // Send the pathname returned by the upload endpoint
+                originalFilename: file.name
+            })
+        });
+
+        if (!importResponse.ok) {
+            const errorData = await importResponse.json().catch(() => ({ error: 'Import initiation failed with status ' + importResponse.status }));
+            throw new Error(errorData.error || 'Failed to start backend import process.');
+        }
+
+        const importData = await importResponse.json();
+        console.log('Backend import process initiated:', importData);
+
+        if (!importData.success || !importData.processingId) {
+            throw new Error(importData.message || 'Backend did not return a valid processing ID.');
+        }
+
+        // --- Start Polling ---
+        startPolling(importData.processingId); // Pass the ID to start polling
+
+        // Do NOT show immediate completion message here
+        // setUploadStatus("Import process started. You can check progress below.");
+        // setUploadStats({ count: 0, totalFiles: importData.totalFiles }); // Show initial total
+
+    } catch (err: any) {
+      console.error("Upload/Import Error:", err);
+      const errorMessage = err.message || "An unknown error occurred during upload or import.";
+      setError(errorMessage);
+      setUploadStatus(null);
+      setIsProcessing(false); // Ensure processing stops on error
+      stopPolling();
+      toast({
+        variant: "destructive",
+        title: "Import Failed",
+        description: errorMessage,
+      });
     }
-  }, [file, toast, onImportComplete, setIsLoading, setProgress, setError, setUploadStatus, setFile, fileInputRef, setUploadStats]);
+  }, [file, toast, startPolling]); // Added startPolling dependency
+
+  // --- UI Rendering Logic ---
+  const getProgressPercent = () => {
+    if (!isProcessing || !importStatus || !importStatus.totalFiles || importStatus.totalFiles === 0) {
+      return progress; // Show blob upload progress initially
+    }
+    // Calculate processing progress based on files
+    return Math.round(((importStatus.processedFilesCount + importStatus.errorFilesCount) / importStatus.totalFiles) * 100);
+  };
+
+  const getProgressText = () => {
+     if (isProcessing && importStatus) {
+         if (importStatus.status === 'queued') return "Waiting for processing to start...";
+         if (importStatus.status === 'processing' || importStatus.status === 'pending') { // Treat pending like processing
+             return `Processing ${importStatus.processedFilesCount} of ${importStatus.totalFiles}...`;
+         }
+     }
+     return uploadStatus; // Fallback to uploadStatus or final message
+  };
 
   // Format date for display
   const formatDate = (date: string | Date | undefined | null) => {
@@ -968,44 +705,6 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       setIsPreferencesOpen(false)
     }
   }
-
-  // Define loadWebhookStatus as a standalone async function callable from elsewhere
-  const loadWebhookStatus = useCallback(async () => {
-    // Only run if connected
-    if (stravaIntegration?.id) { // Check for integration ID specifically
-      console.log('[StravaImport] Strava connected, checking webhook status...');
-        setIsWebhookLoading(true)
-      setWebhookStatus(null); // Reset status before loading
-      try {
-        const result = await getStravaWebhookStatusAction()
-        console.log('[StravaImport] Webhook status result:', result);
-        if (result.success) {
-          setWebhookStatus(result) // Includes { subscribed: boolean, ... }
-        } else {
-          console.error('[StravaImport] Failed to get webhook status:', result.error);
-          // Explicitly set subscribed to false on failure
-          setWebhookStatus({ subscribed: false, success: false, error: result.error || "Failed to get status" }); 
-        }
-      } catch (error) {
-        console.error("[StravaImport] Error loading webhook status:", error)
-        // Explicitly set subscribed to false on catch
-        const errorMsg = error instanceof Error ? error.message : "Unknown error during status check";
-        setWebhookStatus({ subscribed: false, success: false, error: errorMsg });
-      } finally {
-        console.log('[StravaImport] Finished checking webhook status.');
-        setIsWebhookLoading(false)
-      }
-    } else {
-      console.log('[StravaImport] Strava not connected, skipping webhook status check.');
-      setWebhookStatus(null); // Clear status if disconnected
-      setIsWebhookLoading(false); // Ensure loading is false if not connected
-    }
-  }, [stravaIntegration]); // Keep dependency on stravaIntegration
-
-  // Use useEffect to call loadWebhookStatus when stravaIntegration changes
-  useEffect(() => {
-    loadWebhookStatus();
-  }, [loadWebhookStatus]); // Dependency array includes the useCallback function
 
   // Add these functions to handle webhook subscription
   const handleSetupWebhook = async () => {
