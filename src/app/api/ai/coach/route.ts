@@ -1003,38 +1003,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
     return `Sorry ${userName}, I encountered an error while processing your request. Please try again later.`;
   }
 }
-
-// --- Rate Limit Check Helper Function ---
-// REMINDER: Apply this pre-check pattern (call checkRateLimit)
-//           before *any* new Grok API call is made in this route or related functions.
-async function checkRateLimit(userId: string): Promise<{ proceed: boolean; dailyUsage: number; lastReset: Date | null }> {
-    await dbConnect(); // Ensure DB connection
-    // ... existing code ...
-    // --- End Rate Limit Check Helper Function ---
-
-    // --- Token Update Helper Function ---
-    // REMINDER: Apply this post-update pattern (call updateTokenUsage)
-    //           after *any* Grok API call successfully returns usage data.
-    async function updateTokenUsage(userId: string, grokUsageData: any): Promise<void> {
-        if (!grokUsageData) return;
-
-        const tokensUsed = grokUsageData.total_tokens || (
-            (grokUsageData.prompt_tokens || 0) +
-            (grokUsageData.completion_tokens || 0)
-            // Add other usage fields if Grok provides them
-        );
-
-        if (tokensUsed > 0) {
-            console.log(`[COACH_RATE_LIMIT] Updating usage for user ${userId}. Adding ${tokensUsed} tokens.`);
-            // Use await to ensure the update completes or handle potential errors
-            try {
-                await User.updateOne({ _id: userId }, { $inc: { dailyGrokTokenUsage: tokensUsed } });
-            } catch (err) {
-                console.error("[COACH_RATE_LIMIT] Failed to update usage count in DB:", err);
-            }
-        }
-    }
-    // --- End Token Update Helper Function ---
+// End of Selection
 
     // --- MAIN POST HANDLER ---
     export async function POST(req: NextRequest) {
