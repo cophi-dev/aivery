@@ -764,6 +764,21 @@ export async function syncStravaActivity(userId: string, activityId: string) {
     }
     // --- END ADDED SECTION --- 
 
+    // <-- Add verification step -->
+    try {
+      const verificationWorkout = await WorkoutModel.findById(savedWorkout._id).lean();
+      if (verificationWorkout) {
+        console.log(`[syncStravaActivity] Verification successful: Found workout ${savedWorkout._id} immediately after saving.`);
+      } else {
+        console.error(`[syncStravaActivity] Verification FAILED: Workout ${savedWorkout._id} NOT FOUND immediately after saving!`);
+        // Optionally throw an error here if this should be fatal
+        // throw new Error(`Verification failed for workout ${savedWorkout._id}`);
+      }
+    } catch (verificationError) {
+      console.error(`[syncStravaActivity] Error during verification read for workout ${savedWorkout._id}:`, verificationError);
+    }
+    // <-- End verification step -->
+
     console.log(`[syncStravaActivity] Successfully completed sync process for activity ${activityId}.`);
 
   } catch (error) {
