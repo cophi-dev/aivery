@@ -172,8 +172,8 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
       const fetchWorkouts = async () => {
         try {
           console.log('[WorkoutListView] No initial workouts, fetching from API...');
-          // Explicitly disable fetch cache
-          const response = await fetch('/api/workouts', { cache: 'no-store' }); 
+          // Explicitly disable fetch cache and add cache-busting param
+          const response = await fetch(`/api/workouts?_=${Date.now()}`, { cache: 'no-store' }); 
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
