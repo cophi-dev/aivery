@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { head, del } from '@vercel/blob'
+import { head, del, put } from '@vercel/blob'
 import { getDatabase } from '@/lib/db/mongodb'
 import extract from 'extract-zip';
 import { promises as fs } from 'fs';
@@ -9,6 +9,7 @@ import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { Client } from "@upstash/qstash"; // Import QStash client
+import mime from 'mime';
 
 // Keep runtime (Node.js needed for streaming and ZIP handling)
 export const runtime = 'nodejs';
@@ -96,8 +97,8 @@ export async function POST(request: NextRequest) {
 }
 
 // processZipFileMoreReliably function orchestrates extraction and queuing
-async function processZipFileMoreReliably(zipFilePath: string, originalFilename: string | null, blobPathname: string, userId: string): Promise<any> {
-  console.log('Processing Strava ZIP file with extract-zip for better nested folder support');
+async function processZipFileMoreReliably(zipFilePath: string, originalFilename: string | null, originalArchiveBlobPathname: string, userId: string): Promise<any> {
+  console.log('Processing Strava ZIP file with extract-zip...');
   const processingId = uuidv4();
   const tempDir = path.join(os.tmpdir(), `strava-import-${processingId}`);
   console.log(`Creating temp directory for extraction: ${tempDir}`);
@@ -112,28 +113,33 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
     const allFiles: string[] = await getFilesRecursively(tempDir);
     console.log(`Found ${allFiles.length} total files in extracted ZIP`);
     
-    const activityFiles = allFiles.filter(file => {
-      const lowerFile = file.toLowerCase();
+    // Filter for activity files and get their *absolute* paths from tempDir
+    const activityFilesAbsolutePaths = allFiles.filter(absolutePath => {
+      const lowerFile = absolutePath.toLowerCase();
       const normalizedPath = lowerFile.replace(/\\/g, '/');
-      if (normalizedPath.includes('/routes/') || normalizedPath.includes('\\routes\\')) return false;
+      const relativePath = path.relative(tempDir, absolutePath).toLowerCase().replace(/\\/g, '/');
+      
+      if (relativePath.includes('routes/')) return false; // Check relative path for routes
       const isActivityExt = lowerFile.endsWith('.gpx') || lowerFile.endsWith('.fit') || lowerFile.endsWith('.fit.gz') || lowerFile.endsWith('.tcx');
-      const isInActivitiesDir = normalizedPath.includes('/activities/') || normalizedPath.includes('\\activities\\');
-      const isRootActivity = !normalizedPath.includes('/') && isActivityExt;
-      if (isActivityExt) {
+      const isInActivitiesDir = relativePath.includes('activities/');
+      // Check if it's an activity file directly in the root of the ZIP (relative path has no directory separator)
+      const isRootActivity = !relativePath.includes('/') && isActivityExt; 
+      
+      if (isActivityExt && (isInActivitiesDir || isRootActivity)) {
           if (lowerFile.endsWith('.gpx')) resultsSummary.gpxFilesFound++;
           else if (lowerFile.endsWith('.fit.gz')) resultsSummary.fitGzFilesFound++;
           else if (lowerFile.endsWith('.fit')) resultsSummary.fitFilesFound++;
           else if (lowerFile.endsWith('.tcx')) resultsSummary.tcxFilesFound++;
+          return true;
       }
-      return (isInActivitiesDir && isActivityExt) || isRootActivity;
+      return false;
     });
     
-    console.log(`Found ${activityFiles.length} potential activity files after filtering`);
-    const totalFiles = activityFiles.length;
+    console.log(`Found ${activityFilesAbsolutePaths.length} potential activity files after filtering`);
+    const totalFiles = activityFilesAbsolutePaths.length;
 
     if (totalFiles === 0) {
         console.warn("No activity files found in the extracted archive.");
-        // Clean up the temporary directory as it's not needed
         try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
         return {
             processingId: null, // No ID needed if no files
@@ -142,12 +148,48 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
         }
     }
     
+    // --- Upload individual activity files to Blob --- START
+    console.log(`Uploading ${totalFiles} individual activity files to Blob storage...`);
+    const uploadedFilesData: { relativePath: string; blobPathname: string }[] = [];
+    const uploadErrors: string[] = [];
+
+    for (const absolutePath of activityFilesAbsolutePaths) {
+        const relativePath = path.relative(tempDir, absolutePath);
+        // Sanitize relativePath for blob pathname (replace backslashes)
+        const sanitizedRelativePath = relativePath.replace(/\\/g, '/');
+        const activityBlobPathname = `strava-imports/${userId}/${processingId}/activities/${sanitizedRelativePath}`;
+        try {
+            const fileContent = await fs.readFile(absolutePath);
+            // Re-add access: 'public' to satisfy type, use mime.getType
+            const blobResult = await put(activityBlobPathname, fileContent, { 
+                access: 'public', // Required by type definition
+                contentType: mime.getType(absolutePath) || 'application/octet-stream' 
+            });
+            console.log(`Uploaded ${relativePath} to ${blobResult.pathname}`);
+            uploadedFilesData.push({ relativePath: relativePath, blobPathname: blobResult.pathname });
+        } catch (uploadError) {
+            console.error(`Failed to upload activity file ${relativePath} to Blob:`, uploadError);
+            uploadErrors.push(relativePath);
+        }
+    }
+
+    if (uploadErrors.length > 0) {
+        console.error(`Failed to upload ${uploadErrors.length} activity files. Aborting import.`);
+        // TODO: Clean up already uploaded individual files? Maybe not necessary if batch fails.
+        try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
+        throw new Error(`Failed to upload all activity files to storage. Files failed: ${uploadErrors.join(', ')}`);
+    }
+    console.log("All activity files successfully uploaded to Blob.");
+    // --- Upload individual activity files to Blob --- END
+    
     const processingState = {
       processingId, userId, status: 'pending', createdAt: new Date(), lastUpdated: new Date(),
-      activityFiles: activityFiles.map(file => path.relative(tempDir, file)),
+      // Store relative paths of files *intended* for processing
+      activityFiles: uploadedFilesData.map(f => f.relativePath), 
       processedFiles: [] as string[], importedFiles: [] as string[], errorFiles: [] as string[],
-      totalFiles: totalFiles, originalFilename: originalFilename || 'strava-export.zip',
-      blobPathname: blobPathname
+      totalFiles: totalFiles, 
+      originalArchiveBlobPathname: originalArchiveBlobPathname, // Store original archive path for final deletion
+      activityBlobPathPrefix: `strava-imports/${userId}/${processingId}/activities/` // Store prefix for worker convenience?
     };
     
     try {
@@ -160,6 +202,7 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       throw new Error('Failed to save processing state to database: ' + (dbError instanceof Error ? dbError.message : String(dbError)));
     }
 
+    // --- ENQUEUE JOBS using QStash --- START
     console.log(`Enqueuing ${totalFiles} jobs via QStash for processingId: ${processingId}`);
     const qstashClient = new Client({ token: process.env.QSTASH_TOKEN! });
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
@@ -173,55 +216,69 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
     console.log(`Worker URL target: ${workerUrl}`);
 
     let enqueuedCount = 0;
-    let failedEnqueueFiles: string[] = [];
-    const batchSize = 100; 
-    for (let i = 0; i < processingState.activityFiles.length; i += batchSize) {
-        const batchFilePaths = processingState.activityFiles.slice(i, i + batchSize);
-        const messagesToEnqueue = batchFilePaths.map(activityFilePath => ({
+    let failedEnqueueFilesData: { relativePath: string; blobPathname: string }[] = [];
+    const batchSize = 100;
+    
+    // Use uploadedFilesData which contains both relative path and blob pathname
+    for (let i = 0; i < uploadedFilesData.length; i += batchSize) {
+        const batchFileData = uploadedFilesData.slice(i, i + batchSize);
+        const messagesToEnqueue = batchFileData.map(fileData => ({
             url: workerUrl,
-            body: JSON.stringify({ processingId, userId, blobPathname, activityFileRelativePath: activityFilePath }),
+            // Send the INDIVIDUAL ACTIVITY FILE'S BLOB PATHNAME
+            body: JSON.stringify({ 
+                processingId, 
+                userId, 
+                activityFileBlobPathname: fileData.blobPathname, 
+                originalArchiveBlobPathname: originalArchiveBlobPathname // Keep original archive path if needed by worker (e.g., for final deletion logic)
+            }),
             headers: { 'content-type': 'application/json' }
         }));
         try {
             const responses = await qstashClient.batchJSON(messagesToEnqueue);
             responses.forEach((response, index) => {
                 if ('messageId' in response && response.messageId) enqueuedCount++;
-                else if ('error' in response && response.error) failedEnqueueFiles.push(batchFilePaths[index]);
-                else failedEnqueueFiles.push(batchFilePaths[index]); // Treat unexpected as failure
+                else failedEnqueueFilesData.push(batchFileData[index]); // Record failed file data
             });
         } catch (batchEnqueueError) {
             console.error(`Failed to enqueue QStash batch starting at index ${i}:`, batchEnqueueError);
-            failedEnqueueFiles.push(...batchFilePaths);
+            failedEnqueueFilesData.push(...batchFileData);
         }
     }
 
     console.log(`Successfully enqueued ${enqueuedCount} / ${totalFiles} jobs via QStash.`);
     let finalStatus = 'queued';
-    if (failedEnqueueFiles.length > 0) {
-       console.warn(`Failed to enqueue ${failedEnqueueFiles.length} jobs.`);
+    if (failedEnqueueFilesData.length > 0) {
+       console.warn(`Failed to enqueue ${failedEnqueueFilesData.length} jobs.`);
        finalStatus = (enqueuedCount === 0) ? 'enqueue_failed' : 'queued_with_errors';
+       // Update errorFiles in DB with relative paths of failed enqueues
+       processingState.errorFiles = failedEnqueueFilesData.map(f => f.relativePath);
+    } else {
+       processingState.errorFiles = []; // Ensure errorFiles is empty if all succeed
     }
 
     try {
       const db = await getDatabase();
       await db.collection('strava_import_state').updateOne(
         { processingId: processingId },
-        { $set: { status: finalStatus, errorFiles: failedEnqueueFiles, lastUpdated: new Date() } }
+        // Update status and the potentially modified errorFiles list
+        { $set: { status: finalStatus, errorFiles: processingState.errorFiles, lastUpdated: new Date() } } 
       );
       console.log(`Updated processing state status to ${finalStatus} in MongoDB`);
     } catch (dbUpdateError) {
       console.error(`Failed to update DB status after QStash enqueue attempt:`, dbUpdateError);
     }
+    // --- ENQUEUE JOBS using QStash --- END
 
-    // Don't delete tempDir here - the worker needs the state file initially?
-    // No, state is in DB now. We *can* delete tempDir.
+    // --- Clean up Temp Directory --- START
     try {
-      console.log(`Cleaning up temp directory: ${tempDir}`);
+      console.log(`Cleaning up temp extraction directory: ${tempDir}`);
       await fs.rm(tempDir, { recursive: true, force: true });
+      console.log("Temp directory cleaned up.");
     } catch (cleanupError) {
-      console.error(`Failed to cleanup temp directory ${tempDir}:`, cleanupError);
-      // Log error but don't fail the overall process
+      console.error(`Failed to cleanup temp directory ${tempDir} after processing:`, cleanupError);
+      // Log error but don't fail the overall process as uploads/queueing might be done
     }
+    // --- Clean up Temp Directory --- END
 
     return {
       processingId: processingId,
@@ -229,11 +286,12 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       message: `${enqueuedCount}/${totalFiles} activity processing jobs queued.`,
       fileTypes: resultsSummary
     };
-
+    
   } catch (error) {
     console.error('Error in processZipFileMoreReliably:', error);
+    // Ensure temp dir is cleaned up on any major error during the process
     try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
-    throw error; // Re-throw error to be caught by POST handler
+    throw error; 
   }
 }
 

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { Receiver } from "@upstash/qstash";
 import { getDatabase } from '@/lib/db/mongodb';
 import { head, del } from '@vercel/blob';
-import yauzl from 'yauzl';
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 import { Buffer } from 'buffer'; // Ensure Buffer is available
@@ -23,74 +22,11 @@ const qstashReceiver = new Receiver({
     nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY!,
 });
 
-// Helper function to open a ZIP file from a buffer using promises
-function openZipFromBuffer(buffer: Buffer): Promise<yauzl.ZipFile> {
-  return new Promise((resolve, reject) => {
-    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
-      if (err || !zipfile) return reject(err || new Error('Failed to open ZIP file'));
-      resolve(zipfile);
-    });
-  });
-}
-
-// Helper function to find and read a specific entry from a ZIP file buffer
-async function findAndReadEntryAsync(zipBuffer: Buffer, targetFileName: string): Promise<Buffer | null> {
-    console.log(`Attempting to find and read entry: ${targetFileName}`);
-    const zipfile = await openZipFromBuffer(zipBuffer);
-    
-    return new Promise((resolve, reject) => {
-        let foundEntry: yauzl.Entry | null = null;
-
-        zipfile.on('entry', (entry: yauzl.Entry) => {
-            // Normalize path separators
-            const normalizedEntryName = entry.fileName.replace(/\\/g, '/');
-            const normalizedTargetName = targetFileName.replace(/\\/g, '/');
-            // console.log(`Checking entry: ${normalizedEntryName}`); // Verbose logging
-            
-            // Check if this entry matches the target file path (case-insensitive recommended)
-            if (normalizedEntryName.toLowerCase() === normalizedTargetName.toLowerCase()) {
-                console.log(`Found matching entry: ${entry.fileName}`);
-                foundEntry = entry;
-                // Stop reading further entries once found
-                // Note: yauzl might not have a direct 'stop' method, but we can handle it logicall
-            } else if (foundEntry === null) {
-                 // Read next entry only if target not found yet
-                zipfile.readEntry();
-            }
-        });
-
-        zipfile.on('end', () => {
-            if (foundEntry) {
-                console.log(`Opening read stream for found entry: ${foundEntry.fileName}`);
-                zipfile.openReadStream(foundEntry, (err, readStream) => {
-                    if (err) return reject(err);
-                    if (!readStream) return reject(new Error('Failed to open read stream for found entry'));
-
-                    const chunks: Buffer[] = [];
-                    readStream.on('data', (chunk) => chunks.push(chunk));
-                    readStream.on('end', () => {
-                         console.log(`Successfully read buffer for ${foundEntry?.fileName}`);
-                         resolve(Buffer.concat(chunks));
-                    });
-                    readStream.on('error', reject);
-                });
-            } else {
-                console.warn(`Target entry "${targetFileName}" not found in the archive.`);
-                resolve(null); // Resolve with null if entry not found
-            }
-        });
-
-        zipfile.on('error', reject);
-
-        // Start reading entries
-        zipfile.readEntry();
-    });
-}
-
 async function handler(req: NextRequest) {
     console.log("--- Strava Process Activity Job Received ---");
     let processingId: string | null = null;
-    let activityFileRelativePath: string | null = null;
+    let activityFileBlobPathname: string | null = null; // Renamed for clarity
+    let originalArchiveBlobPathname: string | null = null; // Path to the original ZIP
 
     // 1. Verify QStash Signature
     const signature = req.headers.get("upstash-signature");
@@ -114,15 +50,18 @@ async function handler(req: NextRequest) {
         const body = JSON.parse(requestBodyString); 
         processingId = body.processingId;
         const userId = body.userId;
-        const blobPathname = body.blobPathname;
-        activityFileRelativePath = body.activityFileRelativePath;
+        activityFileBlobPathname = body.activityFileBlobPathname; // Get the specific activity file path
+        originalArchiveBlobPathname = body.originalArchiveBlobPathname; // Get original archive path
 
-        if (!processingId || !userId || !blobPathname || !activityFileRelativePath) {
+        // Use activityFileBlobPathname for logging the specific file being processed
+        const logIdentifier = activityFileBlobPathname ? activityFileBlobPathname.split('/').pop() : 'unknown_file';
+
+        if (!processingId || !userId || !activityFileBlobPathname || !originalArchiveBlobPathname) {
             console.error("Missing required fields in job payload:", body);
             return NextResponse.json({ success: false, error: "Invalid job payload" }, { status: 400 });
         }
 
-        console.log("Processing job:", { processingId, userId, activityFileRelativePath });
+        console.log(`Processing job for: ${logIdentifier}`, { processingId, userId });
 
         // 1. Fetch processing state from MongoDB
         const db = await getDatabase();
@@ -134,206 +73,206 @@ async function handler(req: NextRequest) {
             return NextResponse.json({ success: false, error: "Processing state not found" }, { status: 404 }); // 404 might prevent retries
         }
 
+        // Calculate relative path (might be undefined)
+        let relativePathFromBlob: string | undefined;
+        if (state.activityBlobPathPrefix && activityFileBlobPathname.includes(state.activityBlobPathPrefix)) {
+            relativePathFromBlob = activityFileBlobPathname.split(state.activityBlobPathPrefix)[1];
+        }
+        
+        // Use logIdentifier as fallback if relative path couldn't be determined
+        const fileCheckIdentifier = relativePathFromBlob || logIdentifier || 'unknown_path';
+        
         if (state.status === 'completed' || state.status === 'failed') {
              console.log(`Skipping job for already completed/failed batch: ${processingId}, status: ${state.status}`);
              return NextResponse.json({ success: true, message: "Batch already completed or failed" });
         }
 
-        // Check if this specific file has already been processed or errored
-        if (state.processedFiles?.includes(activityFileRelativePath) || state.errorFiles?.includes(activityFileRelativePath)) {
-             console.log(`Skipping already processed/errored file: ${activityFileRelativePath} in batch: ${processingId}`);
+        // Check if already processed/errored using fileCheckIdentifier
+        if (state.processedFiles?.includes(fileCheckIdentifier) || state.errorFiles?.includes(fileCheckIdentifier)) {
+             console.log(`Skipping already processed/errored file: ${fileCheckIdentifier} in batch: ${processingId}`);
              return NextResponse.json({ success: true, message: "File already processed or errored" });
         }
 
-        // 2. Download original archive blob
-        console.log(`Downloading archive blob: ${blobPathname}`);
-        const blobHead = await head(blobPathname);
-        if (!blobHead || !blobHead.url) {
-             console.error(`Original archive blob not found: ${blobPathname}`);
-             await db.collection('strava_import_state').updateOne(
-                 { processingId: processingId },
-                 { $set: { status: 'failed', error: 'Original archive blob missing', lastUpdated: new Date() } }
-             );
-             return NextResponse.json({ success: false, error: "Original archive blob missing" }, { status: 404 });
-        }
-        const blobResponse = await fetch(blobHead.url);
-        if (!blobResponse.ok) {
-             console.error(`Failed to download archive blob: ${blobPathname} (Status: ${blobResponse.status})`);
-             // Don't fail the whole batch state, maybe just this file? Or allow retry?
-             return NextResponse.json({ success: false, error: "Failed to download archive blob" }, { status: 502 }); // Allows QStash retry
-        }
-        const archiveBuffer = Buffer.from(await blobResponse.arrayBuffer());
-        console.log(`Downloaded archive (${archiveBuffer.length} bytes)`);
-
-        // 3. Extract the specific activity file buffer
-        let fileBuffer = await findAndReadEntryAsync(archiveBuffer, activityFileRelativePath);
-
-        if (!fileBuffer) {
-            console.error(`Failed to extract file "${activityFileRelativePath}" from archive: ${blobPathname}`);
-             await db.collection('strava_import_state').updateOne(
+        // 2. Download the SPECIFIC activity file blob
+        console.log(`Downloading activity blob: ${activityFileBlobPathname}`);
+        let fileBuffer: Buffer;
+        try {
+            // Use head to get the download URL
+            const blobHead = await head(activityFileBlobPathname); 
+            if (!blobHead || !blobHead.url) {
+                 throw new Error(`Activity blob not found or URL missing: ${activityFileBlobPathname}`);
+            }
+            // Fetch the content from the URL
+            const blobResponse = await fetch(blobHead.url);
+            if (!blobResponse.ok) {
+                 throw new Error(`Failed to download activity blob: ${activityFileBlobPathname} (Status: ${blobResponse.status})`);
+            }
+            fileBuffer = Buffer.from(await blobResponse.arrayBuffer());
+            console.log(`Downloaded activity file (${fileBuffer.length} bytes) for: ${fileCheckIdentifier}`);
+        } catch (downloadError) {
+            console.error(`Error downloading activity file ${activityFileBlobPathname}:`, downloadError);
+            // Revert to using 'as any' for $push as a temporary workaround
+            await db.collection('strava_import_state').updateOne(
                 { processingId: processingId },
-                { $push: { errorFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
-             );
-             // Consider this a success for QStash (job attempted), but record file error
-             return NextResponse.json({ success: true, error: `File not found in archive: ${activityFileRelativePath}` });
+                { $push: { errorFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
+            );
+            return NextResponse.json({ success: true, error: `Failed download for ${fileCheckIdentifier}` });
         }
-        
-        console.log(`Extracted file buffer (${fileBuffer.length} bytes) for: ${activityFileRelativePath}`);
-        
-        // Check if file needs decompression (.gz)
-        const lowerFilePath = activityFileRelativePath.toLowerCase();
+
+        // 3. Decompress if necessary (.gz)
+        const lowerFilePath = activityFileBlobPathname.toLowerCase();
         let isGzipped = false;
         if (lowerFilePath.endsWith('.gz')) {
-            console.log(`Decompressing gzipped file: ${activityFileRelativePath}`);
+            console.log(`Decompressing gzipped file: ${fileCheckIdentifier}`);
             try {
                  fileBuffer = await gunzipAsync(fileBuffer);
                  isGzipped = true;
                  console.log(`Decompressed buffer size: ${fileBuffer.length} bytes`);
             } catch (unzipError) {
-                console.error(`Failed to decompress file ${activityFileRelativePath}:`, unzipError);
+                console.error(`Failed to decompress file ${fileCheckIdentifier}:`, unzipError);
+                // Revert to using 'as any' for $push
                 await db.collection('strava_import_state').updateOne(
                     { processingId: processingId },
-                    { $push: { errorFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                    { $push: { errorFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
                 );
-                return NextResponse.json({ success: true, error: `Failed to decompress file: ${activityFileRelativePath}` });
+                return NextResponse.json({ success: true, error: `Failed to decompress file: ${fileCheckIdentifier}` });
             }
         }
 
         // Determine actual file type for processing
-        const actualFilePath = isGzipped ? lowerFilePath.slice(0, -3) : lowerFilePath; // remove .gz if needed
+        const actualFileType = isGzipped ? lowerFilePath.slice(0, -3) : lowerFilePath; 
         
         // 4. Process the extracted file buffer
         let processedActivityData: any = null;
         try {
-            if (actualFilePath.endsWith('.fit')) {
-                console.log(`Processing as FIT file: ${activityFileRelativePath}`);
-                processedActivityData = await processFitFile(fileBuffer, activityFileRelativePath);
-            } else if (actualFilePath.endsWith('.gpx')) {
-                 console.log(`Processing as GPX file: ${activityFileRelativePath}`);
-                 processedActivityData = await processGpxFile(fileBuffer, activityFileRelativePath);
-            } else if (actualFilePath.endsWith('.tcx')) {
-                 console.warn(`TCX file processing not yet implemented, skipping: ${activityFileRelativePath}`);
-                 // Mark as processed but not imported
+            // Pass the relative path (for logging/ID generation) and the buffer
+            const fileNameForProcessing = fileCheckIdentifier; 
+            if (actualFileType.endsWith('.fit')) {
+                console.log(`Processing as FIT file: ${fileNameForProcessing}`);
+                processedActivityData = await processFitFile(fileBuffer, fileNameForProcessing);
+            } else if (actualFileType.endsWith('.gpx')) {
+                 console.log(`Processing as GPX file: ${fileNameForProcessing}`);
+                 processedActivityData = await processGpxFile(fileBuffer, fileNameForProcessing);
+            } else if (actualFileType.endsWith('.tcx')) {
+                 console.warn(`TCX file processing not yet implemented, skipping: ${fileNameForProcessing}`);
+                 // Revert to using 'as any' for $push
                  await db.collection('strava_import_state').updateOne(
                     { processingId: processingId },
-                    { $push: { processedFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                    { $push: { processedFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
                  );
-                 return NextResponse.json({ success: true, message: `TCX processing skipped for ${activityFileRelativePath}` });
+                 return NextResponse.json({ success: true, message: `TCX processing skipped for ${fileCheckIdentifier}` });
             } else {
-                 console.warn(`Unsupported file type skipped: ${activityFileRelativePath}`);
-                 // Mark as processed but not imported
+                 console.warn(`Unsupported file type skipped: ${fileNameForProcessing}`);
+                 // Revert to using 'as any' for $push
                  await db.collection('strava_import_state').updateOne(
                     { processingId: processingId },
-                    { $push: { processedFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                    { $push: { processedFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
                  );
-                 return NextResponse.json({ success: true, message: `Unsupported file type skipped for ${activityFileRelativePath}` });
+                 return NextResponse.json({ success: true, message: `Unsupported file type skipped for ${fileCheckIdentifier}` });
             }
 
             if (!processedActivityData) {
-                console.warn(`File processing returned no data for: ${activityFileRelativePath}`);
-                // Mark as error file
+                console.warn(`File processing returned no data for: ${fileCheckIdentifier}`);
+                // Revert to using 'as any' for $push
                 await db.collection('strava_import_state').updateOne(
                     { processingId: processingId },
-                    { $push: { errorFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                    { $push: { errorFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
                  );
-                return NextResponse.json({ success: true, error: `File processing failed: ${activityFileRelativePath}` });
+                return NextResponse.json({ success: true, error: `File processing failed: ${fileCheckIdentifier}` });
             }
             
         } catch (processingError) {
-             console.error(`Error processing file content for ${activityFileRelativePath}:`, processingError);
+             console.error(`Error processing file content for ${fileCheckIdentifier}:`, processingError);
+             // Revert to using 'as any' for $push
              await db.collection('strava_import_state').updateOne(
                 { processingId: processingId },
-                { $push: { errorFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                { $push: { errorFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
              );
-             return NextResponse.json({ success: true, error: `Error processing file: ${activityFileRelativePath}` });
+             return NextResponse.json({ success: true, error: `Error processing file: ${fileCheckIdentifier}` });
         }
 
         // 5. Transform and Save Workout
         try {
-             console.log(`Transforming activity data for: ${activityFileRelativePath}`);
+             console.log(`Transforming activity data for: ${fileCheckIdentifier}`);
              const workoutData = transformStravaActivity(processedActivityData);
              
-             console.log(`Saving workout to DB for user ${userId}, file: ${activityFileRelativePath}`);
-             // Fix createCardioWorkout call - pass single object (assuming signature)
-             const workoutInput = { 
-                 userId: userId, 
-                 ...workoutData // Spread the transformed data
-             };
+             console.log(`Saving workout to DB for user ${userId}, file: ${fileCheckIdentifier}`);
+             const workoutInput = { userId: userId, ...workoutData };
              const createdWorkout = await createCardioWorkout(workoutInput);
 
              if (!createdWorkout) {
                  throw new Error('Workout creation function returned undefined or null.');
              }
 
-             console.log(`Successfully saved workout ID: ${createdWorkout._id} from file: ${activityFileRelativePath}`);
+             console.log(`Successfully saved workout ID: ${createdWorkout._id} from file: ${fileCheckIdentifier}`);
 
-             // 6. Update State - Mark file as imported
+             // 6. Update State - Use fileCheckIdentifier (guaranteed string)
              await db.collection('strava_import_state').updateOne(
                  { processingId: processingId },
                  {
                      $push: {
-                         processedFiles: activityFileRelativePath as any,
-                         importedFiles: activityFileRelativePath as any 
+                         processedFiles: fileCheckIdentifier as any,
+                         importedFiles: fileCheckIdentifier as any
                      },
                      $set: { lastUpdated: new Date() }
                  }
              );
 
-             // Optional: Check if all files are processed and update final status
-             // Fetch state again *after* update to get latest counts
+             // Check if all files are processed and update final status / delete ORIGINAL archive
              const finalStateCheck = await db.collection('strava_import_state').findOne({ processingId: processingId });
-             // Check if the batch processing is complete
              if (finalStateCheck && (finalStateCheck.processedFiles?.length ?? 0) + (finalStateCheck.errorFiles?.length ?? 0) >= finalStateCheck.totalFiles) {
                  console.log(`All files processed for batch ${processingId}. Updating status to completed.`);
-                 // Update the batch status to 'completed'
                  await db.collection('strava_import_state').updateOne(
                      { processingId: processingId },
                      { $set: { status: 'completed', lastUpdated: new Date() } }
                  );
                  
-                 // --- Trigger Blob Deletion --- 
-                 const blobToDelete = finalStateCheck.blobPathname;
-                 if (blobToDelete) {
-                     console.log(`Batch complete. Attempting to delete archive blob: ${blobToDelete}`);
+                 // Trigger ORIGINAL archive Blob Deletion
+                 const archiveToDelete = finalStateCheck.originalArchiveBlobPathname; // Use the correct path
+                 if (archiveToDelete) {
+                     console.log(`Batch complete. Attempting to delete ORIGINAL archive blob: ${archiveToDelete}`);
                      try {
-                         await del(blobToDelete); // Use the pathname directly with del
-                         console.log(`Successfully deleted blob: ${blobToDelete}`);
+                         await del(archiveToDelete); 
+                         console.log(`Successfully deleted original archive blob: ${archiveToDelete}`);
                      } catch (deleteError) {
-                         console.error(`Failed to delete blob ${blobToDelete} after batch completion:`, deleteError);
-                         // Log the error but don't fail the worker job itself
+                         console.error(`Failed to delete original archive blob ${archiveToDelete}:`, deleteError);
                      }
                  } else {
-                     console.warn(`Cannot delete blob for completed batch ${processingId}: blobPathname missing in state.`);
+                     console.warn(`Cannot delete original archive blob for completed batch ${processingId}: path missing in state.`);
                  }
-                 // --- End Blob Deletion --- 
+                 // We might also want to delete the individual activity files here or later? For now, keep them.
              }
 
              return NextResponse.json({ success: true, workoutId: createdWorkout._id });
 
         } catch (dbError) {
-             console.error(`Error transforming or saving workout for file ${activityFileRelativePath}:`, dbError);
+             console.error(`Error transforming or saving workout for file ${fileCheckIdentifier}:`, dbError);
               await db.collection('strava_import_state').updateOne(
                  { processingId: processingId },
-                 { $push: { errorFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                 { $push: { errorFiles: fileCheckIdentifier as any }, $set: { lastUpdated: new Date() } }
               );
-             return NextResponse.json({ success: true, error: `Error saving workout: ${activityFileRelativePath}` });
+             return NextResponse.json({ success: true, error: `Error saving workout: ${fileCheckIdentifier}` });
         }
 
     } catch (error) {
         console.error("Unhandled error in Strava activity processor:", error);
-        // Attempt to mark file as error in state if possible
-        if (processingId && activityFileRelativePath) {
+        if (processingId && activityFileBlobPathname) {
+             // Recalculate identifier within this scope for safety
+             let errorFileIdentifier = activityFileBlobPathname.split('/').pop() || 'unknown_file';
              try {
                  const db = await getDatabase();
+                 const stateForError = await db.collection('strava_import_state').findOne({ processingId: processingId });
+                 if(stateForError?.activityBlobPathPrefix && activityFileBlobPathname.includes(stateForError.activityBlobPathPrefix)) {
+                     const splitResult = activityFileBlobPathname.split(stateForError.activityBlobPathPrefix)[1];
+                     if (splitResult) errorFileIdentifier = splitResult;
+                 }
+                 // Revert to using 'as any' for $push
                  await db.collection('strava_import_state').updateOne(
                     { processingId: processingId },
-                    { $push: { errorFiles: activityFileRelativePath as any }, $set: { lastUpdated: new Date() } }
+                    { $push: { errorFiles: errorFileIdentifier as any }, $set: { lastUpdated: new Date() } }
                  );
-             } catch (stateUpdateError) {
-                 console.error("Failed to update state after unhandled error:", stateUpdateError);
-             }
+             } catch (stateUpdateError) { /* ... */ }
         }
-        // Return 500 to potentially allow QStash retry for transient issues
         return NextResponse.json({ success: false, error: "Internal server error during activity processing" }, { status: 500 });
     }
 }

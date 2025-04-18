@@ -97,6 +97,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/lodash": "^4.17.16",
+    "@types/mime": "^3.0.4",
     "@types/next": "^8.0.7",
     "@types/node": "^20",
     "@types/react": "^18.2.0",
