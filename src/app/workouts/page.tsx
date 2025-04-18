@@ -31,9 +31,9 @@ export default async function WorkoutsPage() {
   }
 
   try {
-    // Fetch workouts on the server
-    const workouts: WorkoutData[] = await getWorkoutsByUserId(session.user.id);
-    console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
+    // // Fetch workouts on the server
+    // const workouts: WorkoutData[] = await getWorkoutsByUserId(session.user.id);
+    // console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
     
     return (
       <div className="container mx-auto px-4 py-8">
@@ -60,7 +60,7 @@ export default async function WorkoutsPage() {
             <CardTitle>Workouts</CardTitle>
           </CardHeader>
           <CardContent>
-            <WorkoutListView initialWorkouts={workouts} />
+            <WorkoutListView />
           </CardContent>
         </Card>
       </div>
