@@ -495,7 +495,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       console.error("Upload/Import Error:", err);
       const errorMessage = err.message || "An unknown error occurred during upload or import.";
       setError(errorMessage);
-      setUploadStatus(null);
+      setUploadStatus(''); 
       setIsProcessing(false); // Ensure processing stops on error
       stopPolling();
       toast({
@@ -1124,7 +1124,14 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
                                  });
                                  
                                  // Reload webhook status to update lastUpdated
-                                 setTimeout(loadWebhookStatus, 1000);
+                                 setTimeout(async () => {
+                                    const updatedStatus = await getStravaWebhookStatusAction();
+                                    if (updatedStatus.success) {
+                                        setWebhookStatus(updatedStatus);
+                                    } else {
+                                        console.error("Failed to refresh webhook status after test:", updatedStatus.error);
+                                    }
+                                 }, 1000);
                                } else {
                                  throw new Error(result.error || "Unknown error processing test webhook");
                                }
