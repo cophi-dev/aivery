@@ -645,6 +645,17 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     }
     // --- End Update User Summaries ---
 
+    // --- Update Exercise PRs (after summaries, as it might rely on workout count) ---
+    await updateExercisePRs(userId); 
+    // --- End Update Exercise PRs ---
+
+    // 5. Revalidate paths
+    revalidatePath("/calendar")
+    revalidatePath("/workouts")
+    revalidatePath("/dashboard")
+    revalidatePath("/activity")
+    console.log('Paths revalidated');
+
     return savedWorkout!.toObject();
 
   } catch (error) {
@@ -997,6 +1008,10 @@ export async function deleteWorkout(id: string): Promise<void> {
     // --- Update User Summaries ---
     await updateUserWorkoutSummaries(userId);
     // --- End Update User Summaries ---
+
+    // --- Update Exercise PRs (after summaries, as it might rely on workout count) ---
+    await updateExercisePRs(userId);
+    // --- End Update Exercise PRs ---
 
     // 5. Revalidate paths
     revalidatePath("/calendar")
