@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     console.log('User authenticated:', userId);
 
     // Ensure DB connection is ready before starting
-    await dbConnect(); 
+    await dbConnect();
     console.log('Initial DB connection established.');
 
     const body = await request.json();
@@ -53,6 +53,9 @@ export async function POST(request: NextRequest) {
 
     // --- Download Blob --- 
     console.log('Processing file from blob storage:', { blobPathname, originalFilename });
+    console.log(`[Import API] Attempting head request for pathname: '${blobPathname}'`);
+    // Add a short delay to potentially handle eventual consistency issues
+    await new Promise(resolve => setTimeout(resolve, 2000)); 
     const blobHead = await head(blobPathname);
     if (!blobHead || !blobHead.url) {
         try { await del(blobPathname); } catch {} 
