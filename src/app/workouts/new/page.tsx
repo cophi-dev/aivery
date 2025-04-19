@@ -56,6 +56,23 @@ type ExerciseState = {
 }
 // --- END NEW State Types ---
 
+// --- NEW Type for AI Response Data (Mirroring API route's type) ---
+// TODO: Keep this in sync with the API route's ParsedWorkoutData type
+type ParsedWorkoutData = {
+  workoutType?: string;
+  workoutName?: string;
+  exercises: Array<{
+    name: string;
+    notes?: string;
+    sets: Array<{
+      weight?: string;
+      reps?: string;
+      notes?: string;
+    }>;
+  }>;
+};
+// --- END Type for AI Response Data ---
+
 // Define the allowed *schema* types from IWorkout
 type AllowedWorkoutType = IWorkout['type']
 
@@ -106,6 +123,95 @@ const estimateWorkoutDuration = (exercises: ExerciseState[]): number => {
   return totalDuration;
 };
 
+// --- Moved AI Handler outside component ---
+// It needs state setters and relevant data passed in as arguments
+const handleAiProcess = async (
+  aiLogInput: string,
+  setExercises: React.Dispatch<React.SetStateAction<ExerciseState[]>>,
+  setWorkoutType: React.Dispatch<React.SetStateAction<WorkoutTypeOption | undefined>>,
+  setWorkoutName: React.Dispatch<React.SetStateAction<string>>,
+  setIsProcessingAi: React.Dispatch<React.SetStateAction<boolean>>,
+  setError: React.Dispatch<React.SetStateAction<string | null>>,
+  dbExercisesMap: Map<string, ExerciseData>,
+  workoutTypeDisplayNames: Record<WorkoutTypeOption, string>,
+  currentWorkoutType: WorkoutTypeOption | undefined // Pass current type for default logic
+) => {
+  if (!aiLogInput.trim()) {
+    toast.error("Please enter your workout log first.");
+    return;
+  }
+  setIsProcessingAi(true);
+  setError(null);
+
+  try {
+    const response = await fetch('/api/ai/parse-workout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ logText: aiLogInput }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `API request failed with status ${response.status}`);
+    }
+
+    const parsedData: ParsedWorkoutData = await response.json();
+    console.log("Received parsed data from AI API:", parsedData);
+
+    setExercises([]);
+
+    if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
+      setWorkoutType(parsedData.workoutType as WorkoutTypeOption);
+    } else {
+      if (parsedData.exercises && parsedData.exercises.length > 0) {
+        if (!currentWorkoutType) { // Use passed-in current type
+           setWorkoutType("gym"); 
+        }
+      }
+    }
+
+    if (parsedData.workoutName) {
+      setWorkoutName(parsedData.workoutName);
+    }
+
+    const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
+      const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
+      const canonicalExercise = dbExercisesMap.get(parsedEx.name);
+
+      const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => {
+        const setTempId = `set-temp-${Date.now()}-${Math.random()}`;
+        return {
+          id: setTempId,
+          weight: parsedSet.weight || "",
+          reps: parsedSet.reps || "",
+          notes: parsedSet.notes || "",
+        };
+      });
+
+      return {
+        id: exerciseTempId,
+        exerciseId: canonicalExercise?._id,
+        name: canonicalExercise?.name || parsedEx.name,
+        notes: parsedEx.notes || "",
+        sets: newSetsState,
+      };
+    });
+
+    setExercises(newExercisesState);
+    toast.success("Workout populated from AI!");
+
+  } catch (err) {
+    console.error("AI Processing failed:", err);
+    setError(`AI Processing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    toast.error("AI Processing failed.");
+  } finally {
+    setIsProcessingAi(false);
+  }
+};
+// --- END Moved AI Handler ---
+
 export default function NewWorkoutPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -126,6 +232,8 @@ export default function NewWorkoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [aiLogInput, setAiLogInput] = useState<string>("") // State for AI input
+  const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false) // State for AI processing status
 
   const isEditing = !!editingWorkoutId
 
@@ -857,6 +965,41 @@ export default function NewWorkoutPage() {
            </div>
         </div>
 
+        {/* NEW: AI Quick Log Section */}
+        <div className="space-y-4 rounded-md border p-4 md:p-6">
+          <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
+          <div>
+            <Label htmlFor="ai-quick-log">Paste your workout log</Label>
+            <Textarea 
+              id="ai-quick-log"
+              placeholder="e.g., Squats: 1x5 60 kg, 3x5 50 kg, Bench Press: 4x5 60 kg..."
+              className="mt-1 min-h-[80px]"
+              value={aiLogInput} // Bind value to state
+              onChange={(e) => setAiLogInput(e.target.value)} // Update state on change
+              disabled={isProcessingAi || isSubmitting} // Disable if AI is working or form is submitting
+            />
+            <p className="text-sm text-muted-foreground mt-1">Enter your workout details in a simple format.</p>
+          </div>
+          <Button 
+            type="button" // Important: prevent form submission
+            onClick={() => handleAiProcess( // Pass required state and setters
+              aiLogInput,
+              setExercises,
+              setWorkoutType,
+              setWorkoutName,
+              setIsProcessingAi,
+              setError,
+              dbExercisesMap,
+              workoutTypeDisplayNames,
+              workoutType // Pass current workoutType
+            )}
+            disabled={isSubmitting || isProcessingAi || !aiLogInput.trim()} // Disable if submitting, AI processing, or no input
+            variant="outline"
+          >
+            {isProcessingAi ? "Processing..." : "Process with AI"} {/* Change button text when processing */}
+          </Button>
+        </div>
+        {/* END NEW: AI Quick Log Section */}
 
         {/* Conditional Fields for Non-Strength Workouts */}
         {!isStrengthWorkout && workoutType && (
