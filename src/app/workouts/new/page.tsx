@@ -162,21 +162,47 @@ const findCanonicalExercise = (
   if (!parsedName) return undefined;
 
   const normalizedParsedName = normalizeName(parsedName);
+  console.log(`[findCanonicalExercise] Attempting to match: "${parsedName}" (Normalized: "${normalizedParsedName}")`);
 
   // 1. Try direct normalized match
-  let foundExercise = dbExercises.find(ex => normalizeName(ex.name) === normalizedParsedName);
-  if (foundExercise) return foundExercise;
+  console.log(`[findCanonicalExercise] Checking direct match against ${dbExercises.length} DB exercises...`);
+  let foundExercise = dbExercises.find(ex => {
+      const normalizedDbName = normalizeName(ex.name);
+      return normalizedDbName === normalizedParsedName;
+  });
+
+  if (foundExercise) {
+    console.log(`[findCanonicalExercise] Found direct match:`, foundExercise);
+    return foundExercise;
+  }
+  console.log(`[findCanonicalExercise] No direct match found.`);
 
   // 2. Try alias match (normalize the alias key and the target)
+  console.log(`[findCanonicalExercise] Checking alias match...`);
   // First, check if normalized input matches a normalized alias *key*
-  const normalizedAliasKey = Object.keys(aliases).find(key => normalizeName(key) === normalizedParsedName);
+  const normalizedAliasKey = Object.keys(aliases).find(key => {
+      const normalizedKey = normalizeName(key);
+      return normalizedKey === normalizedParsedName;
+  });
   const aliasTargetName = normalizedAliasKey ? aliases[normalizedAliasKey] : undefined;
 
   if (aliasTargetName) {
+    console.log(`[findCanonicalExercise] Found matching alias key: "${normalizedAliasKey}", Target: "${aliasTargetName}"`);
     const normalizedAliasTarget = normalizeName(aliasTargetName);
+    console.log(`[findCanonicalExercise] Normalized alias target: "${normalizedAliasTarget}"`);
     // Find DB exercise matching the normalized alias *target*
-    foundExercise = dbExercises.find(ex => normalizeName(ex.name) === normalizedAliasTarget);
-    if (foundExercise) return foundExercise;
+    console.log(`[findCanonicalExercise] Checking DB match against normalized alias target...`);
+    foundExercise = dbExercises.find(ex => {
+        const normalizedDbName = normalizeName(ex.name);
+        return normalizeName(ex.name) === normalizedAliasTarget;
+    });
+    if (foundExercise) {
+      console.log(`[findCanonicalExercise] Found alias match:`, foundExercise);
+      return foundExercise;
+    }
+     console.log(`[findCanonicalExercise] No DB match found for normalized alias target.`);
+  } else {
+     console.log(`[findCanonicalExercise] No matching alias key found.`);
   }
 
   // 3. Optional: Add fuzzy matching here later if needed
