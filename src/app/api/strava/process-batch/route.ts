@@ -14,15 +14,12 @@ import { FitFileParser } from '@/lib/services/fitFileService'
 import mongoose from 'mongoose'
 import WorkoutModel from '@/lib/db/models/workout'
 import ExerciseModel from '@/lib/db/models/exercise'
-import { findOrCreateBaseExercise } from '@/lib/db/repositories/exerciseRepository'
-import { 
-  processFitFile, 
-  processGpxFile, 
-  processTcxFile, 
-  generateActivityName, 
-  extractStravaIdFromFilename 
-} from '@/lib/services/stravaArchiveService'
 import { updateUserWorkoutSummaries, updateExercisePRs } from '@/lib/workout-actions'
+import { 
+  processTcxFile,
+  generateActivityName,
+  extractStravaIdFromFilename
+} from '@/lib/services/stravaArchiveService'
 
 // Keep runtime (Node.js needed for processing)
 export const runtime = 'nodejs'
