@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
      // --- Cleanup Temp Directory --- 
     if (tempDir) {
         try {
-          console.log(`Cleaning up temp extraction directory: ${tempDir}`);
+          console.log(`Attempting cleanup of temp extraction directory: ${tempDir}`);
           await fs.rm(tempDir, { recursive: true, force: true });
           console.log("Temp directory cleaned up.");
         } catch (cleanupError) {
