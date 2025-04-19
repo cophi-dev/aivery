@@ -1238,6 +1238,7 @@ export async function calculateTotalWeightLifted(workout: any): Promise<number> 
 
 // Create a new cardio workout
 export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
+  await dbConnect(); // Ensure DB connection is established
   try {
     // Find the associated exercise or create it if needed
     const exerciseType = data.type?.toLowerCase() || 'other';
