@@ -39,7 +39,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       access: 'public', // Required for client-side PUT URL generation
       contentType: 'application/zip',
       addRandomSuffix: false,
-      allowOverwrite: true
     });
 
     console.log('Generated blob storage URL:', blob.url);
