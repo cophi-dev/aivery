@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { createCardioWorkout } from "@/lib/workout-actions"
 import { transformStravaActivity } from "@/lib/services/stravaService"
 import { revalidatePath } from "next/cache"
-import { gunzip as gunzipCb } from 'zlib'
+import { gunzip } from 'zlib'
 import { promisify } from 'util'
 import { promises as fs } from 'fs'
 import * as fsSync from 'fs'
@@ -14,13 +14,22 @@ import { FitFileParser } from '@/lib/services/fitFileService'
 import mongoose from 'mongoose'
 import WorkoutModel from '@/lib/db/models/workout'
 import ExerciseModel from '@/lib/db/models/exercise'
+import { findOrCreateBaseExercise } from '@/lib/db/repositories/exerciseRepository'
+import { 
+  processFitFile, 
+  processGpxFile, 
+  processTcxFile, 
+  generateActivityName, 
+  extractStravaIdFromFilename 
+} from '@/lib/services/stravaArchiveService'
+import { updateUserWorkoutSummaries, updateExercisePRs } from '@/lib/workout-actions'
 
 // Keep runtime (Node.js needed for processing)
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Set max duration to 60s (Hobby plan limit)
 
-const gunzipAsync = promisify(gunzipCb)
+const gunzipAsync = promisify(gunzip)
 
 // Helper function to determine a more specific type from filename and path
 function determineActivityTypeFromFilePath(filePath: string): string {
@@ -575,46 +584,6 @@ async function findOrCreateBaseExercise(type: string, category: 'cardio' | 'stre
   }
 }
 
-// Function to extract Strava ID from filename
-function extractStravaIdFromFilename(filename: string): string | undefined {
-  if (!filename) return undefined
-  
-  // Normalize path separators for consistent handling
-  const normalizedFilename = filename.replace(/\\/g, '/')
-  
-  // Try several patterns to extract the ID
-  const patterns = [
-    // Pattern 1: Standard activities/ID.ext format (highest priority)
-    /activities\/(\d{5,})\.(?:fit\.gz|gpx|fit|tcx)/i,
-    
-    // Pattern 2: ID directly in path without activities/ folder
-    /\/(\d{5,})\.(?:fit\.gz|gpx|fit|tcx)$/i,
-    
-    // Pattern 3: Just filename as a number (no path)
-    /(?:^|\/|\\)(\d{5,})\.(?:fit\.gz|gpx|fit|tcx)$/i,
-    
-    // Pattern 4: Activity ID in any file path
-    /activity[_-]?(\d{5,})/i,
-    
-    // Pattern 5: Export_ prefix
-    /export[_-](\d{5,})/i,
-    
-    // Pattern 6: Any number in the filename as last resort (only if at least 8 digits)
-    /(\d{8,})/
-  ]
-  
-  // Try each pattern in order
-  for (let i = 0; i < patterns.length; i++) {
-    const pattern = patterns[i]
-    const match = normalizedFilename.match(pattern)
-    if (match && match[1]) {
-      return match[1]
-    }
-  }
-  
-  return undefined
-}
-
 // Function to generate a user-friendly workout name
 function generateWorkoutName(workout: any): string {
   const date = new Date(workout.date);
@@ -1164,11 +1133,26 @@ export async function POST(request: NextRequest) {
     // Check if all batches are complete
     const isComplete = endIndex >= activityFiles.length
     
-    // If complete, revalidate paths
+    // If complete, revalidate paths and update summaries/PRs
     if (isComplete) {
-      revalidatePath("/calendar")
-      revalidatePath("/activity")
-      revalidatePath("/dashboard")
+      console.log(`Strava import complete for user ${userId}. Revalidating paths and updating summaries/PRs.`);
+      revalidatePath("/calendar");
+      revalidatePath("/activity"); // Assuming this is your workout history page
+      revalidatePath("/dashboard");
+      
+      // --- Add PR and Summary Updates ---
+      try {
+        // Don't await these individually, let them run in parallel
+        const summaryPromise = updateUserWorkoutSummaries(userId);
+        const prPromise = updateExercisePRs(userId); // Process all workouts for the user
+        await Promise.all([summaryPromise, prPromise]);
+        console.log(`Successfully updated summaries and exercise PRs for user ${userId} after import.`);
+      } catch (updateError) {
+        console.error(`Error updating summaries/PRs after import for user ${userId}:`, updateError);
+        // Decide if this should cause the overall endpoint to report an error.
+        // For now, we'll log it but still return success for the batch processing itself.
+      }
+      // --- End PR and Summary Updates ---
     }
     
     return NextResponse.json({
