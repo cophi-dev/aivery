@@ -55,6 +55,10 @@
       "maxDuration": 60,
       "includeFiles": "node_modules/fit-file-parser/**"
     },
+    "app/api/strava/process-activity/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
     "app/api/strava/check-upload/route.ts": {
       "memory": 1024,
       "maxDuration": 30
