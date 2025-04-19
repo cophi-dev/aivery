@@ -10,6 +10,7 @@ import {
   createExercise,
   updateExercise,
   deleteExercise,
+  searchAllExercisesByName,
 } from "./db/repositories/exerciseRepository"
 import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { getCurrentUser } from "./auth"
@@ -156,5 +157,21 @@ export async function getExerciseHistory(exerciseId: string): Promise<WorkoutExe
   } catch (error) {
     console.error("Error fetching exercise history:", error)
     throw new Error("Failed to fetch exercise history")
+  }
+}
+
+// Search all exercises by name for autocomplete/lookup
+export async function searchAllExercisesAction(nameQuery: string): Promise<ExerciseData[]> {
+  try {
+    // Basic validation
+    if (!nameQuery || nameQuery.trim().length < 2) {
+      return [];
+    }
+    // No auth check needed here typically, as exercise names aren't usually sensitive
+    // Add auth check if exercise data visibility should be restricted per user
+    return await searchAllExercisesByName(nameQuery);
+  } catch (error) {
+    console.error(`Error searching exercises action with query '${nameQuery}':`, error);
+    return []; // Return empty array on error to avoid breaking the UI
   }
 } 

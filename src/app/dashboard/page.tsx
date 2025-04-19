@@ -18,11 +18,12 @@ import { SpotlightCards } from "./_components/SpotlightCardsClient";
 import { PersonalRecordsCard } from "./_components/PersonalRecordsCardClient"; 
 import { QuickActionsCard } from "./_components/QuickActionsCardClient";
 import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assuming a loading indicator component
-// Import the type for exercise PRs
+// Import the type for exercise PRs and IUser for overall PRs
 import type { DashboardPREntry } from "@/lib/workout-actions";
+import type { IUser } from '@/lib/db/models/user';
 import { Button } from "@/components/ui/button"; // Import Button
 
-// Define a type for the metrics data (adjust based on actual structure)
+// Define a type for the metrics data
 interface DashboardMetrics {
     strengthVolumeLast7Days: number;
     cardioDurationLast7Days: number;
@@ -30,9 +31,10 @@ interface DashboardMetrics {
     strengthVolumePrevious7Days: number;
     cardioDurationPrevious7Days: number;
     cardioDistancePrevious7Days: number;
-    topPRs: any[]; // Old PRs, can be removed if not used by PersonalRecordsCardClient anymore
-    exercisePRs: DashboardPREntry[]; // <-- Add new field
-    workoutCount: number; // <-- Add workout count
+    // topPRs: any[]; // Keep commented out
+    exercisePRs: DashboardPREntry[];
+    overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs
+    workoutCount: number;
 }
 
 // Placeholder type/interface for a chat message
@@ -205,17 +207,15 @@ export default function DashboardPage() {
                             cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
                             cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
                         />
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <SpotlightCards />
-                            {/* Pass the actual function as a prop */}
-                            <QuickActionsCard sendAiMessage={handleSendAiMessage} /> 
+                            <PersonalRecordsCard 
+                                exercisePRs={metrics.exercisePRs || []} 
+                                overallPRs={metrics.overallPRs || {}} // Keep passing overall PRs
+                            />
+                            {/* <RecentActivitiesCard /> */} 
+                             <QuickActionsCard sendAiMessage={handleSendAiMessage} /> {/* Restore sendAiMessage prop */} 
                         </div>
-
-                        {/* Pass exercisePRs to the component */}
-                        <PersonalRecordsCard
-                            exercisePRs={metrics.exercisePRs} // <-- Pass new data
-                        />
+                        <SpotlightCards />
                     </>
                     // --- End Regular Metrics Cards ---
                 ) : (

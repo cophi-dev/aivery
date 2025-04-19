@@ -180,4 +180,33 @@ export async function deleteExercise(id: string): Promise<boolean> {
     console.error(`Error deleting exercise ${id}:`, error)
     throw new Error(`Failed to delete exercise ${id}`)
   }
+}
+
+// Search ALL exercises by name (case-insensitive, partial match)
+export async function searchAllExercisesByName(nameQuery: string): Promise<ExerciseData[]> {
+  try {
+    await dbConnect();
+
+    if (!nameQuery || nameQuery.trim().length < 2) {
+      // Return empty if query is too short to avoid overly broad results
+      return [];
+    }
+
+    // Use regex for case-insensitive partial matching
+    const regex = new RegExp(nameQuery.trim(), 'i'); 
+
+    const exerciseDocs = await ExerciseModel.find({
+      name: { $regex: regex }
+    })
+      .sort({ name: 1 })
+      .limit(20) // Limit results to avoid overwhelming the UI
+      .lean()
+      .exec();
+
+    return exerciseDocs.map(doc => convertDocToExerciseData(doc));
+  } catch (error) {
+    console.error(`Error searching all exercises by name '${nameQuery}':`, error);
+    // Throwing error might be better here if the calling action handles it
+    throw new Error(`Failed to search exercises by name`); 
+  }
 } 

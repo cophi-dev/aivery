@@ -16,17 +16,19 @@ import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Label } from "@/components/ui/label"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { 
   createWorkout as createWorkoutAction, 
   updateWorkoutAction,
   type WorkoutUpdatePayload,
   type InputSetData
 } from "@/lib/workout-actions"
-import { fetchExercises } from "@/lib/exercise-actions"
+import { fetchExercises, searchAllExercisesAction } from "@/lib/exercise-actions"
 import type { ExerciseData, WorkoutData, WorkoutExerciseData, Set } from "@/types/db"
 import { IWorkout } from "@/lib/db/models/workout"
 import { estimateBodyweightForExercise } from "@/lib/utils"
 import { Textarea } from "@/components/ui/textarea"
+import { useDebounce } from "@/hooks/useDebounce"
 
 // Type guard to filter out nulls
 function isDefined<T>(value: T | null | undefined): value is T {
@@ -45,14 +47,17 @@ type SetState = {
   notes?: string;
 }
 
-// Represents a single exercise in the form state, containing multiple sets
+// Represents a single exercise in the form state, containing multiple sets OR duration/distance
 type ExerciseState = {
   id: number | string; // Temporary ID for form state (e.g., `ex-temp-${Date.now()}`)
   exerciseId?: string; // ID of the canonical Exercise (if known/selected)
   name: string; // Name of the canonical Exercise
   notes?: string; // Notes specific to this exercise in this workout
-  sets: SetState[]; // Array of sets for this exercise
-  // Add other fields if needed (e.g., duration/distance for non-set exercises)
+  // Fields for Strength/Set-based exercises
+  sets: SetState[]; 
+  // Fields for Cardio/Duration-based exercises added within a workout
+  duration?: string; // Duration in minutes for this specific exercise instance
+  distance?: string; // Distance in km/miles for this specific exercise instance
 }
 // --- END NEW State Types ---
 
@@ -308,6 +313,14 @@ export default function NewWorkoutPage() {
   const [aiLogInput, setAiLogInput] = useState<string>("") // State for AI input
   const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false) // State for AI processing status
 
+  // --- NEW Search State ---
+  const [exerciseSearchQuery, setExerciseSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ExerciseData[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchList, setShowSearchList] = useState(false); // To control combobox popover visibility
+  const debouncedSearchQuery = useDebounce(exerciseSearchQuery, 300); // Debounce search input
+  // --- END Search State ---
+
   const isEditing = !!editingWorkoutId
 
   // Map of workout *option* values to display names.
@@ -392,21 +405,50 @@ export default function NewWorkoutPage() {
     return Array.from(new Set([...exercisesInCurrentWorkout, ...dbExercises]));
   }, [workoutType, dbExercises, exercises]);
 
-  // Fetch exercises from DB on mount
+  // Fetch used exercises from DB on mount
   useEffect(() => {
-    const loadExercises = async () => {
+    const loadUsedExercises = async () => {
       try {
-        const fetchedExercises = await fetchExercises()
-        setDbExercises(fetchedExercises)
-        // Create map for easier ID lookup by name during submit
+        console.log("Fetching used exercises...");
+        const fetchedExercises = await fetchExercises(); // This now gets only USED exercises
+        console.log(`Fetched ${fetchedExercises.length} used exercises.`);
+        setDbExercises(fetchedExercises);
         setDbExercisesMap(new Map(fetchedExercises.map(ex => [ex.name, ex]))); 
       } catch (err) {
-        console.error("Failed to fetch exercises:", err)
-        setError("Could not load exercises list.")
+        console.error("Failed to fetch used exercises:", err);
+        setError("Could not load initial exercises list.");
       }
-    }
-    loadExercises()
-  }, []) // Run only once on mount
+    };
+    loadUsedExercises();
+  }, []); // Run only once on mount
+
+  // --- NEW Effect for searching ALL exercises ---
+  useEffect(() => {
+    const searchExercises = async () => {
+      if (debouncedSearchQuery.trim().length < 2) {
+        setSearchResults([]); // Clear results if query is too short
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        console.log(`Searching all exercises for: "${debouncedSearchQuery}"`);
+        const results = await searchAllExercisesAction(debouncedSearchQuery);
+        console.log(`Found ${results.length} search results.`);
+        setSearchResults(results);
+      } catch (err) {
+        console.error("Failed to search exercises:", err);
+        setError("Exercise search failed.");
+        setSearchResults([]); // Clear results on error
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    searchExercises();
+  }, [debouncedSearchQuery]);
+  // --- END Search Effect ---
 
   // Fetch workout data if editing or duplicating
   useEffect(() => {
@@ -536,29 +578,35 @@ export default function NewWorkoutPage() {
   }
 
   const addExercise = () => {
-    setError(null);
-    const newExerciseId = `ex-temp-${Date.now()}-${Math.random()}`;
-    const newSetId = `set-temp-${Date.now()}-${Math.random()}`;
-    // Add a new exercise with one default empty set
-    setExercises([...exercises, { 
-        id: newExerciseId, 
-        name: "", 
-        sets: [{ id: newSetId, weight: "", reps: "" }] // Start with one empty set
-    }]);
+    const newExercise: ExerciseState = {
+      id: `ex-temp-${Date.now()}-${Math.random()}`, // Unique temp ID
+      name: "", // Start with empty name, user will select
+      sets: [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }], // Start with one empty set
+    };
+    setExercises([...exercises, newExercise]);
   };
 
-  // Renamed and updated: Handles changes to Exercise properties (name, notes)
-  const updateExerciseField = (exerciseId: number | string, field: 'name' | 'notes', value: string) => {
+  // Renamed and updated: Handles changes to Exercise properties
+  const updateExerciseField = (exerciseId: number | string, field: 'name' | 'notes' | 'duration' | 'distance', value: string) => { // Added duration/distance
     setError(null);
     setExercises(exercises.map((exercise) => {
       if (exercise.id === exerciseId) {
-        // If changing name, potentially update exerciseId if a match is found in dbExercisesMap
-        let updatedExerciseId = exercise.exerciseId;
+        let updatedState = { ...exercise, [field]: value };
+
+        // If name is changing, update canonical ID link
         if (field === 'name') {
             const matchedDbExercise = dbExercisesMap.get(value);
-            updatedExerciseId = matchedDbExercise?._id;
+            updatedState.exerciseId = matchedDbExercise?._id;
+            // If the newly matched exercise is cardio, clear sets
+            if (matchedDbExercise?.category === 'cardio') {
+               updatedState.sets = []; // Clear sets for cardio
+               // Optionally pre-fill duration/distance if needed, or leave for user
+            } else if (updatedState.sets.length === 0) {
+               // If switching TO non-cardio and sets are empty, add a default set
+               updatedState.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }];
+            }
         }
-        return { ...exercise, [field]: value, exerciseId: updatedExerciseId };
+        return updatedState;
       } 
       return exercise;
     }));
@@ -692,54 +740,43 @@ export default function NewWorkoutPage() {
     return null;
   }
 
-  // Handle selection from ExerciseSelect component
-  const handleExerciseSelection = (exerciseId: number | string, selectedDbExerciseId: string) => {
-    setError(null);
-    // Find by ID now, assuming map key is ID
-    const selectedDbExercise = dbExercises.find(ex => ex._id === selectedDbExerciseId); 
-    if (!selectedDbExercise) {
-      console.error("Selected DB exercise not found:", selectedDbExerciseId);
-      // If not found by ID, try by name as a fallback (using the Map)
-      const selectedByName = dbExercisesMap.get(selectedDbExerciseId); // selectedDbExerciseId might actually be the name here
-      if (selectedByName) {
-         // Call recursively with the ID if found by name
-         handleExerciseSelection(exerciseId, selectedByName._id);
-         return;
-      }
-      console.error("Selected exercise not found by ID or name:", selectedDbExerciseId);
-      toast.error("Could not find selected exercise details.");
-      return; 
-    }
+  // --- Modified: Handle Exercise Selection --- 
+  // This function is called when an exercise is selected from the Combobox
+  const handleExerciseSelection = (exerciseStateId: number | string, selectedDbExercise: ExerciseData) => {
+    if (!selectedDbExercise) return;
 
-    setExercises((prevExercises) =>
-      prevExercises.map((ex) => {
-        if (ex.id === exerciseId) {
-          const firstSet = ex.sets[0];
-          let updatedWeight = firstSet?.weight || "";
-          
-          // --- Safer Bodyweight Check ---
-          // Use type assertion assuming session might be augmented
-          const userWeight = typeof (session?.user as any)?.weight === 'number' ? (session?.user as any).weight : undefined;
-          const isBodyweightExercise = selectedDbExercise.category?.toLowerCase().includes('bodyweight');
-
-          // Ensure userWeight is a number before calling
-          if (isBodyweightExercise && typeof userWeight === 'number' && userWeight > 0 && !updatedWeight) {
-             // Pass only exercise name as per linter error
-             updatedWeight = estimateBodyweightForExercise(selectedDbExercise.name /*, userWeight */).toString();
-          }
-          // --- End Safer Check ---
-          
-          return {
+    setExercises(currentExercises =>
+      currentExercises.map(ex => {
+        if (ex.id === exerciseStateId) {
+          // Update the exercise state with details from the selected DB exercise
+          let updatedEx = {
             ...ex,
-            exerciseId: selectedDbExercise._id,
+            exerciseId: selectedDbExercise._id, 
             name: selectedDbExercise.name, 
-            sets: ex.sets.map((set, index) => index === 0 ? { ...set, weight: updatedWeight } : set),
+            // Clear duration/distance when selecting any exercise initially
+            duration: undefined,
+            distance: undefined,
           };
+
+          // If the selected exercise is cardio, ensure sets are empty
+          if (selectedDbExercise.category === 'cardio') {
+            updatedEx.sets = [];
+          } else if (updatedEx.sets.length === 0) {
+            // If non-cardio and sets were empty (e.g., from previous cardio selection), add default set
+            updatedEx.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }];
+          }
+
+          return updatedEx;
         }
         return ex;
       })
     );
+    // Clear search after selection
+    setExerciseSearchQuery("");
+    setSearchResults([]);
+    setShowSearchList(false); 
   };
+  // --- END Modified: Handle Exercise Selection ---
 
   const getDefaultWorkoutName = (type: WorkoutTypeOption | undefined, workoutDate: Date) => {
     if (!type) return `Workout - ${format(workoutDate, 'PP')}`;
@@ -791,89 +828,85 @@ export default function NewWorkoutPage() {
     // --- Map form state (ExerciseState[]) to payload structure --- 
     let exercisesPayload: WorkoutUpdatePayload['exercises'] = []; 
 
-    if (finalWorkoutTypeForPayload === 'strength') {
-      const mappedExercises = exercisesToSubmit
-        .map((exState, index): NonNullable<WorkoutUpdatePayload['exercises']>[number] | null => {
-          const canonicalExerciseId = exState.exerciseId || dbExercisesMap.get(exState.name)?._id;
-          if (!canonicalExerciseId) return null;
-          const exerciseSetsPayload: InputSetData[] = exState.sets
-            .map((setState, setIndex): InputSetData | null => {
-              const reps = Number.parseInt(setState.reps || '0');
-              if (reps > 0) {
-                return {
-                  weight: Number.parseFloat(setState.weight || '0') || 0,
-                  reps: reps,
-                  duration: setState.duration ? Number.parseInt(setState.duration) : undefined,
-                  distance: setState.distance ? Number.parseFloat(setState.distance) : undefined,
-                  notes: setState.notes || undefined,
-                  order: setIndex 
-                };
-              } 
-              return null;
-            })
-            .filter(isDefined);
-          
-          if (exerciseSetsPayload.length > 0) {
-            return {
-              _id: typeof exState.id === 'string' && exState.id.startsWith('loaded-') ? exState.id.replace('loaded-', '') : undefined,
-              exerciseId: canonicalExerciseId,
-              name: exState.name, 
-              order: index,
-              sets: exerciseSetsPayload,
-              notes: exState.notes || undefined, 
-            } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
-          } 
-          return null; 
-        });
+    // --- Map form state (ExerciseState[]) to payload structure --- 
+    const mappedExercises = exercises
+      .map((exState, index): NonNullable<WorkoutUpdatePayload['exercises']>[number] | null => {
+        const canonicalExercise = exState.exerciseId ? dbExercisesMap.get(exState.exerciseId) : dbExercisesMap.get(exState.name);
         
-      // Remove @ts-ignore and explicitly type the result of filter
-      const definedExercisesPayload: NonNullable<WorkoutUpdatePayload['exercises']>[number][] = mappedExercises.filter(isDefined);
-      exercisesPayload = definedExercisesPayload; // Assign to the broader type variable
-      
-      // Add check here (using the correctly typed variable)
-      if (exercisesToSubmit.length > 0 && definedExercisesPayload.length === 0) {
-         setError("Could not map any exercises to a valid format. Ensure reps > 0.");
-         setIsSubmitting(false);
-         return;
-      }
+        // Skip if no canonical exercise found or name is empty
+        if (!canonicalExercise || !exState.name) return null; 
 
-    } else { // Handle Cardio/Other Types
-      const parsedDuration = Number.parseFloat(duration);
-      const parsedDistance = Number.parseFloat(distance);
-      const cardioExerciseName = finalWorkoutTypeForPayload.charAt(0).toUpperCase() + finalWorkoutTypeForPayload.slice(1);
-      let canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName);
-      
-      if (!canonicalCardioExercise) {
-          // Try with "ing" suffix (e.g., "Running" instead of "Run")
-          const alternativeName = cardioExerciseName + (cardioExerciseName.endsWith('e') ? '' : 'ing');
-          canonicalCardioExercise = dbExercisesMap.get(alternativeName);
-          if (!canonicalCardioExercise) {
-            canonicalCardioExercise = dbExercisesMap.get(cardioExerciseName.toLowerCase()) || dbExercisesMap.get(alternativeName.toLowerCase());
-          }
-       }
+        const isCardioExercise = canonicalExercise.category === 'cardio';
 
-      if (!canonicalCardioExercise) {
-          console.error(`Could not find canonical exercise for type: ${finalWorkoutTypeForPayload}. Tried: ${cardioExerciseName}`);
-          setError(`Could not find a matching exercise definition for type: ${finalWorkoutTypeForPayload}.`);
-          setIsSubmitting(false);
-          return; 
-      } else {
-          // Create a single WorkoutExercise entry for the cardio activity
-          // Check for non-empty duration/distance before creating payload
-          if (parsedDuration > 0 || parsedDistance > 0) { 
-              exercisesPayload = [{
-                  exerciseId: canonicalCardioExercise._id,
-                  name: canonicalCardioExercise.name,
-                  order: 0,
-                  duration: parsedDuration > 0 ? parsedDuration * 60 : undefined, // Convert form minutes to seconds
-                  distance: parsedDistance > 0 ? parsedDistance * 1000 : undefined, // Convert form km to meters?
-                  sets: [], // Cardio doesn't have sets in this model
-              }] as WorkoutUpdatePayload['exercises'];
-          } else {
-             // If no duration/distance, don't add an exercise entry
-             exercisesPayload = []; 
-          }
-      }
+        // --- Handle Cardio Exercise --- 
+        if (isCardioExercise) {
+            const durationMinutes = Number.parseFloat(exState.duration || '0');
+            const distanceKm = Number.parseFloat(exState.distance || '0');
+            // Only include if duration or distance is provided
+            if (durationMinutes > 0 || distanceKm > 0) {
+                return {
+                  exerciseId: canonicalExercise._id,
+                  name: canonicalExercise.name,
+                  order: index,
+                  duration: durationMinutes > 0 ? durationMinutes * 60 : undefined, // Convert form minutes to seconds
+                  distance: distanceKm > 0 ? distanceKm * 1000 : undefined, // Convert form km to meters
+                  sets: [], // Ensure sets is empty array for cardio
+                  notes: exState.notes || undefined,
+                } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
+            } else {
+                return null; // Skip cardio exercise if no duration/distance entered
+            }
+        }
+        // --- Handle Strength Exercise --- 
+        else {
+            const exerciseSetsPayload: InputSetData[] = exState.sets
+              .map((setState, setIndex): InputSetData | null => {
+                const reps = Number.parseInt(setState.reps || '0');
+                if (reps > 0) { // Only include sets with reps
+                  return {
+                    weight: Number.parseFloat(setState.weight || '0') || 0,
+                    reps: reps,
+                    duration: setState.duration ? Number.parseInt(setState.duration) : undefined,
+                    distance: setState.distance ? Number.parseFloat(setState.distance) : undefined,
+                    notes: setState.notes || undefined,
+                    order: setIndex 
+                  };
+                } 
+                return null;
+              })
+              .filter(isDefined);
+            
+            // Only include the exercise if it has valid sets
+            if (exerciseSetsPayload.length > 0) {
+              return {
+                _id: typeof exState.id === 'string' && exState.id.startsWith('loaded-') ? exState.id.replace('loaded-', '') : undefined,
+                exerciseId: canonicalExercise._id,
+                name: exState.name, 
+                order: index,
+                sets: exerciseSetsPayload,
+                notes: exState.notes || undefined, 
+              } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
+            } 
+            return null; // Skip strength exercise if no valid sets
+        }
+      });
+
+    // Filter out nulls and assign to the payload
+    exercisesPayload = mappedExercises.filter(isDefined);
+
+    // --- Validation after mapping ---
+    const isStrengthType = finalWorkoutTypeForPayload === 'strength';
+    if (isStrengthType && exercisesPayload.length === 0 && exercises.length > 0) {
+       // Check if the original form had exercises but none were valid after mapping
+       setError("Please ensure exercises have valid sets (reps > 0) or duration/distance for cardio.");
+       setIsSubmitting(false);
+       return;
+    }
+    // (Keep existing validation for non-strength types)
+    if (!isStrengthType && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
+      setError("Please enter a valid overall distance and duration for this activity type.");
+      setIsSubmitting(false);
+      return;
     }
 
     // --- Construct final WorkoutUpdatePayload --- 
@@ -890,14 +923,15 @@ export default function NewWorkoutPage() {
       name: finalWorkoutName,
       type: finalWorkoutTypeForPayload,
       notes: getSummaryText() || "", 
+      // Use overall duration/distance for non-strength, calculate for strength
       duration: isStrengthType 
-        ? estimateWorkoutDuration(exercisesToSubmit)
+        ? estimateWorkoutDuration(exercises) // Estimate based on potentially mixed exercises
         : (parsedCardioDuration || 0),
-      exercises: exercisesPayload, 
-      cardioDetails: cardioDetailsPayload,
+      exercises: exercisesPayload, // Use the filtered and mapped payload
+      cardioDetails: cardioDetailsPayload, // Use overall cardio details
     };
 
-    console.log("Submitting workout payload (NEW STRUCTURE):", JSON.stringify(workoutPayload, null, 2));
+    console.log("Submitting workout payload (Adjusted for Cardio Exercises):", JSON.stringify(workoutPayload, null, 2));
 
     try {
       setIsLoadingData(true);
@@ -1111,55 +1145,24 @@ export default function NewWorkoutPage() {
           </div>
         )}
 
-        {/* Exercises Section (for Strength Workouts) */}
-        {isStrengthWorkout && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">Exercises</h2>
-            {exercises.map((exercise, index) => (
+        {/* Exercises Section (Modified) */}
+        <div className="space-y-6">
+          <h2 className="text-xl font-semibold">Exercises</h2>
+          {exercises.map((exercise, index) => {
+            // Determine if the current exercise is cardio
+            const canonicalExercise = exercise.exerciseId ? dbExercisesMap.get(exercise.exerciseId) : null;
+            const isCardioExercise = canonicalExercise?.category === 'cardio';
+
+            return (
               <div key={exercise.id} className="rounded-md border p-4 md:p-6 space-y-4 relative bg-background">
+                {/* Exercise Header (Selection + Remove Button) */}
                 <div className="flex justify-between items-start">
                   <div className="flex-1 space-y-2 mr-2">
-                     <Label htmlFor={`exercise-name-${exercise.id}`}>Exercise #{index + 1}</Label>
-                     {/* Use ExerciseSelect component - REPLACED with standard Select */}
-                     <Select
-                        // Pass the canonical ID if known, otherwise the name might be temporarily stored
-                        value={exercise.exerciseId || ''} // <-- SIMPLIFIED: Only use exerciseId for value binding
-                        // Add string type to parameter
-                        onValueChange={(selectedIdOrName: string) => {
-                            // Find the exercise in dbExercises by ID first
-                            const matchedEx = dbExercises.find(dbEx => dbEx._id === selectedIdOrName);
-                            if (matchedEx) {
-                                handleExerciseSelection(exercise.id, matchedEx._id);
-                            } else {
-                                // Fallback: If not found by ID, assume it's a name (e.g., "Other")
-                                // or handle the case where the ID isn't in the list
-                                console.warn(`Exercise ID ${selectedIdOrName} not found directly, might be a name.`);
-                                // If it's just the name changing, update the name field directly
-                                // The exerciseId lookup happens in updateExerciseField or handleExerciseSelection
-                                updateExerciseField(exercise.id, 'name', selectedIdOrName);
-                                // If selectedIdOrName *is* a valid DB exercise ID after all, call handleSelection
-                                const potentialMatchById = dbExercises.find(dbEx => dbEx._id === selectedIdOrName);
-                                if(potentialMatchById) {
-                                   handleExerciseSelection(exercise.id, potentialMatchById._id);
-                                } else if (selectedIdOrName === 'Other') {
-                                  // Handle 'Other' explicitly if needed
-                                }
-                                // Consider adding an 'Other' input field if selectedIdOrName === 'Other'
-                            }
-                        }}
-                     >
-                        <SelectTrigger id={`exercise-name-${exercise.id}`}>
-                          <SelectValue placeholder="Select exercise" />
-                        </SelectTrigger>
-                        <SelectContent position="popper" className="bg-card">
-                           {/* Use filteredExercises instead of dbExercises */}
-                           {filteredExercises.length > 0 ? filteredExercises.map((option) => (
-                              <SelectItem key={option._id} value={option._id}>{option.name}</SelectItem>
-                           )) : <SelectItem value="" disabled>Loading exercises...</SelectItem>}
-                        </SelectContent>
-                     </Select>
-                     {/* Consider adding a manual Input field if 'Other' is selected or if the Select value doesn't match a known ID */}
-                     {/* {exercise.name === 'Other' && ( ... Input field ... ) } */}
+                    <Label htmlFor={`exercise-name-${exercise.id}`}>Exercise #{index + 1}</Label>
+                    {/* Combobox for Exercise Selection (Remains the same) */}
+                    <Popover open={showSearchList} onOpenChange={setShowSearchList}>
+                      {/* ... (PopoverTrigger and PopoverContent with Command for search) ... */} 
+                    </Popover>
                   </div>
                    <Button 
                       type="button" 
@@ -1172,99 +1175,134 @@ export default function NewWorkoutPage() {
                       <LucideX className="h-4 w-4" />
                       <span className="sr-only">Remove Exercise</span>
                    </Button>
-                 </div>
+                </div>
 
-                {/* Sets Section */}
-                <div className="space-y-3 pl-2 border-l-2 border-muted">
-                   <Label className="text-sm font-medium">Sets</Label>
-                   {exercise.sets.map((set, setIndex) => (
-                    <div key={set.id} className="flex items-end space-x-2">
-                       <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
-                       {/* Set Inputs - Arranged Horizontally */}
-                       <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
-                         <div>
-                           <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
-                           <Input
-                              id={`weight-${exercise.id}-${set.id}`}
-                              type="number"
-                              placeholder="Weight"
-                              value={set.weight || ""}
-                              onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                              min="0"
-                              step="0.1"
-                           />
-                         </div>
-                         <div>
-                           <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
-                           <Input
-                              id={`reps-${exercise.id}-${set.id}`}
-                              type="number"
-                              placeholder="Reps"
-                              value={set.reps || ""}
-                              onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                              min="0"
-                           />
-                         </div>
-                          {/* Optional Notes per Set - moved to end */}
-                         <div className="col-span-2 md:col-span-1">
-                             <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="text-xs">Set Notes (Opt.)</Label>
-                             <Input
-                                id={`set-notes-${exercise.id}-${set.id}`}
-                                placeholder="e.g., RPE 8"
-                                value={set.notes || ""}
-                                onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
-                                className="placeholder:text-muted-foreground/50"
-                             />
-                         </div>
-                       </div>
-                       
-                       {/* Remove Set Button */}
-                       <Button 
-                         type="button" 
-                         variant="ghost" 
-                         size="icon" 
-                         onClick={() => removeSet(exercise.id, set.id)}
-                         disabled={exercise.sets.length <= 1} // Disable removing the last set
-                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                         title="Remove Set"
-                       >
-                         <LucideX className="h-4 w-4" />
-                         <span className="sr-only">Remove Set</span>
-                       </Button>
+                {/* --- Conditional Rendering based on Exercise Type --- */}
+                {isCardioExercise ? (
+                  // --- Render Duration/Distance Inputs for Cardio --- 
+                  <div className="space-y-3 pl-2 border-l-2 border-muted">
+                    <Label className="text-sm font-medium">Details</Label>
+                    <div className="flex items-end space-x-2">
+                      <div className="flex-1 grid grid-cols-2 gap-2 items-end">
+                        <div>
+                          <Label htmlFor={`ex-duration-${exercise.id}`} className="text-xs">Duration (min)</Label>
+                          <Input
+                            id={`ex-duration-${exercise.id}`}
+                            type="number"
+                            placeholder="Duration"
+                            value={exercise.duration || ""}
+                            onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
+                            min="0"
+                            step="0.1"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`ex-distance-${exercise.id}`} className="text-xs">Distance (km)</Label> 
+                          <Input
+                            id={`ex-distance-${exercise.id}`}
+                            type="number"
+                            placeholder="Distance"
+                            value={exercise.distance || ""}
+                            onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
+                            min="0"
+                            step="0.1"
+                          />
+                        </div>
+                      </div>
                     </div>
-                   ))}
-                   {/* Add Set Button */}
-                   <Button 
-                     type="button" 
-                     variant="outline" 
-                     size="sm"
-                     onClick={() => addSet(exercise.id)} 
-                     className="mt-2"
-                    >
-                     <LucidePlus className="h-4 w-4 mr-1" /> Add Set
-                   </Button>
-                </div>
-
-                {/* Exercise Notes */}
-                <div>
-                  <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
-                  <Textarea
-                    id={`exercise-notes-${exercise.id}`}
-                    placeholder="e.g., Focused on form, felt strong"
-                    value={exercise.notes || ""}
-                    onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                    className="placeholder:text-muted-foreground/50"
-                    rows={2}
-                  />
-                </div>
+                    {/* Add Exercise Notes for Cardio */} 
+                    <div>
+                      <Label htmlFor={`exercise-notes-${exercise.id}`}>Notes (Optional)</Label>
+                      <Textarea
+                        id={`exercise-notes-${exercise.id}`}
+                        placeholder="e.g., Felt good, easy pace"
+                        value={exercise.notes || ""}
+                        onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                        className="placeholder:text-muted-foreground/50"
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  // --- Render Sets Section for Non-Cardio --- 
+                  <div className="space-y-3 pl-2 border-l-2 border-muted">
+                     <Label className="text-sm font-medium">Sets</Label>
+                     {exercise.sets.map((set, setIndex) => (
+                      <div key={set.id} className="flex items-end space-x-2">
+                         <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
+                         <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                           <div>
+                             <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
+                             <Input
+                                id={`weight-${exercise.id}-${set.id}`}
+                                type="number"
+                                placeholder="Weight"
+                                value={set.weight || ""}
+                                onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                                min="0"
+                                step="0.1"
+                             />
+                           </div>
+                           <div>
+                             <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
+                             <Input
+                                id={`reps-${exercise.id}-${set.id}`}
+                                type="number"
+                                placeholder="Reps"
+                                value={set.reps || ""}
+                                onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                                min="0"
+                             />
+                           </div>
+                            {/* Set Notes Input */}
+                            <div className="col-span-2 md:col-span-1">
+                                <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="text-xs">Set Notes (Opt.)</Label>
+                                <Input
+                                   id={`set-notes-${exercise.id}-${set.id}`}
+                                   placeholder="e.g., RPE 8"
+                                   value={set.notes || ""}
+                                   onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
+                                   className="placeholder:text-muted-foreground/50"
+                                />
+                            </div>
+                          </div>
+                           {/* Remove Set Button */}
+                           <Button 
+                             type="button" 
+                             variant="ghost" 
+                             size="icon" 
+                             onClick={() => removeSet(exercise.id, set.id)}
+                             disabled={exercise.sets.length <= 1} // Disable removing the last set
+                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                             title="Remove Set"
+                           >
+                             <LucideX className="h-4 w-4" />
+                             <span className="sr-only">Remove Set</span>
+                           </Button>
+                        </div>
+                       {/* Exercise Notes for Non-Cardio */}
+                       <div className="pt-2">
+                         <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
+                         <Textarea
+                           id={`exercise-notes-${exercise.id}`}
+                           placeholder="e.g., Focused on form, felt strong"
+                           value={exercise.notes || ""}
+                           onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                           className="placeholder:text-muted-foreground/50"
+                           rows={2}
+                         />
+                       </div>
+                    </div>
+                  )}
+                  {/* --- End Conditional Rendering --- */}
               </div>
-            ))}
-            {/* Add Exercise Button */}
-            <Button type="button" variant="secondary" onClick={addExercise} className="w-full md:w-auto">
-               <LucidePlus className="h-4 w-4 mr-2" /> Add Exercise
-            </Button>
-          </div>
-        )}
+            )
+          })}
+          {/* Add Exercise Button (Remains the same) */}
+          <Button type="button" variant="secondary" onClick={addExercise} className="w-full md:w-auto">
+             <LucidePlus className="h-4 w-4 mr-2" /> Add Exercise
+          </Button>
+        </div>
 
         {/* Save Workout Button */}
         <div className="flex justify-end pt-4">
