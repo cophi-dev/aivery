@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         const importedCount = importState.importedFiles?.length ?? 0;
         const errorCount = importState.errorFiles?.length ?? 0;
 
-        const statusResponse = {
+        const statusResponse: any = { // Use any initially, refine later if needed
             processingId: importState.processingId,
             status: importState.status,
             totalFiles: importState.totalFiles ?? 0,
@@ -63,6 +63,12 @@ export async function GET(req: NextRequest) {
             lastUpdated: importState.lastUpdated,
             originalFilename: importState.originalFilename,
         };
+
+        // --- Add summary statistics if status is completed --- START
+        if (importState.status === 'completed') {
+            statusResponse.summary = importState.summaryStats ?? null; // Assuming stats are stored under summaryStats
+        }
+        // --- Add summary statistics if status is completed --- END
 
         console.log(`Returning status: ${importState.status}, Current: ${statusResponse.currentlyProcessingFile}, Processed: ${processedCount}/${importState.totalFiles}`);
         return NextResponse.json(statusResponse);

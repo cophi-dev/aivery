@@ -49,6 +49,7 @@ interface ImportStatusResponse {
   createdAt: string; // ISO string
   lastUpdated: string; // ISO string
   originalFilename?: string;
+  summary?: ImportStats | null; // ADDED Summary field
 }
 // --- Define structure for import status polling response --- END
 
@@ -78,13 +79,10 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [uploadStats, setUploadStats] = useState<ImportStats | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // --- NEW STATE FOR POLLING ---
-  const [isProcessing, setIsProcessing] = useState(false); // Tracks if an import is actively being processed
-  const [processingId, setProcessingId] = useState<string | null>(null); // Stores the ID of the current import process
-  const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null); // Stores the latest status from the API
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store the interval ID
-  const LOCAL_STORAGE_KEY = 'stravaImportProcessingId'; // Key for localStorage
-  // --- END NEW STATE ---
+  // --- ADD FAKE PROGRESS STATE --- START
+  const [isProcessing, setIsProcessing] = useState(false); // Re-use for overall processing state (upload + import)
+  const fakeProgressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // --- ADD FAKE PROGRESS STATE --- END
 
   const { data: session } = useSession(); // Get session data
 
@@ -346,101 +344,23 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
   }, [toast]);
 
-  // --- POLLING LOGIC --- START
-  const fetchStatus = useCallback(async (currentProcessingId: string) => {
-    if (!currentProcessingId) return;
-
-    console.log(`[Polling] Fetching status for ${currentProcessingId}...`);
-    try {
-      const response = await fetch(`/api/strava/import-status?processingId=${currentProcessingId}`);
-            if (!response.ok) {
-        // Handle non-2xx responses (e.g., 404 if ID not found yet)
-        if (response.status === 404) {
-             console.warn(`[Polling] Status not found for ${currentProcessingId}, stopping polling and clearing ID.`);
-             stopPolling(false); // Pass false to not clear UI state yet
-             localStorage.removeItem(LOCAL_STORAGE_KEY);
-             setProcessingId(null);
-             setIsProcessing(false);
-             setError("Import process not found. It might have expired or been removed.");
-             setUploadStatus("Import not found.");
-             return;
-        }
-        throw new Error(`Status fetch failed: ${response.statusText}`);
-      }
-      const data: ImportStatusResponse = await response.json();
-      setImportStatus(data);
-      console.log("[Polling] Received status:", data);
-
-      // Check for completion or failure to stop polling
-      if (data.status === 'completed' || data.status === 'failed' || data.status === 'queued_with_errors') {
-        console.log(`[Polling] Status is ${data.status}, stopping polling for ${currentProcessingId}.`);
-        stopPolling(); // Will clear localStorage
-        setIsProcessing(false);
-        setProcessingId(null); 
-        if (onImportComplete && data.status === 'completed') {
-             onImportComplete(); 
-        }
-        // Update final upload status message based on result
-        if (data.status === 'completed') {
-            setUploadStatus(`Import complete! Successfully processed ${data.importedFilesCount} of ${data.totalFiles} activities.`);
-        } else if (data.status === 'failed') {
-            setUploadStatus(`Import failed. Please check server logs.`);
-            setError('The import process encountered a critical error.');
-        } else { // queued_with_errors
-            setUploadStatus(`Import finished with errors. Imported ${data.importedFilesCount}, Errors: ${data.errorFilesCount}.`);
-            // Consider showing error file list if data.errorFiles exists
-        }
-      }
-    } catch (err) {
-      console.error("[Polling] Error fetching status:", err);
-      // Consider more robust error handling, maybe stop polling after N errors?
+  // --- ADD Fake Progress Stop Function --- START
+  const stopFakeProgress = useCallback(() => {
+    if (fakeProgressIntervalRef.current) {
+      clearInterval(fakeProgressIntervalRef.current);
+      fakeProgressIntervalRef.current = null;
+      console.log("[Fake Progress] Stopped.");
     }
-  }, [onImportComplete]); 
+  }, []);
+  // --- ADD Fake Progress Stop Function --- END
 
-  const startPolling = useCallback((id: string) => {
-    stopPolling(); // Clear existing interval
-    localStorage.setItem(LOCAL_STORAGE_KEY, id); // Store ID
-    setProcessingId(id);
-    setIsProcessing(true);
-    setImportStatus({ status: 'queued', totalFiles: 0 } as any); 
-    setUploadStatus("Import started, processing activities...");
-    fetchStatus(id);
-    pollingIntervalRef.current = setInterval(() => fetchStatus(id), 5000);
-  }, [fetchStatus]);
-
-  const stopPolling = (clearStoredId = true) => { // Add flag
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-      console.log("[Polling] Polling stopped.");
-    }
-    if (clearStoredId) {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-      console.log("[Polling] Cleared stored processing ID.");
-    }
-  };
-
-  // Effect to cleanup polling on unmount
+  // --- Cleanup fake progress on unmount --- START
   useEffect(() => {
     return () => {
-      stopPolling(false); // Don't clear stored ID on unmount
+      stopFakeProgress();
     };
-  }, []);
-  
-  // --- Effect to check for active import on mount --- START
-  useEffect(() => {
-    const activeId = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (activeId) {
-      console.log(`[Mount] Found active processing ID: ${activeId}, resuming polling.`);
-      startPolling(activeId);
-    } else {
-      console.log("[Mount] No active processing ID found.");
-    }
-    // Run only once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, []); // Empty dependency array ensures it runs only on mount
-  // --- Effect to check for active import on mount --- END
-  // --- POLLING LOGIC --- END
+  }, [stopFakeProgress]);
+  // --- Cleanup fake progress on unmount --- END
 
   // Use the file state variable directly
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
@@ -474,9 +394,9 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     setError(null);
     setProgress(0);
     setUploadStats(null);
-    setProcessingId(null);
-    setImportStatus(null);
-    stopPolling();
+    stopFakeProgress(); // Clear any previous fake progress interval
+
+    let uploadCompleted = false;
 
     try {
         // --- Pass the constructed pathname to upload() ---
@@ -490,9 +410,27 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         // --------------------------------------------------
 
         console.log('[Upload] Client upload complete:', newBlob);
-        setUploadStatus("File uploaded. Starting import process...");
+        setUploadStatus("File uploaded. Preparing import..."); // Update status
+        uploadCompleted = true;
+        setProgress(5); // Give a small initial boost after upload
 
-        // 2. Trigger Backend Import Process using the returned pathname
+        // --- START FAKE PROGRESS --- START
+        setUploadStatus("Processing activities... This may take several minutes.");
+        fakeProgressIntervalRef.current = setInterval(() => {
+          setProgress(prev => {
+            // Increment progress slowly, stopping around 95%
+            if (prev < 95) {
+              return prev + 1; // Adjust increment speed if needed
+            } else {
+              // Stop interval if it reaches 95%
+              stopFakeProgress();
+              return 95;
+            }
+          });
+        }, 800); // Adjust interval timing if needed (e.g., 800ms)
+        // --- START FAKE PROGRESS --- END
+
+        // 2. Trigger Backend Import Process (Synchronous)
         console.log('Triggering backend import process with pathname:', newBlob.pathname);
         const importResponse = await fetch('/api/strava/import', {
             method: 'POST',
@@ -510,55 +448,49 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         }
 
         const importData = await importResponse.json();
-        console.log('Backend import process initiated:', importData);
+        console.log('Backend import process finished:', importData);
 
-        if (!importData.success || !importData.processingId) {
-            throw new Error(importData.message || 'Backend did not return a valid processing ID.');
+        if (!importData.success) {
+            throw new Error(importData.error || 'Backend import failed.');
         }
 
-        // 3. Start Polling
-        startPolling(importData.processingId);
+        // SUCCESS
+        setProgress(100);
+        setUploadStatus(importData.message || `Import complete! Processed ${importData.importedCount || 0} activities.`);
+        setUploadStats(importData.summary || null); // Set summary from direct response
+        setIsProcessing(false); // Stop processing state
+        if (onImportComplete) {
+          onImportComplete();
+        }
+
+        // Don't need startPolling here
+        // startPolling(importData.processingId);
 
     } catch (err: any) {
         console.error("Upload/Import Error:", err);
+        stopFakeProgress(); // Ensure fake progress stops on error
         const errorMessage = err.message || "An unknown error occurred during upload or import.";
         setError(errorMessage);
-        setUploadStatus(''); // Clear status on error
+        setUploadStatus('Import failed.'); // Clear status on error
         setIsProcessing(false); // Ensure processing stops on error
         setProgress(0); // Reset progress
-        stopPolling();
         toast({
             variant: "destructive",
             title: "Import Failed",
             description: errorMessage,
         });
     }
-  }, [toast, startPolling, file, session]); // file is a dependency as it's used directly
+  }, [toast, onImportComplete, file, session, stopFakeProgress]); // Added stopFakeProgress dependency
 
   // --- UI Rendering Logic --- START
   const getProgressPercent = () => {
-    if (!isProcessing || !importStatus || !importStatus.totalFiles || importStatus.totalFiles === 0) {
-      return progress; // Show blob upload progress initially
-    }
-    // Calculate processing progress based on files
-    return Math.round(((importStatus.processedFilesCount + importStatus.errorFilesCount) / importStatus.totalFiles) * 100);
+    // Just return the current progress state (either upload or fake progress)
+    return progress; 
   };
 
   const getProgressText = () => {
-     if (isProcessing && importStatus) {
-         const progressFraction = importStatus.totalFiles > 0 
-           ? `(${(importStatus.processedFilesCount + importStatus.errorFilesCount)}/${importStatus.totalFiles})`
-           : '';
-         if (importStatus.status === 'queued') return `Waiting to process ${importStatus.totalFiles} files...`;
-         if (importStatus.status === 'processing' || importStatus.status === 'pending') { 
-             const currentFileText = importStatus.currentlyProcessingFile 
-               ? `: ${importStatus.currentlyProcessingFile}`
-               : '';
-             return `Processing ${progressFraction}${currentFileText}...`;
-         }
-         // Handle completed/failed states (already done in fetchStatus completion block)
-     }
-     return uploadStatus; // Fallback
+    // Just show the current status message
+     return uploadStatus; 
   };
   // --- UI Rendering Logic --- END
 
@@ -1283,6 +1215,37 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         </CardContent>
       </Card>
 
-            </div>
+      {/* --- Progress and Status Display --- START */}
+      {(isLoading || isProcessing) && (
+        <div className="mt-4 space-y-2">
+          <Progress value={progress} className="w-full" />
+          <p className="text-sm text-muted-foreground text-center">
+              {/* Show detailed processing status if available, else generic status */}
+              {(importStatus?.status === 'processing' && importStatus?.totalFiles > 0)
+                  ? `Processing activity ${importStatus.processedFilesCount + 1} of ${importStatus.totalFiles}`
+                    + (importStatus.currentlyProcessingFile ? ` (${importStatus.currentlyProcessingFile})` : '')
+                  : uploadStatus || (isLoading ? 'Uploading...' : 'Initializing...')
+              }
+          </p>
+        </div>
+      )}
+      {/* --- Progress and Status Display --- END */}
+
+      {/* --- Error Display --- */}
+      {error && (
+        <Alert variant="destructive" className="mt-2">
+          <AlertTitle className="flex items-center gap-2">
+            <X className="h-4 w-4" /> Error
+          </AlertTitle>
+          <AlertDescription className="mt-1">
+            <p className="mb-2">{error}</p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* --- Render Summary --- */}
+      {uploadStats && !isProcessing && renderImportSummary()}
+
+    </div>
   );
 } 

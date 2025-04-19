@@ -16,6 +16,17 @@ import { createCardioWorkout } from '@/lib/workout-actions';
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 
+// --- Interface for Summary Stats --- START
+interface ImportStats {
+  count: number;
+  types: Record<string, number>;
+  earliestDate: string | null;
+  latestDate: string | null;
+  totalDistance: number; // Assuming meters initially, convert later if needed
+  totalDuration: number; // Assuming seconds
+}
+// --- Interface for Summary Stats --- END
+
 // Keep runtime (Node.js needed for streaming and ZIP handling)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -131,6 +142,16 @@ export async function POST(request: NextRequest) {
         successCount: 0,
         errorCount: 0,
         errors: [] as { file: string; error: string }[],
+        // --- Add summary stats tracking --- START
+        summaryStats: {
+          count: 0,
+          types: {},
+          earliestDate: null,
+          latestDate: null,
+          totalDistance: 0,
+          totalDuration: 0,
+        } as ImportStats
+        // --- Add summary stats tracking --- END
     };
     
     console.log(`Starting synchronous processing of ${totalFiles} files...`);
@@ -190,6 +211,26 @@ export async function POST(request: NextRequest) {
             console.log(`Successfully saved workout ID: ${createdWorkout._id} from file: ${fileNameForProcessing}`);
             processingResults.successCount++;
 
+            // --- Update Summary Stats --- START
+            const stats = processingResults.summaryStats;
+            stats.count++;
+            const workoutType = transformedData.type || 'other';
+            stats.types[workoutType] = (stats.types[workoutType] || 0) + 1;
+            stats.totalDistance += (transformedData.distance || 0) * 1000;
+            stats.totalDuration += transformedData.duration || 0;
+            
+            const workoutDate = transformedData.date;
+            if (workoutDate) {
+                const workoutDateStr = workoutDate.toISOString();
+                if (!stats.earliestDate || workoutDateStr < stats.earliestDate) {
+                    stats.earliestDate = workoutDateStr;
+                }
+                if (!stats.latestDate || workoutDateStr > stats.latestDate) {
+                    stats.latestDate = workoutDateStr;
+                }
+            }
+            // --- Update Summary Stats --- END
+
         } catch (error: any) {
             console.error(`!!! Error processing file ${relativePath}:`, error);
             processingResults.errorCount++;
@@ -223,7 +264,8 @@ export async function POST(request: NextRequest) {
         errorCount: processingResults.errorCount,
         totalFiles: totalFiles,
         errors: processingResults.errors, // Include detailed errors
-        fileTypes: resultsSummary
+        fileTypes: resultsSummary,
+        summary: processingResults.summaryStats // RETURN SUMMARY STATS
     });
 
   } catch (error) {
