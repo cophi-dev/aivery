@@ -31,18 +31,19 @@ import {
 } from "@/components/ui/dialog"
 import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
 
 // Fallback data if no history is available
-const fallbackHistoryData = [
-  { date: '2023-01-10', weight: 60, reps: 10 },
-  { date: '2023-01-17', weight: 65, reps: 8 },
-  { date: '2023-01-24', weight: 65, reps: 10 },
-  { date: '2023-01-31', weight: 70, reps: 8 },
-  { date: '2023-02-07', weight: 70, reps: 10 },
-  { date: '2023-02-14', weight: 75, reps: 8 },
-  { date: '2023-02-21', weight: 75, reps: 10 },
-  { date: '2023-02-28', weight: 80, reps: 8 },
-]
+// const fallbackHistoryData = [
+//   { date: '2023-01-10', weight: 60, reps: 10 },
+//   { date: '2023-01-17', weight: 65, reps: 8 },
+//   { date: '2023-01-24', weight: 65, reps: 10 },
+//   { date: '2023-01-31', weight: 70, reps: 8 },
+//   { date: '2023-02-07', weight: 70, reps: 10 },
+//   { date: '2023-02-14', weight: 75, reps: 8 },
+//   { date: '2023-02-21', weight: 75, reps: 10 },
+//   { date: '2023-02-28', weight: 80, reps: 8 },
+// ]
 
 export default function ExerciseDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -95,8 +96,9 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
           processHistoryData(historyData)
         } catch (historyErr) {
           console.error("Error loading exercise history:", historyErr)
-          // Use fallback data if real data is not available
-          setChartData(fallbackHistoryData)
+          // Use fallback data if real data is not available - REMOVED
+          // setChartData(fallbackHistoryData) 
+          setError("Failed to load exercise history") // Set error instead
         }
       } catch (err) {
         setError("Failed to load exercise")
@@ -112,7 +114,8 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   // Process workout history data for display and charts
   const processHistoryData = (historyData: WorkoutExerciseData[]) => {
     if (!historyData.length) {
-      setChartData(fallbackHistoryData)
+      // setChartData(fallbackHistoryData) - REMOVED
+      setChartData([]) // Set empty array instead
       return
     }
     
@@ -236,27 +239,25 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
     })
   }
   
+  // Loading and error states
   if (isLoading) {
+    return <LoadingIndicator />;
+  }
+
+  if (error) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">Loading exercise...</div>
+      <div className="container mx-auto px-4 py-8 text-center text-red-500">
+        Error: {error}
       </div>
-    )
+    );
   }
   
   if (!exercise) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center text-red-500">
-          {error || "Exercise not found"}
-        </div>
-        <div className="flex justify-center mt-4">
-          <Link href="/exercises">
-            <Button>Back to Exercises</Button>
-          </Link>
-        </div>
+      <div className="container mx-auto px-4 py-8 text-center">
+        Exercise not found.
       </div>
-    )
+    );
   }
   
   // Calculate progress percentage if available
