@@ -48,90 +48,25 @@ function transformStravaActivity(activity: any, userId: string): Partial<Workout
     max_heartrate: activity.max_heartrate
   }));
   
-  let distanceInKm = 0;
-  let distanceSource = 'unknown';
-  
-  try {
-    if (typeof activity.distance === 'number') {
-      if (Math.abs(activity.distance - 10000.0) < 0.1) {
-        console.error(`DETECTED 10000.0 DISTANCE BUG for activity ${activity.id}. Setting to fallback 5.0km.`);
-        distanceInKm = 5.0; 
-        distanceSource = 'fallback_for_10000_bug';
-      }
-      else if (activity.distance < 1000 && activity.distance > 0) {
-        distanceInKm = parseFloat(activity.distance.toFixed(2));
-        console.log(`Distance appears to already be in km: ${activity.distance}km`);
-        distanceSource = 'already_in_km';
-      } else {
-        distanceInKm = parseFloat((activity.distance / 1000).toFixed(2));
-        console.log(`Converted distance: ${activity.distance}m → ${distanceInKm}km`);
-        distanceSource = 'converted_from_m_to_km';
-      }
-      if (distanceInKm > 1000 && activity.distance < 1000) {
-        console.log(`Distance conversion issue detected. Original: ${activity.distance}, Converted: ${distanceInKm}km`);
-        distanceInKm = parseFloat(activity.distance.toFixed(2));
-        console.log(`Corrected to assume original value was already in km: ${distanceInKm}km`);
-        distanceSource = 'correction_for_large_value';
-      }
-      if (distanceInKm > 9000 && distanceInKm < 11000) {
-        console.warn(`⚠️ Applying 10,000km bug fix for activity ${activity.id}`);
-        distanceInKm = distanceInKm / 100;
-        distanceSource = 'cm_to_km_conversion';
-      }
-      if (Math.abs(distanceInKm - 10000.0) < 0.1) {
-        console.error(`CRITICAL: Still produced 10000.0 km value for activity ${activity.id}. Setting to fallback 5.0km.`);
-        distanceInKm = 5.0; 
-        distanceSource = 'emergency_fallback_for_10000';
-      }
-    } else if (typeof activity.distance === 'string') {
-      const parsedDistance = parseFloat(activity.distance);
-      if (!isNaN(parsedDistance)) {
-        if (parsedDistance > 1000) {
-          distanceInKm = parseFloat((parsedDistance / 1000).toFixed(2));
-          console.log(`Parsed string distance as meters: ${activity.distance}m → ${distanceInKm}km`);
-          distanceSource = 'parsed_string_as_meters';
-        } else {
-          distanceInKm = parseFloat(parsedDistance.toFixed(2));
-          console.log(`Parsed string distance assumed already in km: ${distanceInKm}km`);
-          distanceSource = 'parsed_string_as_km';
-        }
-      } else {
-        console.error(`Invalid distance format: ${activity.distance}`);
-        distanceSource = 'invalid_string_format';
-      }
-    } else {
-      console.error(`Missing or invalid distance for activity ${activity.id}`);
-      distanceSource = 'missing_or_invalid';
-    }
-  } catch (error) {
-    console.error(`Error processing distance for activity ${activity.id}:`, error);
-    distanceSource = 'processing_error';
+  // Store distance directly in meters (as provided by Strava)
+  const distanceInMeters = typeof activity.distance === 'number' ? activity.distance : 0;
+  if (typeof activity.distance !== 'number' || activity.distance < 0) {
+     console.warn(`Invalid or missing distance for activity ${activity.id}. Setting distance to 0.`);
   }
-  
-  if (distanceInKm > 1000) {
-    console.error(`Unusually large distance detected: ${distanceInKm}km. Setting to reasonable value.`);
-    if (typeof activity.distance === 'number' && activity.distance > 0) {
-      distanceInKm = parseFloat((activity.distance / 1000).toFixed(2));
-      console.log(`Adjusted distance to: ${distanceInKm}km`);
-      distanceSource += '_with_large_value_adjustment';
-    } else {
-      distanceInKm = 5.0; 
-      distanceSource += '_with_fallback';
-    }
-  }
-  
-  if (distanceInKm > 1000 || distanceInKm <= 0) {
-    console.error(`SAFEGUARD: Final distance ${distanceInKm}km still unreasonable. Using fallback value.`);
-    distanceInKm = 5.0; 
-    distanceSource += '_with_final_safeguard';
-  }
-  
-  console.log(`FINAL DISTANCE for activity ${activity.id}: ${distanceInKm}km (source: ${distanceSource})`);
+  console.log(`FINAL DISTANCE for activity ${activity.id}: ${distanceInMeters}m (source: strava)`);
   
   let paceMinPerKm = undefined;
+  // Calculate pace using distance in meters
   if (activity.average_speed && activity.average_speed > 0 && activity.average_speed < 100) {
+    // Pace (min/km) = (Time in seconds / 60) / (Distance in meters / 1000)
+    // This can also be calculated from average_speed (m/s) directly: (1000 / speed_mps) / 60
     paceMinPerKm = parseFloat(((1000 / activity.average_speed) / 60).toFixed(2));
     console.log(`Calculated pace: ${paceMinPerKm} min/km from speed ${activity.average_speed} m/s`);
+  } else if (distanceInMeters > 0 && (activity.moving_time || activity.elapsed_time) > 0) {
+    // Fallback pace calculation if speed is missing but distance/time exist
+    const durationForPace = activity.moving_time || activity.elapsed_time;
+    paceMinPerKm = parseFloat(((durationForPace / 60) / (distanceInMeters / 1000)).toFixed(2));
+    console.log(`Calculated pace: ${paceMinPerKm} min/km from distance ${distanceInMeters}m and time ${durationForPace}s`);
   }
 
   const workoutType: InternalWorkoutType = mapActivityType(activity.type);
@@ -139,38 +74,49 @@ function transformStravaActivity(activity: any, userId: string): Partial<Workout
   const durationSeconds = activity.moving_time || activity.elapsed_time || 0;
   console.log(`Duration from Strava: ${durationSeconds} seconds`);
 
-  const transformedData = {
-    userId: userId,
-    name: activity.name || `${activity.type} Activity`,
-    type: workoutType || 'other',
-    date: new Date(activity.start_date),
-    duration: durationSeconds, 
-    distance: distanceInKm, 
-    intensity: activity.average_heartrate ? 'Medium' : 'Low',
-    cardioDetails: {
-      distance: distanceInKm, 
+  // Prepare the cardio details object separately
+  const cardioDetailsObject: Partial<WorkoutData['cardioDetails']> = {
+      distance: distanceInMeters, // Store distance in METERS
       duration: durationSeconds, 
-      pace: paceMinPerKm, 
-      speed: activity.average_speed, 
-      maxSpeed: activity.max_speed,
+      pace: paceMinPerKm, // Pace in min/km
+      speed: activity.average_speed ? parseFloat((activity.average_speed * 3.6).toFixed(2)) : undefined, // Store speed in km/h
+      maxSpeed: activity.max_speed ? parseFloat((activity.max_speed * 3.6).toFixed(2)) : undefined, // Store maxSpeed in km/h
       elevationGain: activity.total_elevation_gain,
       heartRate: activity.average_heartrate ? {
         average: activity.average_heartrate,
         max: activity.max_heartrate || activity.average_heartrate,
       } : undefined,
-    },
+  };
+
+  // Remove heartRate object if empty
+  if (cardioDetailsObject.heartRate && 
+      cardioDetailsObject.heartRate.average === undefined && 
+      cardioDetailsObject.heartRate.max === undefined) {
+    cardioDetailsObject.heartRate = undefined;
+  }
+
+  const transformedData: Partial<WorkoutData> = {
+    userId: userId,
+    name: activity.name || `${activity.type} Activity`,
+    type: workoutType || 'other',
+    date: new Date(activity.start_date),
+    duration: durationSeconds, 
+    distance: distanceInMeters, // Store distance in METERS
+    intensity: activity.average_heartrate ? 'Medium' : 'Low', // Keep simple intensity logic for now
+    // cardioDetails is added conditionally below
     stravaLink: `https://www.strava.com/activities/${activity.id}`,
     source: 'strava',
     sourceId: activity.id.toString(),
     importedFrom: 'strava-sync',
-    _debug: {
-      originalDistance: activity.distance,
-      distanceSource: distanceSource,
-      originalDuration: activity.moving_time || activity.elapsed_time,
-      stravaActivityType: activity.type,
-      mappedWorkoutType: workoutType
-    }
   };
+
+  // Conditionally add cardioDetails if it contains meaningful data
+  if (cardioDetailsObject.distance && cardioDetailsObject.distance > 0 || 
+      cardioDetailsObject.duration && cardioDetailsObject.duration > 0) {
+    transformedData.cardioDetails = cardioDetailsObject as WorkoutData['cardioDetails']; // Assert type here
+  } else {
+      console.log(`Skipping empty cardioDetails for activity ${activity.id}`);
+  }
   
   console.log('Transformed workout data:', {
     id: transformedData.sourceId,
