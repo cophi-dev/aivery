@@ -2037,78 +2037,91 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
 
   try {
     const userObjectId = new Types.ObjectId(userId);
-    // Use lean and type assertion for user
-    let user = await UserModel.findById(userObjectId).lean<IUser>(); 
+    let user = await UserModel.findById(userObjectId).lean<IUser>();
     if (!user) {
       console.error(`[updateExercisePRs] User not found: ${userId}`);
       return;
     }
-    // Correct field name: user.weight
     const userWeight = (typeof user.weight === 'number' && user.weight > 0) ? user.weight : null;
 
-    // Filter workouts: specific workout ID or all completed workouts for the user
-    const workoutQuery: any = { userId: userObjectId, completed: true };
+    const workoutQuery: any = { userId: userObjectId };
     if (specificWorkoutId && Types.ObjectId.isValid(specificWorkoutId)) {
       workoutQuery._id = new Types.ObjectId(specificWorkoutId);
+      // workoutQuery.completed = true; // Keep commented out based on previous decision
       console.log(`[updateExercisePRs] Querying for specific workout: ${specificWorkoutId}`);
     } else {
-      console.log(`[updateExercisePRs] Querying for all completed workouts for user: ${userId}`);
+      console.log(`[updateExercisePRs] Querying for ALL workouts for user: ${userId}`);
     }
 
-    // Fetch workouts and populate, using safe type assertion
-    const workouts = await WorkoutModel.find(workoutQuery)
-      .sort({ date: 1 }) // Process chronologically to find latest PR
-      .populate<{
-          exercises: Array<LeanWorkoutExercise & {
-              exerciseId: LeanExercise | null;
-              sets: LeanSet[];
-          }>;
-      }>({
-        path: 'exercises',
-        options: { sort: { order: 1 } }, // Sort exercises by order
-        populate: [
-          {
-            path: 'exerciseId',
-            model: ExerciseModel,
-            select: 'name category equipment trackMaxReps' // Ensure trackMaxReps is selected
-          },
-          {
-            path: 'sets',
-            model: SetModel,
-            options: { sort: { order: 1 } } // Sort sets by order
-          }
-        ]
-      })
-      .lean() as unknown as LeanWorkout[]; // <-- Use safe assertion
-
-    if (!workouts || workouts.length === 0) {
+    // --- REFACTORED DATA FETCHING --- 
+    
+    // 1. Fetch Workout documents (only need _id and date for PR logic)
+    const workoutDocs = await WorkoutModel.find(workoutQuery)
+      .select('_id date') // Select only necessary fields from Workout
+      .sort({ date: 1 }) // Process chronologically
+      .lean();
+      
+    if (!workoutDocs || workoutDocs.length === 0) {
       console.log(`[updateExercisePRs] No workouts found matching criteria.`);
       return;
     }
+    
+    const workoutIds = workoutDocs.map(w => w._id);
+    console.log(`[updateExercisePRs] Found ${workoutDocs.length} workouts. Fetching associated exercises...`);
+    
+    // 2. Fetch related WorkoutExercise documents and populate Exercise details
+    const workoutExercises = await WorkoutExerciseModel.find({ workoutId: { $in: workoutIds } })
+      .populate<{ exerciseId: LeanExercise | null }>({
+        path: 'exerciseId',
+        model: ExerciseModel,
+        select: 'name category equipment trackMaxReps' // Ensure trackMaxReps is selected
+      })
+      // REMOVED: Populate sets here - We don't need populated sets for PR calc, lean() is enough
+      .lean() as unknown as LeanWorkoutExercise[]; // Use lean for efficiency
 
-    console.log(`[updateExercisePRs] Processing ${workouts.length} workouts...`);
+    console.log(`[updateExercisePRs] Fetched ${workoutExercises.length} WorkoutExercise documents.`);
 
-    // Store potential PRs found during processing - Key: `${exerciseId}_${unit}`
+    // 3. Group exercises by workoutId for efficient lookup
+    const exercisesByWorkoutId = workoutExercises.reduce((acc, ex) => {
+        const wId = ex.workoutId.toString();
+        if (!acc[wId]) acc[wId] = [];
+        acc[wId].push(ex);
+        return acc;
+    }, {} as Record<string, LeanWorkoutExercise[]>);
+
+    // --- END REFACTORED DATA FETCHING --- 
+
+    console.log(`[updateExercisePRs] Processing ${workoutDocs.length} workouts...`);
+
     const potentialPRs: Record<string, Partial<IExercisePR> & { value: number; date: Date }> = {};
 
-    for (const workout of workouts) {
-      if (!workout.exercises || workout.exercises.length === 0 || !workout.date) continue;
+    // Iterate through the lean WORKOUT documents
+    for (const workout of workoutDocs) {
+      // Get associated exercises from the map
+      // Ensure workout._id is treated as an ObjectId before converting to string
+      const workoutDocId = workout._id as Types.ObjectId; 
+      const workoutIdString = workoutDocId.toString();
+      const exercisesForWorkout = exercisesByWorkoutId[workoutIdString] || [];
+      
+      if (!exercisesForWorkout || exercisesForWorkout.length === 0 || !workout.date) continue;
       const workoutDate = workout.date; // Already a Date object from .lean()
-      const workoutId = workout._id;
+      const workoutIdObj = workoutDocId; // Use the ObjectId directly where needed
 
-      for (const exercise of workout.exercises) {
-        if (!exercise.exerciseId || !exercise.exerciseId.name || !exercise.exerciseId._id) continue; // Skip if exercise details missing
+      // Iterate through the lean WorkoutExercise documents for this workout
+      for (const exercise of exercisesForWorkout) { 
+        // Use the populated/lean exerciseId data
+        const exerciseDocId = exercise.exerciseId?._id as Types.ObjectId; // Ensure exerciseId._id is treated as ObjectId
+        if (!exerciseDocId || !exercise.exerciseId?.name) continue; 
 
-        const exerciseId = exercise.exerciseId._id;
+        const exerciseIdObj = exerciseDocId; // Use the ObjectId directly
         const exerciseName = exercise.exerciseId.name;
         const exerciseTrackMaxReps = exercise.exerciseId.trackMaxReps ?? false;
 
         let currentMaxWeight = 0;
         let currentMaxReps = 0;
-        // let currentVolume = 0; // Volume PR calculation can be added later if needed
-        // let calculatedORM = 0; // ORM calculation can be added later if needed
 
-        if (exercise.sets && exercise.sets.length > 0) {
+        // Use the lean sets data directly from the WorkoutExercise document
+        if (exercise.sets && exercise.sets.length > 0) { 
           for (const set of exercise.sets) {
             const setWeight = set.weight ?? 0;
             const setReps = set.reps ?? 0;
@@ -2132,61 +2145,44 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
             if (setReps > currentMaxReps) {
               currentMaxReps = setReps;
             }
-
-            // Potential future place for Volume and ORM calculation per set
-            // currentVolume += effectiveWeight * setReps;
-            // if (setReps > 0 && effectiveWeight > 0) {
-            //   const setORM = effectiveWeight / (1.0278 - 0.0278 * setReps); // Brzycki
-            //   if (setORM > calculatedORM) calculatedORM = setORM;
-            // }
           }
         }
-
+        // ... rest of the PR staging logic remains the same ...
         // --- Check and Stage Max Weight PR --- 
         if (currentMaxWeight > 0) {
-          const prKey = `${exerciseId.toString()}_kg`; // Using 'kg' as the standard unit for weight PRs
+          const prKey = `${exerciseIdObj.toString()}_kg`; 
           const existingPR = potentialPRs[prKey];
 
           if (!existingPR || currentMaxWeight > existingPR.value || (currentMaxWeight === existingPR.value && workoutDate > existingPR.date)) {
             potentialPRs[prKey] = {
               userId: userObjectId,
-              exerciseId: exerciseId,
+              exerciseId: exerciseIdObj, // Pass ObjectId
               exerciseName: exerciseName,
               value: currentMaxWeight,
               unit: 'kg',
               date: workoutDate,
-              workoutId: workoutId,
+              workoutId: workoutIdObj, // Correct property name
             };
-            // console.log(`[ExPR Update] Staging Max Weight PR for ${exerciseName}: ${currentMaxWeight}kg on ${workoutDate.toISOString()}`);
           }
         }
 
         // --- Check and Stage Max Reps PR --- 
-        // Only track max reps if the flag is set AND we recorded reps > 0
         if (exerciseTrackMaxReps && currentMaxReps > 0) {
-          const prKey = `${exerciseId.toString()}_reps`;
+          const prKey = `${exerciseIdObj.toString()}_reps`;
           const existingPR = potentialPRs[prKey];
 
           if (!existingPR || currentMaxReps > existingPR.value || (currentMaxReps === existingPR.value && workoutDate > existingPR.date)) {
             potentialPRs[prKey] = {
               userId: userObjectId,
-              exerciseId: exerciseId,
+              exerciseId: exerciseIdObj, // Pass ObjectId
               exerciseName: exerciseName,
               value: currentMaxReps,
               unit: 'reps',
               date: workoutDate,
-              workoutId: workoutId,
+              workoutId: workoutIdObj, // Correct property name
             };
-            // console.log(`[ExPR Update] Staging Max Reps PR for ${exerciseName}: ${currentMaxReps} reps on ${workoutDate.toISOString()}`);
           }
         }
-
-        // --- Check and Stage Volume PR --- (Placeholder)
-        // if (currentVolume > 0) { ... }
-
-        // --- Check and Stage ORM PR --- (Placeholder)
-        // if (calculatedORM > 0) { ... }
-
       } // End loop through exercises
     } // End loop through workouts
 
