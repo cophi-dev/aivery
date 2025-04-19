@@ -927,7 +927,7 @@ Do NOT just give a short definition. Aim for an informative, article-style expla
               { role: 'system', content: systemPrompt },
               { role: 'user', content: query } // The user query contains the specific concept to explain
             ],
-            max_tokens: 1024, // Increased max_tokens for longer, article-style explanations
+            max_tokens: 2048, // Increased max_tokens again for even longer explanations
             temperature: 0.6, // Slightly adjusted temperature for informative but engaging tone
             stream: false,
           })
