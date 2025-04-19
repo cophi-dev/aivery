@@ -46,7 +46,7 @@
       "memory": 1024,
       "maxDuration": 10
     },
-    "api/ai/parse-workout/route.ts": {
+    "app/api/ai/parse-workout/route.ts": {
       "memory": 1280,
       "maxDuration": 60
     },
