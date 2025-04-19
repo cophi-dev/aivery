@@ -797,12 +797,12 @@ export default function NewWorkoutPage() {
     const exercisesToSubmit = validExercises;
     
     // Updated Validation checks
-    const isStrengthType = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
-    if (isStrengthType && exercisesToSubmit.length === 0) {
+    const isSubmitStrengthType = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
+    if (isSubmitStrengthType && exercisesToSubmit.length === 0) {
       setError("Please add at least one exercise with valid sets (reps > 0).");
       return;
     }
-    if (!isStrengthType && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
+    if (!isSubmitStrengthType && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
       setError("Please enter a valid distance and duration for this activity type.");
       return;
     }
@@ -812,7 +812,7 @@ export default function NewWorkoutPage() {
 
     // --- Determine the correct WorkoutType for the database ---
     let finalWorkoutTypeForPayload: AllowedWorkoutType;
-    if (isStrengthType) {
+    if (isSubmitStrengthType) {
       finalWorkoutTypeForPayload = "strength";
     } else if (["running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(workoutType)) {
       finalWorkoutTypeForPayload = workoutType as AllowedWorkoutType;
@@ -895,16 +895,15 @@ export default function NewWorkoutPage() {
     exercisesPayload = mappedExercises.filter(isDefined);
 
     // --- Validation after mapping ---
-    const isStrengthType = finalWorkoutTypeForPayload === 'strength';
-    if (isStrengthType && exercisesPayload.length === 0 && exercises.length > 0) {
+    if (finalWorkoutTypeForPayload === 'strength' && exercisesPayload.length === 0 && exercises.length > 0) {
        // Check if the original form had exercises but none were valid after mapping
        setError("Please ensure exercises have valid sets (reps > 0) or duration/distance for cardio.");
        setIsSubmitting(false);
        return;
     }
     // (Keep existing validation for non-strength types)
-    if (!isStrengthType && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
-      setError("Please enter a valid overall distance and duration for this activity type.");
+    if (finalWorkoutTypeForPayload !== 'strength' && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
+      setError("Please enter a valid distance and duration for this activity type.");
       setIsSubmitting(false);
       return;
     }
@@ -914,7 +913,7 @@ export default function NewWorkoutPage() {
     const parsedCardioDistance = distance ? Number.parseFloat(distance) * 1000 : undefined; // meters
     const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined; // seconds
 
-    if (!isStrengthType) {
+    if (finalWorkoutTypeForPayload !== 'strength') {
         cardioDetailsPayload = { distance: parsedCardioDistance ?? 0, duration: parsedCardioDuration ?? 0 };
     }
     
@@ -924,7 +923,7 @@ export default function NewWorkoutPage() {
       type: finalWorkoutTypeForPayload,
       notes: getSummaryText() || "", 
       // Use overall duration/distance for non-strength, calculate for strength
-      duration: isStrengthType 
+      duration: finalWorkoutTypeForPayload === 'strength'
         ? estimateWorkoutDuration(exercises) // Estimate based on potentially mixed exercises
         : (parsedCardioDuration || 0),
       exercises: exercisesPayload, // Use the filtered and mapped payload
@@ -1224,13 +1223,14 @@ export default function NewWorkoutPage() {
                     </div>
                   </div>
                 ) : (
-                  // --- Render Sets Section for Non-Cardio --- 
+                  // --- Render Sets Section for Non-Cardio ---
                   <div className="space-y-3 pl-2 border-l-2 border-muted">
                      <Label className="text-sm font-medium">Sets</Label>
                      {exercise.sets.map((set, setIndex) => (
                       <div key={set.id} className="flex items-end space-x-2">
                          <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
                          <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                           {/* Weight Input */}
                            <div>
                              <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
                              <Input
@@ -1243,6 +1243,7 @@ export default function NewWorkoutPage() {
                                 step="0.1"
                              />
                            </div>
+                           {/* Reps Input */}
                            <div>
                              <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
                              <Input
@@ -1267,10 +1268,10 @@ export default function NewWorkoutPage() {
                             </div>
                           </div>
                            {/* Remove Set Button */}
-                           <Button 
-                             type="button" 
-                             variant="ghost" 
-                             size="icon" 
+                           <Button
+                             type="button"
+                             variant="ghost"
+                             size="icon"
                              onClick={() => removeSet(exercise.id, set.id)}
                              disabled={exercise.sets.length <= 1} // Disable removing the last set
                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
@@ -1280,7 +1281,9 @@ export default function NewWorkoutPage() {
                              <span className="sr-only">Remove Set</span>
                            </Button>
                         </div>
-                       {/* Exercise Notes for Non-Cardio */}
+                       ))}
+
+                       {/* Exercise Notes for Non-Cardio (Now correctly placed sibling to the map result) */}
                        <div className="pt-2">
                          <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
                          <Textarea
@@ -1306,7 +1309,7 @@ export default function NewWorkoutPage() {
 
         {/* Save Workout Button */}
         <div className="flex justify-end pt-4">
-          <Button type="submit" disabled={isSubmitting || !workoutType || (!isStrengthWorkout && !duration && !distance) || (isStrengthWorkout && exercises.length === 0) }>
+          <Button type="submit" disabled={isSubmitting || !workoutType || (!isStrengthWorkout && (!duration || Number(duration) <= 0) && (!distance || Number(distance) <= 0)) || (isStrengthWorkout && exercises.length === 0) }>
             {isSubmitting ? "Saving..." : isEditing ? "Update Workout" : "Save Workout"}
           </Button>
         </div>
