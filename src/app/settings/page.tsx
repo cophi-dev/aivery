@@ -961,10 +961,11 @@ export default function SettingsPage() {
       <h1 className="text-3xl font-bold mb-6">Settings</h1>
       
       <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full sm:grid-cols-3 lg:grid-cols-3 gap-2">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 gap-2">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="ai">AI Personalization</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
         </TabsList>
         
         {/* Profile Tab Content */}
