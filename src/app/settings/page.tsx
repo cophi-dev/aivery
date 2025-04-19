@@ -36,6 +36,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { deleteWorkoutsByTypes, deleteWorkoutsAction } from '../actions/delete-workouts'
 import { InlineSpinner } from "@/components/ui/inline-spinner"
+import { UpgradeButton } from "@/components/UpgradeButton"
+import Link from "next/link"
 
 interface Change {
   field: string;
@@ -906,6 +908,44 @@ export default function SettingsPage() {
     // No need to set setIsDeletingAccount(false) on success because the user is navigated away
   };
 
+  // Add state for Stripe Portal button
+  const [isLoadingPortal, setIsLoadingPortal] = useState(false)
+  const [portalError, setPortalError] = useState<string | null>(null)
+
+  // Add the function to handle Stripe Portal session creation
+  const handleManageSubscription = async () => {
+      setIsLoadingPortal(true);
+      setPortalError(null);
+      try {
+          const response = await fetch('/api/stripe/create-portal-session', {
+              method: 'POST',
+          });
+
+          if (response.status === 400) {
+               const errorData = await response.json();
+               // Use a more generic error for the user unless debugging
+               console.error("Stripe Portal Error Data:", errorData); 
+               throw new Error('Failed to access subscription management. Please ensure you have an active subscription.');
+          } else if (!response.ok) {
+              console.error(`Stripe Portal Non-OK Response: Status ${response.status}`);
+              throw new Error(`Failed to create portal session (Status: ${response.status})`);
+          }
+
+          const { url } = await response.json();
+          if (url) {
+              window.location.href = url;
+          } else {
+              console.error("Stripe Portal URL not received in response.");
+              throw new Error('Portal URL not received');
+          }
+      } catch (err: any) {
+          console.error("Portal Session Error:", err);
+          setPortalError(err.message || 'An unexpected error occurred while trying to access your subscription management.');
+      } finally {
+          setIsLoadingPortal(false);
+      }
+  };
+
   // Check if loading data before rendering
   if (isLoadingUserData) {
     return (
@@ -1433,6 +1473,80 @@ export default function SettingsPage() {
                 </div>
               </div>
             </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Account Tab Content */}
+        <TabsContent value="account" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Management</CardTitle>
+              <CardDescription>Manage your account settings and subscription.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+               {/* Placeholder for Password Update */}
+               <div>
+                 <Label htmlFor="password">Password</Label>
+                 <Button variant="outline" onClick={handlePasswordUpdate} className="mt-2">Change Password</Button>
+               </div>
+               
+               <Separator />
+
+               {/* Subscription Section */}
+               <div>
+                 <h3 className="text-lg font-medium mb-2">Subscription</h3>
+                 {!isLoadingUserData && user ? (
+                   user.tier && user.tier !== 'free' ? (
+                     // User is subscribed
+                     <>
+                       <p className="text-sm text-muted-foreground mb-2">
+                         Your current plan: <span className="font-semibold capitalize">{user.tier}</span>.
+                       </p>
+                       <Button
+                         onClick={handleManageSubscription}
+                         disabled={isLoadingPortal}
+                       >
+                         {isLoadingPortal ? (
+                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                         ) : null}
+                         {isLoadingPortal ? 'Processing...' : 'Manage Subscription'}
+                       </Button>
+                       {portalError && (
+                           <p className="mt-2 text-sm text-red-600">Error: {portalError}</p>
+                       )}
+                     </>
+                   ) : (
+                     // User is on free plan
+                     <>
+                       <p className="text-sm text-muted-foreground mb-3">
+                         You are currently on the Free plan. Upgrade to unlock more features.
+                       </p>
+                       <Link href="/dashboard">
+                         <Button variant="default">Upgrade to Premium</Button>
+                       </Link>
+                       {/* Alternatively, show UpgradeButtons directly:
+                       <div className="flex flex-col sm:flex-row gap-4 mt-2">
+                           <UpgradeButton plan="premium" currentPlanIsFree={true} className="w-full sm:w-auto">
+                               Go Premium (€6.90/month)
+                           </UpgradeButton>
+                           <UpgradeButton plan="expert" currentPlanIsFree={true} variant="secondary" className="w-full sm:w-auto">
+                               Go Expert (€14.90/month)
+                           </UpgradeButton>
+                       </div> 
+                       */}
+                     </>
+                   )
+                 ) : (
+                   // Loading state for subscription info
+                   <p className="text-sm text-muted-foreground">Loading subscription status...</p>
+                 )}
+               </div>
+
+            </CardContent>
+          </Card>
+          
+          <Card className="border-destructive">
+             {/* ... Delete Account section ... */}
           </Card>
         </TabsContent>
 

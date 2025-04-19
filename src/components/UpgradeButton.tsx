@@ -11,29 +11,29 @@ import { InlineSpinner } from "@/components/ui/inline-spinner";
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 interface UpgradeButtonProps extends ButtonProps {
-  plan: 'premium' | 'expert'; // Specify which plan this button targets
-  currentPlanIsFree: boolean; // Indicate if the user is currently on a free plan
-  // Add 'userId' if needed for checks, though usually handled server-side
+  // Plan prop is now only needed to potentially display plan name, 
+  // but we only have one plan ('premium') that triggers checkout.
+  // We could simplify this further later if needed.
+  plan: 'premium'; // Only premium plan is purchasable
+  currentPlanIsFree: boolean; 
 }
 
 export function UpgradeButton({ plan, currentPlanIsFree, children, ...props }: UpgradeButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Get the correct Price ID based on the plan prop
-  // Ensure the NEXT_PUBLIC_ prefix is used for client-side access
-  const priceId = plan === 'premium'
-    ? process.env.NEXT_PUBLIC_STRIPE_PREMIUM_PRICE_ID!
-    : process.env.NEXT_PUBLIC_STRIPE_EXPERT_PRICE_ID!;
+  // Get the premium Price ID 
+  const priceId = process.env.NEXT_PUBLIC_STRIPE_PREMIUM_PRICE_ID!;
 
-   // Check if environment variables are set client-side
+   // Check if required environment variables are set client-side
    if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
      console.error("Stripe publishable key not set in client environment variables.");
-     return <Button disabled {...props}>Error: Config Missing</Button>;
+     return <Button disabled {...props}>Error: Config Missing (PK)</Button>; // Indicate missing Publishable Key
    }
-   if (!process.env.NEXT_PUBLIC_STRIPE_PREMIUM_PRICE_ID || !process.env.NEXT_PUBLIC_STRIPE_EXPERT_PRICE_ID) {
-       console.error("Stripe price IDs not set in client environment variables.");
-       return <Button disabled {...props}>Error: Config Missing</Button>;
+   // Only check for the premium price ID now
+   if (!priceId) {
+       console.error("Stripe premium price ID not set in client environment variables.");
+       return <Button disabled {...props}>Error: Config Missing (Price)</Button>; // Indicate missing Price ID
    }
 
   const handleCheckout = async () => {

@@ -10,8 +10,6 @@ export function SubscriptionStatus() { // Export the function
     const { data: session, status } = useSession();
     const [currentPlan, setCurrentPlan] = useState<string | null>(null);
     const [isLoadingPlan, setIsLoadingPlan] = useState(true);
-    const [isLoadingPortal, setIsLoadingPortal] = useState(false);
-    const [portalError, setPortalError] = useState<string | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -28,7 +26,7 @@ export function SubscriptionStatus() { // Export the function
                 })
                 .catch(err => {
                      console.error("[SubscriptionStatus] Failed to fetch user data:", err);
-                     setCurrentPlan('Error loading plan'); 
+                     setCurrentPlan('error loading plan'); 
                 })
                 .finally(() => {
                     setIsLoadingPlan(false);
@@ -38,39 +36,6 @@ export function SubscriptionStatus() { // Export the function
             router.push('/login?callbackUrl=/dashboard'); 
         }
     }, [status, router]); 
-
-    const handleManageSubscription = async () => {
-        setIsLoadingPortal(true);
-        setPortalError(null);
-        try {
-            const response = await fetch('/api/stripe/create-portal-session', {
-                method: 'POST',
-            });
-
-            if (response.status === 400) {
-                 const errorData = await response.json();
-                 if (errorData.message?.includes('Stripe Customer ID not found')) {
-                      throw new Error('Subscription management is only available for active subscribers.');
-                 } else {
-                      throw new Error(errorData.message || 'Failed to create portal session (Bad Request)');
-                 }
-            } else if (!response.ok) {
-                throw new Error(`Failed to create portal session (Status: ${response.status})`);
-            }
-
-            const { url } = await response.json();
-            if (url) {
-                window.location.href = url;
-            } else {
-                throw new Error('Portal URL not received');
-            }
-        } catch (err: any) {
-            console.error("Portal Session Error:", err);
-            setPortalError(err.message || 'An unexpected error occurred.');
-        } finally {
-            setIsLoadingPortal(false);
-        }
-    };
 
     if (status === 'loading' || (status === 'authenticated' && isLoadingPlan)) {
         return (
@@ -83,40 +48,31 @@ export function SubscriptionStatus() { // Export the function
 
     const isSubscribed = currentPlan && currentPlan !== 'free' && currentPlan !== 'error loading plan' && currentPlan !== null;
 
-    return (
-        <div className="mb-6 p-4 border rounded-lg bg-white dark:bg-card dark:border-border shadow-sm">
-            <h2 className="text-lg font-semibold mb-2 text-gray-800 dark:text-card-foreground">Subscription Status</h2>
-            <p className="text-gray-600 dark:text-muted-foreground">Your current plan: <span className="font-medium capitalize text-gray-900 dark:text-foreground">{currentPlan || 'N/A'}</span></p>
-
-            {isSubscribed && ( 
+    if (!isSubscribed && currentPlan === 'free') {
+        return (
+            <div className="mb-6 p-4 border rounded-lg bg-white dark:bg-card dark:border-border shadow-sm">
+                <h2 className="text-lg font-semibold mb-2 text-gray-800 dark:text-card-foreground">Subscription Status</h2>
+                <p className="text-gray-600 dark:text-muted-foreground">Your current plan: <span className="font-medium capitalize text-gray-900 dark:text-foreground">Free</span></p>
                 <div className="mt-4">
-                    <button
-                        type="button"
-                        onClick={handleManageSubscription}
-                        disabled={isLoadingPortal}
-                        className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isLoadingPortal ? 'Processing...' : 'Manage Subscription'}
-                    </button>
-                    {portalError && (
-                        <p className="mt-2 text-sm text-red-600">Error: {portalError}</p>
-                    )}
+                    <p className="text-gray-500 dark:text-muted-foreground mb-3">Upgrade your plan to unlock more features.</p>
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <UpgradeButton plan="premium" currentPlanIsFree={true} className="w-full sm:w-auto">
+                            Go Premium (€12.90/month)
+                        </UpgradeButton>
+                    </div>
                 </div>
-            )}
+            </div>
+        );
+    }
+    
+    if (currentPlan === 'error loading plan') {
+      return (
+          <div className="mb-6 p-4 border rounded-lg bg-destructive/10">
+              <h2 className="text-lg font-semibold mb-2 text-destructive">Subscription Status</h2>
+              <p className="text-destructive">Error loading subscription status.</p>
+          </div>
+      );
+    }
 
-            {!isSubscribed && currentPlan !== null && currentPlan !== 'Error loading plan' && (
-                 <div className="mt-4">
-                     <p className="text-gray-500 dark:text-muted-foreground mb-3">Upgrade your plan to unlock more features.</p>
-                     <div className="flex flex-col sm:flex-row gap-4">
-                         <UpgradeButton plan="premium" currentPlanIsFree={true} className="w-full sm:w-auto">
-                             Go Premium (€6.90/month)
-                         </UpgradeButton>
-                         <UpgradeButton plan="expert" currentPlanIsFree={true} variant="secondary" className="w-full sm:w-auto">
-                             Go Expert (€14.90/month)
-                         </UpgradeButton>
-                     </div>
-                 </div>
-            )}
-        </div>
-    );
+    return null; 
 } 
