@@ -142,23 +142,27 @@ const findCanonicalExercise = (
   if (!parsedName) return undefined;
 
   const lowerParsedName = parsedName.toLowerCase().trim();
+  const lowerParsedNameNoSpace = lowerParsedName.replace(/\s+/g, ''); // Remove spaces
 
-  // 1. Try direct case-insensitive match
-  let foundExercise = dbExercises.find(ex => ex.name.toLowerCase() === lowerParsedName);
+  // 1. Try direct case-insensitive match (with and without spaces)
+  let foundExercise = dbExercises.find(ex => {
+    const lowerDbName = ex.name.toLowerCase();
+    // Check exact match first, then match without spaces
+    return lowerDbName === lowerParsedName || lowerDbName.replace(/\s+/g, '') === lowerParsedNameNoSpace;
+  });
   if (foundExercise) return foundExercise;
 
-  // 2. Try alias match
-  const aliasTargetName = aliases[lowerParsedName];
+  // 2. Try alias match (with and without spaces)
+  const aliasTargetName = aliases[lowerParsedName] || aliases[lowerParsedNameNoSpace]; // Check alias map with and without spaces
   if (aliasTargetName) {
-    // Find the exercise matching the alias target name (case-insensitive)
-    foundExercise = dbExercises.find(ex => ex.name.toLowerCase() === aliasTargetName);
+    const aliasTargetNameNoSpace = aliasTargetName.replace(/\s+/g, '');
+    // Find the exercise matching the alias target name (case-insensitive, with/without spaces)
+    foundExercise = dbExercises.find(ex => {
+      const lowerDbName = ex.name.toLowerCase();
+      return lowerDbName === aliasTargetName || lowerDbName.replace(/\s+/g, '') === aliasTargetNameNoSpace;
+    });
     if (foundExercise) return foundExercise;
-    // As a fallback, maybe try searching for the alias target name with common pluralization differences
-    // e.g., if alias is 'pull-up', try 'pull-ups' too
-    if (aliasTargetName.endsWith('up')) {
-      foundExercise = dbExercises.find(ex => ex.name.toLowerCase() === aliasTargetName + 's');
-      if (foundExercise) return foundExercise;
-    }
+    // Fallback for s-pluralization removed as space removal handles pull-up/pull-ups cases if names are consistent
   }
 
   // 3. Optional: Add fuzzy matching here later if needed
@@ -1095,7 +1099,7 @@ export default function NewWorkoutPage() {
                      {/* Use ExerciseSelect component - REPLACED with standard Select */}
                      <Select
                         // Pass the canonical ID if known, otherwise the name might be temporarily stored
-                        value={exercise.exerciseId || exercise.name || ''} 
+                        value={exercise.exerciseId || ''} // <-- SIMPLIFIED: Only use exerciseId for value binding
                         // Add string type to parameter
                         onValueChange={(selectedIdOrName: string) => {
                             // Find the exercise in dbExercises by ID first
