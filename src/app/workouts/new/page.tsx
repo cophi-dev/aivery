@@ -136,10 +136,21 @@ const exerciseAliases: Record<string, string> = {
   'klimmzüge': 'pull-up', // Or 'pull ups' depending on your canonical name
   'kniebeugen': 'squat',
   // Add more aliases as needed
-  'kettlebell swings': 'kettlebell swing', // Add alias for kettlebell swings
-  'pushups': 'push-up', // Add alias for pushups (assuming canonical is push-up)
-  'pullups': 'pull-up', // Add alias for pullups (assuming canonical is pull-up)
-  'horsestance': 'horse stance' // Add alias for horsestance (assuming space)
+  'kettlebell swings': 'Kettlebell Swings', // Try matching exact case/plural
+  'pushups': 'Pushup', // Try matching no hyphen, capitalized
+  'pullups': 'Pull-up', // Keep previous attempt
+  'horsestance': 'horse stance' // Keep previous attempt
+};
+
+// --- NEW Helper Function for Normalizing Names ---
+const normalizeName = (name: string): string => {
+  if (!name) return "";
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '') // Remove spaces
+    .replace(/-/g, '') // Remove hyphens
+    // Basic plural check: remove trailing 's' if word isn't 'ss' or similar
+    .replace(/([^s])s$/, '$1'); 
 };
 
 // --- NEW Helper to Find Canonical Exercise ---
@@ -150,57 +161,27 @@ const findCanonicalExercise = (
 ): ExerciseData | undefined => {
   if (!parsedName) return undefined;
 
-  const lowerParsedName = parsedName.toLowerCase().trim();
-  const lowerParsedNameNoSpace = lowerParsedName.replace(/\s+/g, ''); 
-  // Add version without trailing 's' (for pluralization check)
-  const lowerParsedNameSingular = lowerParsedName.endsWith('s') ? lowerParsedName.slice(0, -1) : lowerParsedName;
-  const lowerParsedNameNoSpaceSingular = lowerParsedNameNoSpace.endsWith('s') ? lowerParsedNameNoSpace.slice(0, -1) : lowerParsedNameNoSpace;
+  const normalizedParsedName = normalizeName(parsedName);
 
-  // 1. Try direct match (case-insensitive, space-insensitive, plural-insensitive)
-  let foundExercise = dbExercises.find(ex => {
-    const lowerDbName = ex.name.toLowerCase();
-    const lowerDbNameNoSpace = lowerDbName.replace(/\s+/g, '');
-    // Add version without trailing 's' for DB name
-    const lowerDbNameSingular = lowerDbName.endsWith('s') ? lowerDbName.slice(0, -1) : lowerDbName;
-    const lowerDbNameNoSpaceSingular = lowerDbNameNoSpace.endsWith('s') ? lowerDbNameNoSpace.slice(0, -1) : lowerDbNameNoSpace;
-
-    // Check various combinations:
-    return (
-      lowerDbName === lowerParsedName || // Exact
-      lowerDbNameNoSpace === lowerParsedNameNoSpace || // No spaces
-      lowerDbNameSingular === lowerParsedNameSingular || // Singular
-      lowerDbNameNoSpaceSingular === lowerParsedNameNoSpaceSingular // Singular, no spaces
-    );
-  });
+  // 1. Try direct normalized match
+  let foundExercise = dbExercises.find(ex => normalizeName(ex.name) === normalizedParsedName);
   if (foundExercise) return foundExercise;
 
-  // 2. Try alias match (case-insensitive, space-insensitive, plural-insensitive)
-  const aliasTargetName = aliases[lowerParsedName] || aliases[lowerParsedNameNoSpace] || aliases[lowerParsedNameSingular] || aliases[lowerParsedNameNoSpaceSingular]; 
+  // 2. Try alias match (normalize the alias key and the target)
+  // First, check if normalized input matches a normalized alias *key*
+  const normalizedAliasKey = Object.keys(aliases).find(key => normalizeName(key) === normalizedParsedName);
+  const aliasTargetName = normalizedAliasKey ? aliases[normalizedAliasKey] : undefined;
+
   if (aliasTargetName) {
-    const aliasTargetNameNoSpace = aliasTargetName.replace(/\s+/g, '');
-    const aliasTargetNameSingular = aliasTargetName.endsWith('s') ? aliasTargetName.slice(0, -1) : aliasTargetName;
-    const aliasTargetNameNoSpaceSingular = aliasTargetNameNoSpace.endsWith('s') ? aliasTargetNameNoSpace.slice(0, -1) : aliasTargetNameNoSpace;
-
-    foundExercise = dbExercises.find(ex => {
-      const lowerDbName = ex.name.toLowerCase();
-      const lowerDbNameNoSpace = lowerDbName.replace(/\s+/g, '');
-      const lowerDbNameSingular = lowerDbName.endsWith('s') ? lowerDbName.slice(0, -1) : lowerDbName;
-      const lowerDbNameNoSpaceSingular = lowerDbNameNoSpace.endsWith('s') ? lowerDbNameNoSpace.slice(0, -1) : lowerDbNameNoSpace;
-
-      // Check alias against DB name variations
-      return (
-        lowerDbName === aliasTargetName || 
-        lowerDbNameNoSpace === aliasTargetNameNoSpace ||
-        lowerDbNameSingular === aliasTargetNameSingular || 
-        lowerDbNameNoSpaceSingular === aliasTargetNameNoSpaceSingular
-      );
-    });
+    const normalizedAliasTarget = normalizeName(aliasTargetName);
+    // Find DB exercise matching the normalized alias *target*
+    foundExercise = dbExercises.find(ex => normalizeName(ex.name) === normalizedAliasTarget);
     if (foundExercise) return foundExercise;
   }
 
   // 3. Optional: Add fuzzy matching here later if needed
 
-  console.warn(`[findCanonicalExercise] Could not find canonical match for: "${parsedName}"`);
+  console.warn(`[findCanonicalExercise] Could not find canonical match for: "${parsedName}" (Normalized: "${normalizedParsedName}")`);
   return undefined; // Not found
 };
 
