@@ -18,6 +18,9 @@ import { fetchWorkoutForAI } from "@/lib/workout-actions"; // Re-add this import
 // Explicitly mark this route as dynamic
 export const dynamic = 'force-dynamic';
 
+// Explicitly set max duration for Vercel Serverless Function (Pro plan allows >= 60s)
+export const maxDuration = 60;
+
 // Define the daily token limit
 const DAILY_GROK_TOKEN_LIMIT = 500000;
 
