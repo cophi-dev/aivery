@@ -472,12 +472,17 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             access: 'public',
             handleUploadUrl: '/api/strava/handle-blob-upload',
             onUploadProgress: (event) => {
-                const progressPercent = event.percentage;
+                // Log the entire event object to inspect its structure
+                console.log("[onUploadProgress] Event object:", event);
+                
+                const progressPercent = event.percentage; // Keep original attempt
                 if (typeof progressPercent === 'number') {
                     setProgress(progressPercent);
                     setUploadStatus(`Uploading... ${progressPercent}%`);
                 } else {
-                     console.warn("Indeterminate progress or unexpected event structure:", event);
+                     console.warn("Indeterminate progress or unexpected event structure. Check logged event object.");
+                     // Potentially set a generic status if percentage isn't available
+                     // setUploadStatus('Uploading...'); 
                 }
             },
         });
