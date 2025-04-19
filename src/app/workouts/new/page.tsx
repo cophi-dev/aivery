@@ -142,27 +142,51 @@ const findCanonicalExercise = (
   if (!parsedName) return undefined;
 
   const lowerParsedName = parsedName.toLowerCase().trim();
-  const lowerParsedNameNoSpace = lowerParsedName.replace(/\s+/g, ''); // Remove spaces
+  const lowerParsedNameNoSpace = lowerParsedName.replace(/\s+/g, ''); 
+  // Add version without trailing 's' (for pluralization check)
+  const lowerParsedNameSingular = lowerParsedName.endsWith('s') ? lowerParsedName.slice(0, -1) : lowerParsedName;
+  const lowerParsedNameNoSpaceSingular = lowerParsedNameNoSpace.endsWith('s') ? lowerParsedNameNoSpace.slice(0, -1) : lowerParsedNameNoSpace;
 
-  // 1. Try direct case-insensitive match (with and without spaces)
+  // 1. Try direct match (case-insensitive, space-insensitive, plural-insensitive)
   let foundExercise = dbExercises.find(ex => {
     const lowerDbName = ex.name.toLowerCase();
-    // Check exact match first, then match without spaces
-    return lowerDbName === lowerParsedName || lowerDbName.replace(/\s+/g, '') === lowerParsedNameNoSpace;
+    const lowerDbNameNoSpace = lowerDbName.replace(/\s+/g, '');
+    // Add version without trailing 's' for DB name
+    const lowerDbNameSingular = lowerDbName.endsWith('s') ? lowerDbName.slice(0, -1) : lowerDbName;
+    const lowerDbNameNoSpaceSingular = lowerDbNameNoSpace.endsWith('s') ? lowerDbNameNoSpace.slice(0, -1) : lowerDbNameNoSpace;
+
+    // Check various combinations:
+    return (
+      lowerDbName === lowerParsedName || // Exact
+      lowerDbNameNoSpace === lowerParsedNameNoSpace || // No spaces
+      lowerDbNameSingular === lowerParsedNameSingular || // Singular
+      lowerDbNameNoSpaceSingular === lowerParsedNameNoSpaceSingular // Singular, no spaces
+    );
   });
   if (foundExercise) return foundExercise;
 
-  // 2. Try alias match (with and without spaces)
-  const aliasTargetName = aliases[lowerParsedName] || aliases[lowerParsedNameNoSpace]; // Check alias map with and without spaces
+  // 2. Try alias match (case-insensitive, space-insensitive, plural-insensitive)
+  const aliasTargetName = aliases[lowerParsedName] || aliases[lowerParsedNameNoSpace] || aliases[lowerParsedNameSingular] || aliases[lowerParsedNameNoSpaceSingular]; 
   if (aliasTargetName) {
     const aliasTargetNameNoSpace = aliasTargetName.replace(/\s+/g, '');
-    // Find the exercise matching the alias target name (case-insensitive, with/without spaces)
+    const aliasTargetNameSingular = aliasTargetName.endsWith('s') ? aliasTargetName.slice(0, -1) : aliasTargetName;
+    const aliasTargetNameNoSpaceSingular = aliasTargetNameNoSpace.endsWith('s') ? aliasTargetNameNoSpace.slice(0, -1) : aliasTargetNameNoSpace;
+
     foundExercise = dbExercises.find(ex => {
       const lowerDbName = ex.name.toLowerCase();
-      return lowerDbName === aliasTargetName || lowerDbName.replace(/\s+/g, '') === aliasTargetNameNoSpace;
+      const lowerDbNameNoSpace = lowerDbName.replace(/\s+/g, '');
+      const lowerDbNameSingular = lowerDbName.endsWith('s') ? lowerDbName.slice(0, -1) : lowerDbName;
+      const lowerDbNameNoSpaceSingular = lowerDbNameNoSpace.endsWith('s') ? lowerDbNameNoSpace.slice(0, -1) : lowerDbNameNoSpace;
+
+      // Check alias against DB name variations
+      return (
+        lowerDbName === aliasTargetName || 
+        lowerDbNameNoSpace === aliasTargetNameNoSpace ||
+        lowerDbNameSingular === aliasTargetNameSingular || 
+        lowerDbNameNoSpaceSingular === aliasTargetNameNoSpaceSingular
+      );
     });
     if (foundExercise) return foundExercise;
-    // Fallback for s-pluralization removed as space removal handles pull-up/pull-ups cases if names are consistent
   }
 
   // 3. Optional: Add fuzzy matching here later if needed
