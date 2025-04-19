@@ -176,6 +176,26 @@ export async function POST(request: Request) {
          }).exec();
 
          if (!existingWorkout) {
+           // ---> ADD DETAILED LOGGING HERE <---
+           console.log(`[SYNC PROCESSING] Raw Activity ${activity.id} Received from Strava API:`, JSON.stringify({
+             id: activity.id,
+             name: activity.name,
+             type: activity.type,
+             sport_type: activity.sport_type, // Include sport_type
+             start_date: activity.start_date,
+             distance: activity.distance, // <<< THE KEY VALUE
+             distance_type: typeof activity.distance,
+             moving_time: activity.moving_time,
+             elapsed_time: activity.elapsed_time,
+             average_speed: activity.average_speed,
+             max_speed: activity.max_speed,
+             total_elevation_gain: activity.total_elevation_gain,
+             average_heartrate: activity.average_heartrate,
+             max_heartrate: activity.max_heartrate,
+             // Add any other potentially relevant fields if needed
+           }));
+           // ---> END LOGGING <---
+           
            // Transform and create new workout
            const workoutData = transformStravaActivity(activity, userId);
            await WorkoutModel.create(workoutData);
