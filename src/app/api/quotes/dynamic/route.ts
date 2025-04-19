@@ -8,6 +8,8 @@ import { getCollection } from "@/lib/db/mongodb";
 import { ObjectId } from "mongodb";
 import { getToken } from "next-auth/jwt";
 
+export const dynamic = 'force-dynamic';
+
 // Basic quotes for fallback
 const FALLBACK_QUOTES = [
   "Push yourself because no one else is going to do it for you.",

@@ -4,6 +4,8 @@ import { ObjectId } from "mongodb";
 import dbConnect from "@/lib/db/mongodb";
 import { getCollection } from "@/lib/db/mongodb";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     // For debugging purposes only - this would need authentication in production

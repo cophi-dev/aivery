@@ -220,7 +220,6 @@ export const authOptions: NextAuthOptions = {
         path: '/',
         secure: process.env.NODE_ENV === 'production', 
         maxAge: 30 * 24 * 60 * 60,
-        domain: process.env.NODE_ENV === 'production' ? cookieDomain || undefined : undefined,
       },
     },
     callbackUrl: {
@@ -229,7 +228,6 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax',
         path: '/',
         secure: process.env.NODE_ENV === 'production',
-        domain: process.env.NODE_ENV === 'production' ? cookieDomain || undefined : undefined,
       },
     },
     csrfToken: {
@@ -239,7 +237,6 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax',
         path: '/',
         secure: process.env.NODE_ENV === 'production',
-        domain: process.env.NODE_ENV === 'production' ? cookieDomain || undefined : undefined,
       },
     },
   },

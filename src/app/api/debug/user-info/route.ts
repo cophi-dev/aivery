@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongodb";
 import User from "@/lib/db/models/user";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Get user session

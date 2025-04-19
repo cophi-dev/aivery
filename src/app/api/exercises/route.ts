@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongoose";
 import { getCollection } from "@/lib/db/mongodb";
 
+export const dynamic = 'force-dynamic';
+
 // Sample exercises for the API
 const SAMPLE_EXERCISES = [
   {

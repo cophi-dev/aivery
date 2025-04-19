@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { seedExercises } from '@/lib/db/seed/exercises'
 import { getCurrentUser } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     // Check if user is authenticated

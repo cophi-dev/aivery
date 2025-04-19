@@ -6,6 +6,8 @@ import AccountModel from '@/lib/db/models/account';
 import dbConnect from '@/lib/db/mongodb';
 import { ObjectId } from 'mongodb';
 
+export const dynamic = 'force-dynamic';
+
 // Endpoint for testing Strava activity fetching and transformation
 export async function GET(request: NextRequest) {
   try {

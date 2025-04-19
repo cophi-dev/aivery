@@ -5,6 +5,8 @@ import dbConnect from "@/lib/db/mongodb"
 import User from "@/lib/db/models/user"
 import WeightHistory from "@/lib/db/models/weightHistory"
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getCollection } from '@/lib/db/mongodb';
 
+export const dynamic = 'force-dynamic';
+
 // This endpoint creates test workout data for a user
 export async function GET(request: NextRequest) {
   try {

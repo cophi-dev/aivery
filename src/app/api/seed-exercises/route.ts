@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { seedExercises } from '@/lib/db/seed/exercises'
 import { getCurrentUser } from '@/lib/auth'
+import { getServerSession } from 'next-auth/next'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
