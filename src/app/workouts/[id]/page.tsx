@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
-import { formatDate, formatDuration } from "@/lib/utils"
+import { formatDate, formatDuration, formatDistance, formatPace } from "@/lib/utils"
 import { getPreviousWorkoutsByType } from "@/lib/db/repositories/workoutRepository"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
 import ReactMarkdown from "react-markdown"
@@ -221,27 +221,36 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
 
   // Format details for display using imported utilities
   const formattedDate = workout.date ? formatDate(workout.date) : "N/A"; // Use default format from utility
-  const formattedDuration = workout.duration ? formatDuration(workout.duration) : "N/A";
+  const formattedDuration = formatDuration(workout.duration);
   
-  // Update distance calculation logic to check workoutExercises
-  let rawDistanceKm: number | null = null;
-  if (workout.type !== 'strength') { // Only calculate distance for non-strength types typically
-    if (workout.cardioDetails?.distance != null) {
-        // Prioritize cardioDetails if it exists (assume KM)
-        rawDistanceKm = workout.cardioDetails.distance;
-        console.log(`>>> Distance Source: cardioDetails (${rawDistanceKm} km)`);
-    } else if (workout.workoutExercises && workout.workoutExercises[0]?.distance != null) {
-        // Fallback to workoutExercises (assume meters, convert to KM)
-        rawDistanceKm = workout.workoutExercises[0].distance / 1000;
-        console.log(`>>> Distance Source: workoutExercises[0] (${workout.workoutExercises[0].distance}m -> ${rawDistanceKm} km)`);
-    } else if (workout.distance != null) {
-        // Fallback to top-level distance (assume KM)
-        rawDistanceKm = workout.distance;
-        console.log(`>>> Distance Source: workout.distance (${rawDistanceKm} km)`);
+  // NEW Distance Calculation (Assume stored values are METERS)
+  let rawDistanceMeters: number | null = null;
+  
+  if (workout.type !== 'strength') { 
+    if (workout.cardioDetails?.distance != null && typeof workout.cardioDetails.distance === 'number') {
+        rawDistanceMeters = workout.cardioDetails.distance;
+        console.log(`>>> Distance Source: cardioDetails (${rawDistanceMeters} m)`);
+    } else if (workout.workoutExercises && workout.workoutExercises[0]?.distance != null && typeof workout.workoutExercises[0].distance === 'number') {
+        rawDistanceMeters = workout.workoutExercises[0].distance;
+        console.log(`>>> Distance Source: workoutExercises[0] (${rawDistanceMeters} m)`);
+    } else if (workout.distance != null && typeof workout.distance === 'number') {
+        rawDistanceMeters = workout.distance;
+        console.log(`>>> Distance Source: workout.distance (${rawDistanceMeters} m)`);
     }
   }
-  const distanceValue = rawDistanceKm;
-  const formattedDistance = distanceValue != null ? `${distanceValue.toFixed(2)} km` : null;
+
+  // Use formatDistance utility which expects meters
+  const formattedDistance = rawDistanceMeters != null && rawDistanceMeters >= 0 ? formatDistance(rawDistanceMeters) : null;
+  
+  // Calculate pace if possible (needs distance in METERS and duration in SECONDS)
+  let formattedPace: string | null = null;
+  if (rawDistanceMeters != null && rawDistanceMeters > 0 && workout.duration != null && workout.duration > 0) {
+    const paceMinPerKm = (workout.duration / 60) / (rawDistanceMeters / 1000);
+    formattedPace = formatPace(paceMinPerKm);
+  } else if (workout.cardioDetails?.pace != null) {
+    // Fallback to stored pace if available
+    formattedPace = formatPace(workout.cardioDetails.pace);
+  }
 
   // Determine overall workout type category (strength or cardio)
   const workoutCategory = workout.type === 'strength' ? 'strength' : 'cardio'; // Simplified category
@@ -483,12 +492,12 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                                {workout.cardioDetails ? (
                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                    {/* --- Re-add Cardio Metric Blocks --- */}
-                                   {workout.cardioDetails.distance != null && (
+                                   {rawDistanceMeters != null && rawDistanceMeters >= 0 && (
                                      <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
                                        <LucideRuler className="h-5 w-5 text-accent-medium" />
                                        <div>
                                          <p className="text-sm text-secondary-dark-bg">Distance</p>
-                                         {/* Use formattedDistance which handles KM conversion */}
+                                         {/* Use formatDistance which handles KM conversion */}
                                          <p className="font-semibold text-primary-dark-bg">{formattedDistance || 'N/A'}</p>
                                        </div>
                                      </div>
@@ -503,13 +512,13 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                                        </div>
                                      </div>
                                    )}
-                                   {workout.cardioDetails.pace != null && workout.cardioDetails.pace > 0 && (
+                                   {/* --- Pace Metric Block --- */}
+                                   {formattedPace && (
                                      <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
                                        <LucideGauge className="h-5 w-5 text-accent-medium" />
                                        <div>
-                                         <p className="text-sm text-secondary-dark-bg">Average pace</p>
-                                         {/* Format pace directly */}
-                                         <p className="font-semibold text-primary-dark-bg">{`${Math.floor(workout.cardioDetails.pace)}:${Math.round((workout.cardioDetails.pace % 1) * 60).toString().padStart(2, '0')} min/km`}</p> 
+                                         <p className="text-sm text-secondary-dark-bg">Avg Pace</p>
+                                         <p className="font-semibold text-primary-dark-bg">{formattedPace}</p>
                                        </div>
                                      </div>
                                    )}

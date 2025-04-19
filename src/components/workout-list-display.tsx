@@ -47,7 +47,7 @@ export function WorkoutListDisplay({ workouts }: WorkoutListDisplayProps) {
             </div>
             <div>
               <span className="font-medium">Distance:</span>{' '}
-              {workout.distance ? formatDistance(workout.distance * 1000) : 'N/A'} {/* Convert km back to meters for formatter */}
+              {workout.distance ? formatDistance(workout.distance) : 'N/A'} {/* Pass raw distance (expected meters) to formatter */}
             </div>
             <div>
               <span className="font-medium">Calories:</span>{' '}
