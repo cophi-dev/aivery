@@ -1296,12 +1296,11 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       sourceData: data.sourceData,
       stravaLink: data.stravaLink,
       cardioDetails: {
-        distance: data.distance || 0, // Ensure distance is also in cardioDetails (km)
-        // Don't multiply by 60 if source is strava since it's already in seconds
-        duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
-        pace: data.distance && data.duration ? data.duration / data.distance : 0, // pace (min/km) calculation uses input minutes
-        speed: data.distance && data.duration ? data.distance / (data.duration / 60) : 0, // speed (km/h) calculation uses input minutes
-        elevationGain: data.totalElevationGain || 0,
+        distance: data.distance || 0, // Expects KILOMETERS (KM)
+        duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60, // Expects SECONDS
+        pace: data.pace || 0, // Expects min/km to be passed in data
+        speed: data.speed || 0, // Expects km/h to be passed in data
+        elevationGain: data.totalElevationGain || 0, // Expects METERS
         heartRate: (data.averageHeartRate || data.maxHeartRate) ? {
           average: data.averageHeartRate || 0,
           max: data.maxHeartRate || 0,
@@ -1310,7 +1309,7 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
           sport: exerciseType,
           subSport: data.sportType || undefined,
         },
-        maxSpeed: data.maxSpeed || 0,
+        maxSpeed: data.maxSpeed || 0, // Expects km/h to be passed in data
       },
       updatedAt: new Date(),
       createdAt: new Date(),

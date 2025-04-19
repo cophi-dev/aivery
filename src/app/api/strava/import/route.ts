@@ -174,9 +174,48 @@ export async function POST(request: NextRequest) {
             console.log(`Transforming activity data for: ${fileNameForProcessing}`);
             const transformedData = transformStravaActivity(parsedData);
 
+            // --- Calculate metrics in expected units --- START
+            const distanceKm = transformedData.distance; // Already in KM
+            const durationSec = transformedData.duration; // Already in Seconds
+            const avgSpeedMs = transformedData.averageSpeed; // In m/s
+            const maxSpeedMs = transformedData.maxSpeed; // In m/s
+            const elevationM = transformedData.totalElevationGain; // In Meters
+
+            const avgSpeedKmh = avgSpeedMs * 3.6;
+            const maxSpeedKmh = maxSpeedMs * 3.6;
+            let paceMinKm = 0;
+            if (distanceKm > 0 && durationSec > 0) {
+                paceMinKm = (durationSec / 60) / distanceKm; // (seconds/60) / km = min/km
+            }
+            // --- Calculate metrics in expected units --- END
+
             // Save workout
             console.log(`Saving workout to DB for user ${userId}, file: ${fileNameForProcessing}`);
-            const workoutInput = { userId: userId, ...transformedData };
+            // Prepare input for createCardioWorkout with correct units
+            const workoutInput = {
+                userId: userId,
+                title: transformedData.title,
+                description: transformedData.description,
+                type: transformedData.type,
+                date: transformedData.date,
+                source: transformedData.source,
+                sourceId: transformedData.id, 
+                sourceData: transformedData.sourceData, // Consider reducing size if needed
+                // Metrics in expected units:
+                distance: distanceKm, // KM
+                duration: durationSec, // Seconds
+                calories: transformedData.calories,
+                totalElevationGain: elevationM, // Meters
+                averageHeartRate: transformedData.averageHeartRate,
+                maxHeartRate: transformedData.maxHeartRate,
+                sportType: transformedData.sportType,
+                // Calculated metrics for cardioDetails
+                pace: paceMinKm, // min/km
+                speed: avgSpeedKmh, // km/h
+                maxSpeed: maxSpeedKmh, // km/h
+                // Other potential fields like intensity could be added if available/needed
+            };
+            
             // Use createCardioWorkout as it handles finding/creating Exercise etc.
             const createdWorkout = await createCardioWorkout(workoutInput); 
             if (!createdWorkout) {
