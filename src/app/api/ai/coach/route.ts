@@ -899,7 +899,19 @@ async function getDirectTextResponse(query: string, userId: string): Promise<str
         return "Sorry, the AI is unavailable right now.";
     }
 
-    const systemPrompt = "You are Aivery, a helpful fitness assistant. Respond directly and concisely to the user's query. If it's a question you can answer, provide the answer. If it's a command you understand but can't perform directly (like complex data retrieval), politely explain that and suggest how the user might rephrase for better analysis.";
+    // Updated system prompt for detailed, article-style explanations
+    const systemPrompt = `You are Aivery, an expert fitness coach AI. The user has asked for an explanation of a fitness concept.
+
+Your task is to explain the concept mentioned in the user query in detail, like a helpful mini-article. Use clear, easy-to-understand language.
+
+Structure your response using markdown:
+- Start with a clear definition.
+- Elaborate on the key aspects, benefits, and potential drawbacks or considerations.
+- Briefly discuss how someone might typically incorporate this concept into their fitness routine.
+- Go into reasonable depth to provide a comprehensive understanding.
+- Conclude the explanation with an engaging, open-ended question related to the concept to encourage discussion with the user.
+
+Do NOT just give a short definition. Aim for an informative, article-style explanation.`;
 
     try {
         console.log(`[getDirectTextResponse] Sending direct query to Grok: "${query}"`);
@@ -910,13 +922,13 @@ async function getDirectTextResponse(query: string, userId: string): Promise<str
             'Authorization': `Bearer ${grokApiKey}`
           },
           body: JSON.stringify({
-            model: 'grok-3-mini-latest',
+            model: 'grok-3-mini-latest', // Consider a larger model if explanations are consistently too short
             messages: [
               { role: 'system', content: systemPrompt },
-              { role: 'user', content: query }
+              { role: 'user', content: query } // The user query contains the specific concept to explain
             ],
-            max_tokens: 150,
-            temperature: 0.5, // Allow a bit more creativity for direct answers
+            max_tokens: 1024, // Increased max_tokens for longer, article-style explanations
+            temperature: 0.6, // Slightly adjusted temperature for informative but engaging tone
             stream: false,
           })
         });
@@ -1222,23 +1234,30 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         // 5. Normal Query Analysis (If not a special request)
         console.log("[API /coach] Proceeding with normal query analysis...");
 
-        // Check for simple keyword explanation request (move this logic here)
-        const keywordMatch = query.match(/^What is (.*)?$/i);
+        // Check for simple keyword explanation request
+        const keywordMatch = query.match(/^What is (.*)\?$/i); // Keep the regex as is for now
         if (keywordMatch && keywordMatch[1]) {
-            const keyword = keywordMatch[1];
-            const explanationQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
-            // Directly call Grok or another LLM for explanation
-            // Pass userId to the direct response function
-            const explanation = await getDirectTextResponse(explanationQuery, userId); 
-            if (explanation) {
-                 return NextResponse.json({ response: explanation, data: null });
+            // Remove trailing question mark from the captured keyword
+            const keyword = keywordMatch[1].trim().replace(/\?$/, '').trim(); 
+            
+            // Check if keyword is empty after trimming/removing '?'
+            if (!keyword) {
+                 console.warn("[POST] Keyword explanation requested but keyword was empty.");
+                 // Fall through to normal analysis if keyword is empty
             } else {
-                // If explanation is null or empty, it means the direct response failed.
-                // Return a specific error instead of falling through.
-                console.warn(`[POST] Failed to get direct explanation for keyword: ${keyword}`);
-                return NextResponse.json({ response: `Sorry ${userName}, I had trouble explaining "${keyword}" right now. Please try again later or ask about your workouts.`, data: null });
+                 // Construct the prompt using the cleaned keyword
+                 const explanationQuery = `Explain the fitness concept \"${keyword}\" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
+
+                 // Directly call Grok or another LLM for explanation
+                 const explanation = await getDirectTextResponse(explanationQuery, userId);
+                 if (explanation) {
+                     return NextResponse.json({ response: explanation, data: null });
+                 } else {
+                     // Handle failure
+                     console.warn(`[POST] Failed to get direct explanation for keyword: ${keyword}`);
+                     return NextResponse.json({ response: `Sorry ${userName}, I had trouble explaining \"${keyword}\" right now. Please try again later or ask about your workouts.`, data: null });
+                 }
             }
-            // Fall through removed
         }
 
 
