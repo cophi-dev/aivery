@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 import { useSession } from "next-auth/react"; // <-- Import useSession
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Import Card components
+import Link from "next/link"; // Import Link
+import { ArrowRight, Upload, Edit3 } from "lucide-react"; // Import icons
 
 // Import Client Components
 import { SubscriptionStatus } from "./_components/SubscriptionStatusClient"; 
@@ -17,6 +20,7 @@ import { QuickActionsCard } from "./_components/QuickActionsCardClient";
 import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assuming a loading indicator component
 // Import the type for exercise PRs
 import type { DashboardPREntry } from "@/lib/workout-actions";
+import { Button } from "@/components/ui/button"; // Import Button
 
 // Define a type for the metrics data (adjust based on actual structure)
 interface DashboardMetrics {
@@ -28,6 +32,7 @@ interface DashboardMetrics {
     cardioDistancePrevious7Days: number;
     topPRs: any[]; // Old PRs, can be removed if not used by PersonalRecordsCardClient anymore
     exercisePRs: DashboardPREntry[]; // <-- Add new field
+    workoutCount: number; // <-- Add workout count
 }
 
 // Placeholder type/interface for a chat message
@@ -61,14 +66,18 @@ export default function DashboardPage() {
             const fetchMetrics = async () => {
                 setIsLoadingMetrics(true);
                 setErrorMetrics(null);
+                console.log("[Dashboard Page] useEffect triggered. Status authenticated. Fetching metrics..."); // Log start
                 try {
-                    console.log("[Dashboard Page] Fetching metrics from API...");
+                    // console.log("[Dashboard Page] Fetching metrics from API..."); // Original log
                     const response = await fetch('/api/dashboard/metrics');
+                    console.log(`[Dashboard Page] API Response Status: ${response.status}`); // Log status
                     if (!response.ok) {
-                        throw new Error(`Failed to fetch metrics: ${response.statusText}`);
+                        const errorText = await response.text(); // Try to get error text
+                        console.error("[Dashboard Page] API Response Error Text:", errorText);
+                        throw new Error(`Failed to fetch metrics: ${response.status} ${response.statusText}`);
                     }
                     const data: DashboardMetrics = await response.json();
-                    console.log("[Dashboard Page] Metrics fetched successfully:", data);
+                    console.log("[Dashboard Page] Metrics data received:", JSON.stringify(data, null, 2)); // Log full received data
                     setMetrics(data);
                 } catch (error: any) {
                     console.error("[Dashboard Page] Error fetching metrics:", error);
@@ -76,6 +85,7 @@ export default function DashboardPage() {
                     setMetrics(null); // Reset metrics on error
                 } finally {
                     setIsLoadingMetrics(false);
+                    console.log("[Dashboard Page] Fetch metrics finished."); // Log end
                 }
             };
             fetchMetrics();
@@ -120,6 +130,9 @@ export default function DashboardPage() {
     const displayName = session?.user?.nickname || session?.user?.name || "User";
     const userImage = session?.user?.image || null;
 
+    // Log metrics state right before rendering
+    console.log(`[Dashboard Page] Rendering. isLoadingMetrics: ${isLoadingMetrics}, metrics: ${JSON.stringify(metrics, null, 2)}, workoutCount: ${metrics?.workoutCount}`);
+
     return (
         <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-6 md:space-y-8">
             <DashboardHeader 
@@ -131,12 +144,58 @@ export default function DashboardPage() {
                 <LogWorkoutButton />
                 <SubscriptionStatus /> 
                 
-                {/* Conditional rendering for Progress & Records based on loading/error state */} 
+                {/* Conditional rendering for Getting Started / Progress & Records */} 
                 {isLoadingMetrics ? (
                     <div className="flex justify-center items-center h-24"><LoadingIndicator /></div>
                 ) : errorMetrics ? (
                      <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
+                ) : metrics && metrics.workoutCount === 0 ? (
+                    // --- Getting Started Card ---
+                    <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-none">
+                        <CardHeader>
+                            <CardTitle className="text-primary dark:text-primary text-xl font-semibold">🚀 Let's Get Started!</CardTitle>
+                            <CardDescription className="text-primary/80 dark:text-primary/70">Your Aivery journey begins now. How do you want to add your first workout?</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex flex-col sm:flex-row gap-4">
+                                {/* Option 1: Import */}
+                                <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
+                                    <div className="flex items-center mb-2">
+                                        <Upload className="w-5 h-5 mr-2 text-primary dark:text-primary" />
+                                        <h4 className="font-medium text-primary/90 dark:text-foreground">Import History</h4>
+                                    </div>
+                                    <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Got data on Strava? Bring it over to fill your timeline.</p>
+                                    <Link href="/integrations">
+                                        <Button variant="outline" size="sm" className="w-full bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
+                                            Go to Integrations <ArrowRight className="w-4 h-4 ml-1" />
+                                        </Button>
+                                    </Link>
+                                </div>
+                                
+                                {/* Option 2: Manual Log / Auto-Sync */}
+                                <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
+                                     <div className="flex items-center mb-2">
+                                        <Edit3 className="w-5 h-5 mr-2 text-primary dark:text-primary" />
+                                        <h4 className="font-medium text-primary/90 dark:text-foreground">Start Fresh</h4>
+                                    </div>
+                                    <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Log workouts manually or connect Strava for auto-syncing new ones.</p>
+                                    <Link href="/log-workout">
+                                        <Button variant="outline" size="sm" className="w-full mb-2 bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
+                                            Log First Workout <ArrowRight className="w-4 h-4 ml-1" />
+                                        </Button>
+                                    </Link>
+                                    <Link href="/integrations">
+                                        <Button variant="link" size="sm" className="text-primary/70 dark:text-muted-foreground hover:text-primary dark:hover:text-foreground w-full text-xs p-0 h-auto">
+                                            Setup Auto-Sync
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    // --- End Getting Started Card ---
                 ) : metrics ? (
+                    // --- Regular Metrics Cards ---
                     <>
                         <ProgressCards 
                             strengthVolume={metrics.strengthVolumeLast7Days}
@@ -158,27 +217,12 @@ export default function DashboardPage() {
                             exercisePRs={metrics.exercisePRs} // <-- Pass new data
                         />
                     </>
+                    // --- End Regular Metrics Cards ---
                 ) : (
                     <p className="text-center text-muted-foreground">Metrics data not available.</p>
                 )}
                 
-                {/* Render Spotlight/QuickActions even if metrics fail? Or hide them too? 
-                    Keeping them visible for now, but QuickActionsCard needs handleSendAiMessage.
-                    Let's move QuickActionsCard outside the conditional metric rendering. */}
-                {/* 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <SpotlightCards />
-                    <QuickActionsCard sendAiMessage={handleSendAiMessage} /> 
-                </div> 
-                */}
-                
             </div>
-            {/* Remove AI Loading indicator from dashboard */}
-            {/* {isAiLoading && (
-                 <div className="fixed bottom-4 right-4 z-50">
-                     <LoadingIndicator /> 
-                 </div>
-            )} */}
         </div>
     );
 }

@@ -83,9 +83,9 @@ export function SubscriptionStatus() { // Export the function
     const isSubscribed = currentPlan && currentPlan !== 'Free' && currentPlan !== 'Error loading plan' && currentPlan !== null;
 
     return (
-        <div className="mb-6 p-4 border rounded-lg bg-white shadow-sm">
-            <h2 className="text-lg font-semibold mb-2">Subscription Status</h2>
-            <p className="text-gray-600">Your current plan: <span className="font-medium capitalize text-gray-800">{currentPlan || 'N/A'}</span></p>
+        <div className="mb-6 p-4 border rounded-lg bg-white dark:bg-card dark:border-border shadow-sm">
+            <h2 className="text-lg font-semibold mb-2 text-gray-800 dark:text-card-foreground">Subscription Status</h2>
+            <p className="text-gray-600 dark:text-muted-foreground">Your current plan: <span className="font-medium capitalize text-gray-900 dark:text-foreground">{currentPlan || 'N/A'}</span></p>
 
             {isSubscribed && ( 
                 <div className="mt-4">
@@ -105,7 +105,7 @@ export function SubscriptionStatus() { // Export the function
 
             {!isSubscribed && currentPlan !== null && currentPlan !== 'Error loading plan' && (
                  <div className="mt-4">
-                     <p className="text-gray-500 mb-3">Upgrade your plan to unlock more features.</p>
+                     <p className="text-gray-500 dark:text-muted-foreground mb-3">Upgrade your plan to unlock more features.</p>
                      <div className="flex flex-col sm:flex-row gap-4">
                          <UpgradeButton plan="premium" currentPlanIsFree={true} className="w-full sm:w-auto">
                              Go Premium (€6.90/month)
