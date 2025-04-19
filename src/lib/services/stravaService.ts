@@ -502,13 +502,16 @@ export const transformStravaActivity = (activity: StravaActivity): ImportActivit
   const mappedType = mapStravaType(activity.type || '', activity.sport_type);
   
   // KEEP distance in METERS
-  let distance = 0;
+  let distanceMeters = 0;
   if (activity.distance !== undefined && activity.distance !== null && activity.distance > 0) {
-    distance = activity.distance; // Keep distance in meters
-    console.log(`Using distance: ${distance}m`);
+    distanceMeters = activity.distance; // Keep distance in meters
+    console.log(`Using distance: ${distanceMeters}m`);
   } else {
     console.log(`No valid distance provided or distance is zero: ${activity.distance}`);
   }
+
+  // Convert meters to kilometers for storage
+  const distanceKm = distanceMeters / 1000;
   
   // KEEP duration in SECONDS
   // Use moving_time primarily, fallback to elapsed_time
@@ -528,7 +531,7 @@ export const transformStravaActivity = (activity: StravaActivity): ImportActivit
   
   // REMOVED: Sanity checks/estimations based on minutes/km - data should be correct now 
   
-  console.log(`Processing Strava activity: ${activity.name || 'Unnamed Activity'}, Type: ${activity.type} -> ${mappedType}, Distance: ${distance}m, Duration: ${duration}s`);
+  console.log(`Processing Strava activity: ${activity.name || 'Unnamed Activity'}, Type: ${activity.type} -> ${mappedType}, Distance: ${distanceKm.toFixed(2)}km, Duration: ${duration}s`);
   
   // Ensure all required fields for ImportActivity are provided, even if using defaults/zeros
   return {
@@ -536,14 +539,14 @@ export const transformStravaActivity = (activity: StravaActivity): ImportActivit
     title: activity.name || 'Untitled Activity',
     description: activity.description || '',
     type: mappedType,
-    distance: distance, // Return METERS
+    distance: distanceKm, // Return KILOMETERS
     duration: duration, // Return SECONDS
     date: parseStravaDate(activity.start_date), // parseStravaDate handles undefined/null start_date
     calories: activity.calories || 0,
     averageHeartRate: activity.average_heartrate || 0,
     maxHeartRate: activity.max_heartrate || 0,
     // Ensure averageSpeed calculation is safe
-    averageSpeed: (distance > 0 && duration > 0) ? distance / duration : 0, // m/s
+    averageSpeed: (distanceMeters > 0 && duration > 0) ? distanceMeters / duration : 0, // m/s
     maxSpeed: activity.max_speed || 0,
     totalElevationGain: activity.total_elevation_gain || 0,
     sportType: activity.sport_type || '',
