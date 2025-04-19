@@ -136,20 +136,11 @@ export default function ChatPage() {
     setIsLoading(true);
     
     try {
-      // **Enhanced prompt for keyword explanation**
-      let finalQuery = messageContent;
-      const keywordMatch = messageContent.match(/^What is (.*)\?$/i);
-      if (keywordMatch && keywordMatch[1]) {
-         const keyword = keywordMatch[1];
-         // Use a more detailed prompt for keywords
-         finalQuery = `Explain the fitness concept "${keyword}" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
-      }
-
       const response = await fetch('/api/ai/coach', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: finalQuery, // Use potentially enhanced query
+          query: messageContent, // Send the original messageContent directly
           userName: userDisplayName,
           history: previousMessages, // Send the history *before* this turn
           context: context // Send the optional context object
