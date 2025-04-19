@@ -308,7 +308,7 @@ export async function GET(req: NextRequest) {
               // Simplified user message, maybe just trigger generation
               { role: 'user', content: `Generate the highlight.` }
             ],
-            max_tokens: 256, // Increased max_tokens to provide more buffer
+            max_tokens: 512, // Increased max_tokens further to 512
             temperature: 0.7, // Slightly reduced temperature for more focused output
             stream: false,
           })
@@ -450,7 +450,7 @@ export async function POST(req: NextRequest) {
               { role: 'system', content: systemPrompt },
               { role: 'user', content: `Generate a workout highlight for ${userName}.` }
             ],
-            max_tokens: 256, // Increased max_tokens for POST handler as well
+            max_tokens: 512, // Increased max_tokens for POST handler as well
             temperature: 0.8, // Allow some creativity
             stream: false,
           })
