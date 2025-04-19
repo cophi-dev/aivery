@@ -16,6 +16,8 @@ import "./dynamic-config"
 import { VERSION, getTimestamp } from "./version"
 // Import next/dynamic for client components
 import { default as NextDynamic } from "next/dynamic"
+// Import Vercel Analytics
+import { Analytics } from '@vercel/analytics/react';
 
 // Import CacheBuster with client-side only rendering
 const CacheBuster = NextDynamic(() => import("@/components/cache-buster"), { ssr: false })
@@ -166,6 +168,7 @@ export default async function RootLayout({
             </ToastProvider>
           </ThemeProvider>
         </AuthProvider>
+        <Analytics />
         {/* Script to hide splash screen */}
         <script
           dangerouslySetInnerHTML={{
