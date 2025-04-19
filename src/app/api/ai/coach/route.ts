@@ -1243,13 +1243,98 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         } 
         // **** END SPECIAL HANDLING FOR PLAN GENERATION ****
 
-        // --- Default query processing if not plan generation ---
-        // ... rest of POST function ...
+        // **** SPECIAL HANDLING FOR WEEKLY REVIEW REQUEST ****
+        if (context?.requestType === 'generate_weekly_review') {
+           console.log(`[API /coach] Detected weekly review request.`);
+           try {
+               // 1. Fetch last week's workout data
+               console.log(`[API /coach] Fetching last week's workouts for user: ${userId}`);
+               const lastWeekRange = calculateDateRange('last_week');
+               const lastWeekWorkouts = await listWorkouts(
+                   userId,
+                   'any', // Get all workout types
+                   lastWeekRange.start_date,
+                   lastWeekRange.end_date,
+                   100 // Limit to 100 workouts for the week, adjust if needed
+               );
+               console.log(`[API /coach] Found ${lastWeekWorkouts.length} workouts for last week review.`);
 
-        // 5. Normal Query Analysis (If not a special request)
-        console.log("[API /coach] Proceeding with normal query analysis...");
+               let workoutDataString = "No workouts logged last week.";
+               if (lastWeekWorkouts.length > 0) {
+                   // Summarize workouts for the prompt
+                   workoutDataString = "Last Week's Workouts Summary:\n";
+                   workoutDataString += lastWeekWorkouts.map(w => 
+                       `- ${format(new Date(w.date), 'EEE, MMM d')}: ${w.name || w.type} (${formatDuration(w.duration || 0)}${w.distance ? ', ' + formatDistance(w.distance) : ''}${w.calories ? ', ~' + w.calories + 'kcal' : ''})`
+                   ).join('\n');
+               }
 
-        // Check for simple keyword explanation request
+               // 2. Construct the system prompt for weekly review
+               // TODO: Fetch previous week's data for comparison?
+               const systemPrompt = `\\nYou are Aivery, an expert fitness coach providing a weekly performance review for ${userName}.\\n\\nLAST WEEK'S WORKOUT DATA:\\n${workoutDataString}\\n\\nRESPONSE GUIDELINES:\\n1.  **Tone:** Friendly, encouraging, and insightful.\\n2.  **Analyze Last Week:** Based *only* on the provided data, summarize the user's activity from the last completed week (Monday-Sunday). Calculate and mention key totals (e.g., total workouts, total duration, total distance if applicable, total strength volume if calculable).\\n3.  **Identify Trends/Highlights:** Point out any noticeable patterns, achievements, or areas for focus (e.g., consistency, high intensity days, longest run, PRs if inferable from data). \\n4.  **Provide Insights:** Offer 1-2 brief, actionable insights based on the week's activity (e.g., "Great job getting 4 sessions in!", "Mixing strength and cardio seems to be working well.", "Consider adding a rest day if intensity was high.").\\n5.  **Keep it Concise:** Aim for a helpful summary, not an exhaustive analysis.\\n6.  **No Questions (Mostly):** Generate the review directly. End with a brief encouraging closing statement or a very gentle open question like \"How did the week feel overall?\"\\n7.  **Handle No Data:** If 'No workouts logged last week', acknowledge this and offer encouragement to log workouts in the current week.\\n\\nGenerate the weekly review for ${userName} based *only* on the provided workout data.`;
+
+               console.log("[API /coach] Sending weekly review prompt to Grok...");
+               // 3. Call the AI model
+               const reviewResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId);
+
+               // 4. Return the generated review
+               console.log("[API /coach] Weekly review generation successful.");
+               const endTime = Date.now();
+               console.log(`--- [AI Coach Request Completed - Review] Latency: ${endTime - startTime}ms ---`);
+               return NextResponse.json({ response: reviewResponse });
+
+           } catch (reviewError: any) {
+               console.error("[API /coach] Error generating weekly review:", reviewError);
+               const endTime = Date.now();
+               console.log(`--- [AI Coach Request FAILED - Review] Latency: ${endTime - startTime}ms ---`);
+               return NextResponse.json({ error: `Failed to generate weekly review: ${reviewError.message}` }, { status: 500 });
+           }
+        }
+        // **** END SPECIAL HANDLING FOR WEEKLY REVIEW REQUEST ****
+
+        // --- Default query processing if not handled by special request types ---
+        console.log("[API /coach] Proceeding with normal query analysis..."); 
+
+        // Analyze the query if it wasn't a plan or review request
+        const analysis = await analyzeUserQuery(query, history, userId);
+        console.log("Query Analysis Result:", analysis);
+
+        // Validate analysis result
+        const validation = QueryAnalysisSchema.safeParse(analysis);
+        if (!validation.success) {
+            console.error("Invalid analysis structure:", validation.error);
+            return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
+        }
+
+        const { intent, entities, response_suggestion } = validation.data;
+
+        // Use suggestion if provided and intent is simple or unknown
+        if (response_suggestion && (intent === 'unknown' /*|| intent === 'simple_greeting' etc.*/ )) {
+            return NextResponse.json({ response: response_suggestion });
+        }
+
+        // Initialize variables for the response generation
+        let responseData: any = null;
+        let responseText = "";
+
+        // Calculate date range if a period is specified in the analysis
+        let dateRangeResult: { start_date?: string; end_date?: string; period_description: string } | null = null;
+        const period = entities?.period; 
+        if (period) {
+          dateRangeResult = calculateDateRange(period); 
+        }
+
+        // Prioritize explicit dates from AI analysis if available
+        const startDate = entities?.explicit_start_date ?? dateRangeResult?.start_date;
+        const endDate = entities?.explicit_end_date ?? dateRangeResult?.end_date;
+
+        const qualifier = entities?.record_qualifier;
+        const identifier = entities?.workout_identifier;
+        const limit = entities?.limit;
+
+        // Re-assert userDisplayName for clarity within the switch scope if needed
+        const currentUserName = userDisplayName; 
+
+        // Check for simple keyword explanation request (can potentially be handled by analysis too, but keep explicit check for now)
         const keywordMatch = query.match(/^What is (.*)\?$/i); // Keep the regex as is for now
         if (keywordMatch && keywordMatch[1]) {
             // Remove trailing question mark from the captured keyword
@@ -1275,48 +1360,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
             }
         }
 
-
-        const analysis = await analyzeUserQuery(query, history, userId);
-        console.log("Query Analysis Result:", analysis);
-
-        // Validate analysis result
-        const validation = QueryAnalysisSchema.safeParse(analysis);
-        if (!validation.success) {
-            console.error("Invalid analysis structure:", validation.error);
-            return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
-        }
-
-        const { intent, entities, response_suggestion } = validation.data;
-
-        // Use suggestion if provided and intent is simple or unknown
-        if (response_suggestion && (intent === 'unknown' /*|| intent === 'simple_greeting' etc.*/ )) {
-            return NextResponse.json({ response: response_suggestion });
-        }
-
         // 2. Backend Logic Routing based on Intent
-        let responseData: any = null;
-        let responseText = "";
-
-        // Calculate date range if a period is specified
-        let dateRangeResult: { start_date?: string; end_date?: string; period_description: string } | null = null;
-        const period = entities?.period; // Type here is now inferred as the extended type from Zod
-        if (period) {
-          // calculateDateRange now accepts the extended period type
-          dateRangeResult = calculateDateRange(period); // This call should now be type-correct
-        }
-
-        // Prioritize explicit dates from AI if available
-        const startDate = entities?.explicit_start_date ?? dateRangeResult?.start_date;
-        const endDate = entities?.explicit_end_date ?? dateRangeResult?.end_date;
-
-        const qualifier = entities?.record_qualifier;
-        const identifier = entities?.workout_identifier;
-        const limit = entities?.limit;
-
-        // Re-assert userDisplayName for clarity within the switch scope if needed
-        const currentUserName = userDisplayName; 
-
-        // Switch based on intent... (rest of the switch statement remains the same)
         switch (intent) {
           case "get_total_metric":
             if (!entities?.metric) { responseText = "Please specify which metric you want the total for (e.g., distance, duration)."; break; }
