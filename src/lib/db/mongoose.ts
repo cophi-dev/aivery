@@ -49,9 +49,10 @@ async function dbConnect(): Promise<Mongoose> {
   if (!cached.promise) {
     const opts = {
       bufferCommands: true,
+      serverSelectionTimeoutMS: 30000,
     }
 
-    console.log('Creating new MongoDB connection...');
+    console.log('Creating new MongoDB connection with options:', opts);
     // Use the MONGODB_URI fetched inside the function
     console.log('MongoDB URI:', MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//<credentials>@')); 
     
