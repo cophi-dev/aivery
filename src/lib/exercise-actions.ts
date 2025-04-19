@@ -174,4 +174,16 @@ export async function searchAllExercisesAction(nameQuery: string): Promise<Exerc
     console.error(`Error searching exercises action with query '${nameQuery}':`, error);
     return []; // Return empty array on error to avoid breaking the UI
   }
-} 
+}
+
+// --- NEW Action to fetch ALL exercises ---
+export async function fetchAllExercisesAction(): Promise<ExerciseData[]> {
+  try {
+    // No auth check needed here typically, adjust if needed
+    return await getAllExercises();
+  } catch (error) {
+    console.error("Error fetching all exercises action:", error);
+    return []; // Return empty array on error
+  }
+}
+// --- END NEW Action --- 

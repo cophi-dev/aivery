@@ -23,7 +23,7 @@ import {
   type WorkoutUpdatePayload,
   type InputSetData
 } from "@/lib/workout-actions"
-import { fetchExercises, searchAllExercisesAction } from "@/lib/exercise-actions"
+import { fetchExercises, searchAllExercisesAction, fetchAllExercisesAction } from "@/lib/exercise-actions"
 import type { ExerciseData, WorkoutData, WorkoutExerciseData, Set } from "@/types/db"
 import { IWorkout } from "@/lib/db/models/workout"
 import { estimateBodyweightForExercise } from "@/lib/utils"
@@ -414,22 +414,23 @@ export default function NewWorkoutPage() {
 
   // Fetch ALL exercises from DB on mount
   useEffect(() => {
-    const loadAllExercises = async () => { // Renamed function
+    const loadAllExercises = async () => { 
       try {
-        setIsLoadingData(true); // Add loading state indication
-        console.log("Fetching ALL exercises..."); // Updated log
-        const fetchedExercises = await searchAllExercisesAction(""); // Use searchAll with empty query
-        console.log(`Fetched ${fetchedExercises.length} total exercises.`); // Updated log
-        setDbExercises(fetchedExercises); // <-- This updates the state
+        setIsLoadingData(true); 
+        console.log("Fetching ALL exercises...");
+        // Use the new action designed to fetch all exercises
+        const fetchedExercises = await fetchAllExercisesAction(); 
+        console.log(`Fetched ${fetchedExercises.length} total exercises.`); 
+        setDbExercises(fetchedExercises); 
         setDbExercisesMap(new Map(fetchedExercises.map(ex => [ex.name, ex]))); 
       } catch (err) {
-        console.error("Failed to fetch all exercises:", err); // Updated log
+        console.error("Failed to fetch all exercises:", err);
         setError("Could not load initial exercises list.");
       } finally {
-         setIsLoadingData(false); // Ensure loading state is turned off
+         setIsLoadingData(false); 
       }
     };
-    loadAllExercises(); // Call the renamed function
+    loadAllExercises(); 
   }, []); // Run only once on mount
 
   // --- NEW Effect for searching ALL exercises ---
