@@ -915,7 +915,7 @@ Do NOT just give a short definition. Aim for an informative, article-style expla
 
     // Add AbortController for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
 
     try {
         console.log(`[getDirectTextResponse] Sending direct query to Grok: \"${query}\"`);
@@ -962,7 +962,7 @@ Do NOT just give a short definition. Aim for an informative, article-style expla
     } catch (error) {
         clearTimeout(timeoutId); // Ensure timeout is cleared on error too
         if (error instanceof Error && error.name === 'AbortError') {
-             console.error("[getDirectTextResponse] Grok API call timed out after 25 seconds.");
+             console.error("[getDirectTextResponse] Grok API call timed out after 45 seconds.");
              return "Sorry, the request to the AI timed out. It might be taking longer than usual to respond. Please try again shortly.";
         }
         console.error("Error calling Grok API for direct response:", error);
