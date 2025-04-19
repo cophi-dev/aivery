@@ -1220,12 +1220,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         <div className="mt-4 space-y-2">
           <Progress value={progress} className="w-full" />
           <p className="text-sm text-muted-foreground text-center">
-              {/* Show detailed processing status if available, else generic status */}
-              {(importStatus?.status === 'processing' && importStatus?.totalFiles > 0)
-                  ? `Processing activity ${importStatus.processedFilesCount + 1} of ${importStatus.totalFiles}`
-                    + (importStatus.currentlyProcessingFile ? ` (${importStatus.currentlyProcessingFile})` : '')
-                  : uploadStatus || (isLoading ? 'Uploading...' : 'Initializing...')
-              }
+              {uploadStatus || (isLoading ? 'Uploading...' : 'Initializing...')}
           </p>
         </div>
       )}
