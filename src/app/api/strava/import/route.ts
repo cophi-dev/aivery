@@ -216,10 +216,16 @@ export async function POST(request: NextRequest) {
             stats.count++;
             const workoutType = transformedData.type || 'other';
             stats.types[workoutType] = (stats.types[workoutType] || 0) + 1;
-            stats.totalDistance += (transformedData.distance || 0) * 1000;
-            stats.totalDuration += transformedData.duration || 0;
             
-            const workoutDate = transformedData.date;
+            // --- Log distance before aggregation --- START
+            console.log(`[Summary Aggregation] Adding distance: ${transformedData.distance} km from file: ${fileNameForProcessing}`);
+            // --- Log distance before aggregation --- END
+
+            // Aggregate distance directly in KM
+            stats.totalDistance += (transformedData.distance || 0);
+            stats.totalDuration += transformedData.duration || 0; // duration is already in seconds
+            
+            const workoutDate = transformedData.date; // Use \'date\' property (Date object or null)
             if (workoutDate) {
                 const workoutDateStr = workoutDate.toISOString();
                 if (!stats.earliestDate || workoutDateStr < stats.earliestDate) {
