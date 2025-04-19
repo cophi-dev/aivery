@@ -136,6 +136,10 @@ const exerciseAliases: Record<string, string> = {
   'klimmzüge': 'pull-up', // Or 'pull ups' depending on your canonical name
   'kniebeugen': 'squat',
   // Add more aliases as needed
+  'kettlebell swings': 'kettlebell swing', // Add alias for kettlebell swings
+  'pushups': 'push-up', // Add alias for pushups (assuming canonical is push-up)
+  'pullups': 'pull-up', // Add alias for pullups (assuming canonical is pull-up)
+  'horsestance': 'horse stance' // Add alias for horsestance (assuming space)
 };
 
 // --- NEW Helper to Find Canonical Exercise ---
@@ -1158,9 +1162,66 @@ export default function NewWorkoutPage() {
                 <div className="flex justify-between items-start">
                   <div className="flex-1 space-y-2 mr-2">
                     <Label htmlFor={`exercise-name-${exercise.id}`}>Exercise #{index + 1}</Label>
-                    {/* Combobox for Exercise Selection (Remains the same) */}
+                    {/* RE-ADD Combobox for Exercise Selection */}
                     <Popover open={showSearchList} onOpenChange={setShowSearchList}>
-                      {/* ... (PopoverTrigger and PopoverContent with Command for search) ... */} 
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={showSearchList}
+                          className="w-full justify-between font-normal"
+                          onClick={() => setShowSearchList(true)} // Open on click
+                        >
+                          {exercise.name || "Select exercise..."}
+                          {/* Add a ChevronsUpDown icon or similar indicator */}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                        <Command shouldFilter={false}> {/* Filtering done via search state */}
+                          <CommandInput 
+                            placeholder="Search exercise..." 
+                            value={exerciseSearchQuery}
+                            onValueChange={setExerciseSearchQuery}
+                          />
+                          <CommandList>
+                            <CommandEmpty>
+                              {isSearching ? "Searching..." : "No exercise found."}
+                            </CommandEmpty>
+                            <CommandGroup>
+                              {searchResults.map((dbExercise) => (
+                                <CommandItem
+                                  key={dbExercise._id}
+                                  value={dbExercise.name} // Use name for Command value
+                                  onSelect={() => {
+                                    handleExerciseSelection(exercise.id, dbExercise);
+                                    setShowSearchList(false); // Close on select
+                                  }}
+                                >
+                                  {dbExercise.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                            {/* Optionally show initially loaded/filtered exercises when not searching? */}
+                            {/* Or add a separator */} 
+                            {debouncedSearchQuery.length < 2 && (
+                                <CommandGroup heading="Recently Used / Suggested">
+                                    {filteredExercises.slice(0, 10).map((dbEx) => (
+                                        <CommandItem
+                                            key={dbEx._id}
+                                            value={dbEx.name}
+                                            onSelect={() => {
+                                                handleExerciseSelection(exercise.id, dbEx);
+                                                setShowSearchList(false);
+                                            }}
+                                        >
+                                            {dbEx.name}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            )}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
                     </Popover>
                   </div>
                    <Button 
