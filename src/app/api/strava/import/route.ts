@@ -205,7 +205,6 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
 
     // --- ENQUEUE JOBS using QStash --- START
     console.log(`Enqueuing ${totalFiles} jobs via QStash for processingId: ${processingId}`);
-    const qstashClient = new Client({ token: process.env.QSTASH_TOKEN! });
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
     if (!appUrl) {
         console.error('Error: NEXT_PUBLIC_APP_URL or VERCEL_URL environment variable not set.');
@@ -215,6 +214,14 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
     const workerBaseUrl = appUrl.startsWith('http') ? appUrl : `https://${appUrl}`;
     const workerUrl = `${workerBaseUrl}/api/strava/process-activity`;
     console.log(`Worker URL target: ${workerUrl}`);
+    
+    // Log the token being used (masked)
+    const qstashToken = process.env.QSTASH_TOKEN;
+    console.log(`Using QStash Token: ${qstashToken ? qstashToken.substring(0, 5) + '...' : 'NOT SET!'}`);
+    if (!qstashToken) {
+       throw new Error("QSTASH_TOKEN environment variable is not set.");
+    }
+    const qstashClient = new Client({ token: qstashToken });
 
     let enqueuedCount = 0;
     let failedEnqueueFilesData: { relativePath: string; blobPathname: string }[] = [];
@@ -235,13 +242,22 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
             headers: { 'content-type': 'application/json' }
         }));
         try {
+            console.log(`Attempting to enqueue batch of ${messagesToEnqueue.length} messages...`);
             const responses = await qstashClient.batchJSON(messagesToEnqueue);
             responses.forEach((response, index) => {
                 if ('messageId' in response && response.messageId) enqueuedCount++;
                 else failedEnqueueFilesData.push(batchFileData[index]); // Record failed file data
             });
         } catch (batchEnqueueError) {
-            console.error(`Failed to enqueue QStash batch starting at index ${i}:`, batchEnqueueError);
+            console.error(`!!! Failed to enqueue QStash batch starting at index ${i} !!!`);
+            // Log the detailed error from QStash
+            if (batchEnqueueError instanceof Error) {
+                console.error("QStash Error Name:", batchEnqueueError.name);
+                console.error("QStash Error Message:", batchEnqueueError.message);
+                console.error("QStash Error Stack:", batchEnqueueError.stack);
+            } else {
+                console.error("QStash Non-Error Thrown:", batchEnqueueError);
+            }
             failedEnqueueFilesData.push(...batchFileData);
         }
     }
@@ -266,7 +282,14 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       );
       console.log(`Updated processing state status to ${finalStatus} in MongoDB`);
     } catch (dbUpdateError) {
-      console.error(`Failed to update DB status after QStash enqueue attempt:`, dbUpdateError);
+      console.error(`!!! Failed to update DB status to ${finalStatus} after QStash enqueue attempt !!!`);
+      if (dbUpdateError instanceof Error) {
+         console.error("DB Update Error Name:", dbUpdateError.name);
+         console.error("DB Update Error Message:", dbUpdateError.message);
+      } else {
+         console.error("DB Update Non-Error Thrown:", dbUpdateError);
+      }
+      // Don't re-throw here, the main result indicating enqueue failure is already set
     }
     // --- ENQUEUE JOBS using QStash --- END
 
