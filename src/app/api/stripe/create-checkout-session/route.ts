@@ -9,11 +9,9 @@ import { absoluteUrl } from '@/lib/utils'; // Helper for absolute URLs
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY is not set in environment variables.');
 }
+// Only check for Premium Price ID
 if (!process.env.STRIPE_PREMIUM_PRICE_ID) {
     throw new Error('STRIPE_PREMIUM_PRICE_ID is not set.');
-}
-if (!process.env.STRIPE_EXPERT_PRICE_ID) {
-    throw new Error('STRIPE_EXPERT_PRICE_ID is not set.');
 }
 
 // Initialize Stripe
@@ -23,13 +21,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
 });
 
-// Define price IDs from environment variables (non-public ones for server-side validation)
+// Define price IDs from environment variables 
+// Only include premium now
 const pricing = {
   premium: {
     priceId: process.env.STRIPE_PREMIUM_PRICE_ID!,
-  },
-  expert: {
-    priceId: process.env.STRIPE_EXPERT_PRICE_ID!,
   },
 };
 
@@ -60,19 +56,20 @@ export async function POST(req: Request) {
     try {
         const body = await req.json();
         priceId = body.priceId;
-        if (!priceId) throw new Error("Missing priceId");
+        // Ensure the received priceId is the premium one
+        if (priceId !== pricing.premium.priceId) {
+             console.error(`[Stripe Checkout] Invalid or non-premium Price ID provided: ${priceId}`);
+             // Throw an error instead of just logging to prevent proceeding
+             throw new Error("Invalid Price ID provided.");
+        }
     } catch (error) {
-        console.error("[Stripe Checkout] Invalid request body:", error);
-        return new NextResponse('Bad Request: Missing or invalid priceId in request body.', { status: 400 });
+        console.error("[Stripe Checkout] Invalid request body or Price ID:", error);
+        // Return a clear error message
+        const errorMessage = error instanceof Error ? error.message : 'Missing or invalid priceId in request body.';
+        return new NextResponse(`Bad Request: ${errorMessage}`, { status: 400 });
     }
 
-    console.log(`[Stripe Checkout] Received priceId: ${priceId}`);
-
-    // Validate the received priceId against configured plans
-    if (priceId !== pricing.premium.priceId && priceId !== pricing.expert.priceId) {
-        console.error(`[Stripe Checkout] Invalid Price ID provided: ${priceId}`);
-        return new NextResponse('Invalid Price ID provided.', { status: 400 });
-    }
+    console.log(`[Stripe Checkout] Received valid premium priceId: ${priceId}`);
 
     // 3. TODO: Check for existing subscription (Optional but Recommended)
     // const subscriptionPlan = await getUserSubscriptionPlan(userId); // Implement this function
