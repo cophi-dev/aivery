@@ -26,6 +26,10 @@ export async function GET(request: Request) {
         const metrics = await calculateDashboardMetrics(); // Assumes this function implicitly uses the authenticated user ID
         console.log("[API /dashboard/metrics] Metrics calculated successfully");
 
+        // --- Add Log Before Return --- 
+        console.log("[API /dashboard/metrics] Returning metrics:", JSON.stringify(metrics, null, 2));
+        // --- End Log --- 
+
         // 3. Return the metrics
         return NextResponse.json(metrics);
 
