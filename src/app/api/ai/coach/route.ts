@@ -913,14 +913,19 @@ Structure your response using markdown:
 
 Do NOT just give a short definition. Aim for an informative, article-style explanation.`;
 
+    // Add AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+
     try {
-        console.log(`[getDirectTextResponse] Sending direct query to Grok: "${query}"`);
+        console.log(`[getDirectTextResponse] Sending direct query to Grok: \"${query}\"`);
         const response = await fetch('https://api.x.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${grokApiKey}`
           },
+          signal: controller.signal, // Pass the AbortSignal to fetch
           body: JSON.stringify({
             model: 'grok-3-mini-latest', // Consider a larger model if explanations are consistently too short
             messages: [
@@ -932,6 +937,8 @@ Do NOT just give a short definition. Aim for an informative, article-style expla
             stream: false,
           })
         });
+
+        clearTimeout(timeoutId); // Clear the timeout if fetch completes
 
         if (!response.ok) {
           const errorBody = await response.text();
@@ -953,8 +960,13 @@ Do NOT just give a short definition. Aim for an informative, article-style expla
         }
 
     } catch (error) {
+        clearTimeout(timeoutId); // Ensure timeout is cleared on error too
+        if (error instanceof Error && error.name === 'AbortError') {
+             console.error("[getDirectTextResponse] Grok API call timed out after 25 seconds.");
+             return "Sorry, the request to the AI timed out. It might be taking longer than usual to respond. Please try again shortly.";
+        }
         console.error("Error calling Grok API for direct response:", error);
-        return null;
+        return null; // Return null on timeout or other fetch errors
     }
 }
 
