@@ -123,6 +123,50 @@ const estimateWorkoutDuration = (exercises: ExerciseState[]): number => {
   return totalDuration;
 };
 
+// --- NEW Exercise Alias Mapping ---
+// Add known aliases here (lowercase keys and values for consistent lookup)
+const exerciseAliases: Record<string, string> = {
+  'kreuzheben': 'deadlift',
+  'bankdrücken': 'bench press',
+  'klimmzüge': 'pull-up', // Or 'pull ups' depending on your canonical name
+  'kniebeugen': 'squat',
+  // Add more aliases as needed
+};
+
+// --- NEW Helper to Find Canonical Exercise ---
+const findCanonicalExercise = (
+  parsedName: string,
+  dbExercises: ExerciseData[],
+  aliases: Record<string, string>
+): ExerciseData | undefined => {
+  if (!parsedName) return undefined;
+
+  const lowerParsedName = parsedName.toLowerCase().trim();
+
+  // 1. Try direct case-insensitive match
+  let foundExercise = dbExercises.find(ex => ex.name.toLowerCase() === lowerParsedName);
+  if (foundExercise) return foundExercise;
+
+  // 2. Try alias match
+  const aliasTargetName = aliases[lowerParsedName];
+  if (aliasTargetName) {
+    // Find the exercise matching the alias target name (case-insensitive)
+    foundExercise = dbExercises.find(ex => ex.name.toLowerCase() === aliasTargetName);
+    if (foundExercise) return foundExercise;
+    // As a fallback, maybe try searching for the alias target name with common pluralization differences
+    // e.g., if alias is 'pull-up', try 'pull-ups' too
+    if (aliasTargetName.endsWith('up')) {
+      foundExercise = dbExercises.find(ex => ex.name.toLowerCase() === aliasTargetName + 's');
+      if (foundExercise) return foundExercise;
+    }
+  }
+
+  // 3. Optional: Add fuzzy matching here later if needed
+
+  console.warn(`[findCanonicalExercise] Could not find canonical match for: "${parsedName}"`);
+  return undefined; // Not found
+};
+
 // --- Moved AI Handler outside component ---
 // It needs state setters and relevant data passed in as arguments
 const handleAiProcess = async (
@@ -134,7 +178,8 @@ const handleAiProcess = async (
   setError: React.Dispatch<React.SetStateAction<string | null>>,
   dbExercisesMap: Map<string, ExerciseData>,
   workoutTypeDisplayNames: Record<WorkoutTypeOption, string>,
-  currentWorkoutType: WorkoutTypeOption | undefined // Pass current type for default logic
+  currentWorkoutType: WorkoutTypeOption | undefined, // Pass current type for default logic
+  dbExercises: ExerciseData[] // <-- Add dbExercises array parameter
 ) => {
   if (!aiLogInput.trim()) {
     toast.error("Please enter your workout log first.");
@@ -178,7 +223,7 @@ const handleAiProcess = async (
 
     const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
       const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
-      const canonicalExercise = dbExercisesMap.get(parsedEx.name);
+      const canonicalExercise = findCanonicalExercise(parsedEx.name, dbExercises, exerciseAliases);
 
       const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => {
         const setTempId = `set-temp-${Date.now()}-${Math.random()}`;
@@ -991,7 +1036,8 @@ export default function NewWorkoutPage() {
               setError,
               dbExercisesMap,
               workoutTypeDisplayNames,
-              workoutType // Pass current workoutType
+              workoutType, // Pass current workoutType
+              dbExercises // <-- Pass dbExercises state variable
             )}
             disabled={isSubmitting || isProcessingAi || !aiLogInput.trim()} // Disable if submitting, AI processing, or no input
             variant="outline"
