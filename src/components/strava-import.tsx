@@ -486,12 +486,6 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         const newBlob = await upload(pathname, file, { // Use the constructed pathname
             access: 'public',
             handleUploadUrl: '/api/strava/handle-blob-upload',
-            onUploadProgress: (event) => {
-                // Use event.percentage directly (confirmed it exists)
-                const progressPercent = event.percentage;
-                setProgress(progressPercent);
-                setUploadStatus(`Uploading... ${progressPercent.toFixed(0)}%`); // Format nicely
-            },
         });
         // --------------------------------------------------
 

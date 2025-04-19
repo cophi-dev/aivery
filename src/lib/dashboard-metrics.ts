@@ -67,6 +67,7 @@ interface DashboardMetrics {
   cardioDistancePrevious7Days: number;
   topPRs: PRData[];
   exercisePRs: DashboardPREntry[];
+  workoutCount: number;
 }
 
 // --- Helper to Fetch Workouts in Date Range --- 
@@ -155,12 +156,13 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
   const user = await getCurrentUser();
   if (!user?.id) {
     console.warn("No user found for dashboard metrics calculation");
-    // Return default structure
-    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, topPRs: [], exercisePRs: [] };
+    // Return default structure with workoutCount
+    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, topPRs: [], exercisePRs: [], workoutCount: 0 };
   }
   const userId = user.id;
 
   try {
+    await dbConnect(); // Ensure DB connection
     const today = new Date();
     const endOfCurrentPeriod = endOfDay(today);
     // Keep start of current period as 7 days ago
@@ -173,12 +175,25 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
     console.log(`[Metrics] Fetching workouts from: ${startOfFetchPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
 
     // Fetch workouts for the last 14 days using the start of the fetch period
-    const workouts = await fetchWorkoutsForMetrics(userId, startOfFetchPeriod, endOfCurrentPeriod);
-    console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 14 days.`);
-
+    // We can run this in parallel with the count and PR fetches
+    const workoutsPromise = fetchWorkoutsForMetrics(userId, startOfFetchPeriod, endOfCurrentPeriod);
+    
     // Fetch the new exercise PRs (limit 4)
-    const exercisePRs = await fetchDashboardExercisePRs(4);
+    const exercisePRsPromise = fetchDashboardExercisePRs(4);
+
+    // Fetch the total workout count
+    const workoutCountPromise = WorkoutModel.countDocuments({ userId: new mongoose.Types.ObjectId(userId) });
+
+    // Await all promises
+    const [workouts, exercisePRs, workoutCount] = await Promise.all([
+      workoutsPromise,
+      exercisePRsPromise,
+      workoutCountPromise
+    ]);
+
+    console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 14 days.`);
     console.log(`[Metrics] Fetched ${exercisePRs.length} Exercise PRs.`);
+    console.log(`[Metrics] Total workout count for user ${userId}: ${workoutCount}`);
 
     // Temporarily disabled to diagnose performance bottleneck - KEEP DISABLED FOR NOW
     // const topPRs = await fetchTopPRs(userId);
@@ -249,29 +264,30 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
         }
     }
 
-    // Remove rounding for distances - assume values are already in KM and let UI format
-    // cardioDistanceLast7Days = Math.round(cardioDistanceLast7Days);
-    // cardioDistancePrevious7Days = Math.round(cardioDistancePrevious7Days);
+    console.log("[Metrics] Final Calculated Metrics:", {
+      strengthVolumeLast7Days,
+      cardioDurationLast7Days,
+      cardioDistanceLast7Days,
+      strengthVolumePrevious7Days,
+      cardioDurationPrevious7Days,
+      cardioDistancePrevious7Days,
+      workoutCount, // Include count in log
+    });
 
-    // Log final raw sums before returning
-    console.log(`[Metrics Debug] Final Sums: StrVol7d=${strengthVolumeLast7Days}, CardioDist7d=${cardioDistanceLast7Days} (raw km), StrVolPrev7d=${strengthVolumePrevious7Days}, CardioDistPrev7d=${cardioDistancePrevious7Days} (raw km)`); // Updated log message
-
-    const finalMetrics = {
-        strengthVolumeLast7Days,
-        cardioDurationLast7Days,
-        cardioDistanceLast7Days,
-        strengthVolumePrevious7Days,
-        cardioDurationPrevious7Days,
-        cardioDistancePrevious7Days,
-        topPRs,
-        exercisePRs
+    return {
+      strengthVolumeLast7Days,
+      cardioDurationLast7Days,
+      cardioDistanceLast7Days,
+      strengthVolumePrevious7Days,
+      cardioDurationPrevious7Days,
+      cardioDistancePrevious7Days,
+      topPRs, // Keep this, even if empty
+      exercisePRs,
+      workoutCount, // Include the count in the returned object
     };
-    console.log("[Metrics] Final Calculated Metrics (with previous week):", finalMetrics);
-    return finalMetrics;
-
   } catch (error) {
-    console.error("[Dashboard Metrics] Error calculating metrics:", error);
-    // Return default structure on error
-    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, topPRs: [], exercisePRs: [] };
+    console.error("[Metrics] Error in calculateDashboardMetrics:", error);
+    // Return default structure on error, including workoutCount
+    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, topPRs: [], exercisePRs: [], workoutCount: 0 }; 
   }
 } 
