@@ -17,9 +17,6 @@ if (!process.env.STRIPE_WEBHOOK_SECRET) {
 if (!process.env.STRIPE_PREMIUM_PRICE_ID) {
     throw new Error('STRIPE_PREMIUM_PRICE_ID is not set.');
 }
-if (!process.env.STRIPE_EXPERT_PRICE_ID) {
-    throw new Error('STRIPE_EXPERT_PRICE_ID is not set.');
-}
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   // Cast API version to 'any' to bypass strict type check
@@ -29,9 +26,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-// Define price IDs for mapping
+// Define price ID for mapping (only premium)
 const premiumPriceId = process.env.STRIPE_PREMIUM_PRICE_ID;
-const expertPriceId = process.env.STRIPE_EXPERT_PRICE_ID;
 
 export async function POST(req: Request) {
   console.log("[Stripe Webhook] Received request");
@@ -117,39 +113,60 @@ export async function POST(req: Request) {
     try {
         // Determine the plan based on the Price ID in the *retrieved* subscription
         const priceId = subscription.items.data[0]?.price.id;
-        let newTier: 'premium' | 'expert' | 'free' | null = null; // Include 'free' for typing
+        let newTier: 'premium' | 'free' | null = null; // Only premium or free possible now
 
+        // Only check against premium price ID
         if (priceId === premiumPriceId) {
             newTier = 'premium';
-        } else if (priceId === expertPriceId) {
-            newTier = 'expert';
         } else {
-             console.error(`[Stripe Webhook] Unknown priceId ${priceId} in subscription ${subscription?.id} for user ${userId}.`);
-             return new NextResponse(`Webhook Error: Unknown Price ID ${priceId}`, { status: 400 });
+             console.error(`[Stripe Webhook] Unknown or non-premium priceId ${priceId} in subscription ${subscription?.id} for user ${userId}. Setting tier to null/unchanged.`);
+             // Don't necessarily error out, maybe just log and don't update tier?
+             // Or handle based on your business logic for unexpected price IDs
+             // For now, let's prevent setting a tier if the price ID doesn't match premium
+             // return new NextResponse(`Webhook Error: Unknown or non-premium Price ID ${priceId}`, { status: 400 }); 
+             // Set newTier to null to avoid updating it if it wasn't premium
+             newTier = null;
         }
-        console.log(`[Stripe Webhook] Determined tier: ${newTier} for user ${userId}`);
+        
+        // Only proceed with tier update if newTier is set (i.e., it was premium)
+        if (newTier) {
+            console.log(`[Stripe Webhook] Determined tier: ${newTier} for user ${userId}`);
 
-        // Update user record in MongoDB using Mongoose
-        const updatedUser = await User.findOneAndUpdate(
-          { _id: userId },
-          {
-            $set: {
-              tier: newTier,
-              stripeCustomerId: typeof retrievedSession.customer === 'string' ? retrievedSession.customer : retrievedSession.customer?.id,
-              stripeSubscriptionId: subscription.id,
-              stripeSubscriptionStatus: subscription.status,
-              planExpiresAt: subscription ? new Date((subscription as any)['current_period_end'] * 1000) : null,
+            // Update user record in MongoDB using Mongoose
+            const updatedUser = await User.findOneAndUpdate(
+              { _id: userId },
+              {
+                $set: {
+                  tier: newTier, // Set to 'premium'
+                  stripeCustomerId: typeof retrievedSession.customer === 'string' ? retrievedSession.customer : retrievedSession.customer?.id,
+                  stripeSubscriptionId: subscription.id,
+                  stripeSubscriptionStatus: subscription.status,
+                  planExpiresAt: subscription ? new Date((subscription as any)['current_period_end'] * 1000) : null,
+                }
+              },
+              { new: true } // Return the updated document
+            );
+
+            if (!updatedUser) {
+                 console.error(`[Stripe Webhook] User not found in DB for ID: ${userId}`);
+                 // Consider returning a specific status or just logging
+                 return new NextResponse(`Webhook Error: User with ID ${userId} not found`, { status: 404 });
             }
-          },
-          { new: true }
-        );
-
-        if (!updatedUser) {
-             console.error(`[Stripe Webhook] User not found in DB for ID: ${userId}`);
-             return new NextResponse(`Webhook Error: User with ID ${userId} not found`, { status: 404 });
+            console.log(`[Stripe Webhook] Successfully updated DB for user: ${userId}, New Tier: ${updatedUser.tier}, SubID: ${updatedUser.stripeSubscriptionId}`);
+        } else {
+            console.log(`[Stripe Webhook] Price ID ${priceId} did not match premium plan. Not updating user tier for user ${userId}.`);
+            // Still need to save customer ID even if tier isn't premium (e.g., if you add other products later)
+            // Or maybe only save if tier is updated? Depends on logic.
+            // Let's update only the customer ID if the tier wasn't premium, 
+            // assuming customer ID is always present on completed checkout.
+            const customerId = typeof retrievedSession.customer === 'string' ? retrievedSession.customer : retrievedSession.customer?.id;
+            if (customerId) {
+                 await User.updateOne({ _id: userId }, { $set: { stripeCustomerId: customerId } });
+                 console.log(`[Stripe Webhook] Updated stripeCustomerId for user ${userId} even though price ID wasn't premium.`);
+            } else {
+                 console.error(`[Stripe Webhook] Could not find customer ID on session ${retrievedSession.id} when price ID wasn't premium.`);
+            }
         }
-
-      console.log(`[Stripe Webhook] Successfully updated DB for user: ${userId}, New Tier: ${updatedUser.tier}, SubID: ${updatedUser.stripeSubscriptionId}`);
 
     } catch (dbError: any) {
       console.error(`[Stripe Webhook] Database update failed for user ${userId}: ${dbError.message}`);
