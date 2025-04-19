@@ -43,36 +43,38 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const blobPathname = body.blobPathname;
+    const blobUrl = body.blobUrl; // Get the URL
     const originalFilename = body.originalFilename;
     if (!blobPathname || typeof blobPathname !== 'string') {
       return NextResponse.json({ success: false, error: "Missing blobPathname" }, { status: 400 });
+    }
+    if (!blobUrl || typeof blobUrl !== 'string') { // Add check for URL
+        return NextResponse.json({ success: false, error: "Missing blobUrl" }, { status: 400 });
     }
     if (!blobPathname.startsWith(`strava-imports/${userId}/`)) {
         return NextResponse.json({ success: false, error: "Unauthorized access to blob" }, { status: 403 });
     }
 
     // --- Download Blob --- 
-    console.log('Processing file from blob storage:', { blobPathname, originalFilename });
-    console.log(`[Import API] Attempting head request for pathname: '${blobPathname}'`);
-    // Add a short delay to potentially handle eventual consistency issues
-    await new Promise(resolve => setTimeout(resolve, 2000)); 
-    const blobHead = await head(blobPathname);
-    if (!blobHead || !blobHead.url) {
-        try { await del(blobPathname); } catch {} 
-        return NextResponse.json({ success: false, error: "Uploaded file not found in storage." }, { status: 404 });
-    }
-    blobUrlToDelete = blobHead.pathname; // Use pathname for deletion
-    if (blobHead.size <= 1) { 
-        try { await del(blobUrlToDelete); } catch {} 
-        return NextResponse.json({ success: false, error: "File upload seems to have failed or is empty." }, { status: 400 });
-    }
-    const blobResponse = await fetch(blobHead.url);
+    console.log('Processing file from blob storage:', { blobPathname, blobUrl, originalFilename });
+    blobUrlToDelete = blobPathname; // Store original pathname for deletion
+    
+    console.log(`[Import API] Attempting to fetch blob directly from URL: ${blobUrl}`);
+    const blobResponse = await fetch(blobUrl);
     if (!blobResponse.ok) {
+        // If fetch fails, try deleting the blob entry if it exists
+        try { await del(blobPathname); } catch {}
         return NextResponse.json({ success: false, error: `Failed to download file from storage (status ${blobResponse.status})` }, { status: 500 });
     }
     const arrayBuffer = await blobResponse.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    console.log('File buffer size from blob:', buffer.length);
+
+    // Basic size check after download
+    if (buffer.length <= 1) {
+        try { await del(blobUrlToDelete); } catch {} 
+        return NextResponse.json({ success: false, error: "File upload seems to have failed or is empty." }, { status: 400 });
+    }
+    console.log('File buffer size from blob URL:', buffer.length);
 
     // --- Save to Temp ZIP --- 
     tempZipPath = path.join(os.tmpdir(), `strava-import-${uuidv4()}.zip`);

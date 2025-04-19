@@ -499,6 +499,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 blobPathname: newBlob.pathname,
+                blobUrl: newBlob.url,
                 originalFilename: file.name // Use file from state
             })
           });
