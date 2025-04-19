@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Import Card components
 import Link from "next/link"; // Import Link
-import { ArrowRight, Upload, Edit3 } from "lucide-react"; // Import icons
+import { ArrowRight, Upload, Edit3, Sparkles } from "lucide-react"; // Import icons
 
 // Import Client Components
 import { SubscriptionStatus } from "./_components/SubscriptionStatusClient"; 
@@ -35,6 +35,8 @@ interface DashboardMetrics {
     exercisePRs: DashboardPREntry[];
     overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs
     workoutCount: number;
+    // Added this field from the backend API 
+    hasAiPreferences?: boolean; 
 }
 
 // Placeholder type/interface for a chat message
@@ -61,6 +63,8 @@ export default function DashboardPage() {
     const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
     const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
     const [errorMetrics, setErrorMetrics] = useState<string | null>(null);
+    
+    // --- REMOVED TEMPORARY STATE ---
 
     // Fetch metrics when session is loaded
     useEffect(() => {
@@ -145,6 +149,30 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-6 w-full max-w-4xl">
                 <LogWorkoutButton />
                 <SubscriptionStatus /> 
+
+                {/* --- NEW: AI Preferences Prompt --- */} 
+                {/* Use the real flag from metrics */}
+                {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
+                    <Card className="border-primary/30 dark:border-primary/40 bg-primary/5 dark:bg-primary/10 shadow-sm hover:shadow-md transition-shadow duration-200">
+                         <CardHeader className="flex flex-row items-center justify-between pb-3">
+                             <div className="space-y-1">
+                                <CardTitle className="text-base font-semibold text-primary dark:text-primary flex items-center">
+                                     <Sparkles className="w-5 h-5 mr-2 text-primary dark:text-primary" />
+                                     Unlock Deeper Insights!
+                                 </CardTitle>
+                                <CardDescription className="text-sm text-primary/80 dark:text-primary/70">
+                                     Tell Aivery about your goals and preferences for a truly personalized experience.
+                                 </CardDescription>
+                             </div>
+                            <Link href="/settings?tab=ai">
+                                 <Button variant="outline" size="sm" className="bg-white dark:bg-background border-primary/50 dark:border-primary text-primary dark:text-primary hover:bg-primary/10 dark:hover:bg-primary/20">
+                                     Set Preferences <ArrowRight className="w-4 h-4 ml-1.5" />
+                                 </Button>
+                             </Link>
+                         </CardHeader>
+                    </Card>
+                )}
+                {/* --- END: AI Preferences Prompt --- */}
                 
                 {/* Conditional rendering for Getting Started / Progress & Records */} 
                 {isLoadingMetrics ? (

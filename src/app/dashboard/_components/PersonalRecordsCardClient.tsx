@@ -48,7 +48,7 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
     <Card>
       <CardHeader className="pb-4">
         <CardTitle className="text-lg flex items-center justify-center">
-          <Zap className="mr-2 h-5 w-5 text-yellow-500" /> Personal Records
+          <Zap className="mr-2 h-5 w-5 text-primary" /> Personal Records
         </CardTitle>
         {/* <CardDescription className="text-center">Your best recent achievements</CardDescription> */} 
       </CardHeader>
@@ -59,7 +59,7 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
             {longestRun?.value && (
               <div className="text-sm border-b border-border/50 pb-2">
                 <p className="font-medium truncate flex items-center justify-center">
-                  <TrendingUp className="mr-1.5 h-4 w-4 text-blue-500" /> Longest Run
+                  <TrendingUp className="mr-1.5 h-4 w-4 text-muted-foreground" /> Longest Run
                 </p>
                 <p className="text-muted-foreground">
                   <span className="font-semibold text-foreground">{formatDistance(longestRun.value)}</span>
@@ -72,7 +72,7 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
             {fastest5kPace?.value && (
                <div className="text-sm border-b border-border/50 pb-2">
                 <p className="font-medium truncate flex items-center justify-center">
-                  <Gauge className="mr-1.5 h-4 w-4 text-green-500" /> Fastest 5k Pace
+                  <Gauge className="mr-1.5 h-4 w-4 text-muted-foreground" /> Fastest 5k Pace
                 </p>
                 <p className="text-muted-foreground">
                   <span className="font-semibold text-foreground">{formatPace(fastest5kPace.value)}</span>
@@ -85,7 +85,7 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
             {maxStrengthVolume?.value && (
                <div className="text-sm border-b border-border/50 pb-2 sm:col-span-2">
                 <p className="font-medium truncate flex items-center justify-center">
-                  <Weight className="mr-1.5 h-4 w-4 text-red-500" /> Max Strength Volume
+                  <Weight className="mr-1.5 h-4 w-4 text-muted-foreground" /> Max Strength Volume
                 </p>
                 <p className="text-muted-foreground">
                   <span className="font-semibold text-foreground">{formatVolume(maxStrengthVolume.value)}</span>

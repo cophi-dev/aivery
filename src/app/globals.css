@@ -57,56 +57,62 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
  
-    --primary: 217 85% 60%;
-    --primary-foreground: 210 40% 98%;
+    /* Brand Colors - Light Theme */
+    --primary: 214 100% 67%; /* brand-blue */
+    --primary-foreground: 0 0% 100%; /* white */
  
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Swapped secondary/muted */
+    --secondary: 216 100% 95%; /* Very light blue */
+    --secondary-foreground: 215.4 16.3% 46.9%; /* Grey */
  
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 216 100% 88%; /* Light blue */
+    --muted-foreground: 222.2 84% 4.9%; /* Dark grey */
  
-    --accent: 217 85% 60%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 19 94% 73%; /* brand-orange */
+    --accent-foreground: 0 0% 100%; /* white */
  
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84.2% 60.2%; /* Keep existing red */
+    --destructive-foreground: 0 0% 100%; /* white */
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 217 85% 60%;
+    /* Adjusted border/input */
+    --border: 216 40% 92%; /* Subtle blue-grey */
+    --input: 216 40% 92%; /* Subtle blue-grey */
+    --ring: 214 100% 67%; /* brand-blue */
  
     --radius: 0.5rem;
   }
  
   .dark {
-    --background: 220 15% 22%;
-    --foreground: 210 40% 98%;
+    --background: 220 15% 15%; /* Darker background */
+    --foreground: 210 40% 98%; /* light grey */
  
-    --card: 220 15% 25%;
-    --card-foreground: 210 40% 98%;
+    --card: 220 15% 20%; /* Darker card */
+    --card-foreground: 210 40% 98%; /* light grey */
  
-    --popover: 220 15% 22%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 220 15% 15%; /* Darker popover */
+    --popover-foreground: 210 40% 98%; /* light grey */
  
-    --primary: 217 85% 60%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    /* Brand Colors - Dark Theme */
+    --primary: 214 100% 67%; /* brand-blue */
+    --primary-foreground: 0 0% 100%; /* white */
  
-    --secondary: 217.2 32.6% 22%;
-    --secondary-foreground: 210 40% 98%;
+    /* Swapped secondary/muted */
+    --secondary: 216 50% 25%; /* Darker muted blue */
+    --secondary-foreground: 215 20.2% 65%; /* Lighter grey */
  
-    --muted: 217.2 32.6% 22%;
-    --muted-foreground: 215 20.2% 75%;
+    --muted: 216 50% 30%; /* Dark muted blue */
+    --muted-foreground: 210 40% 98%; /* light grey */
  
-    --accent: 217 85% 60%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 19 94% 73%; /* brand-orange */
+    --accent-foreground: 0 0% 100%; /* white */
  
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 70% 50%; /* Slightly adjusted red */
+    --destructive-foreground: 0 0% 100%; /* white */
 
-    --border: 217.2 32.6% 30%;
-    --input: 217.2 32.6% 30%;
-    --ring: 217 85% 60%;
+    /* Adjusted border/input */
+    --border: 216 15% 35%; /* Dark blue-grey */
+    --input: 216 15% 35%; /* Dark blue-grey */
+    --ring: 214 100% 67%; /* brand-blue */
   }
 }
 

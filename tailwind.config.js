@@ -48,6 +48,9 @@ module.exports = {
         strava: "#FC4C02",
         'brand-accent': '#FFA07A',       // The main reddish-orange
         'brand-accent-hover': '#FF8C61', // Darker version for hover
+        'brand-blue': '#58a3ff',
+        'brand-lightblue': '#c0daff',
+        'brand-orange': '#fa9f7b',
       },
       borderRadius: {
         sm: "calc(var(--radius) - 4px)",

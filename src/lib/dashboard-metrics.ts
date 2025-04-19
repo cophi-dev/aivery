@@ -70,6 +70,7 @@ interface DashboardMetrics {
   exercisePRs: DashboardPREntry[];
   overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs (optional)
   workoutCount: number;
+  hasAiPreferences?: boolean; // <-- Add flag
 }
 
 // --- Helper to Fetch Workouts in Date Range --- 
@@ -159,7 +160,7 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
   if (!user?.id) {
     console.warn("No user found for dashboard metrics calculation");
     // Return default structure with workoutCount
-    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, /*topPRs: [],*/ exercisePRs: [], overallPRs: {}, workoutCount: 0 };
+    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, /*topPRs: [],*/ exercisePRs: [], overallPRs: {}, workoutCount: 0, hasAiPreferences: false };
   }
   const userId = user.id;
 
@@ -186,10 +187,10 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
     // Fetch the total workout count
     const workoutCountPromise = WorkoutModel.countDocuments({ userId: new mongoose.Types.ObjectId(userId) });
 
-    // --- Fetch User for Overall PRs --- 
+    // --- Fetch User for Overall PRs and AI Prefs --- 
     const userPromise = UserModel.findById(userId)
-      .select('personalRecords') // Select only the overall PRs field
-      .lean<Pick<IUser, 'personalRecords'> | null>();
+      .select('personalRecords aiPreferences') // Select PRs and AI preferences
+      .lean<Pick<IUser, 'personalRecords' | 'aiPreferences'> | null>();
     // --- End Fetch User --- 
 
     // Await all promises
@@ -199,6 +200,22 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
       workoutCountPromise,
       userPromise // <-- Await user fetch
     ]);
+
+    // --- Check AI Preferences --- 
+    let hasAiPreferences = false;
+    if (userDoc?.aiPreferences) {
+      const prefs = userDoc.aiPreferences;
+      // Check if key preferences have non-empty string values
+      if ((prefs.fitnessGoals && prefs.fitnessGoals.trim() !== '') || 
+          (prefs.trainingPreferences && prefs.trainingPreferences.trim() !== '')) {
+        hasAiPreferences = true;
+      }
+    }
+    console.log(`[Metrics] Has AI Preferences set: ${hasAiPreferences}`);
+    // --- End Check AI Preferences ---
+
+    // Extract overall PRs from the user document
+    const overallPRs = userDoc?.personalRecords || {};
 
     console.log(`[Metrics] Fetched ${workouts.length} workouts for the last 14 days.`);
     console.log(`[Metrics] Fetched ${exercisePRs.length} Exercise PRs.`);
@@ -295,8 +312,9 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
         cardioDistancePrevious7Days,
         // topPRs: [], // Keep commented out
         exercisePRs: exercisePRs,
-        overallPRs: userDoc?.personalRecords || {}, // <-- Include overall PRs
+        overallPRs: overallPRs, // <-- Pass overall PRs
         workoutCount: workoutCount,
+        hasAiPreferences: hasAiPreferences, // <-- Add flag to return object
     };
     
     // --- Log the final result object --- 
@@ -307,6 +325,6 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
   } catch (error) {
     console.error(`Error calculating dashboard metrics for user ${userId}:`, error);
     // Return default structure on error
-    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, /*topPRs: [],*/ exercisePRs: [], overallPRs: {}, workoutCount: 0 };
+    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, /*topPRs: [],*/ exercisePRs: [], overallPRs: {}, workoutCount: 0, hasAiPreferences: false };
   }
 } 
