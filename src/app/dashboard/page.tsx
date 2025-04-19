@@ -207,15 +207,16 @@ export default function DashboardPage() {
                             cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
                             cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
                         />
+                        {/* Wrap Spotlight and QuickActions in a grid first */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <PersonalRecordsCard 
-                                exercisePRs={metrics.exercisePRs || []} 
-                                overallPRs={metrics.overallPRs || {}} // Keep passing overall PRs
-                            />
-                            {/* <RecentActivitiesCard /> */} 
-                             <QuickActionsCard sendAiMessage={handleSendAiMessage} /> {/* Restore sendAiMessage prop */} 
+                            <SpotlightCards />
+                            <QuickActionsCard sendAiMessage={handleSendAiMessage} /> {/* Restore sendAiMessage prop */}
                         </div>
-                        <SpotlightCards />
+                        {/* PersonalRecordsCard is now last */}
+                        <PersonalRecordsCard 
+                            exercisePRs={metrics.exercisePRs || []} 
+                            overallPRs={metrics.overallPRs || {}} // Keep passing overall PRs
+                        />
                     </>
                     // --- End Regular Metrics Cards ---
                 ) : (
