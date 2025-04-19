@@ -54,6 +54,10 @@
       "memory": 1024,
       "maxDuration": 60
     },
+    "app/api/ai/workout-highlight/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
     "app/api/strava/import/route.ts": {
       "memory": 1024,
       "maxDuration": 60,
