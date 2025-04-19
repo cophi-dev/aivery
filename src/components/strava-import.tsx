@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine, X, Loader2, Waves, Footprints, PersonStanding, Zap, Shapes, AlertTriangle } from "lucide-react"
+import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine, X, Loader2, Waves, Footprints, PersonStanding, Zap, Shapes } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +22,6 @@ import { InlineSpinner } from "@/components/ui/inline-spinner"
 import { Save } from "lucide-react"
 import { upload } from '@vercel/blob/client'
 import { useSession } from "next-auth/react"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 interface ImportStats {
   count: number;
@@ -56,8 +55,8 @@ interface ImportStatusResponse {
 export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [file, setFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [uploadStatus, setUploadStatus] = useState<string>("")
   const [progress, setProgress] = useState(0)
+  const [uploadStatus, setUploadStatus] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const [selectedWorkoutTypes, setSelectedWorkoutTypes] = useState<string[]>([])
@@ -76,10 +75,18 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
-  const [importResult, setImportResult] = useState<any | null>(null)
+  const [uploadStats, setUploadStats] = useState<ImportStats | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const { data: session } = useSession();
+  // --- NEW STATE FOR POLLING ---
+  const [isProcessing, setIsProcessing] = useState(false); // Tracks if an import is actively being processed
+  const [processingId, setProcessingId] = useState<string | null>(null); // Stores the ID of the current import process
+  const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null); // Stores the latest status from the API
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store the interval ID
+  const LOCAL_STORAGE_KEY = 'stravaImportProcessingId'; // Key for localStorage
+  // --- END NEW STATE ---
+
+  const { data: session } = useSession(); // Get session data
 
   // Load Strava integration and activity types on component mount
   useEffect(() => {
@@ -339,14 +346,114 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
   }, [toast]);
 
+  // --- POLLING LOGIC --- START
+  const fetchStatus = useCallback(async (currentProcessingId: string) => {
+    if (!currentProcessingId) return;
+
+    console.log(`[Polling] Fetching status for ${currentProcessingId}...`);
+    try {
+      const response = await fetch(`/api/strava/import-status?processingId=${currentProcessingId}`);
+            if (!response.ok) {
+        // Handle non-2xx responses (e.g., 404 if ID not found yet)
+        if (response.status === 404) {
+             console.warn(`[Polling] Status not found for ${currentProcessingId}, stopping polling and clearing ID.`);
+             stopPolling(false); // Pass false to not clear UI state yet
+             localStorage.removeItem(LOCAL_STORAGE_KEY);
+             setProcessingId(null);
+             setIsProcessing(false);
+             setError("Import process not found. It might have expired or been removed.");
+             setUploadStatus("Import not found.");
+             return;
+        }
+        throw new Error(`Status fetch failed: ${response.statusText}`);
+      }
+      const data: ImportStatusResponse = await response.json();
+      setImportStatus(data);
+      console.log("[Polling] Received status:", data);
+
+      // Check for completion or failure to stop polling
+      if (data.status === 'completed' || data.status === 'failed' || data.status === 'queued_with_errors') {
+        console.log(`[Polling] Status is ${data.status}, stopping polling for ${currentProcessingId}.`);
+        stopPolling(); // Will clear localStorage
+        setIsProcessing(false);
+        setProcessingId(null); 
+        if (onImportComplete && data.status === 'completed') {
+             onImportComplete(); 
+        }
+        // Update final upload status message based on result
+        if (data.status === 'completed') {
+            setUploadStatus(`Import complete! Successfully processed ${data.importedFilesCount} of ${data.totalFiles} activities.`);
+        } else if (data.status === 'failed') {
+            setUploadStatus(`Import failed. Please check server logs.`);
+            setError('The import process encountered a critical error.');
+        } else { // queued_with_errors
+            setUploadStatus(`Import finished with errors. Imported ${data.importedFilesCount}, Errors: ${data.errorFilesCount}.`);
+            // Consider showing error file list if data.errorFiles exists
+        }
+      }
+    } catch (err) {
+      console.error("[Polling] Error fetching status:", err);
+      // Consider more robust error handling, maybe stop polling after N errors?
+    }
+  }, [onImportComplete]); 
+
+  const startPolling = useCallback((id: string) => {
+    stopPolling(); // Clear existing interval
+    localStorage.setItem(LOCAL_STORAGE_KEY, id); // Store ID
+    setProcessingId(id);
+    setIsProcessing(true);
+    setImportStatus({ status: 'queued', totalFiles: 0 } as any); 
+    setUploadStatus("Import started, processing activities...");
+    fetchStatus(id);
+    pollingIntervalRef.current = setInterval(() => fetchStatus(id), 5000);
+  }, [fetchStatus]);
+
+  const stopPolling = (clearStoredId = true) => { // Add flag
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+      console.log("[Polling] Polling stopped.");
+    }
+    if (clearStoredId) {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      console.log("[Polling] Cleared stored processing ID.");
+    }
+  };
+
+  // Effect to cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      stopPolling(false); // Don't clear stored ID on unmount
+    };
+  }, []);
+  
+  // --- Effect to check for active import on mount --- START
+  useEffect(() => {
+    const activeId = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (activeId) {
+      console.log(`[Mount] Found active processing ID: ${activeId}, resuming polling.`);
+      startPolling(activeId);
+    } else {
+      console.log("[Mount] No active processing ID found.");
+    }
+    // Run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, []); // Empty dependency array ensures it runs only on mount
+  // --- Effect to check for active import on mount --- END
+  // --- POLLING LOGIC --- END
+
+  // Use the file state variable directly
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    
     if (!file) { 
       console.error('[handleUpload] Exiting: No file in state.');
       setError("Please select a file first.");
       toast({ title: "No File Selected", description: "Please choose a ZIP file to upload.", variant: "destructive" }); 
       return;
     }
+    
+    // --- Get userId from session for path prefixing --- 
     if (!session?.user?.id) {
       console.error('[handleUpload] Exiting: User session not available.');
       setError("Authentication error. Please refresh and try again.");
@@ -354,89 +461,111 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       return;
     }
     const userId = session.user.id;
+    // --- Construct the full desired pathname --- 
     const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const pathname = `strava-imports/${userId}/${Date.now()}-${safeFilename}`;
+    console.log(`[handleUpload] Requesting upload to pathname: ${pathname}`);
+    // ---------------------------------------------
+
+    console.log('[handleUpload] Proceeding with file from state:', file.name);
     
-    setIsLoading(true);
+    setIsProcessing(true);
     setUploadStatus("Starting upload...");
     setError(null);
     setProgress(0);
-    setImportResult(null);
+    setUploadStats(null);
+    setProcessingId(null);
+    setImportStatus(null);
+    stopPolling();
 
     try {
+        // --- Pass the constructed pathname to upload() ---
         console.log('[Upload] Starting upload via client helper for path:', pathname);
         setUploadStatus("Uploading file...");
         
-        const newBlob = await upload(pathname, file, {
+        const newBlob = await upload(pathname, file, { // Use the constructed pathname
             access: 'public',
             handleUploadUrl: '/api/strava/handle-blob-upload',
             onUploadProgress: (event) => {
+                // Use event.percentage directly (confirmed it exists)
                 const progressPercent = event.percentage;
                 setProgress(progressPercent);
-                setUploadStatus(`Uploading... ${progressPercent.toFixed(0)}%`);
+                setUploadStatus(`Uploading... ${progressPercent.toFixed(0)}%`); // Format nicely
             },
         });
+        // --------------------------------------------------
+
         console.log('[Upload] Client upload complete:', newBlob);
-        
-        setUploadStatus("Upload complete. Processing archive... This may take several minutes.");
-        setProgress(100);
-        
-        console.log('Triggering backend synchronous import process with pathname:', newBlob.pathname);
+        setUploadStatus("File uploaded. Starting import process...");
+
+        // 2. Trigger Backend Import Process using the returned pathname
+        console.log('Triggering backend import process with pathname:', newBlob.pathname);
         const importResponse = await fetch('/api/strava/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 blobPathname: newBlob.pathname,
-                originalFilename: file.name
+                originalFilename: file.name // Use file from state
             })
           });
           
-        const importData = await importResponse.json();
-        console.log('Synchronous backend import process finished:', importData);
-        setImportResult(importData);
-          
-        if (!importResponse.ok || !importData.success) {
-            throw new Error(importData.error || 'Import process failed on the server.');
+        if (!importResponse.ok) {
+            const errorData = await importResponse.json().catch(() => ({ error: 'Import initiation failed with status ' + importResponse.status }));
+            throw new Error(errorData.error || 'Failed to start backend import process.');
         }
 
-        setUploadStatus(importData.message || `Import finished.`);
-        if (importData.errorCount > 0) {
-             toast({
-                variant: "default",
-                title: "Import Completed with Errors",
-                description: `Imported ${importData.importedCount}, Errors: ${importData.errorCount}. Check details below.`,
-             });
-        } else {
-             toast({ title: "Import Successful", description: importData.message });
-             if (onImportComplete) {
-                 onImportComplete();
-             }
+        const importData = await importResponse.json();
+        console.log('Backend import process initiated:', importData);
+
+        if (!importData.success || !importData.processingId) {
+            throw new Error(importData.message || 'Backend did not return a valid processing ID.');
         }
+
+        // 3. Start Polling
+        startPolling(importData.processingId);
 
     } catch (err: any) {
         console.error("Upload/Import Error:", err);
         const errorMessage = err.message || "An unknown error occurred during upload or import.";
         setError(errorMessage);
-        setUploadStatus('Import failed.'); 
-        setImportResult(null);
+        setUploadStatus(''); // Clear status on error
+        setIsProcessing(false); // Ensure processing stops on error
+        setProgress(0); // Reset progress
+        stopPolling();
         toast({
             variant: "destructive",
             title: "Import Failed",
             description: errorMessage,
         });
-    } finally {
-        setIsLoading(false);
-        setProgress(0);
     }
-  }, [toast, file, session, onImportComplete]); 
+  }, [toast, startPolling, file, session]); // file is a dependency as it's used directly
 
+  // --- UI Rendering Logic --- START
   const getProgressPercent = () => {
-    return progress;
+    if (!isProcessing || !importStatus || !importStatus.totalFiles || importStatus.totalFiles === 0) {
+      return progress; // Show blob upload progress initially
+    }
+    // Calculate processing progress based on files
+    return Math.round(((importStatus.processedFilesCount + importStatus.errorFilesCount) / importStatus.totalFiles) * 100);
   };
 
   const getProgressText = () => {
-    return uploadStatus;
+     if (isProcessing && importStatus) {
+         const progressFraction = importStatus.totalFiles > 0 
+           ? `(${(importStatus.processedFilesCount + importStatus.errorFilesCount)}/${importStatus.totalFiles})`
+           : '';
+         if (importStatus.status === 'queued') return `Waiting to process ${importStatus.totalFiles} files...`;
+         if (importStatus.status === 'processing' || importStatus.status === 'pending') { 
+             const currentFileText = importStatus.currentlyProcessingFile 
+               ? `: ${importStatus.currentlyProcessingFile}`
+               : '';
+             return `Processing ${progressFraction}${currentFileText}...`;
+         }
+         // Handle completed/failed states (already done in fetchStatus completion block)
+     }
+     return uploadStatus; // Fallback
   };
+  // --- UI Rendering Logic --- END
 
   // Format date for display
   const formatDate = (date: string | Date | undefined | null) => {
@@ -482,70 +611,78 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     return `${distance.toFixed(1)} km`;
   }
 
-  const renderImportResult = () => {
-    if (!importResult || importResult.success === false) return null;
+  const renderImportSummary = () => {
+    if (!uploadStats) return null;
 
-    const fileTypes = importResult.fileTypes || {};
-    const sortedTypes = Object.entries(fileTypes)
-       .filter(([key]) => key.endsWith('Found'))
-       .map(([key, count]) => ({ 
-          type: key.replace('FilesFound', '').replace('Gz', '.gz'), 
-          count: count as number 
-       }))
-       .filter(item => item.count > 0)
-       .sort((a, b) => b.count - a.count);
+    // Sort activity types by count in descending order
+    const sortedTypes = Object.entries(uploadStats.types || {})
+      .sort(([, countA], [, countB]) => countB - countA);
 
     return (
-      <Card className={`mt-6 ${importResult.errorCount > 0 ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'}`}>
+      <Card className="mt-6 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
         <CardHeader className="pb-2">
-          <CardTitle className={`${importResult.errorCount > 0 ? 'text-orange-800 dark:text-orange-400' : 'text-green-800 dark:text-green-400'} flex items-center gap-2`}>
-            {importResult.errorCount > 0 ? <AlertTriangle className="h-5 w-5" /> : <Check className="h-5 w-5" />}
-            {importResult.errorCount > 0 ? 'Import Finished with Errors' : 'Import Successful'}
+          <CardTitle className="text-green-800 dark:text-green-400 flex items-center gap-2">
+            <Check className="h-5 w-5" />
+            Import Successful
           </CardTitle>
-          <CardDescription className={`${importResult.errorCount > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-green-700 dark:text-green-300'}`}>
-            Imported {importResult.importedCount} of {importResult.totalFiles} activities. Errors: {importResult.errorCount}.
+          <CardDescription className="text-green-700 dark:text-green-300">
+            {uploadStats.count} activities were successfully imported from your Strava archive
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {sortedTypes.length > 0 && (
+        <CardContent>
+          <div className="space-y-4">
+            {uploadStats.earliestDate && uploadStats.latestDate && (
+              <div className="flex items-center gap-2 text-sm">
+                <Calendar className="h-4 w-4 text-green-700 dark:text-green-500" />
+                <span className="text-green-800 dark:text-green-300">
+                  {formatDate(uploadStats.earliestDate)} - {formatDate(uploadStats.latestDate)}
+                </span>
+              </div>
+            )}
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/50 dark:bg-white/5 p-3 rounded-lg">
+                <div className="text-sm text-green-700 dark:text-green-500">Total Distance</div>
+                <div className="text-xl font-bold text-green-900 dark:text-green-300">
+                  {formatDistance(uploadStats.totalDistance)}
+                </div>
+              </div>
+              <div className="bg-white/50 dark:bg-white/5 p-3 rounded-lg">
+                <div className="text-sm text-green-700 dark:text-green-500">Total Duration</div>
+                <div className="text-xl font-bold text-green-900 dark:text-green-300">
+                  {formatDuration(uploadStats.totalDuration)}
+                </div>
+              </div>
+            </div>
+            
             <div className="space-y-2">
-              <h4 className="text-sm font-medium">File Types Processed</h4>
-              <div className="flex flex-wrap gap-2">
-                {sortedTypes.map((item) => (
-                  <Badge key={item.type} variant="secondary" className="font-normal">
-                    {item.type.toUpperCase()}: {item.count}
-                  </Badge>
+              <h4 className="text-sm font-medium text-green-800 dark:text-green-400">Activity Types</h4>
+              <div className="space-y-2">
+                {sortedTypes.map(([type, count]) => (
+                  <div key={type} className="flex items-center gap-2">
+                    <div className="w-8 flex justify-center text-green-700 dark:text-green-500">
+                      {getSportIcon(type) ?? <Shapes className="h-4 w-4" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm capitalize text-green-800 dark:text-green-300">{type}</span>
+                        <span className="text-xs text-green-700 dark:text-green-400">{count}</span>
+                      </div>
+                      <Progress 
+                        value={uploadStats.count > 0 ? (count / uploadStats.count) * 100 : 0} 
+                        className="h-1.5 bg-green-200 dark:bg-green-900" 
+                      />
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
-          )}
-
-          {importResult.errorCount > 0 && importResult.errors && (
-             <Collapsible className="pt-2">
-               <CollapsibleTrigger asChild>
-                 <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground">
-                   Show {importResult.errorCount} Error Details
-                   <ChevronDown className="h-3 w-3 ml-1" />
-                 </Button>
-               </CollapsibleTrigger>
-               <CollapsibleContent>
-                 <ScrollArea className="h-[150px] mt-1 border rounded p-2 bg-background">
-                   <ul className="text-xs space-y-1">
-                     {importResult.errors.map((err: any, index: number) => (
-                       <li key={index} className="break-words">
-                         <strong className="font-medium">{err.file}:</strong> {err.error}
-                       </li>
-                     ))}
-                   </ul>
-                 </ScrollArea>
-               </CollapsibleContent>
-             </Collapsible>
-          )}
+          </div>
         </CardContent>
         <CardFooter>
           <Button 
             variant="outline" 
-            className="w-full"
+            className="w-full border-green-300 text-green-700 hover:bg-green-100 hover:text-green-800 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/50"
             onClick={resetFileInput}
           >
             Import Another Archive
@@ -555,6 +692,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     );
   };
 
+  // Toggle a sync preference
   const toggleSyncPreference = (id: string) => {
     setSyncPreferences(prev => 
       prev.map(item => 
@@ -565,17 +703,21 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     )
   }
   
+  // Save sync preferences
   const saveSyncPreferences = async () => {
     try {
       setIsSavingPreferences(true)
       
+      // Get enabled activity type IDs
       const enabledTypes = syncPreferences
         .filter(item => item.enabled)
         .map(item => item.id)
       
+      // Update preferences
       const result = await updateStravaSyncPreferencesAction(enabledTypes)
       
       if (result.success) {
+        // Refresh the preferences from the server to ensure we have the latest state
         const typesResult = await getSupportedActivityTypes()
         if (typesResult.success && typesResult.activityTypes) {
           setSyncPreferences(typesResult.activityTypes)
@@ -601,14 +743,17 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       })
     } finally {
       setIsSavingPreferences(false)
+      // Close the preferences panel after successful save
       setIsPreferencesOpen(false)
     }
   }
 
+  // Add these functions to handle webhook subscription
   const handleSetupWebhook = async () => {
     try {
       setIsSettingUpWebhook(true)
       
+      // First check if integration is truly valid
       const integrationCheck = await getStravaIntegrationAction()
       if (!integrationCheck.success || !integrationCheck.integration) {
         toast({
@@ -727,6 +872,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       fileInputRef.current.value = ''
     }
     setFile(null)
+    setUploadStats(null) // Reset stats if using summary card
+    setUploadStatus('')
     setProgress(0)
     setError(null)
   }
@@ -839,8 +986,8 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
         </CardContent>
       </Card>
 
-      {/* Import Summary Card (Renders after successful ZIP import) - Removed as it relies on old synchronous flow */}
-      {/* {importResult && renderImportResult()} */}
+      {/* Import Summary Card (Renders after successful ZIP import) */} 
+      {uploadStats && renderImportSummary()}
 
       {/* === STEP 2: Connect for Automatic Sync === */} 
       <Card className="border shadow-sm">
