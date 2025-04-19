@@ -4,6 +4,637 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine, X, Loader2, Waves, Footprints, PersonStanding, Zap, Shapes, AlertTriangle } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Checkbox } from "@/components/ui/checkbox"
+import { getStravaIntegrationAction, syncStravaWorkoutsAction, getSupportedActivityTypes, updateStravaSyncPreferencesAction, getStravaWebhookStatusAction, setupStravaWebhookAction, removeStravaWebhookAction } from "@/lib/strava-actions"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Switch } from "@/components/ui/switch"
+import Link from "next/link"
+import { disconnectStravaAction } from "@/lib/integration-actions"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { v4 as uuidv4 } from 'uuid'
+import { formatDuration } from "@/lib/utils"
+import { InlineSpinner } from "@/components/ui/inline-spinner"
+import { Save } from "lucide-react"
+import { upload } from '@vercel/blob/client'
+import { useSession } from "next-auth/react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+
+interface ImportStats {
+  count: number;
+  types: Record<string, number>;
+  earliestDate: string;
+  latestDate: string;
+  totalDistance: number;
+  totalDuration: number;
+}
+
+interface StravaImportProps {
+  onImportComplete?: () => void;
+}
+
+// --- Define structure for import status polling response --- START
+interface ImportStatusResponse {
+  processingId: string;
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'queued_with_errors';
+  totalFiles: number;
+  processedFilesCount: number;
+  importedFilesCount: number;
+  errorFilesCount: number;
+  currentlyProcessingFile?: string | null; // ADD THIS (optional for backward compat or if not set)
+  errorFiles?: string[]; // Optional list of failed filenames
+  createdAt: string; // ISO string
+  lastUpdated: string; // ISO string
+  originalFilename?: string;
+}
+// --- Define structure for import status polling response --- END
+
+export function StravaImport({ onImportComplete }: StravaImportProps) {
+  const [file, setFile] = useState<File | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStatus, setUploadStatus] = useState<string>('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { toast } = useToast()
+  const [selectedWorkoutTypes, setSelectedWorkoutTypes] = useState<string[]>([])
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  const [stravaIntegration, setStravaIntegration] = useState<any>(null)
+  const [isConnecting, setIsConnecting] = useState(false)
+
+  const [syncPreferences, setSyncPreferences] = useState<{ id: string, label: string, enabled: boolean, disabled?: boolean }[]>([])
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(false)
+  const [isSavingPreferences, setIsSavingPreferences] = useState(false)
+
+  const [webhookStatus, setWebhookStatus] = useState<any>(null)
+  const [isWebhookLoading, setIsWebhookLoading] = useState(false)
+  const [isSettingUpWebhook, setIsSettingUpWebhook] = useState(false)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
+  const [importResult, setImportResult] = useState<any | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const { data: session } = useSession();
+
+  // Load Strava integration and activity types on component mount
+  useEffect(() => {
+    const loadStravaData = async () => {
+      try {
+        setIsLoadingPreferences(true)
+        console.log('[StravaImport] Checking Strava integration status...');
+        const { success: intSuccess, integration } = await getStravaIntegrationAction()
+        console.log('[StravaImport] Integration status result:', { intSuccess, integration });
+        if (intSuccess && integration) {
+          setStravaIntegration(integration)
+          setError(null); // Clear previous errors before re-validating
+          
+          // Verify actual API connectivity
+          try {
+            console.log('[StravaImport] Fetching /api/strava-status...');
+            const response = await fetch('/api/strava-status');
+            const stravaStatus = await response.json();
+            console.log('[StravaImport] /api/strava-status response:', stravaStatus);
+
+            // Check if the API call was successful and if the connection is valid according to the backend
+            if (!stravaStatus.success || !stravaStatus.connected) {
+              console.log('[StravaImport] Strava connection reported as invalid by API status check.');
+              // Construct a more informative error based on the response
+              let errorMsg = stravaStatus.error || 'Your Strava connection appears to be invalid or expired.';
+              if (stravaStatus.account?.tokenValid === false) {
+                errorMsg = 'Your Strava token seems invalid or expired. Please try reconnecting.';
+              } else if (stravaStatus.account?.apiCallSuccess === false) {
+                errorMsg = 'Could not verify connection with Strava API. Please try reconnecting.';
+              }
+              setError(errorMsg + " You may need to disconnect and reconnect your account.");
+              // Optionally, we could set stravaIntegration back to null to force reconnect UI,
+              // but showing an error within the connected view might be better UX.
+              // setStravaIntegration(null);
+            } else {
+              // Connection is valid, ensure no error is shown
+              setError(null);
+              
+              // Check if auto-sync (webhook) is enabled, if not, enable it automatically
+              // by calling loadWebhookStatus first, then setting it up if not already enabled
+              const webhookResult = await getStravaWebhookStatusAction();
+              console.log('[StravaImport] Auto-checking webhook status:', webhookResult);
+              
+              if (webhookResult.success && !webhookResult.subscribed) {
+                console.log('[StravaImport] Auto-enabling webhook/auto-sync on connection');
+                // Auto-enable webhook for the user
+                await handleSetupWebhook();
+              }
+            }
+          } catch (statusError) {
+            console.error('[StravaImport] Error fetching Strava status:', statusError);
+            setError('Could not verify Strava connection status. Please check your network or try again later.');
+            // Don't set error state here - be lenient // <-- Keep this comment? Or set error as above?
+            // Let's set an error here for clarity to the user.
+          }
+        } else {
+          setStravaIntegration(null);
+          setError(null); // Ensure no error if not integrated
+        }
+        
+        console.log('[StravaImport] Fetching supported activity types...');
+        const typesResult = await getSupportedActivityTypes()
+        console.log('[StravaImport] Supported types result:', typesResult);
+        if (typesResult.success && typesResult.activityTypes) {
+           const modifiedTypes = typesResult.activityTypes.map(type => {
+               // Check for strength, weight_training, OR workout ID
+               if (type.id === 'strength' || type.id === 'weight_training' || type.id === 'workout') { 
+                   console.log(`[StravaImport] Forcing type '${type.id}' (${type.label}) to be enabled in preferences list.`);
+                   return { ...type, disabled: false }; // Force enable
+               }
+               return type;
+           });
+           console.log('[StravaImport] Setting modified sync preferences:', modifiedTypes);
+           setSyncPreferences(modifiedTypes); // Set state with modified types
+        } else {
+          console.error('[StravaImport] Failed to load activity types:', typesResult.error);
+           setSyncPreferences([]); // Ensure state is empty on failure
+        }
+      } catch (error) {
+        console.error("[StravaImport] Error loading initial Strava data:", error)
+        setStravaIntegration(null);
+        setSyncPreferences([]);
+      } finally {
+        setIsLoadingPreferences(false)
+      }
+    }
+    loadStravaData()
+  }, [])
+
+  // Handle URL parameters for OAuth flow
+  useEffect(() => {
+    if (searchParams) {
+      const success = searchParams.get('success')
+      const error = searchParams.get('error')
+      const details = searchParams.get('details')
+      
+      if (success === 'strava_connected') {
+        toast({
+          title: "Connected to Strava",
+          description: "Your Strava account is now connected with auto-sync enabled.",
+          variant: "default"
+        });
+        
+        // Refresh the integration status and then setup webhook (if not already done on server)
+        const setupAutoSync = async () => {
+          try {
+            console.log('[StravaImport] Refreshing integration after connect...');
+            const { success, integration } = await getStravaIntegrationAction();
+            if (success && integration) {
+              setStravaIntegration(integration);
+              
+              // Check webhook status first
+              const webhookResult = await getStravaWebhookStatusAction();
+              console.log('[StravaImport] Checking webhook status:', webhookResult);
+              
+              if (!webhookResult.subscribed) {
+                console.log('[StravaImport] Auto-sync not enabled yet, setting up...');
+                // Try to set up webhook if not already done on server
+                const setupResult = await setupStravaWebhookAction();
+                if (setupResult.success) {
+                  setWebhookStatus({ 
+                    subscribed: true, 
+                    success: true, 
+                    subscription: setupResult.subscription
+                  });
+                } else {
+                  console.error('[StravaImport] Failed to set up webhook on client:', setupResult.error);
+                  setWebhookStatus({ 
+                    subscribed: false, 
+                    success: false, 
+                    error: setupResult.error
+                  });
+                }
+              } else {
+                // Webhook is already set up, just update UI
+                setWebhookStatus(webhookResult);
+                console.log('[StravaImport] Auto-sync already enabled');
+              }
+            }
+          } catch (error) {
+            console.error("Error during post-connection setup:", error);
+          }
+        };
+        
+        setupAutoSync(); // Call the async function
+        
+        // Clear the URL parameters to avoid showing the message again on refresh
+        router.replace('/integrations', { scroll: false })
+      } else if (error) {
+        let errorMessage = "Failed to connect to Strava";
+        let errorDescription = "Please try again or contact support if the issue persists.";
+        
+        // Handle specific error cases
+        switch (error) {
+          case 'strava_auth_failed':
+            errorMessage = "Strava authentication failed";
+            errorDescription = "Please check your Strava API credentials (Client ID and Client Secret) are correctly configured.";
+            break;
+          case 'strava_config_error':
+            errorMessage = "Strava configuration error";
+            errorDescription = details ? 
+              `Configuration issues detected: ${details}` : 
+              "Your Strava integration is not properly configured. Check environment variables.";
+            break;
+          case 'strava_invalid_code':
+            errorMessage = "Invalid authorization code";
+            errorDescription = "The authorization code may have expired or already been used. Please try connecting again.";
+            break;
+          case 'strava_network_error':
+            errorMessage = "Network connection error";
+            errorDescription = "Could not connect to Strava API. Please check your internet connection and try again.";
+            break;
+          case 'no_code':
+            errorMessage = "No authorization code received";
+            errorDescription = "The authorization process was interrupted. Please try again.";
+            break;
+          case 'strava_callback_failed':
+            errorMessage = "Error processing Strava callback";
+            errorDescription = "There was an error while connecting to Strava. Please try again later.";
+            break;
+          case 'failed_to_exchange_code_for_token':
+            errorMessage = "Failed to get Strava access token";
+            errorDescription = "Check that your Strava account is active and try again.";
+            break;
+          default:
+            if (error.includes('token') || error.includes('auth')) {
+              errorMessage = "Strava authorization error";
+              errorDescription = "There was an issue authorizing with Strava. Please ensure your Strava account is active.";
+            }
+        }
+        
+        toast({
+          title: errorMessage,
+          description: errorDescription,
+          variant: "destructive"
+        });
+        
+        // Clear the URL parameters to avoid showing the message again on refresh
+        router.replace('/integrations', { scroll: false })
+      }
+    }
+  }, [searchParams, router, toast])
+
+  // Handle connect to Strava
+  const handleConnectStrava = () => {
+    setIsConnecting(true)
+    
+    try {
+      // Use direct redirect to Strava OAuth page
+      window.location.href = `/api/strava/authorize`
+    } catch (error) {
+      console.error("Error connecting to Strava:", error)
+      toast({
+        title: "Error",
+        description: "Failed to connect to Strava. Check console for details.",
+        variant: "destructive"
+      })
+      setIsConnecting(false)
+    }
+  }
+
+  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    if (fileList && fileList.length > 0) {
+      const selected = fileList[0];
+      console.log('[handleFileChange] File selected:', selected.name, selected.size);
+      // Check file type first
+      if (!selected.name.endsWith('.zip')) {
+        toast({
+          title: "Invalid file type",
+          description: "Please select a ZIP file containing your Strava export.",
+          variant: "destructive"
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      
+      // Validate file size - allow up to 10MB to handle typical Strava exports
+      const MAX_FILE_SIZE_MB = 10;
+      const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+      if (selected.size > MAX_FILE_SIZE_BYTES) {
+        toast({
+          title: "File too large",
+          description: `Maximum file size is ${MAX_FILE_SIZE_MB}MB. Try selecting fewer activities when exporting from Strava.`,
+          variant: "destructive"
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      setFile(selected);
+      console.log('[handleFileChange] File state set:', selected.name);
+    } else {
+      // If user cancels file selection
+      console.log('[handleFileChange] File selection cancelled or no file.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [toast]);
+
+  const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!file) { 
+      console.error('[handleUpload] Exiting: No file in state.');
+      setError("Please select a file first.");
+      toast({ title: "No File Selected", description: "Please choose a ZIP file to upload.", variant: "destructive" }); 
+      return;
+    }
+    if (!session?.user?.id) {
+      console.error('[handleUpload] Exiting: User session not available.');
+      setError("Authentication error. Please refresh and try again.");
+      toast({ title: "Authentication Error", description: "Could not get user ID from session.", variant: "destructive" });
+      return;
+    }
+    const userId = session.user.id;
+    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const pathname = `strava-imports/${userId}/${Date.now()}-${safeFilename}`;
+    
+    setIsLoading(true);
+    setUploadStatus("Starting upload...");
+    setError(null);
+    setUploadProgress(0);
+    setImportResult(null);
+
+    try {
+        console.log('[Upload] Starting upload via client helper for path:', pathname);
+        setUploadStatus("Uploading file...");
+        
+        const newBlob = await upload(pathname, file, {
+            access: 'public',
+            handleUploadUrl: '/api/strava/handle-blob-upload',
+            onUploadProgress: (event) => {
+                const progressPercent = event.percentage;
+                setUploadProgress(progressPercent);
+                setUploadStatus(`Uploading... ${progressPercent.toFixed(0)}%`);
+            },
+        });
+        console.log('[Upload] Client upload complete:', newBlob);
+        
+        setUploadStatus("Upload complete. Processing archive... This may take several minutes.");
+        setUploadProgress(100);
+        
+        console.log('Triggering backend synchronous import process with pathname:', newBlob.pathname);
+        const importResponse = await fetch('/api/strava/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                blobPathname: newBlob.pathname,
+                originalFilename: file.name
+            })
+          });
+          
+        const importData = await importResponse.json();
+        console.log('Synchronous backend import process finished:', importData);
+        setImportResult(importData);
+          
+        if (!importResponse.ok || !importData.success) {
+            throw new Error(importData.error || 'Import process failed on the server.');
+        }
+
+        setUploadStatus(importData.message || `Import finished.`);
+        if (importData.errorCount > 0) {
+             toast({
+                variant: "warning",
+                title: "Import Completed with Errors",
+                description: `Imported ${importData.importedCount}, Errors: ${importData.errorCount}. Check details below.`,
+             });
+        } else {
+             toast({ title: "Import Successful", description: importData.message });
+             if (onImportComplete) {
+                 onImportComplete();
+             }
+        }
+
+    } catch (err: any) {
+        console.error("Upload/Import Error:", err);
+        const errorMessage = err.message || "An unknown error occurred during upload or import.";
+        setError(errorMessage);
+        setUploadStatus('Import failed.'); 
+        setImportResult(null);
+        toast({
+            variant: "destructive",
+            title: "Import Failed",
+            description: errorMessage,
+        });
+    } finally {
+        setIsLoading(false);
+        setUploadProgress(0);
+    }
+  }, [toast, file, session, onImportComplete]); 
+
+  const getProgressPercent = () => {
+    return uploadProgress;
+  };
+
+  const getProgressText = () => {
+    return uploadStatus;
+  };
+
+  // Format date for display
+  const formatDate = (date: string | Date | undefined | null) => {
+    if (!date) return "Never";
+    try {
+      return new Date(date).toLocaleString();
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Invalid date";
+    }
+  }
+
+  const getSportIcon = (type: string) => {
+    switch (type.toLowerCase()) {
+      case 'running':
+        return <Activity className="h-4 w-4" />;
+      case 'cycling':
+      case 'ride':
+      case 'bike':
+        return <Bike className="h-4 w-4" />;
+      case 'strength':
+      case 'weight_training':
+        return <Dumbbell className="h-4 w-4" />;
+      case 'swimming':
+      case 'swim':
+        return <Waves className="h-4 w-4" />;
+      case 'walking':
+      case 'hike':
+      case 'hiking':
+        return <Footprints className="h-4 w-4" />;
+      case 'flexibility':
+      case 'yoga':
+        return <PersonStanding className="h-4 w-4" />;
+      case 'hiit':
+        return <Zap className="h-4 w-4" />;
+      case 'other':
+      default:
+        return <Shapes className="h-4 w-4" />;
+    }
+  }
+
+  const formatDistance = (distance: number) => {
+    return `${distance.toFixed(1)} km`;
+  }
+
+  const renderImportResult = () => {
+    if (!importResult || importResult.success === false) return null;
+
+    const fileTypes = importResult.fileTypes || {};
+    const sortedTypes = Object.entries(fileTypes)
+       .filter(([key]) => key.endsWith('Found'))
+       .map(([key, count]) => ({ 
+          type: key.replace('FilesFound', '').replace('Gz', '.gz'), 
+          count: count as number 
+       }))
+       .filter(item => item.count > 0)
+       .sort((a, b) => b.count - a.count);
+
+    return (
+      <Card className={`mt-6 ${importResult.errorCount > 0 ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'}`}>
+        <CardHeader className="pb-2">
+          <CardTitle className={`${importResult.errorCount > 0 ? 'text-orange-800 dark:text-orange-400' : 'text-green-800 dark:text-green-400'} flex items-center gap-2`}>
+            {importResult.errorCount > 0 ? <AlertTriangle className="h-5 w-5" /> : <Check className="h-5 w-5" />}
+            {importResult.errorCount > 0 ? 'Import Finished with Errors' : 'Import Successful'}
+          </CardTitle>
+          <CardDescription className={`${importResult.errorCount > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-green-700 dark:text-green-300'}`}>
+            Imported {importResult.importedCount} of {importResult.totalFiles} activities. Errors: {importResult.errorCount}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {sortedTypes.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">File Types Processed</h4>
+              <div className="flex flex-wrap gap-2">
+                {sortedTypes.map((item) => (
+                  <Badge key={item.type} variant="secondary" className="font-normal">
+                    {item.type.toUpperCase()}: {item.count}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {importResult.errorCount > 0 && importResult.errors && (
+             <Collapsible className="pt-2">
+               <CollapsibleTrigger asChild>
+                 <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground">
+                   Show {importResult.errorCount} Error Details
+                   <ChevronDown className="h-3 w-3 ml-1" />
+                 </Button>
+               </CollapsibleTrigger>
+               <CollapsibleContent>
+                 <ScrollArea className="h-[150px] mt-1 border rounded p-2 bg-background">
+                   <ul className="text-xs space-y-1">
+                     {importResult.errors.map((err: any, index: number) => (
+                       <li key={index} className="break-words">
+                         <strong className="font-medium">{err.file}:</strong> {err.error}
+                       </li>
+                     ))}
+                   </ul>
+                 </ScrollArea>
+               </CollapsibleContent>
+             </Collapsible>
+          )}
+        </CardContent>
+        <CardFooter>
+          <Button 
+            variant="outline" 
+            className="w-full"
+            onClick={resetFileInput}
+          >
+            Import Another Archive
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  };
+
+  const toggleSyncPreference = (id: string) => {
+    setSyncPreferences(prev => 
+      prev.map(item => 
+        item.id === id && !item.disabled 
+          ? { ...item, enabled: !item.enabled } 
+          : item
+      )
+    )
+  }
+  
+  const saveSyncPreferences = async () => {
+    try {
+      setIsSavingPreferences(true)
+      
+      const enabledTypes = syncPreferences
+        .filter(item => item.enabled)
+        .map(item => item.id)
+      
+      const result = await updateStravaSyncPreferencesAction(enabledTypes)
+      
+      if (result.success) {
+        const typesResult = await getSupportedActivityTypes()
+        if (typesResult.success && typesResult.activityTypes) {
+          setSyncPreferences(typesResult.activityTypes)
+        }
+        
+        toast({
+          title: "Success",
+          description: "Sync preferences updated"
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to update preferences",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error("Error saving preferences:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSavingPreferences(false)
+      setIsPreferencesOpen(false)
+    }
+  }
+
+  const handleSetupWebhook = async () => {
+    try {
+      setIsSettingUpWebhook(true)
+      
+      const integrationCheck = await getStravaIntegrationAction()
+      if (!integrationCheck.success || !integrationCheck.integration) {
+        toast({
+          title: "Connection Error",
+          description: "Your Strava connection appears to be invalid. Please disconnect and reconnect your account.",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      const result = await setupStravaWebhookAction()
+      
+      if (result.success) {
+        setWebhookStatus({
+          success: true,
+          subscribed: true,
+          subscription: result.subscription
+        })
+        
+        toast({
+"use client"
+
+import { useState, useRef, useEffect, useCallback } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Upload, Info, ArrowRight, Check, Calendar, Activity, Bike, Dumbbell, RefreshCw, ArrowLeftRight, FileUp, ArrowDownToLine, ChevronDown, ChevronUp, ArrowUpToLine, X, Loader2, Waves, Footprints, PersonStanding, Zap, Shapes } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
