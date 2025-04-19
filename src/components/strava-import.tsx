@@ -971,10 +971,11 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
               </div>
             )}
 
-            {(isLoading || progress > 0) && (
+            {/* Use simpler condition, rely solely on isProcessing state */}
+            {isProcessing && ( 
               <div className="space-y-1 pt-2">
-                <Progress value={progress} className="w-full h-2" aria-label={`Upload progress: ${progress}%`} />
-                <p className="text-sm text-muted-foreground text-center h-4">{uploadStatus}</p>
+                <Progress value={getProgressPercent()} className="w-full h-2" aria-label={`Upload progress: ${getProgressPercent()}%`} />
+                <p className="text-sm text-muted-foreground text-center h-4">{getProgressText()}</p> 
               </div>
             )}
           </form>
