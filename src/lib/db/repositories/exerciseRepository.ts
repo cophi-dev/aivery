@@ -2,6 +2,8 @@ import { ObjectId } from "mongodb"
 import dbConnect from '../mongodb'
 import ExerciseModel, { IExercise } from '../models/exercise'
 import type { ExerciseData } from "@/types/db"
+import WorkoutExerciseModel from "../models/workoutExercise"
+import { isValidObjectId } from 'mongoose'
 
 // Convert Mongoose document to ExerciseData
 function convertDocToExerciseData(doc: any): ExerciseData {
@@ -20,20 +22,34 @@ function convertDocToExerciseData(doc: any): ExerciseData {
   };
 }
 
-// Get all exercises
+// Get all exercises THAT HAVE BEEN USED in a workout
 export async function getAllExercises(): Promise<ExerciseData[]> {
   try {
     await dbConnect()
     
-    const exerciseDocs = await ExerciseModel.find()
+    // 1. Find all distinct exercise IDs from WorkoutExercise collection
+    const usedExerciseIds = await WorkoutExerciseModel.distinct('exerciseId')
+    
+    // Filter out any potential invalid ObjectIds that might have crept in
+    const validUsedExerciseIds = usedExerciseIds.filter(id => isValidObjectId(id))
+
+    if (validUsedExerciseIds.length === 0) {
+        console.log("No exercises found that have been used in workouts.")
+        return [] // Return empty if no exercises have been used
+    }
+
+    // 2. Find all Exercise documents where the _id is in the list of used IDs
+    const exerciseDocs = await ExerciseModel.find({
+      _id: { $in: validUsedExerciseIds }
+    })
       .sort({ name: 1 })
       .lean()
       .exec()
 
     return exerciseDocs.map(doc => convertDocToExerciseData(doc));
   } catch (error) {
-    console.error('Error getting exercises:', error)
-    throw new Error('Failed to get exercises')
+    console.error('Error getting used exercises:', error)
+    throw new Error('Failed to get used exercises')
   }
 }
 

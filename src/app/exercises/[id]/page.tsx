@@ -32,6 +32,7 @@ import {
 import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { LoadingIndicator } from "@/components/ui/loading-indicator"
+import Image from "next/image"
 
 // Fallback data if no history is available
 // const fallbackHistoryData = [
@@ -67,48 +68,63 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   const [muscleGroups, setMuscleGroups] = useState<string[]>([])
   
   useEffect(() => {
-    async function loadExercise() {
+    let isMounted = true
+    
+    async function loadExerciseAndHistory() {
       try {
         setIsLoading(true)
+        setError("")
+
         const exerciseData = await fetchExercise(params.id)
         
         if (!exerciseData) {
-          setError("Exercise not found")
+          if (isMounted) setError("Exercise not found")
           return
         }
         
-        setExercise(exerciseData)
-        
-        // Also populate edit form fields
-        setName(exerciseData.name)
-        setDescription(exerciseData.description || "")
-        setCategory(exerciseData.category as "strength" | "cardio" | "flexibility")
-        setEquipment(exerciseData.equipment || "")
-        setInstructions(exerciseData.instructions || "")
-        setMuscleGroups(exerciseData.muscleGroups || [])
-        
-        // Load exercise history
-        try {
-          const historyData = await getExerciseHistory(params.id)
-          setHistory(historyData)
+        if (isMounted) {
+          setExercise(exerciseData)
           
-          // Process history data for charts
-          processHistoryData(historyData)
-        } catch (historyErr) {
-          console.error("Error loading exercise history:", historyErr)
-          // Use fallback data if real data is not available - REMOVED
-          // setChartData(fallbackHistoryData) 
-          setError("Failed to load exercise history") // Set error instead
+          // Also populate edit form fields
+          setName(exerciseData.name)
+          setDescription(exerciseData.description || "")
+          setCategory(exerciseData.category as "strength" | "cardio" | "flexibility")
+          setEquipment(exerciseData.equipment || "")
+          setInstructions(exerciseData.instructions || "")
+          setMuscleGroups(exerciseData.muscleGroups || [])
+          
+          // Fetch history (no longer fetching API details here)
+          try {
+            const historyData = await getExerciseHistory(params.id)
+            if (isMounted) {
+              setHistory(historyData)
+              processHistoryData(historyData)
+            }
+          } catch (historyErr) {
+            console.error("Error loading exercise history:", historyErr)
+            if (isMounted) {
+              setHistory([])
+              processHistoryData([])
+            }
+          }
         }
+        
       } catch (err) {
-        setError("Failed to load exercise")
-        console.error(err)
+        console.error("Failed to load exercise page data:", err)
+        if (isMounted) setError("Failed to load exercise data. Please try again.")
       } finally {
-        setIsLoading(false)
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
     }
     
-    loadExercise()
+    loadExerciseAndHistory()
+
+    // Cleanup function to set isMounted to false when the component unmounts
+    return () => {
+      isMounted = false
+    }
   }, [params.id])
   
   // Process workout history data for display and charts
@@ -330,6 +346,20 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                 <CardTitle>About this Exercise</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {exercise.apiGifUrl ? (
+                  <div className="mb-4 bg-muted rounded-md overflow-hidden flex justify-center items-center aspect-video relative">
+                    <Image 
+                      src={exercise.apiGifUrl} 
+                      alt={`${exercise.name} demonstration GIF`} 
+                      layout="fill"
+                      objectFit="contain"
+                      unoptimized={true}
+                    />
+                  </div>
+                ) : (
+                   <div className="mb-4 text-center p-4 text-muted-foreground text-sm">No visual available.</div>
+                )}
+
                 <div>
                   <h3 className="font-medium mb-1">Category</h3>
                   <p className="capitalize">{exercise.category}</p>
@@ -353,17 +383,18 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                   </div>
                 )}
                 
-                {exercise.description && (
-                  <div>
-                    <h3 className="font-medium mb-1">Description</h3>
-                    <p>{exercise.description}</p>
-                  </div>
+                {(exercise.apiDescription || exercise.instructions) && (
+                   <div>
+                     <h3 className="font-medium mb-1">Instructions</h3>
+                     <p className="whitespace-pre-line">
+                       {exercise.apiDescription || exercise.instructions}
+                     </p>
+                   </div>
                 )}
                 
-                {exercise.instructions && (
-                  <div>
-                    <h3 className="font-medium mb-1">Instructions</h3>
-                    <p className="whitespace-pre-line">{exercise.instructions}</p>
+                {exercise.description && !(exercise.apiDescription || exercise.instructions) && (                  <div>
+                    <h3 className="font-medium mb-1">Description</h3>
+                    <p>{exercise.description}</p>
                   </div>
                 )}
               </CardContent>

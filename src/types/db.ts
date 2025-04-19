@@ -141,8 +141,11 @@ export interface ExerciseData {
   category: "strength" | "cardio" | "flexibility";
   equipment?: string;
   instructions?: string;
+  userId?: string;
   createdAt: string;
   updatedAt: string;
+  apiDescription?: string;
+  apiGifUrl?: string;
 }
 
 export interface WorkoutExerciseData {
