@@ -390,21 +390,24 @@ export default function NewWorkoutPage() {
     return Array.from(new Set([...exercisesInCurrentWorkout, ...dbExercises]));
   }, [workoutType, dbExercises, exercises]);
 
-  // Fetch used exercises from DB on mount
+  // Fetch ALL exercises from DB on mount
   useEffect(() => {
-    const loadUsedExercises = async () => {
+    const loadAllExercises = async () => { // Renamed function
       try {
-        console.log("Fetching used exercises...");
-        const fetchedExercises = await fetchExercises(); // This now gets only USED exercises
-        console.log(`Fetched ${fetchedExercises.length} used exercises.`);
+        setIsLoadingData(true); // Add loading state indication
+        console.log("Fetching ALL exercises..."); // Updated log
+        const fetchedExercises = await searchAllExercisesAction(""); // Use searchAll with empty query
+        console.log(`Fetched ${fetchedExercises.length} total exercises.`); // Updated log
         setDbExercises(fetchedExercises);
         setDbExercisesMap(new Map(fetchedExercises.map(ex => [ex.name, ex]))); 
       } catch (err) {
-        console.error("Failed to fetch used exercises:", err);
+        console.error("Failed to fetch all exercises:", err); // Updated log
         setError("Could not load initial exercises list.");
+      } finally {
+         setIsLoadingData(false); // Ensure loading state is turned off
       }
     };
-    loadUsedExercises();
+    loadAllExercises(); // Call the renamed function
   }, []); // Run only once on mount
 
   // --- NEW Effect for searching ALL exercises ---
