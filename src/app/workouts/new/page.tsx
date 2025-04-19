@@ -168,6 +168,7 @@ const findCanonicalExercise = (
   console.log(`[findCanonicalExercise] Checking direct match against ${dbExercises.length} DB exercises...`);
   let foundExercise = dbExercises.find(ex => {
       const normalizedDbName = normalizeName(ex.name);
+      console.log(`[findCanonicalExercise] Comparing "${normalizedParsedName}" with DB "${ex.name}" (Normalized: "${normalizedDbName}")`);
       return normalizedDbName === normalizedParsedName;
   });
 
@@ -194,6 +195,7 @@ const findCanonicalExercise = (
     console.log(`[findCanonicalExercise] Checking DB match against normalized alias target...`);
     foundExercise = dbExercises.find(ex => {
         const normalizedDbName = normalizeName(ex.name);
+        console.log(`[findCanonicalExercise] Comparing normalized target "${normalizedAliasTarget}" with DB "${ex.name}" (Normalized: "${normalizedDbName}")`);
         return normalizeName(ex.name) === normalizedAliasTarget;
     });
     if (foundExercise) {
@@ -1083,7 +1085,7 @@ export default function NewWorkoutPage() {
         </div>
 
         {/* NEW: AI Quick Log Section */}
-        <div className="space-y-4 rounded-md border p-4 md:p-6">
+        <div className="space-y-4 rounded-md border p-4 md:p-6 opacity-50 cursor-not-allowed">
           <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
           <div>
             <Label htmlFor="ai-quick-log">Paste your workout log</Label>
@@ -1091,20 +1093,19 @@ export default function NewWorkoutPage() {
               id="ai-quick-log"
               placeholder="e.g., Squats: 1x5 60 kg, 3x5 50 kg, Bench Press: 4x5 60 kg..."
               className="mt-1 min-h-[80px]"
-              value={aiLogInput} // Bind value to state
-              onChange={(e) => setAiLogInput(e.target.value)} // Update state on change
-              disabled={isProcessingAi || isSubmitting} // Disable if AI is working or form is submitting
+              value={aiLogInput} 
+              onChange={(e) => setAiLogInput(e.target.value)} 
+              disabled={true} // <-- Always disabled for now
             />
-            <p className="text-sm text-muted-foreground mt-1">Enter your workout details in a simple format.</p>
+            <p className="text-sm text-muted-foreground mt-1">Enter your workout details in a simple format. (Temporarily Disabled)</p> {/* Added note */}
           </div>
           <Button 
             type="button" 
-            onClick={() => handleAiProcess(aiLogInput)} // Pass only the input string now
-            disabled={isSubmitting || isProcessingAi || !aiLogInput.trim() || isLoadingData || dbExercises.length === 0} // Added check for isLoadingData and dbExercises length
+            onClick={() => handleAiProcess(aiLogInput)} 
+            disabled={true} // <-- Always disabled for now
             variant="outline"
           >
-            {/* Also check isLoadingData or dbExercises length for button text/state */}
-            {isProcessingAi ? "Processing..." : (isLoadingData || dbExercises.length === 0) ? "Loading Exercises..." : "Process with AI"} 
+            Process with AI {/* Removed dynamic text, it's always disabled */}
           </Button>
         </div>
         {/* END NEW: AI Quick Log Section */}
