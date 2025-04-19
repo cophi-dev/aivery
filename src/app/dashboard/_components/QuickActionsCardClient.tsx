@@ -34,14 +34,13 @@ export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
 
     // Handler for reviewing this week's workouts
     const handleReviewWeek = () => {
-        console.log("Triggering weekly review...");
-        const context = {
-            requestType: 'generate_weekly_review'
-        };
-        const userQuery = "Hey, can you review my workouts from this week?";
-
         // Check if the function is available before calling
         if (typeof sendAiMessage === 'function') {
+            console.log("Triggering weekly review...");
+            const context = {
+                requestType: 'generate_weekly_review'
+            };
+            const userQuery = "Can you review my performance and progress from the last completed week?"; // Slightly different query for dashboard context
             sendAiMessage(userQuery, context);
         } else {
             console.error('sendAiMessage function was not provided or is not a function.');

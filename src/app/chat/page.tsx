@@ -368,10 +368,9 @@ export default function ChatPage() {
   // Placeholder for the new button's action
   const handleReviewRequest = useCallback(() => {
     if (isLoading) return; // Don't send if already loading
-    console.log("Weeks Review button clicked");
-    // TODO: Implement the actual logic for weekly review request
-    // This might involve calling sendMessage with specific context, similar to handlePlanRequest
-    // e.g., sendMessage("Can you review my last week's performance?", { requestType: 'generate_weekly_review' });
+    const userQuery = "Can you review my last week's performance and progress?";
+    const context = { requestType: 'generate_weekly_review' };
+    sendMessage(userQuery, context);
   }, [isLoading, sendMessage]);
 
   // --- Render JSX ---
