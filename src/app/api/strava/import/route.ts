@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mime from 'mime';
 import { processFitFile, processGpxFile, processTcxFile, ProcessedActivityData } from '@/lib/services/stravaArchiveService';
 import { transformStravaActivity } from '@/lib/services/stravaService';
-import { createCardioWorkout } from '@/lib/workout-actions';
+import { createCardioWorkout, updateUserWorkoutSummaries, updateExercisePRs } from '@/lib/workout-actions';
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 
@@ -235,6 +235,22 @@ export async function POST(request: NextRequest) {
     // --- SYNCHRONOUS PROCESSING LOOP --- END
 
     // --- Final Actions --- 
+    
+    // --- Batch Update PRs & Summaries --- START
+    try {
+      console.log("Starting batch update of PRs and Summaries...");
+      // Ensure DB connection is still good before these potentially heavy operations
+      await dbConnect(); 
+      await updateUserWorkoutSummaries(userId);
+      await updateExercisePRs(userId); // Process all workouts for the user
+      console.log("Finished batch update of PRs and Summaries.");
+    } catch (prError) {
+      console.error("!!! Error during batch PR/Summary update after import:", prError);
+      // Log error but don't fail the entire import response
+      processingResults.errors.push({ file: "Batch PR Update", error: prError instanceof Error ? prError.message : String(prError) });
+    }
+    // --- Batch Update PRs & Summaries --- END
+
     // Delete original archive blob from storage
     if (blobUrlToDelete) {
         try {

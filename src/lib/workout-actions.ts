@@ -1332,14 +1332,6 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
     // Update user's workouts array
     await updateUserWorkouts(data.userId, workout._id);
 
-    // --- Update User Summaries ---
-    if (workout) {
-      await updateUserWorkoutSummaries(data.userId);
-      // Also update Exercise PRs (process only this new workout)
-      await updateExercisePRs(data.userId, workout._id.toString());
-    }
-    // --- End Update User Summaries ---
-
     return workout;
   } catch (error) {
     console.error('Error creating cardio workout:', error);
