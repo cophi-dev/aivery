@@ -82,8 +82,14 @@ const QueryAnalysisSchema = z.object({
     metric: ValidMetrics.optional(),
     workout_type: ValidWorkoutTypes.optional(),
     period: ValidPeriods.optional(), // Use the updated ValidPeriods enum
-    explicit_start_date: z.string().datetime().optional(),
-    explicit_end_date: z.string().datetime().optional(),
+    explicit_start_date: z.union([
+      z.string().datetime(), // Keep original datetime check
+      z.string().regex(/^\d{4}-\d{2}-\d{2}$/) // Add YYYY-MM-DD check
+    ]).optional(),
+    explicit_end_date: z.union([
+      z.string().datetime(), // Keep original datetime check
+      z.string().regex(/^\d{4}-\d{2}-\d{2}$/) // Add YYYY-MM-DD check
+    ]).optional(),
     comparison_period: ValidPeriods.optional(), // comparison_period can also now potentially be next_week if needed later
     record_qualifier: z.string().optional(),
     workout_identifier: z.string().optional(),
@@ -1226,8 +1232,13 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
             const explanation = await getDirectTextResponse(explanationQuery, userId); 
             if (explanation) {
                  return NextResponse.json({ response: explanation, data: null });
+            } else {
+                // If explanation is null or empty, it means the direct response failed.
+                // Return a specific error instead of falling through.
+                console.warn(`[POST] Failed to get direct explanation for keyword: ${keyword}`);
+                return NextResponse.json({ response: `Sorry ${userName}, I had trouble explaining "${keyword}" right now. Please try again later or ask about your workouts.`, data: null });
             }
-            // Fall through to standard analysis if direct explanation fails
+            // Fall through removed
         }
 
 
