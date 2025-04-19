@@ -23,10 +23,11 @@ export function SubscriptionStatus() { // Export the function
                     return res.json();
                 })
                 .then(data => {
-                    setCurrentPlan(data.user?.tier || 'Free');
+                    const fetchedTier = data.user?.tier || 'Free';
+                    setCurrentPlan(fetchedTier.toLowerCase());
                 })
                 .catch(err => {
-                     console.error("Failed to fetch user data:", err);
+                     console.error("[SubscriptionStatus] Failed to fetch user data:", err);
                      setCurrentPlan('Error loading plan'); 
                 })
                 .finally(() => {
@@ -80,7 +81,7 @@ export function SubscriptionStatus() { // Export the function
         );
     }
 
-    const isSubscribed = currentPlan && currentPlan !== 'Free' && currentPlan !== 'Error loading plan' && currentPlan !== null;
+    const isSubscribed = currentPlan && currentPlan !== 'free' && currentPlan !== 'error loading plan' && currentPlan !== null;
 
     return (
         <div className="mb-6 p-4 border rounded-lg bg-white dark:bg-card dark:border-border shadow-sm">

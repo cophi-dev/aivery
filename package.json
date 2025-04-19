@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push --config=./drizzle.config.ts",
     "db:generate": "drizzle-kit generate --config=./drizzle.config.ts",
     "test:api": "node scripts/test-endpoints.js",
-    "test:grok": "node scripts/test-grok.js"
+    "test:grok": "node scripts/test-grok.js",
+    "db:seed": "dotenv -e .env.local -- npx ts-node scripts/seed-exercises.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.7",

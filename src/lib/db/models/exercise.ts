@@ -10,6 +10,9 @@ export interface IExercise extends Document {
   createdAt: Date
   updatedAt: Date
   trackMaxReps?: boolean
+  userId: mongoose.Types.ObjectId
+  apiDescription: string
+  apiGifUrl: string
 }
 
 const ExerciseSchema: Schema = new Schema(
@@ -26,6 +29,9 @@ const ExerciseSchema: Schema = new Schema(
     equipment: { type: [String] },
     instructions: { type: String },
     trackMaxReps: { type: Boolean, default: false },
+    userId: { type: Schema.Types.ObjectId, ref: 'User' },
+    apiDescription: { type: String, required: false },
+    apiGifUrl: { type: String, required: false },
   },
   { timestamps: true },
 )
