@@ -188,6 +188,7 @@ async function processZipFileMoreReliably(zipFilePath: string, originalFilename:
       activityFiles: uploadedFilesData.map(f => f.relativePath), 
       processedFiles: [] as string[], importedFiles: [] as string[], errorFiles: [] as string[],
       totalFiles: totalFiles, 
+      currentlyProcessingFile: null,
       originalArchiveBlobPathname: originalArchiveBlobPathname, // Store original archive path for final deletion
       activityBlobPathPrefix: `strava-imports/${userId}/${processingId}/activities/` // Store prefix for worker convenience?
     };

@@ -36,7 +36,7 @@ interface StravaImportProps {
   onImportComplete?: () => void;
 }
 
-// --- NEW: Define structure for import status polling response ---
+// --- Define structure for import status polling response --- START
 interface ImportStatusResponse {
   processingId: string;
   status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'queued_with_errors';
@@ -44,12 +44,13 @@ interface ImportStatusResponse {
   processedFilesCount: number;
   importedFilesCount: number;
   errorFilesCount: number;
+  currentlyProcessingFile?: string | null; // ADD THIS (optional for backward compat or if not set)
   errorFiles?: string[]; // Optional list of failed filenames
   createdAt: string; // ISO string
   lastUpdated: string; // ISO string
   originalFilename?: string;
 }
-// --- END NEW ---
+// --- Define structure for import status polling response --- END
 
 export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [file, setFile] = useState<File | null>(null)
@@ -82,6 +83,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
   const [processingId, setProcessingId] = useState<string | null>(null); // Stores the ID of the current import process
   const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null); // Stores the latest status from the API
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store the interval ID
+  const LOCAL_STORAGE_KEY = 'stravaImportProcessingId'; // Key for localStorage
   // --- END NEW STATE ---
 
   const { data: session } = useSession(); // Get session data
@@ -344,7 +346,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
   }, [toast]);
 
-  // --- POLLING LOGIC ---
+  // --- POLLING LOGIC --- START
   const fetchStatus = useCallback(async (currentProcessingId: string) => {
     if (!currentProcessingId) return;
 
@@ -354,10 +356,14 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
             if (!response.ok) {
         // Handle non-2xx responses (e.g., 404 if ID not found yet)
         if (response.status === 404) {
-             console.warn(`[Polling] Status not found yet for ${currentProcessingId}, will retry.`);
-             // Keep existing status or set to 'pending'
-             setImportStatus(prev => prev || { status: 'pending', totalFiles: 0 } as any);
-             return; // Don't throw, just wait for next poll
+             console.warn(`[Polling] Status not found for ${currentProcessingId}, stopping polling and clearing ID.`);
+             stopPolling(false); // Pass false to not clear UI state yet
+             localStorage.removeItem(LOCAL_STORAGE_KEY);
+             setProcessingId(null);
+             setIsProcessing(false);
+             setError("Import process not found. It might have expired or been removed.");
+             setUploadStatus("Import not found.");
+             return;
         }
         throw new Error(`Status fetch failed: ${response.statusText}`);
       }
@@ -368,11 +374,11 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       // Check for completion or failure to stop polling
       if (data.status === 'completed' || data.status === 'failed' || data.status === 'queued_with_errors') {
         console.log(`[Polling] Status is ${data.status}, stopping polling for ${currentProcessingId}.`);
-        stopPolling();
+        stopPolling(); // Will clear localStorage
         setIsProcessing(false);
-        setProcessingId(null); // Clear processing ID once done
+        setProcessingId(null); 
         if (onImportComplete && data.status === 'completed') {
-             onImportComplete(); // Notify parent if needed
+             onImportComplete(); 
         }
         // Update final upload status message based on result
         if (data.status === 'completed') {
@@ -387,45 +393,54 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
       }
     } catch (err) {
       console.error("[Polling] Error fetching status:", err);
-      // Optionally stop polling on fetch errors, or let it retry
-      // stopPolling();
-      // setIsProcessing(false);
-      // setError("Failed to get import status.");
-      // setUploadStatus("Error fetching status.");
+      // Consider more robust error handling, maybe stop polling after N errors?
     }
-  }, [onImportComplete]); // Added onImportComplete dependency
+  }, [onImportComplete]); 
 
   const startPolling = useCallback((id: string) => {
-    // Clear any existing interval first
-    stopPolling();
-
+    stopPolling(); // Clear existing interval
+    localStorage.setItem(LOCAL_STORAGE_KEY, id); // Store ID
     setProcessingId(id);
     setIsProcessing(true);
-    setImportStatus({ status: 'queued', totalFiles: 0 } as any); // Initial status
-    setUploadStatus("Import started, processing activities..."); // User feedback
-
-    // Fetch immediately once
+    setImportStatus({ status: 'queued', totalFiles: 0 } as any); 
+    setUploadStatus("Import started, processing activities...");
     fetchStatus(id);
-
-    // Then poll every 5 seconds
     pollingIntervalRef.current = setInterval(() => fetchStatus(id), 5000);
-  }, [fetchStatus]); // Added fetchStatus dependency
+  }, [fetchStatus]);
 
-  const stopPolling = () => {
+  const stopPolling = (clearStoredId = true) => { // Add flag
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
       console.log("[Polling] Polling stopped.");
+    }
+    if (clearStoredId) {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      console.log("[Polling] Cleared stored processing ID.");
     }
   };
 
   // Effect to cleanup polling on unmount
   useEffect(() => {
     return () => {
-      stopPolling();
+      stopPolling(false); // Don't clear stored ID on unmount
     };
   }, []);
-  // --- END POLLING LOGIC ---
+  
+  // --- Effect to check for active import on mount --- START
+  useEffect(() => {
+    const activeId = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (activeId) {
+      console.log(`[Mount] Found active processing ID: ${activeId}, resuming polling.`);
+      startPolling(activeId);
+    } else {
+      console.log("[Mount] No active processing ID found.");
+    }
+    // Run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, []); // Empty dependency array ensures it runs only on mount
+  // --- Effect to check for active import on mount --- END
+  // --- POLLING LOGIC --- END
 
   // Use the file state variable directly
   const handleUpload = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
@@ -533,7 +548,7 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
     }
   }, [toast, startPolling, file, session]); // file is a dependency as it's used directly
 
-  // --- UI Rendering Logic ---
+  // --- UI Rendering Logic --- START
   const getProgressPercent = () => {
     if (!isProcessing || !importStatus || !importStatus.totalFiles || importStatus.totalFiles === 0) {
       return progress; // Show blob upload progress initially
@@ -544,13 +559,21 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
 
   const getProgressText = () => {
      if (isProcessing && importStatus) {
-         if (importStatus.status === 'queued') return "Waiting for processing to start...";
-         if (importStatus.status === 'processing' || importStatus.status === 'pending') { // Treat pending like processing
-             return `Processing ${importStatus.processedFilesCount} of ${importStatus.totalFiles}...`;
+         const progressFraction = importStatus.totalFiles > 0 
+           ? `(${(importStatus.processedFilesCount + importStatus.errorFilesCount)}/${importStatus.totalFiles})`
+           : '';
+         if (importStatus.status === 'queued') return `Waiting to process ${importStatus.totalFiles} files...`;
+         if (importStatus.status === 'processing' || importStatus.status === 'pending') { 
+             const currentFileText = importStatus.currentlyProcessingFile 
+               ? `: ${importStatus.currentlyProcessingFile}`
+               : '';
+             return `Processing ${progressFraction}${currentFileText}...`;
          }
+         // Handle completed/failed states (already done in fetchStatus completion block)
      }
-     return uploadStatus; // Fallback to uploadStatus or final message
+     return uploadStatus; // Fallback
   };
+  // --- UI Rendering Logic --- END
 
   // Format date for display
   const formatDate = (date: string | Date | undefined | null) => {

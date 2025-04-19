@@ -55,6 +55,7 @@ export async function GET(req: NextRequest) {
             processedFilesCount: processedCount,
             importedFilesCount: importedCount,
             errorFilesCount: errorCount,
+            currentlyProcessingFile: importState.currentlyProcessingFile ?? null,
             // Optionally include the list of error files if needed by frontend
             errorFiles: importState.errorFiles ?? [], 
             createdAt: importState.createdAt,
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
             originalFilename: importState.originalFilename,
         };
 
-        console.log(`Returning status: ${importState.status}, Processed: ${processedCount}/${importState.totalFiles}`);
+        console.log(`Returning status: ${importState.status}, Current: ${statusResponse.currentlyProcessingFile}, Processed: ${processedCount}/${importState.totalFiles}`);
         return NextResponse.json(statusResponse);
 
     } catch (error) {
