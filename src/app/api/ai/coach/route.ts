@@ -899,19 +899,19 @@ async function getDirectTextResponse(query: string, userId: string): Promise<str
         return "Sorry, the AI is unavailable right now.";
     }
 
-    // Updated system prompt for detailed, article-style explanations
+    // Updated system prompt for CONCISE explanations
     const systemPrompt = `You are Aivery, an expert fitness coach AI. The user has asked for an explanation of a fitness concept.
 
-Your task is to explain the concept mentioned in the user query in detail, like a helpful mini-article. Use clear, easy-to-understand language.
+Your task is to explain the concept mentioned in the user query concisely but informatively. Use clear, easy-to-understand language.
 
 Structure your response using markdown:
 - Start with a clear definition.
-- Elaborate on the key aspects, benefits, and potential drawbacks or considerations.
-- Briefly discuss how someone might typically incorporate this concept into their fitness routine.
-- Go into reasonable depth to provide a comprehensive understanding.
+- Briefly cover the key aspects, benefits, and potential drawbacks or considerations.
+- Briefly mention how someone might typically incorporate this concept into their fitness routine.
+- Keep the overall explanation concise.
 - Conclude the explanation with an engaging, open-ended question related to the concept to encourage discussion with the user.
 
-Do NOT just give a short definition. Aim for an informative, article-style explanation.`;
+Aim for a helpful summary, not an exhaustive article.`;
 
     try {
         console.log(`[getDirectTextResponse] Sending direct query to Grok: "${query}"`);
@@ -922,13 +922,13 @@ Do NOT just give a short definition. Aim for an informative, article-style expla
             'Authorization': `Bearer ${grokApiKey}`
           },
           body: JSON.stringify({
-            model: 'grok-3-mini-latest', // Consider a larger model if explanations are consistently too short
+            model: 'grok-3-mini-latest',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: query } // The user query contains the specific concept to explain
             ],
-            max_tokens: 2048, // Increased max_tokens again for even longer explanations
-            temperature: 0.6, // Slightly adjusted temperature for informative but engaging tone
+            max_tokens: 512, // Reduced max_tokens for conciseness
+            temperature: 0.6, 
             stream: false,
           })
         });
