@@ -90,7 +90,7 @@ export function ProgressCards({
       <Card>
         <CardHeader className="text-center">
           <CardTitle className="text-lg flex items-center justify-center">
-            <HeartPulse className="mr-2 h-5 w-5 text-red-500" /> Cardio Progress
+            <HeartPulse className="mr-2 h-5 w-5 text-accent" /> Cardio Progress
           </CardTitle>
           <CardDescription>Total Time (Last 7 Days)</CardDescription>
         </CardHeader>

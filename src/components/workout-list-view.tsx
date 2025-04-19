@@ -641,7 +641,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
                       <div className="flex items-center gap-4">
                          <div className="flex flex-col items-end text-xs">
                            <div className="flex items-center gap-1">
-                             <Clock className="h-3 w-3 text-muted-foreground" /> 
+                             <Clock className="h-3 w-3 text-muted-foreground" />
                              {formatDuration(workout.duration)}
                            </div>
                            {volume.value > 0 && (

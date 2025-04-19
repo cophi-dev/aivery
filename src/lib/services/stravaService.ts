@@ -694,11 +694,13 @@ export async function syncStravaActivity(userId: string, activityId: string) {
     // <-- End Sanity Check -->
 
     // Prepare workout data for saving (existing logic)
+    const distanceInKm = distanceInMeters / 1000; // Convert meters to kilometers
+
     const workoutData: any = {
       userId: new mongoose.Types.ObjectId(userId),
       source: "strava",
       sourceId: activityId,
-      name: activity.name || `Strava ${mappedType}`, 
+      name: activity.name || `Strava ${mappedType}`,
       date: parseStravaDate(activity.start_date),
       type: mappedType,
       duration: activity.moving_time || activity.elapsed_time || 0, // Use moving_time primarily, fallback to elapsed_time (seconds)
@@ -707,11 +709,11 @@ export async function syncStravaActivity(userId: string, activityId: string) {
       stravaLink: `https://www.strava.com/activities/${activityId}`,
       // Add initial cardioDetails structure if applicable
       cardioDetails: { 
-        distance: activity.distance || 0, // Store distance in METERS
+        distance: distanceInKm, // Store distance in KILOMETERS
         duration: activity.moving_time || 0, // Use moving_time for active duration (seconds)
-        // Calculate pace using consistent distance (meters) and duration (moving_time seconds)
-        pace: (activity.distance && activity.moving_time && activity.distance > 0 && activity.moving_time > 0) 
-              ? (activity.moving_time / 60) / (activity.distance / 1000) 
+        // Calculate pace using consistent distance (km) and duration (moving_time seconds)
+        pace: (distanceInMeters && activity.moving_time && distanceInMeters > 0 && activity.moving_time > 0)
+              ? (activity.moving_time / 60) / distanceInKm // Use distanceInKm for pace calculation
               : undefined, // Pace in min/km
         speed: activity.average_speed ? activity.average_speed * 3.6 : undefined, // Convert m/s to km/h (keep original Strava value if needed)
         maxSpeed: activity.max_speed ? activity.max_speed * 3.6 : undefined,
@@ -723,8 +725,8 @@ export async function syncStravaActivity(userId: string, activityId: string) {
         // power: activity.average_watts ? { average: activity.average_watts, max: activity.max_watts } : undefined,
         // Laps/Sets need separate processing later
       },
-      // Ensure top-level distance matches cardioDetails distance (store in METERS)
-      distance: activity.distance || 0, // Store distance in METERS
+      // Ensure top-level distance matches cardioDetails distance (store in KILOMETERS)
+      distance: distanceInKm, // Store distance in KILOMETERS
     };
     
     // Remove undefined heart rate values

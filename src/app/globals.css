@@ -126,7 +126,9 @@
     background-color: hsl(var(--background));
   }
   
-  /* Markdown styling for chat messages */
+  /* --- Temporarily Commented Out for Debugging --- 
+  
+  // Markdown styling for chat messages
   .prose h1 {
     @apply text-xl font-bold mb-3 mt-2;
   }
@@ -203,7 +205,7 @@
     @apply bg-gray-100 dark:bg-gray-700 font-semibold;
   }
   
-  /* Add specific styles for dark mode chat messages */
+  // Add specific styles for dark mode chat messages 
   .dark .bg-muted {
     @apply text-gray-50;
   }
@@ -211,9 +213,12 @@
   .dark .prose p, .dark .prose li, .dark .prose h1, .dark .prose h2, .dark .prose h3 {
     @apply text-gray-50;
   }
-}
+  */
+} /* End of @layer base containing prose styles */
 
-/* Custom scrollbar styles */
+/* --- Temporarily Commented Out for Debugging --- 
+
+// Custom scrollbar styles 
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -231,6 +236,7 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--primary) / 0.5);
 }
+*/
 
 /* Smooth scrolling */
 html {

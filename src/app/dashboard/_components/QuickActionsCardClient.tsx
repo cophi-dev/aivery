@@ -55,14 +55,14 @@ export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
             </CardHeader>
             <CardContent className="flex flex-col space-y-3">
                 <Button
-                    variant="outline"
+                    variant="secondary"
                     onClick={handleGeneratePlan}
                 >
                     <CalendarPlus className="mr-2 h-4 w-4" />
                     Create Next Week's Plan
                 </Button>
                 <Button
-                    variant="outline"
+                    variant="secondary"
                     onClick={handleReviewWeek}
                 >
                     <ClipboardCheck className="mr-2 h-4 w-4" />

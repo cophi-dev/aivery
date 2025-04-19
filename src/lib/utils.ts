@@ -57,25 +57,25 @@ export function formatDuration(totalSeconds: number | undefined | null): string 
   }
 }
 
-// Format distance with units (accepts meters, displays km)
-export function formatDistance(distanceInMeters: number): string {
-  if (isNaN(distanceInMeters) || distanceInMeters < 0) {
-    return "0.00 km";
+// Format distance with units (accepts and displays km)
+export function formatDistance(distanceInKm: number): string {
+  if (isNaN(distanceInKm) || distanceInKm < 0) {
+    return "0.000 km"; // Keep consistent formatting
   }
 
-  // Convert meters to kilometers
-  const distanceInKm = distanceInMeters / 1000;
-  
-  // Handle unreasonably large values (post-conversion)
-  if (distanceInKm > 1000) { // e.g., > 1,000,000 meters
+  // Remove the meters to kilometers conversion
+  // const distanceInKm = distanceInMeters / 1000;
+
+  // Handle unreasonably large values 
+  if (distanceInKm > 10000) { // Increased threshold slightly
     console.warn(`Unreasonably large distance value detected: ${distanceInKm}km. Limiting display.`);
-    if (distanceInKm > 10000) {
-      return "Error: Invalid distance";
-    }
-    return `${Math.round(distanceInKm)} km`;
+    return "Error: Invalid distance";
+  } else if (distanceInKm > 1000) {
+     // Display large values with less precision if desired, or keep toFixed(3)
+    return `${distanceInKm.toFixed(1)} km`; // e.g., 5000.0 km 
   }
   
-  // Normal handling for reasonable values - use 3 decimal places for more precision
+  // Normal handling for reasonable values - use 3 decimal places for precision
   return `${distanceInKm.toFixed(3)} km`;
 }
 
