@@ -94,7 +94,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
           setCategory(exerciseData.category as "strength" | "cardio" | "flexibility")
           setEquipment(exerciseData.equipment || [])
           setInstructions(exerciseData.instructions || [])
-          setMuscleGroups(exerciseData.primaryMuscles || [])
+          setMuscleGroups(exerciseData.muscleGroups || [])
           
           // Fetch history (no longer fetching API details here)
           try {
@@ -224,7 +224,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
         category,
         equipment,
         instructions,
-        primaryMuscles: muscleGroups
+        muscleGroups: muscleGroups
       })
       
       if (updatedExercise) {
@@ -431,7 +431,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                 <div>
                   <h3 className="font-medium mb-1">Target Muscle Groups</h3>
                   <div className="flex flex-wrap gap-1">
-                    {(exercise.primaryMuscles || []).map((muscle: string) => (
+                    {(exercise.muscleGroups || []).map((muscle: string) => (
                       <Badge key={muscle} variant="secondary" className="capitalize">
                         {muscle}
                       </Badge>
