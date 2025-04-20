@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mime from 'mime';
 import { processFitFile, processGpxFile, processTcxFile, ProcessedActivityData } from '@/lib/services/stravaArchiveService';
 import { transformStravaActivity } from '@/lib/services/stravaService';
-import { createCardioWorkout } from '@/lib/workout-actions';
+import { createCardioWorkout, updateUserWorkoutSummaries } from '@/lib/workout-actions';
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 
@@ -246,6 +246,17 @@ export async function POST(request: NextRequest) {
         console.log(`--- Finished processing file: ${relativePath} ---`);
     }
     // --- SYNCHRONOUS PROCESSING LOOP --- END
+
+    // --- Update User Summaries and Overall PRs ---
+    try {
+      console.log(`[Strava Import] Starting summary update for user: ${userId}`);
+      await updateUserWorkoutSummaries(userId);
+      console.log(`[Strava Import] Finished summary update for user: ${userId}`);
+    } catch (summaryError) {
+      console.error(`[Strava Import] Error updating summaries for user ${userId} after import:`, summaryError);
+      // Log the error but don't fail the import process
+    }
+    // --- End Summary Update ---
 
     // --- Final Actions --- 
     // Delete original archive blob from storage
