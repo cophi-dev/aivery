@@ -138,7 +138,7 @@ export interface ExerciseData {
   name: string;
   aliases?: string[];
   description?: string;
-  primaryMuscles: string[];
+  muscleGroups: string[];
   secondaryMuscles?: string[];
   category: "strength" | "cardio" | "flexibility" | "other";
   level?: "beginner" | "intermediate" | "advanced";
