@@ -1,24 +1,51 @@
 import { ObjectId } from "mongodb"
 import dbConnect from '../mongodb'
-import ExerciseModel, { IExercise } from '../models/exercise'
+import ExerciseModel, { IExercise } from '@/lib/db/models/exercise'
 import type { ExerciseData } from "@/types/db"
-import WorkoutExerciseModel from "../models/workoutExercise"
+import WorkoutExerciseModel from "@/lib/db/models/workoutExercise"
 import { isValidObjectId } from 'mongoose'
 
 // Convert Mongoose document to ExerciseData
-function convertDocToExerciseData(doc: any): ExerciseData {
-  if (!doc) return {} as ExerciseData;
+function convertDocToExerciseData(doc: IExercise | null): ExerciseData {
+  if (!doc) {
+     // Return a default structure or throw an error if doc is null/undefined
+     console.warn("[convertDocToExerciseData] Received null document.");
+     // Returning a mostly empty object matching ExerciseData structure
+     return {
+         _id: '',
+         name: '',
+         description: '',
+         primaryMuscles: [],
+         secondaryMuscles: [],
+         category: 'other',
+         equipment: [],
+         instructions: [],
+         level: undefined,
+         aliases: [],
+         images: [],
+         videos: [],
+         createdAt: new Date().toISOString(), // Default to now
+         updatedAt: new Date().toISOString(), // Default to now
+     } as ExerciseData; // Assert type if necessary
+  }
   
+  const idString = doc._id ? doc._id.toString() : '';
+
   return {
-    _id: doc._id ? doc._id.toString() : '',
+    _id: idString,
     name: doc.name || '',
     description: doc.description || '',
-    muscleGroups: doc.muscleGroups || [],
+    primaryMuscles: doc.primaryMuscles || [],
+    secondaryMuscles: doc.secondaryMuscles || [],
     category: doc.category || 'strength',
-    equipment: doc.equipment || '',
-    instructions: doc.instructions || '',
-    createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc.createdAt || new Date()),
-    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : String(doc.updatedAt || new Date()),
+    equipment: doc.equipment || [],
+    instructions: doc.instructions || [],
+    level: doc.level,
+    aliases: doc.aliases || [],
+    images: doc.images || [],
+    videos: doc.videos || [],
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc.createdAt || ''),
+    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : String(doc.updatedAt || ''),
   };
 }
 
@@ -43,10 +70,10 @@ export async function getAllExercises(): Promise<ExerciseData[]> {
       _id: { $in: validUsedExerciseIds }
     })
       .sort({ name: 1 })
-      .lean()
+      .lean<IExercise[]>()
       .exec()
 
-    return exerciseDocs.map(doc => convertDocToExerciseData(doc));
+    return exerciseDocs.map((doc: IExercise) => convertDocToExerciseData(doc));
   } catch (error) {
     console.error('Error getting used exercises:', error)
     throw new Error('Failed to get used exercises')
@@ -60,10 +87,10 @@ export async function getExercisesByCategory(category: string): Promise<Exercise
     
     const exerciseDocs = await ExerciseModel.find({ category })
       .sort({ name: 1 })
-      .lean()
+      .lean<IExercise[]>()
       .exec()
 
-    return exerciseDocs.map(doc => convertDocToExerciseData(doc));
+    return exerciseDocs.map((doc: IExercise) => convertDocToExerciseData(doc));
   } catch (error) {
     console.error(`Error getting exercises by category ${category}:`, error)
     throw new Error(`Failed to get exercises by category ${category}`)
@@ -75,12 +102,12 @@ export async function getExercisesByMuscleGroup(muscleGroup: string): Promise<Ex
   try {
     await dbConnect()
     
-    const exerciseDocs = await ExerciseModel.find({ muscleGroups: muscleGroup })
+    const exerciseDocs = await ExerciseModel.find({ primaryMuscles: muscleGroup })
       .sort({ name: 1 })
-      .lean()
+      .lean<IExercise[]>()
       .exec()
 
-    return exerciseDocs.map(doc => convertDocToExerciseData(doc));
+    return exerciseDocs.map((doc: IExercise) => convertDocToExerciseData(doc));
   } catch (error) {
     console.error(`Error getting exercises by muscle group ${muscleGroup}:`, error)
     throw new Error(`Failed to get exercises by muscle group ${muscleGroup}`)
@@ -92,7 +119,7 @@ export async function getExerciseById(id: string): Promise<ExerciseData | null> 
   try {
     await dbConnect()
     
-    const exerciseDoc = await ExerciseModel.findById(id).lean().exec()
+    const exerciseDoc = await ExerciseModel.findById(id).lean<IExercise>().exec()
 
     if (!exerciseDoc) {
       return null
@@ -110,7 +137,7 @@ export async function getExerciseByName(name: string): Promise<ExerciseData | nu
   try {
     await dbConnect()
     
-    const exerciseDoc = await ExerciseModel.findOne({ name }).lean().exec()
+    const exerciseDoc = await ExerciseModel.findOne({ name }).lean<IExercise>().exec()
 
     if (!exerciseDoc) {
       return null
@@ -131,10 +158,15 @@ export async function createExercise(exerciseData: Partial<ExerciseData>): Promi
     const exercise = new ExerciseModel({
       name: exerciseData.name,
       description: exerciseData.description || "",
-      muscleGroups: exerciseData.muscleGroups || [],
+      primaryMuscles: exerciseData.primaryMuscles || [],
+      secondaryMuscles: exerciseData.secondaryMuscles || [],
       category: exerciseData.category || "strength",
-      equipment: exerciseData.equipment || "",
-      instructions: exerciseData.instructions || "",
+      equipment: exerciseData.equipment || [],
+      instructions: exerciseData.instructions || [],
+      level: exerciseData.level,
+      aliases: exerciseData.aliases || [],
+      images: exerciseData.images || [],
+      videos: exerciseData.videos || [],
     })
 
     const savedExercise = await exercise.save()
@@ -156,7 +188,7 @@ export async function updateExercise(id: string, exerciseData: Partial<ExerciseD
       id,
       { ...exerciseData, updatedAt: new Date() },
       { new: true }
-    ).lean().exec()
+    ).lean<IExercise>().exec()
 
     if (!result) {
       return null
@@ -200,10 +232,10 @@ export async function searchAllExercisesByName(nameQuery: string): Promise<Exerc
     })
       .sort({ name: 1 })
       .limit(20) // Limit results to avoid overwhelming the UI
-      .lean()
+      .lean<IExercise[]>()
       .exec();
 
-    return exerciseDocs.map(doc => convertDocToExerciseData(doc));
+    return exerciseDocs.map((doc: IExercise) => convertDocToExerciseData(doc));
   } catch (error) {
     console.error(`Error searching all exercises by name '${nameQuery}':`, error);
     // Throwing error might be better here if the calling action handles it
