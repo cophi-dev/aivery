@@ -26,7 +26,7 @@ export default function NewExercisePage() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [category, setCategory] = useState<"strength" | "cardio" | "flexibility">("strength")
-  const [equipment, setEquipment] = useState("")
+  const [equipment, setEquipment] = useState<string[]>([])
   const [instructions, setInstructions] = useState("")
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>([])
@@ -62,13 +62,16 @@ export default function NewExercisePage() {
     setIsSubmitting(true)
     
     try {
+      // Split instructions string into array by newline before sending
+      const instructionsArray = instructions.split('\n').filter(line => line.trim() !== '');
+      
       await createExerciseAction({
         name,
         description,
         category,
         equipment,
-        instructions,
-        muscleGroups
+        instructions: instructionsArray,
+        primaryMuscles: muscleGroups
       })
       
       router.push("/exercises")
@@ -170,11 +173,17 @@ export default function NewExercisePage() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="equipment">Equipment (Optional)</Label>
+              <Label htmlFor="equipment">Equipment (comma-separated)</Label>
               <Input
                 id="equipment"
-                value={equipment}
-                onChange={(e) => setEquipment(e.target.value)}
+                value={equipment.join(', ')}
+                onChange={(e) => {
+                  const newEquipment = e.target.value
+                    .split(',')
+                    .map(item => item.trim())
+                    .filter(item => item !== '');
+                  setEquipment(newEquipment);
+                }}
                 placeholder="e.g., Barbell, Dumbbell"
               />
             </div>
@@ -205,9 +214,8 @@ export default function NewExercisePage() {
               <Link href="/exercises">
                 <Button variant="outline" type="button">Cancel</Button>
               </Link>
-              <Button type="submit" disabled={isSubmitting}>
-                <LucideSave className="h-4 w-4 mr-2" />
-                {isSubmitting ? 'Saving...' : 'Save Exercise'}
+              <Button type="submit" disabled={isSubmitting} className="w-full">
+                {isSubmitting ? "Creating..." : <><LucideSave className="h-4 w-4 mr-2" />Create Exercise</>}
               </Button>
             </div>
           </form>
