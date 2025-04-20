@@ -200,9 +200,18 @@ export async function generateExerciseDetails(exerciseName: string): Promise<Par
   // Check if exercise exists in database
   const exactMatch = exerciseDatabase[normalizedName]
   if (exactMatch) {
+    // Explicitly create the return object, converting equipment and instructions
     return {
       name: exerciseName,
-      ...exactMatch
+      description: exactMatch.description,
+      // Assuming muscleGroups from local DB matches expected ExerciseData type (string[])
+      primaryMuscles: exactMatch.muscleGroups, // Use primaryMuscles if that's the field in ExerciseData
+      category: exactMatch.category,
+      // Convert equipment string to string array
+      equipment: exactMatch.equipment ? exactMatch.equipment.split(',').map(e => e.trim()).filter(e => e) : [],
+      // Split instructions string into array
+      instructions: exactMatch.instructions ? exactMatch.instructions.split('\n').filter(line => line.trim() !== '') : [],
+      // Add other fields from ExerciseData if needed, or ensure exactMatch covers them
     }
   }
   
@@ -213,9 +222,17 @@ export async function generateExerciseDetails(exerciseName: string): Promise<Par
       const keywords = key.split(' ')
       for (const word of keywords) {
         if (normalizedName.includes(word) && word.length > 3) {
+          // Explicitly create the return object, converting equipment and instructions
           return {
             name: exerciseName,
-            ...data
+            description: data.description,
+            primaryMuscles: data.muscleGroups, // Use primaryMuscles
+            category: data.category,
+            // Convert equipment string to string array (assuming comma separation or single item)
+            equipment: data.equipment ? data.equipment.split(',').map(e => e.trim()).filter(e => e) : [],
+            // Split instructions string into array
+            instructions: data.instructions ? data.instructions.split('\n').filter(line => line.trim() !== '') : [],
+            // Add other fields
           }
         }
       }
@@ -224,7 +241,7 @@ export async function generateExerciseDetails(exerciseName: string): Promise<Par
     // Attempt to guess category and muscle groups from common keywords
     const result: Partial<ExerciseData> = {
       name: exerciseName,
-      muscleGroups: [],
+      primaryMuscles: [], // Use primaryMuscles
       category: "strength" // Default category
     }
     
@@ -243,7 +260,11 @@ export async function generateExerciseDetails(exerciseName: string): Promise<Par
     for (const [muscle, keywords] of Object.entries(muscleKeywords)) {
       for (const keyword of keywords) {
         if (normalizedName.includes(keyword)) {
-          result.muscleGroups?.push(muscle)
+          // Ensure primaryMuscles exists before pushing
+          if (!result.primaryMuscles) {
+            result.primaryMuscles = [];
+          }
+          result.primaryMuscles.push(muscle)
           break
         }
       }
