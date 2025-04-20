@@ -804,10 +804,10 @@ export default function NewWorkoutPage() {
     const isSubmitStrengthType = currentWorkoutType === "gym" || currentWorkoutType === "home_strength" || currentWorkoutType === "strength";
     if (isSubmitStrengthType) {
         finalWorkoutTypeForPayload = "strength";
-    } else if (["running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(currentWorkoutType)) {
+    } else if (currentWorkoutType && ["running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(currentWorkoutType)) {
         finalWorkoutTypeForPayload = currentWorkoutType as AllowedWorkoutType;
     } else {
-        console.error("Invalid workoutType selected for submission:", currentWorkoutType);
+        console.error("Invalid or undefined workoutType selected for submission:", currentWorkoutType);
         setError("Invalid activity type selected.");
         setIsSubmitting(false);
         return;
