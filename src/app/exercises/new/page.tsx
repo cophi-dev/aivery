@@ -65,13 +65,13 @@ export default function NewExercisePage() {
       // Split instructions string into array by newline before sending
       const instructionsArray = instructions.split('\n').filter(line => line.trim() !== '');
       
-      await createExerciseAction({
+      const newExercise = await createExerciseAction({
         name,
         description,
         category,
         equipment,
         instructions: instructionsArray,
-        primaryMuscles: muscleGroups
+        muscleGroups: muscleGroups
       })
       
       router.push("/exercises")
