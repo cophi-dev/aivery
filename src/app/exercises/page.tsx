@@ -1,4 +1,4 @@
-import { fetchExercises, fetchExerciseByName } from "@/lib/exercise-actions"
+import { getAllExercisesFromDB, getUsedExercises, fetchExerciseByName } from "@/lib/exercise-actions"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { 
@@ -27,29 +27,28 @@ export default async function ExercisesPage({
   searchParams: { [key: string]: string | string[] | undefined }
 }) {
   const nameParam = searchParams.name as string | undefined
-  const tagsParam = searchParams.tags as string | undefined // Get tags from URL
+  // We ignore tagsParam for now as filtering logic might need revisit
+  // const tagsParam = searchParams.tags as string | undefined 
   
   // If a name is provided, try to find the matching exercise and redirect
   if (nameParam) {
     const exercise = await fetchExerciseByName(nameParam)
     if (exercise) {
-      // If found, redirect to the exercise detail page
       redirect(`/exercises/${exercise._id}`)
     }
-    // If not found, continue to show the list with a note
   }
   
-  // Fetch exercises, passing the tags parameter
-  // We assume fetchExercises is updated or calls the API route which handles tags
-  const exercises = await fetchExercises(tagsParam)
+  // Fetch ALL exercises for main list and category filtering
+  const allExercises = await getAllExercisesFromDB();
+  // Fetch USED exercises for the new tab
+  const usedExercises = await getUsedExercises();
   
-  // Track if a name was searched but not found
   const exerciseNotFound = nameParam ? true : false
   
-  // Restore category filtering logic
-  const strengthExercises = exercises.filter(ex => ex.category === "strength")
-  const cardioExercises = exercises.filter(ex => ex.category === "cardio")
-  const flexibilityExercises = exercises.filter(ex => ex.category === "flexibility")
+  // Filter ALL exercises by category
+  const strengthExercises = allExercises.filter((ex: ExerciseData) => ex.category === "strength")
+  const cardioExercises = allExercises.filter((ex: ExerciseData) => ex.category === "cardio")
+  const flexibilityExercises = allExercises.filter((ex: ExerciseData) => ex.category === "flexibility")
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -72,43 +71,40 @@ export default async function ExercisesPage({
         </Link>
       </div>
       
-      {/* Show notification if exercise was not found */}
       {exerciseNotFound && (
         <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 p-4 rounded-md mb-6">
           <p>Exercise &quot;{nameParam}&quot; not found. You can create it or browse existing exercises below.</p>
         </div>
       )}
       
-      {/* ADD FILTER COMPONENT HERE LATER - Removed as per user request */}
-
-      {/* Restore original structure with Tabs */}
-      {exercises.length === 0 && !tagsParam ? ( // Show seeding message only if no exercises AND no filters applied
+      {allExercises.length === 0 ? ( 
         <div className="text-center py-12">
-          <p className="text-muted-foreground mb-4">No exercises found.</p>
+          <p className="text-muted-foreground mb-4">No exercises found in the database.</p>
           <p className="text-sm text-muted-foreground mb-6">
-            Start by adding exercises to your database or seed some predefined exercises.
+            Start by adding exercises to your database.
           </p>
-          <div className="flex justify-center gap-4">
-            <Link href="/api/seed-exercises">
-              <Button variant="outline">Seed Sample Exercises</Button>
-            </Link>
-            <Link href="/exercises/new">
+          <Link href="/exercises/new">
               <Button>Add Exercise</Button>
-            </Link>
-          </div>
+          </Link>
+          {/* Removed Seed button as API route was deleted */}
         </div>
       ) : (
         <Tabs defaultValue="all" className="w-full">
-          <TabsList className="mb-6">
-            <TabsTrigger value="all">All ({exercises.length})</TabsTrigger>
+          <TabsList className="mb-6 grid w-full grid-cols-5"> {/* Adjust grid columns */} 
+            <TabsTrigger value="all">All ({allExercises.length})</TabsTrigger>
+            <TabsTrigger value="performed">Performed ({usedExercises.length})</TabsTrigger> {/* New Tab */} 
             <TabsTrigger value="strength">Strength ({strengthExercises.length})</TabsTrigger>
             <TabsTrigger value="cardio">Cardio ({cardioExercises.length})</TabsTrigger>
             <TabsTrigger value="flexibility">Flexibility ({flexibilityExercises.length})</TabsTrigger>
-            {/* Add "Used Exercises" tab later */}
           </TabsList>
           
           <TabsContent value="all">
-            <ExerciseGrid exercises={exercises} />
+            <ExerciseGrid exercises={allExercises} />
+          </TabsContent>
+          
+          {/* New Tab Content */} 
+          <TabsContent value="performed">
+            <ExerciseGrid exercises={usedExercises} />
           </TabsContent>
           
           <TabsContent value="strength">

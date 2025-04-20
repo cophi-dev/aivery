@@ -11,6 +11,8 @@ import {
   updateExercise,
   deleteExercise,
   searchAllExercisesByName,
+  getAllExercisesFromDB as getAllExercisesFromDBRepo,
+  getUsedExercises as getUsedExercisesRepo,
 } from "./db/repositories/exerciseRepository"
 import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { getCurrentUser } from "./auth"
@@ -19,6 +21,8 @@ import {
 } from "@/lib/db/repositories/workoutExerciseRepository"
 import { getSession } from "next-auth/react"
 import { headers } from 'next/headers'
+import { generateImage } from './openai-actions'
+import { saveImageToR2, deleteImageFromR2 } from './r2-actions'
 
 // Fetch exercises, potentially filtered by tags
 export async function fetchExercises(tags?: string): Promise<ExerciseData[]> {
@@ -312,3 +316,163 @@ export async function generateAndSaveExerciseImage(
   }
 }
 // --- END NEW ACTION --- 
+
+// Fetch ALL Exercises Action (NEW)
+export async function getAllExercisesFromDB(): Promise<ExerciseData[]> {
+  try {
+    return await getAllExercisesFromDBRepo();
+  } catch (error) {
+    console.error(`Action Error - getAllExercisesFromDB:`, error);
+    return []; // Return empty array on error
+  }
+}
+
+// Fetch USED Exercises Action (NEW - wraps renamed repo function)
+export async function getUsedExercises(): Promise<ExerciseData[]> {
+  try {
+    return await getUsedExercisesRepo();
+  } catch (error) {
+    console.error(`Action Error - getUsedExercises:`, error);
+    return []; // Return empty array on error
+  }
+}
+
+// Update Exercise Action
+export async function updateExerciseAction(
+  id: string, 
+  exerciseData: Partial<ExerciseData>
+): Promise<ExerciseData | null> {
+  try {
+    const updatedExercise = await updateExercise(id, exerciseData);
+    if (updatedExercise) {
+      revalidatePath("/exercises");       // Revalidate list page
+      revalidatePath(`/exercises/${id}`); // Revalidate detail page
+    }
+    return updatedExercise;
+  } catch (error) {
+    console.error(`Action Error - updateExerciseAction (ID: ${id}):`, error);
+    throw new Error("Failed to update exercise via action.");
+  }
+}
+
+// Delete Exercise Action
+export async function deleteExerciseAction(id: string): Promise<boolean> {
+  let imageUrlToDelete: string | undefined = undefined;
+  try {
+    // Optionally, fetch the exercise first to get the image URL if you need to delete it
+    const exerciseToDelete = await getExerciseById(id);
+    imageUrlToDelete = exerciseToDelete?.images?.[0]; // Assuming first image
+
+    const success = await deleteExercise(id);
+    if (success) {
+      revalidatePath("/exercises");
+       // Optionally, delete the associated image from R2
+      // if (imageUrlToDelete) {
+      //   try {
+      //     await deleteImageFromR2(imageUrlToDelete); 
+      //     console.log(`Deleted associated image from R2: ${imageUrlToDelete}`);
+      //   } catch (r2Error) {
+      //     console.error(`Failed to delete image from R2 (${imageUrlToDelete}):`, r2Error);
+      //     // Decide if you want to surface this error or just log it
+      //   }
+      // }
+    }
+    return success;
+  } catch (error) {
+    console.error(`Action Error - deleteExerciseAction (ID: ${id}):`, error);
+    throw new Error("Failed to delete exercise via action.");
+  }
+}
+
+// Fetch Exercises by Category Action
+export async function getExercisesByCategory(category: string): Promise<ExerciseData[]> {
+  try {
+    return await getExercisesByCategory(category);
+  } catch (error) {
+    console.error(`Action Error - getExercisesByCategory (Category: ${category}):`, error);
+    return [];
+  }
+}
+
+// Fetch Exercises by Muscle Group Action
+export async function getExercisesByMuscleGroup(muscleGroup: string): Promise<ExerciseData[]> {
+  try {
+    return await getExercisesByMuscleGroup(muscleGroup);
+  } catch (error) {
+    console.error(`Action Error - getExercisesByMuscleGroup (Muscle: ${muscleGroup}):`, error);
+    return [];
+  }
+}
+
+// Search All Exercises Action
+export async function searchAllExercisesByNameAction(nameQuery: string): Promise<ExerciseData[]> {
+   try {
+     return await searchAllExercisesByName(nameQuery);
+   } catch (error) {
+     console.error(`Action Error - searchAllExercisesByNameAction (Query: ${nameQuery}):`, error);
+     return []; // Return empty array on error
+   }
+}
+
+// Generate and Save Exercise Image Action
+export async function generateAndSaveExerciseImage(exerciseId: string, prompt: string): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
+  if (!exerciseId) return { success: false, error: "Exercise ID is required." };
+  if (!prompt) return { success: false, error: "Prompt is required." };
+
+  try {
+    // 1. Generate Image using OpenAI
+    const generationResult = await generateImage(prompt);
+    if (!generationResult.success || !generationResult.imageUrl) {
+      return { success: false, error: generationResult.error || "Failed to generate image." };
+    }
+
+    const generatedImageUrl = generationResult.imageUrl;
+
+    // 2. Save Image URL to R2 (or just get the final URL if generateImage handles upload)
+    // Assuming generateImage returns a temporary URL and we need to save it permanently
+    // If generateImage already saves to R2 and returns the final URL, skip this
+    // For demonstration, let's assume generateImage gives a URL we need to process/store
+    // const r2Result = await saveImageToR2(generatedImageUrl, `${exerciseId}-${Date.now()}.png`);
+    // if (!r2Result.success || !r2Result.imageUrl) {
+    //   return { success: false, error: r2Result.error || "Failed to save image to storage." };
+    // }
+    // const finalImageUrl = r2Result.imageUrl;
+    const finalImageUrl = generatedImageUrl; // Use direct URL if generateImage handles storage
+
+    // 3. Update Exercise Document in DB
+    const updatedExercise = await updateExercise(exerciseId, { 
+      images: [finalImageUrl] // Replace or add to existing images array as needed
+    });
+
+    if (!updatedExercise) {
+      // Optional: Try to delete the uploaded image if DB update fails
+      // await deleteImageFromR2(finalImageUrl).catch(err => console.error("Failed to cleanup R2 image after DB update failure:", err));
+      return { success: false, error: "Failed to update exercise with new image URL." };
+    }
+    
+    revalidatePath(`/exercises/${exerciseId}`); // Revalidate the specific exercise page
+
+    return { success: true, imageUrl: finalImageUrl };
+
+  } catch (error: any) {
+    console.error(`Action Error - generateAndSaveExerciseImage (ID: ${exerciseId}):`, error);
+    return { success: false, error: error.message || "An unexpected error occurred." };
+  }
+}
+
+// --- Helper / Legacy Functions (Consider removal if not used) ---
+
+// Simple wrapper for getting all exercises - might be legacy if categories are used
+// export async function fetchExercises(tags?: string): Promise<ExerciseData[]> {
+//   // This might need updating based on whether you filter by tags server-side
+//   // or fetch all and filter client-side.
+//   console.log("fetchExercises called with tags:", tags); // Log tags
+//   try {
+//     // Currently fetches ALL exercises, ignoring tags for now
+//     // Adapt this if server-side tag filtering is implemented
+//     return await getAllExercisesFromDBRepo(); 
+//   } catch (error) {
+//     console.error("Action Error - fetchExercises:", error);
+//     return [];
+//   }
+// } 

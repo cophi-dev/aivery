@@ -49,8 +49,8 @@ function convertDocToExerciseData(doc: IExercise | null): ExerciseData {
   };
 }
 
-// Get all exercises THAT HAVE BEEN USED in a workout
-export async function getAllExercises(): Promise<ExerciseData[]> {
+// Renamed: Get all exercises THAT HAVE BEEN USED in a workout
+export async function getUsedExercises(): Promise<ExerciseData[]> {
   try {
     await dbConnect()
     
@@ -77,6 +77,22 @@ export async function getAllExercises(): Promise<ExerciseData[]> {
   } catch (error) {
     console.error('Error getting used exercises:', error)
     throw new Error('Failed to get used exercises')
+  }
+}
+
+// New: Get ALL exercises directly from the DB
+export async function getAllExercisesFromDB(): Promise<ExerciseData[]> {
+  try {
+    await dbConnect()
+    const exerciseDocs = await ExerciseModel.find({})
+      .sort({ name: 1 })
+      .lean<IExercise[]>()
+      .exec()
+      
+    return exerciseDocs.map((doc: IExercise) => convertDocToExerciseData(doc));
+  } catch (error) {
+    console.error('Error getting all exercises from DB:', error)
+    throw new Error('Failed to get all exercises from DB')
   }
 }
 
