@@ -155,9 +155,9 @@ function ExerciseCard({ exercise }: { exercise: ExerciseData }) {
         </CardHeader>
         <CardContent className="flex-grow flex flex-col justify-between">
            <div>
-             {/* Use primaryMuscles now */}
+             {/* Use muscleGroups now */}
              <div className="flex flex-wrap gap-1 mb-2">
-               {(exercise.primaryMuscles || []).map((muscle: string) => (
+               {(exercise.muscleGroups  || []).map((muscle: string)  => (
                  <Badge key={muscle} variant="secondary" className="capitalize">
                    {muscle}
                  </Badge>
