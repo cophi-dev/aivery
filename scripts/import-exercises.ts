@@ -97,7 +97,7 @@ async function importExercises(repoUrl: string) {
                     name: sourceData.name,
                     aliases: sourceData.aliases || [],
                     description: sourceData.details,
-                    primaryMuscles: sourceData.primaryMuscles || [],
+                    muscleGroups: sourceData.primaryMuscles || [],
                     secondaryMuscles: sourceData.secondaryMuscles || [],
                     category: ["strength", "cardio", "flexibility"].includes(sourceData.category.toLowerCase())
                         ? sourceData.category.toLowerCase()
@@ -111,8 +111,8 @@ async function importExercises(repoUrl: string) {
                     // Assuming Exercise model handles images; adjust if needed
                 };
 
-                if (!mappedData.name || !mappedData.primaryMuscles?.length || !mappedData.instructions?.length) {
-                     console.warn(`⚠️ Skipping ${dirName}: Missing required fields (name, primaryMuscles, instructions).`);
+                if (!mappedData.name || !mappedData.muscleGroups?.length || !mappedData.instructions?.length) {
+                     console.warn(`⚠️ Skipping ${dirName}: Missing required fields (name, muscleGroups, instructions).`);
                      skippedCount++;
                      continue;
                 }

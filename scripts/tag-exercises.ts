@@ -30,8 +30,9 @@ if (!MONGODB_URI) {
 }
 
 // Helper function to check if an exercise uses multiple major groups
-function isCompound(primary: string[], secondary: string[]): boolean {
-    const allMuscles = [...(primary || []), ...(secondary || [])].map(m => m.toLowerCase());
+function isCompound(muscleGroups?: string[], secondaryMuscles?: string[]): boolean {
+    const primary = muscleGroups || [];
+    const allMuscles = [...(primary || []), ...(secondaryMuscles || [])].map(m => m.toLowerCase());
     const workedMajorGroups = new Set<string>();
 
     allMuscles.forEach(muscle => {
@@ -94,7 +95,7 @@ async function tagExercises() {
             }
 
             // Rule 2: Compound
-            if (isCompound(exercise.primaryMuscles, exercise.secondaryMuscles)) {
+            if (isCompound(exercise.muscleGroups, exercise.secondaryMuscles)) {
                 if (!exercise.tags?.includes(COMPOUND_TAG)) {
                      tagsToAdd.add(COMPOUND_TAG);
                      needsUpdate = true;
@@ -125,7 +126,7 @@ async function tagExercises() {
             } else {
                 // Check if already correctly tagged by previous runs (optional logging)
                  const shouldHaveBw = isBodyweight(exercise.equipment);
-                 const shouldHaveComp = isCompound(exercise.primaryMuscles, exercise.secondaryMuscles);
+                 const shouldHaveComp = isCompound(exercise.muscleGroups, exercise.secondaryMuscles);
                  if ((shouldHaveBw && exercise.tags?.includes(BODYWEIGHT_TAG)) || (shouldHaveComp && exercise.tags?.includes(COMPOUND_TAG))) {
                      alreadyTaggedCount++;
                      // console.log(`${progress} Skipping ${exercise.name} - Already appropriately tagged.`);

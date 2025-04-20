@@ -2,7 +2,7 @@
 
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/db/mongodb';
-import Exercise from '@/lib/db/models/exercise';
+import ExerciseModel, { IExercise } from '@/lib/db/models/exercise';
 import { ExerciseData } from "@/types/db";
 
 // Define the proper category type
@@ -30,28 +30,31 @@ export async function generateExerciseDetails(exerciseName: string): Promise<Par
     await dbConnect(); // Ensure database connection
 
     // Find exercise in the database (case-insensitive)
-    const dbExercise = await Exercise.findOne({
+    const dbExercise = await ExerciseModel.findOne({
       name: { $regex: new RegExp(`^${normalizedName}$`, 'i') } // Case-insensitive exact match
     }).lean(); // Use .lean() for plain JS object
 
     if (dbExercise) {
       console.log(`[ai-exercise-generator] Found exercise in DB: "${dbExercise.name}"`);
-      // Map the found data to the Partial<ExerciseData> structure
-      // Ensure all expected fields are present or handled
-      return {
-        name: exerciseName, // Keep original casing if preferred, or use dbExercise.name
-        description: dbExercise.description,
-        primaryMuscles: dbExercise.primaryMuscles,
-        secondaryMuscles: dbExercise.secondaryMuscles,
-        category: dbExercise.category as ExerciseCategory, // Assuming category matches
-        equipment: dbExercise.equipment, // Already string[]
-        instructions: dbExercise.instructions, // Already string[]
-        level: dbExercise.level,
-        aliases: dbExercise.aliases,
-        images: dbExercise.images,
-        videos: dbExercise.videos,
-        // Add any other relevant fields from ExerciseData
+      // Cast dbExercise to IExercise to help TypeScript understand its shape
+      const exerciseDoc = dbExercise as any as IExercise; // Cast to expected interface
+      
+      // Map the found data using the casted object
+      const exerciseData: Partial<ExerciseData> = {
+        _id: exerciseDoc._id ? exerciseDoc._id.toString() : undefined, // Convert ObjectId to string
+        name: exerciseName, 
+        description: exerciseDoc.description,
+        muscleGroups: exerciseDoc.muscleGroups, // Now accessed via casted type
+        secondaryMuscles: exerciseDoc.secondaryMuscles,
+        category: exerciseDoc.category as ExerciseCategory, 
+        equipment: exerciseDoc.equipment, 
+        instructions: exerciseDoc.instructions, 
+        level: exerciseDoc.level,
+        aliases: exerciseDoc.aliases,
+        images: exerciseDoc.images,
+        videos: exerciseDoc.videos,
       };
+      return exerciseData;
     } else {
       console.log(`[ai-exercise-generator] Exercise "${exerciseName}" not found in DB.`);
       // If not found, return the basic object with just the name

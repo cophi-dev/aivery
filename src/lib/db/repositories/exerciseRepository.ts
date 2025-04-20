@@ -15,7 +15,7 @@ function convertDocToExerciseData(doc: IExercise | null): ExerciseData {
          _id: '',
          name: '',
          description: '',
-         primaryMuscles: [],
+         muscleGroups: [],
          secondaryMuscles: [],
          category: 'other',
          equipment: [],
@@ -35,7 +35,7 @@ function convertDocToExerciseData(doc: IExercise | null): ExerciseData {
     _id: idString,
     name: doc.name || '',
     description: doc.description || '',
-    primaryMuscles: doc.primaryMuscles || [],
+    muscleGroups: doc.muscleGroups || [],
     secondaryMuscles: doc.secondaryMuscles || [],
     category: doc.category || 'strength',
     equipment: doc.equipment || [],
@@ -102,7 +102,7 @@ export async function getExercisesByMuscleGroup(muscleGroup: string): Promise<Ex
   try {
     await dbConnect()
     
-    const exerciseDocs = await ExerciseModel.find({ primaryMuscles: muscleGroup })
+    const exerciseDocs = await ExerciseModel.find({ muscleGroups: muscleGroup })
       .sort({ name: 1 })
       .lean<IExercise[]>()
       .exec()
@@ -158,7 +158,7 @@ export async function createExercise(exerciseData: Partial<ExerciseData>): Promi
     const exercise = new ExerciseModel({
       name: exerciseData.name,
       description: exerciseData.description || "",
-      primaryMuscles: exerciseData.primaryMuscles || [],
+      muscleGroups: exerciseData.muscleGroups || [],
       secondaryMuscles: exerciseData.secondaryMuscles || [],
       category: exerciseData.category || "strength",
       equipment: exerciseData.equipment || [],

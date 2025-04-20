@@ -8,7 +8,7 @@ export interface IExercise extends Document {
   name: string
   aliases?: string[]
   description?: string
-  primaryMuscles: string[]
+  muscleGroups: string[]
   secondaryMuscles?: string[]
   category: ExerciseCategory
   level?: ExerciseLevel
@@ -29,7 +29,7 @@ const ExerciseSchema: Schema<IExercise> = new Schema(
     name: { type: String, required: true, unique: true, index: true },
     aliases: { type: [String], required: false },
     description: { type: String, required: false },
-    primaryMuscles: { type: [String], required: true },
+    muscleGroups: { type: [String], required: true },
     secondaryMuscles: { type: [String], required: false },
     category: {
       type: String,
@@ -55,8 +55,9 @@ const ExerciseSchema: Schema<IExercise> = new Schema(
 )
 
 // Indexing for common search fields
-ExerciseSchema.index({ primaryMuscles: 1 })
+ExerciseSchema.index({ name: 'text', description: 'text', aliases: 'text' })
 ExerciseSchema.index({ category: 1 })
+ExerciseSchema.index({ muscleGroups: 1 })
 ExerciseSchema.index({ equipment: 1 })
 ExerciseSchema.index({ tags: 1 })
 
