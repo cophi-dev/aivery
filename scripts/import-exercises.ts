@@ -1,15 +1,20 @@
 #!/usr/bin/env ts-node
-// Use CommonJS require syntax
-const mongoose = require('mongoose');
-const fs = require('fs/promises');
-const path = require('path');
-const dotenv = require('dotenv');
+// Use ES Module import syntax
+import mongoose from 'mongoose';
+import fs from 'fs/promises';
+import path from 'path';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+
+// Adjust dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
-// Adjust model import for CommonJS (default export)
-const Exercise = require('../src/lib/db/models/exercise').default; // Access default export
+// Adjust model import for ES Modules
+import Exercise from '../src/lib/db/models/exercise'; // Direct default import
 
 // --- Configuration ---
 const EXERCISES_DATA_PATH = path.resolve(process.cwd(), './temp/exercises.json/exercises');
@@ -88,7 +93,7 @@ async function importExercises(repoUrl: string) {
                 const jsonData = await fs.readFile(jsonFilePath, 'utf-8');
                 const sourceData = JSON.parse(jsonData) as SourceExerciseData;
 
-                const mappedData: Partial<any> = { // Using any here for simplicity with CJS require
+                const mappedData: Partial<any> = { // Using any here for simplicity
                     name: sourceData.name,
                     aliases: sourceData.aliases || [],
                     description: sourceData.details,
@@ -97,12 +102,13 @@ async function importExercises(repoUrl: string) {
                     category: ["strength", "cardio", "flexibility"].includes(sourceData.category.toLowerCase())
                         ? sourceData.category.toLowerCase()
                         : 'other',
-                    level: sourceData.level && ["beginner", "intermediate", "advanced"].includes(sourceData.level)
+                    level: sourceData.level && ["beginner", "intermediate", "expert"].includes(sourceData.level) // Corrected level check
                         ? sourceData.level
                         : undefined,
                     equipment: typeof sourceData.equipment === 'string' ? [sourceData.equipment] : [],
                     instructions: sourceData.instructions || [],
                     videos: sourceData.youtube ? [`https://www.youtube.com/watch?v=${sourceData.youtube}`] : [],
+                    // Assuming Exercise model handles images; adjust if needed
                 };
 
                 if (!mappedData.name || !mappedData.primaryMuscles?.length || !mappedData.instructions?.length) {
@@ -167,18 +173,21 @@ async function importExercises(repoUrl: string) {
     }
 }
 
-// --- Execute Script (CommonJS style) ---
+// --- Execute Script (ES Module style) ---
 // Immediately invoke the async function
 (async () => {
     try {
         await importExercises(REPO_URL);
+        // Exit cleanly if successful
+        if (mongoose.connection.readyState !== 1) { // Ensure disconnected before exiting cleanly
+             process.exit(0);
+        } 
     } catch (err) {
         console.error("Script execution failed globally:", err);
-    } finally {
-        // Ensure disconnection even on global script failure
+        // Ensure disconnection on error
         if (mongoose.connection.readyState === 1) {
-            await mongoose.disconnect();
+            await mongoose.disconnect().catch(discErr => console.error("Disconnection error:", discErr));
         }
-        process.exit(1); // Exit with error code if catch was hit or normally if not
+        process.exit(1); // Exit with error code
     }
 })(); // IIFE 

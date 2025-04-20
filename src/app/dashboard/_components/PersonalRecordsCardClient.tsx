@@ -1,17 +1,19 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Zap, ChevronRight, TrendingUp, Gauge, Weight } from "lucide-react";
+import { Zap, ChevronRight, TrendingUp, Gauge, Weight, Trophy, ChevronsRight, Edit, Search } from "lucide-react";
 import { format } from "date-fns"; // For formatting the date
 import Link from "next/link"; // Import Link for navigation
 // Import the new PR type
 import type { DashboardPREntry } from "@/lib/workout-actions";
 import type { IUser } from '@/lib/db/models/user'; // Import IUser for overall PRs type
 
-// --- Add workoutId to the Record type used within IUser['personalRecords'] ---
-// This is an assumption based on the desired linking functionality.
-// The backend data source will need to provide this workoutId.
-type RecordWithWorkoutId = IUser['personalRecords']['longestRun'] & { workoutId?: string };
+// Base type for a single record entry (value and date are required)
+type SingleRecord = { value: number; date: Date };
+
+// New definition for RecordWithWorkoutId, ensuring it handles optional fields
+// It represents the structure of a single record *if it exists*
+type RecordWithWorkoutId = SingleRecord & { workoutId?: string };
 
 // Helper: Format pace from seconds/meter to min/km
 const formatPace = (paceSecondsPerMeter: number | undefined): string => {
