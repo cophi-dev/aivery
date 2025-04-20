@@ -8,6 +8,11 @@ import Link from "next/link"; // Import Link for navigation
 import type { DashboardPREntry } from "@/lib/workout-actions";
 import type { IUser } from '@/lib/db/models/user'; // Import IUser for overall PRs type
 
+// --- Add workoutId to the Record type used within IUser['personalRecords'] ---
+// This is an assumption based on the desired linking functionality.
+// The backend data source will need to provide this workoutId.
+type RecordWithWorkoutId = IUser['personalRecords']['longestRun'] & { workoutId?: string };
+
 // Helper: Format pace from seconds/meter to min/km
 const formatPace = (paceSecondsPerMeter: number | undefined): string => {
   if (!paceSecondsPerMeter || paceSecondsPerMeter === Infinity) return "N/A";
@@ -31,7 +36,12 @@ const formatVolume = (volumeKg: number | undefined): string => {
 
 interface PersonalRecordsCardProps {
   exercisePRs?: DashboardPREntry[];
-  overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs prop
+  // Update prop type to expect potential workoutId on overall records
+  overallPRs?: {
+    longestRun?: RecordWithWorkoutId;
+    fastest5kPace?: RecordWithWorkoutId;
+    maxStrengthVolume?: RecordWithWorkoutId;
+  };
 }
 
 export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: PersonalRecordsCardProps) {
@@ -57,43 +67,94 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
         {hasOverallPRs && (
           <>
             {longestRun?.value && (
-              <div className="text-sm border-b border-border/50 pb-2">
-                <p className="font-medium truncate flex items-center justify-center">
-                  <TrendingUp className="mr-1.5 h-4 w-4 text-muted-foreground" /> Longest Run
-                </p>
-                <p className="text-muted-foreground">
-                  <span className="font-semibold text-foreground">{formatDistance(longestRun.value)}</span>
-                  {longestRun.date && (
-                      <span className="text-xs"> on {format(new Date(longestRun.date), 'MMM d, yyyy')}</span>
-                  )}
-                </p>
-              </div>
+              // Wrap in Link if workoutId exists
+              longestRun.workoutId ? (
+                <Link href={`/workouts/${longestRun.workoutId}`} className="block group hover:text-primary transition-colors text-sm border-b border-border/50 pb-2">
+                  <p className="font-medium truncate flex items-center justify-center">
+                    <TrendingUp className="mr-1.5 h-4 w-4 text-muted-foreground" /> Longest Run
+                    <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{formatDistance(longestRun.value)}</span>
+                    {longestRun.date && (
+                        <span className="text-xs"> on {format(new Date(longestRun.date), 'MMM d, yyyy')}</span>
+                    )}
+                  </p>
+                </Link>
+              ) : (
+                // Original div if no workoutId
+                <div className="text-sm border-b border-border/50 pb-2">
+                  <p className="font-medium truncate flex items-center justify-center">
+                    <TrendingUp className="mr-1.5 h-4 w-4 text-muted-foreground" /> Longest Run
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{formatDistance(longestRun.value)}</span>
+                    {longestRun.date && (
+                        <span className="text-xs"> on {format(new Date(longestRun.date), 'MMM d, yyyy')}</span>
+                    )}
+                  </p>
+                </div>
+              )
             )}
             {fastest5kPace?.value && (
-               <div className="text-sm border-b border-border/50 pb-2">
-                <p className="font-medium truncate flex items-center justify-center">
-                  <Gauge className="mr-1.5 h-4 w-4 text-muted-foreground" /> Fastest 5k Pace
-                </p>
-                <p className="text-muted-foreground">
-                  <span className="font-semibold text-foreground">{formatPace(fastest5kPace.value)}</span>
-                  {fastest5kPace.date && (
-                      <span className="text-xs"> on {format(new Date(fastest5kPace.date), 'MMM d, yyyy')}</span>
-                  )}
-                </p>
-              </div>
+               // Wrap in Link if workoutId exists
+               fastest5kPace.workoutId ? (
+                 <Link href={`/workouts/${fastest5kPace.workoutId}`} className="block group hover:text-primary transition-colors text-sm border-b border-border/50 pb-2">
+                  <p className="font-medium truncate flex items-center justify-center">
+                    <Gauge className="mr-1.5 h-4 w-4 text-muted-foreground" /> Fastest 5k Pace
+                    <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{formatPace(fastest5kPace.value)}</span>
+                    {fastest5kPace.date && (
+                        <span className="text-xs"> on {format(new Date(fastest5kPace.date), 'MMM d, yyyy')}</span>
+                    )}
+                  </p>
+                 </Link>
+               ) : (
+                 // Original div if no workoutId
+                 <div className="text-sm border-b border-border/50 pb-2">
+                  <p className="font-medium truncate flex items-center justify-center">
+                    <Gauge className="mr-1.5 h-4 w-4 text-muted-foreground" /> Fastest 5k Pace
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{formatPace(fastest5kPace.value)}</span>
+                    {fastest5kPace.date && (
+                        <span className="text-xs"> on {format(new Date(fastest5kPace.date), 'MMM d, yyyy')}</span>
+                    )}
+                  </p>
+                </div>
+               )
             )}
             {maxStrengthVolume?.value && (
-               <div className="text-sm border-b border-border/50 pb-2 sm:col-span-2">
-                <p className="font-medium truncate flex items-center justify-center">
-                  <Weight className="mr-1.5 h-4 w-4 text-muted-foreground" /> Max Strength Volume
-                </p>
-                <p className="text-muted-foreground">
-                  <span className="font-semibold text-foreground">{formatVolume(maxStrengthVolume.value)}</span>
-                  {maxStrengthVolume.date && (
-                      <span className="text-xs"> in workout on {format(new Date(maxStrengthVolume.date), 'MMM d, yyyy')}</span>
-                  )}
-                </p>
-              </div>
+               // Wrap in Link if workoutId exists
+               maxStrengthVolume.workoutId ? (
+                 <Link href={`/workouts/${maxStrengthVolume.workoutId}`} className="block group hover:text-primary transition-colors text-sm border-b border-border/50 pb-2 sm:col-span-2">
+                    <p className="font-medium truncate flex items-center justify-center">
+                      <Weight className="mr-1.5 h-4 w-4 text-muted-foreground" /> Max Strength Volume
+                      <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </p>
+                    <p className="text-muted-foreground">
+                      <span className="font-semibold text-foreground">{formatVolume(maxStrengthVolume.value)}</span>
+                      {maxStrengthVolume.date && (
+                          <span className="text-xs"> in workout on {format(new Date(maxStrengthVolume.date), 'MMM d, yyyy')}</span>
+                      )}
+                    </p>
+                 </Link>
+               ) : (
+                 // Original div if no workoutId
+                 <div className="text-sm border-b border-border/50 pb-2 sm:col-span-2">
+                  <p className="font-medium truncate flex items-center justify-center">
+                    <Weight className="mr-1.5 h-4 w-4 text-muted-foreground" /> Max Strength Volume
+                  </p>
+                  <p className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{formatVolume(maxStrengthVolume.value)}</span>
+                    {maxStrengthVolume.date && (
+                        <span className="text-xs"> in workout on {format(new Date(maxStrengthVolume.date), 'MMM d, yyyy')}</span>
+                    )}
+                  </p>
+                </div>
+               )
             )}
             {/* Separator if both sections exist */} 
             {hasExercisePRs && (

@@ -24,7 +24,7 @@ import { estimateBodyweightForExercise } from "@/lib/utils"
 import { Document } from 'mongoose'
 import UserModel, { IUser } from '@/lib/db/models/user'
 import SetModel from "@/lib/db/models/set";
-import dbConnect from '@/lib/db/mongoose'; // Ensure dbConnect is imported
+import dbConnect from '@/lib/db/mongodb'; // Ensure dbConnect is imported
 import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR';
 
 // Define an interface for the input set structure expected by createWorkout
@@ -442,7 +442,7 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     let userWeight: number | null = null;
     try {
       // Ensure we connect before fetching user weight
-      const localDbConnect = (await import("@/lib/db/mongoose")).default; 
+      const localDbConnect = (await import("@/lib/db/mongodb")).default; 
       await localDbConnect();
       const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
       if (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) {
@@ -719,7 +719,7 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
 
     try {
         console.log("Connecting to DB...");
-        const dbConnect = (await import("@/lib/db/mongoose")).default;
+        const dbConnect = (await import("@/lib/db/mongodb")).default;
         await dbConnect();
         console.log("DB Connected.");
 
@@ -743,7 +743,7 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
         // --- Fetch User Weight for Volume Calculation ---
         let userWeight: number | null = null;
         try {
-          const localDbConnect = (await import("@/lib/db/mongoose")).default;
+          const localDbConnect = (await import("@/lib/db/mongodb")).default;
           await localDbConnect(); // Ensure connection
           const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
           if (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) {
@@ -1887,14 +1887,15 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
     const overallCount = workouts.length;
     let lastWorkoutDate = workouts[0].date; // Latest workout
 
-    let overallLongestRun = { value: 0, date: new Date(0) };
-    let overallFastest5kPace = { value: Infinity, date: new Date(0) };
-    let overallMaxStrengthVolume = { value: 0, date: new Date(0) }; // Calculated based on CORRECTED logic
+    let overallLongestRun = { value: 0, date: new Date(0), workoutId: undefined as Types.ObjectId | undefined };
+    let overallFastest5kPace = { value: Infinity, date: new Date(0), workoutId: undefined as Types.ObjectId | undefined };
+    let overallMaxStrengthVolume = { value: 0, date: new Date(0), workoutId: undefined as Types.ObjectId | undefined };
 
     // 4. Iterate and calculate overall summaries and overall PRs
     for (const workout of workouts) {
       const workoutDate = workout.date instanceof Date ? workout.date : new Date(0);
       const workoutType = workout.type?.toLowerCase() || 'other';
+      const workoutId = workout._id; // Get the workout ID
 
       // Accumulate Duration & Distance
       const duration = workout.duration ?? 0;
@@ -1909,25 +1910,26 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
          const volume = workout.calculatedVolume ?? 0;
          overallVolume += volume;
          if (volume > overallMaxStrengthVolume.value) {
-             overallMaxStrengthVolume = { value: volume, date: workoutDate };
+             overallMaxStrengthVolume = { value: volume, date: workoutDate, workoutId: workoutId }; // Store workoutId
          }
       }
 
       // Check Cardio PRs
       if (workoutType === 'running' || workoutType === 'run') {
         if (distance > overallLongestRun.value) {
-          overallLongestRun = { value: distance, date: workoutDate };
+          overallLongestRun = { value: distance, date: workoutDate, workoutId: workoutId }; // Store workoutId
         }
         if (distance >= 5 && duration > 0) {
           const pace = duration / (distance * 1000); // s/m
           if (pace < overallFastest5kPace.value) {
-            overallFastest5kPace = { value: pace, date: workoutDate };
+            overallFastest5kPace = { value: pace, date: workoutDate, workoutId: workoutId }; // Store workoutId
           }
         }
       }
     }
 
     console.log(`[Summ] Calculated Totals - Count: ${overallCount}, Dist: ${overallDistance.toFixed(2)}km, Dur: ${overallDuration}s, Vol: ${overallVolume}kg`);
+    console.log(`[Summ] Calculated PRs - Longest Run: ${JSON.stringify(overallLongestRun)}, Fastest 5k: ${JSON.stringify(overallFastest5kPace)}, Max Vol: ${JSON.stringify(overallMaxStrengthVolume)}`); // Log PRs including ID
 
     // 5. Update User Document with Overall Summaries & Overall PRs
     const userUpdateData: Record<string, any> = {

@@ -104,12 +104,13 @@ export default function DashboardPage() {
     const handleSendAiMessage = (query: string, context: any) => {
         console.log("--- Triggering AI Action (Redirecting to Chat) ---");
         console.log("Query:", query);
-        console.log("Context:", context);
+        console.log("Context Received:", context); // Log received context
 
         // Encode query and context to pass in URL
         const encodedQuery = encodeURIComponent(query);
-        // We only need the requestType from context for the chat page to know what to do
+        // Extract required requestType and optional reviewPeriod
         const requestType = context?.requestType;
+        const reviewPeriod = context?.reviewPeriod; // Get reviewPeriod if present
 
         if (!requestType) {
             console.error("handleSendAiMessage called without a requestType in context!");
@@ -118,9 +119,20 @@ export default function DashboardPage() {
         }
 
         const encodedRequestType = encodeURIComponent(requestType);
+        
+        // Build the URL with query parameters
+        let redirectUrl = `/chat?initialQuery=${encodedQuery}&requestType=${encodedRequestType}`;
+        
+        // Add reviewPeriod to URL if it exists
+        if (reviewPeriod) {
+            const encodedReviewPeriod = encodeURIComponent(reviewPeriod);
+            redirectUrl += `&reviewPeriod=${encodedReviewPeriod}`;
+            console.log(`Adding reviewPeriod to redirect URL: ${reviewPeriod}`);
+        }
 
         // Redirect immediately
-        router.push(`/chat?initialQuery=${encodedQuery}&requestType=${encodedRequestType}`);
+        console.log("Redirecting to:", redirectUrl);
+        router.push(redirectUrl);
     };
 
     // Handle loading state for session

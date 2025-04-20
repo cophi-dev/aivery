@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { format, isToday, isPast, isFuture, parseISO } from "date-fns"
 import { useSession } from "next-auth/react"
-import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX } from "lucide-react"
+import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from 'react-hot-toast'
 
@@ -1053,7 +1053,7 @@ export default function NewWorkoutPage() {
                         {date ? format(date, "PPP") : <span>Pick a date</span>}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 bg-white dark:bg-slate-800">
+                    <PopoverContent className="w-auto p-0 bg-white dark:bg-slate-900">
                       <Calendar
                         mode="single"
                         selected={date}
@@ -1171,17 +1171,17 @@ export default function NewWorkoutPage() {
                           onClick={() => setShowSearchList(true)} // Open on click
                         >
                           {exercise.name || "Select exercise..."}
-                          {/* Add a ChevronsUpDown icon or similar indicator */}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0 bg-white dark:bg-slate-900">
                         <Command shouldFilter={false}> {/* Filtering done via search state */}
                           <CommandInput 
                             placeholder="Search exercise..." 
                             value={exerciseSearchQuery}
                             onValueChange={setExerciseSearchQuery}
                           />
-                          <CommandList>
+                          <CommandList> {/* Removed bg-popover */}
                             <CommandEmpty>
                               {isSearching ? "Searching..." : "No exercise found."}
                             </CommandEmpty>

@@ -12,7 +12,19 @@ interface QuickActionsCardProps {
 
 export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
 
-    // Handler for generating the next week's plan
+    // Get current day of the week (0=Sunday, 1=Monday, ..., 6=Saturday)
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+
+    // Determine if we should review 'this_week' (Thursday-Sunday) or 'last_week' (Monday-Wednesday)
+    // Days: Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
+    const reviewPeriod = (dayOfWeek >= 4 || dayOfWeek === 0) ? 'this_week' : 'last_week';
+    const reviewButtonText = reviewPeriod === 'this_week' ? "Review This Week's Workouts" : "Review Last Week's Workouts";
+    const reviewUserQuery = reviewPeriod === 'this_week' 
+        ? "Can you review my performance and progress from this current week?"
+        : "Can you review my performance and progress from the last completed week?";
+
+    // Handler for generating the next week\'s plan
     const handleGeneratePlan = () => {
         console.log("Triggering plan generation...");
         // System prompt construction is handled by the backend for this request type.
@@ -32,16 +44,17 @@ export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
         }
     };
 
-    // Handler for reviewing this week's workouts
+    // Updated handler for reviewing workouts
     const handleReviewWeek = () => {
         // Check if the function is available before calling
         if (typeof sendAiMessage === 'function') {
-            console.log("Triggering weekly review...");
+            console.log(`Triggering weekly review for: ${reviewPeriod}`);
             const context = {
-                requestType: 'generate_weekly_review'
+                requestType: 'generate_weekly_review',
+                reviewPeriod: reviewPeriod // Pass the calculated period
             };
-            const userQuery = "Can you review my performance and progress from the last completed week?"; // Slightly different query for dashboard context
-            sendAiMessage(userQuery, context);
+            // Use the dynamically generated query
+            sendAiMessage(reviewUserQuery, context); 
         } else {
             console.error('sendAiMessage function was not provided or is not a function.');
             alert('Error: Could not trigger weekly review.');
@@ -66,7 +79,8 @@ export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
                     onClick={handleReviewWeek}
                 >
                     <ClipboardCheck className="mr-2 h-4 w-4" />
-                    Review This Week's Workouts
+                    {/* Use the dynamic button text */}
+                    {reviewButtonText}
                 </Button>
             </CardContent>
         </Card>

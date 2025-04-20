@@ -280,34 +280,7 @@ async function analyzeUserQuery(query: string, history: HistoryMessage[], userId
     .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
     .join('\n');
 
-  const systemPrompt = `\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.
-
-CONVERSATION HISTORY:
-${historyString}
-
-LATEST USER QUERY: "${query}"
-
-Your goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.
-
-AVAILABLE DATA TYPES OVERVIEW:
-- User: name, goals, preferences, location, age, weight, height, ...
-- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...
-- Exercises (Library): name, description, muscles, category, equipment, ...
-
-SCHEMA:\n\`\`\`json\n${schemaString}\n\`\`\`\n\nRULES:\n- Analyze the LATEST USER QUERY: "${query}".
-- Use the CONVERSATION HISTORY to understand context (e.g., what "these" refers to).
-- Identify the primary intent of the LATEST QUERY.
-- Extract all relevant entities mentioned or implied in the LATEST QUERY. Use context from history if needed (e.g., if the user says "show me those", infer the period/type from the previous message).
-- **IMPORTANT CONTEXT RULE:** If the LATEST QUERY is a direct follow-up asking to list items mentioned previously (like "show me those", "list them"), **you MUST inherit the period, explicit_start_date, explicit_end_date, and workout_type entities from the context of the previous turn** unless the LATEST QUERY explicitly specifies a *new* period or type.
-- Use the current date ONLY for resolving relative time periods like 'today', 'last week', etc. The backend will handle the precise date calculations.
-- If the LATEST QUERY is too vague, even with history context, set intent to "unknown" and optionally provide a suggestion for clarification in response_suggestion.
-- For comparison intents, try to extract both the main period and the comparison period.
-- If the user asks for a specific workout (e.g., 'my run yesterday', 'workout ID 123'), capture this in workout_identifier.
-- Only return the JSON object adhering strictly to the schema.
-- Do NOT add any explanations or commentary outside the JSON structure.
-
-CURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).
-`;
+  const systemPrompt = `\\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.\\n\\nCONVERSATION HISTORY:\\n${historyString}\\n\\nLATEST USER QUERY: \"${query}\"\\n\\nYour goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.\\n\\nAVAILABLE DATA TYPES OVERVIEW:\\n- User: name, goals, preferences, location, age, weight, height, ...\\n- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...\\n- Exercises (Library): name, description, muscles, category, equipment, ...\\n\\nSCHEMA:\\n\\\`\\\`\\\`json\\n${schemaString}\\n\\\`\\\`\\\`\\n\\nRULES:\\n- Analyze the LATEST USER QUERY: \"${query}\".\\n- Use the CONVERSATION HISTORY to understand context (e.g., what \"these\" refers to).\\n- Identify the primary intent of the LATEST QUERY.\\n- Extract all relevant entities mentioned or implied in the LATEST QUERY. Use context from history if needed (e.g., if the user says \"show me those\", infer the period/type from the previous message).\\n- **IMPORTANT CONTEXT RULE:** If the LATEST QUERY is a direct follow-up asking to list items mentioned previously (like \"show me those\", \"list them\"), **you MUST inherit the period, explicit_start_date, explicit_end_date, and workout_type entities from the context of the previous turn** unless the LATEST QUERY explicitly specifies a *new* period or type.\\n- **NEW FOLLOW-UP RULE:** If the LATEST QUERY is a simple follow-up asking about a *different time period* (e.g., \"how about last week?\", \"and yesterday?\", \"compare that to last month\") AND the *previous assistant message* provided a summary or list of metrics (like distance, duration, count), you MUST infer the user wants the *same metrics* for the *new period* mentioned in the LATEST QUERY. Extract the relevant \\\`metric\\\` entities based on the previous assistant turn.\\n- Use the current date ONLY for resolving relative time periods like 'today', 'last week', etc. The backend will handle the precise date calculations.\\n- If the LATEST QUERY is too vague, even with history context, set intent to \"unknown\" and optionally provide a suggestion for clarification in response_suggestion.\\n- For comparison intents, try to extract both the main period and the comparison period.\\n- If the user asks for a specific workout (e.g., 'my run yesterday', 'workout ID 123'), capture this in workout_identifier.\\n- Only return the JSON object adhering strictly to the schema.\\n- Do NOT add any explanations or commentary outside the JSON structure.\\n\\nCURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).\\n`;
 
   const defaultUnknownResponse: QueryAnalysis = {
     intent: "unknown",
@@ -328,7 +301,7 @@ CURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this fo
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `LATEST USER QUERY: "${query}"` } // Pass the query explicitly as per prompt structure
         ],
-        max_tokens: 1024, // Allow for larger JSON output
+        max_tokens: 2048, // <<< Increased max_tokens from 1024 to 2048
         temperature: 0, // Keep deterministic for analysis
         stream: false,
         // Add response_format if Grok supports it for enforcing JSON
@@ -398,14 +371,16 @@ function buildWorkoutFilters(
   }
   const dateFilter: any = {}; // Mongoose date filter
   if (startDate) {
+    // Only create Date object if startDate is defined
     dateFilter.$gte = new Date(startDate);
   }
   if (endDate) {
-    // Add 1 day to endDate to make it inclusive of the end day
-    const end = new Date(endDate);
-    end.setDate(end.getDate() + 1);
-    dateFilter.$lt = end; // Use less than the start of the next day
+    // Only create Date object if endDate is defined
+    // Use $lte (less than or equal to) the provided end date
+    // endOfWeek already provides the very end of the day (23:59:59.999)
+    dateFilter.$lte = new Date(endDate); 
   }
+  // Only add the date filter if it has keys
   if (Object.keys(dateFilter).length > 0) {
     filters.date = dateFilter;
   }
@@ -1246,33 +1221,50 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         // **** SPECIAL HANDLING FOR WEEKLY REVIEW REQUEST ****
         if (context?.requestType === 'generate_weekly_review') {
            console.log(`[API /coach] Detected weekly review request.`);
+           // Determine the review period from context, default to 'last_week'
+           const reviewPeriod: 'this_week' | 'last_week' = context?.reviewPeriod === 'this_week' ? 'this_week' : 'last_week';
+           console.log(`[API /coach] Review period determined as: ${reviewPeriod}`);
+
            try {
-               // 1. Fetch last week's workout data
-               console.log(`[API /coach] Fetching last week's workouts for user: ${userId}`);
-               const lastWeekRange = calculateDateRange('last_week');
-               const lastWeekWorkouts = await listWorkouts(
+               // 1. Fetch workout data for the determined period
+               console.log(`[API /coach] Fetching ${reviewPeriod}'s workouts for user: ${userId}`);
+               // Use the dynamic reviewPeriod here
+               const dateRange = calculateDateRange(reviewPeriod);
+               // <<< ADD LOGGING HERE >>>
+               console.log(`[API /coach] Calculated Date Range for ${reviewPeriod}: Start = ${dateRange.start_date}, End = ${dateRange.end_date}`);
+               // <<< END LOGGING >>>
+               const workouts = await listWorkouts(
                    userId,
                    'any', // Get all workout types
-                   lastWeekRange.start_date,
-                   lastWeekRange.end_date,
+                   dateRange.start_date,
+                   dateRange.end_date,
                    100 // Limit to 100 workouts for the week, adjust if needed
                );
-               console.log(`[API /coach] Found ${lastWeekWorkouts.length} workouts for last week review.`);
+               // <<< ADD LOGGING HERE >>>
+               console.log(`[API /coach] Found ${workouts.length} workouts for the calculated range (${reviewPeriod}).`);
+               // Optional: Log first workout date if workouts exist
+               if (workouts.length > 0) {
+                 console.log(`[API /coach] First workout date in results: ${workouts[0].date}`);
+               }
+               // <<< END LOGGING >>>
 
-               let workoutDataString = "No workouts logged last week.";
-               if (lastWeekWorkouts.length > 0) {
+               // Adjust strings based on the period
+               const periodDescription = reviewPeriod === 'this_week' ? "this week" : "last week";
+               const periodTitle = reviewPeriod === 'this_week' ? "This Week's" : "Last Week's";
+
+               let workoutDataString = `No workouts logged ${periodDescription}.`;
+               if (workouts.length > 0) {
                    // Summarize workouts for the prompt
-                   workoutDataString = "Last Week's Workouts Summary:\n";
-                   workoutDataString += lastWeekWorkouts.map(w => 
+                   workoutDataString = `${periodTitle} Workouts Summary:\\n`;
+                   workoutDataString += workouts.map(w => 
                        `- ${format(new Date(w.date), 'EEE, MMM d')}: ${w.name || w.type} (${formatDuration(w.duration || 0)}${w.distance ? ', ' + formatDistance(w.distance) : ''}${w.calories ? ', ~' + w.calories + 'kcal' : ''})`
-                   ).join('\n');
+                   ).join('\\n');
                }
 
-               // 2. Construct the system prompt for weekly review
-               // TODO: Fetch previous week's data for comparison?
-               const systemPrompt = `\\nYou are Aivery, an expert fitness coach providing a weekly performance review for ${userName}.\\n\\nLAST WEEK'S WORKOUT DATA:\\n${workoutDataString}\\n\\nRESPONSE GUIDELINES:\\n1.  **Tone:** Friendly, encouraging, and insightful.\\n2.  **Analyze Last Week:** Based *only* on the provided data, summarize the user's activity from the last completed week (Monday-Sunday). Calculate and mention key totals (e.g., total workouts, total duration, total distance if applicable, total strength volume if calculable).\\n3.  **Identify Trends/Highlights:** Point out any noticeable patterns, achievements, or areas for focus (e.g., consistency, high intensity days, longest run, PRs if inferable from data). \\n4.  **Provide Insights:** Offer 1-2 brief, actionable insights based on the week's activity (e.g., "Great job getting 4 sessions in!", "Mixing strength and cardio seems to be working well.", "Consider adding a rest day if intensity was high.").\\n5.  **Keep it Concise:** Aim for a helpful summary, not an exhaustive analysis.\\n6.  **No Questions (Mostly):** Generate the review directly. End with a brief encouraging closing statement or a very gentle open question like \"How did the week feel overall?\"\\n7.  **Handle No Data:** If 'No workouts logged last week', acknowledge this and offer encouragement to log workouts in the current week.\\n\\nGenerate the weekly review for ${userName} based *only* on the provided workout data.`;
+               // 2. Construct the system prompt for weekly review, adjusting for the period
+               const systemPrompt = `\\\\nYou are Aivery, an expert fitness coach providing a weekly performance review for ${userName}.\\\\n\\\\n${periodTitle.toUpperCase()} WORKOUT DATA:\\\\n${workoutDataString}\\\\n\\\\nRESPONSE GUIDELINES:\\\\n1.  **Tone:** Friendly, encouraging, and insightful.\\\\n2.  **Analyze ${periodDescription}:** Based *only* on the provided data, summarize the user's activity from ${periodDescription} (Monday-Sunday). Calculate and mention key totals (e.g., total workouts, total duration, total distance if applicable, total strength volume if calculable).\\\\n3.  **Identify Trends/Highlights:** Point out any noticeable patterns, achievements, or areas for focus (e.g., consistency, high intensity days, longest run, PRs if inferable from data). \\\\n4.  **Provide Insights:** Offer 1-2 brief, actionable insights based on the week's activity (e.g., "Great job getting 4 sessions in!", "Mixing strength and cardio seems to be working well.", "Consider adding a rest day if intensity was high.").\\\\n5.  **Keep it Concise:** Aim for a helpful summary, not an exhaustive analysis.\\\\n6.  **No Questions (Mostly):** Generate the review directly. End with a brief encouraging closing statement or a very gentle open question like \\\"How did the week feel overall?\\\"\\\\n7.  **Handle No Data:** If 'No workouts logged ${periodDescription}', acknowledge this and offer encouragement to log workouts.\\\\n\\\\nGenerate the weekly review for ${userName} based *only* on the provided workout data for ${periodDescription}.`;
 
-               console.log("[API /coach] Sending weekly review prompt to Grok...");
+               console.log(`[API /coach] Sending ${reviewPeriod} review prompt to Grok...`);
                // 3. Call the AI model
                const reviewResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId);
 

@@ -209,16 +209,21 @@ export default function ChatPage() {
      const workoutId = searchParams?.get('workoutId'); // Get workoutId
      const initialQuery = searchParams?.get('initialQuery'); // Get from dashboard
      const requestType = searchParams?.get('requestType'); // Get requestType from dashboard
+     const reviewPeriod = searchParams?.get('reviewPeriod'); // Get reviewPeriod from dashboard
 
      // Define async function inside useEffect to handle async operations
      const handleInitialLoad = async () => {
 
        // Priority 1: Handle Dashboard Quick Action Redirect
        if (initialQuery && requestType && !initialMessageSentRef.current) {
-         console.log(`[ChatPage] Initial dashboard action detected. Query: "${initialQuery}", Type: "${requestType}"`);
+         console.log(`[ChatPage] Initial dashboard action detected. Query: "${initialQuery}", Type: "${requestType}", ReviewPeriod: "${reviewPeriod || 'N/A'}"`);
          initialMessageSentRef.current = true;
          // Construct context object for the API call
-         const context = { requestType: requestType }; 
+         // Include reviewPeriod if it exists
+         const context: any = { requestType: requestType }; 
+         if (reviewPeriod) {
+           context.reviewPeriod = reviewPeriod;
+         }
          // Call sendMessage, which will add user message, show loading, call API, and add response
          await sendMessage(initialQuery, context);
          // Optional: Clear the query params from URL without reload

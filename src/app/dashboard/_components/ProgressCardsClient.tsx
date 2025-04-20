@@ -17,7 +17,7 @@ const formatVolume = (volume: number | undefined | null): string | null => {
 const formatDistance = (meters: number | undefined | null): string | null => {
   if (meters === undefined || meters === null || meters <= 0) return null;
   const km = meters / 1000;
-  return `${km.toFixed(1)} km`;
+  return `${km.toFixed(2)} km`;
 };
 
 // Calculate percentage change

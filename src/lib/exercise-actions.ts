@@ -18,14 +18,56 @@ import {
   getWorkoutExercisesByExerciseId 
 } from "@/lib/db/repositories/workoutExerciseRepository"
 import { getSession } from "next-auth/react"
+import { headers } from 'next/headers'
 
-// Fetch all exercises
-export async function fetchExercises(): Promise<ExerciseData[]> {
+// Fetch exercises, potentially filtered by tags
+export async function fetchExercises(tags?: string): Promise<ExerciseData[]> {
   try {
-    return await getAllExercises();
+    const baseUrl = getApiBaseUrl(); // Get base URL (http://localhost:3000 or production URL)
+    const url = new URL(`${baseUrl}/api/exercises`);
+
+    // Add tags query parameter if provided
+    if (tags) {
+      url.searchParams.append('tags', tags);
+    }
+
+    console.log(`Fetching exercises from API: ${url.toString()}`);
+
+    // NOTE: We are calling our *own* API endpoint here.
+    // This endpoint handles authentication internally.
+    // We need to ensure cookies/session are forwarded if auth relies on them,
+    // but since it's a server-to-server call from an action, it might just work
+    // or we might need to pass auth explicitly if the API requires it beyond the session check.
+    // For simplicity now, assume the session check within the API route is sufficient for server-side calls.
+    
+    // Use fetch API for server-side actions
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        // Add headers if necessary, e.g., Content-Type, but likely not needed for GET
+        // We might need to forward authentication headers/cookies if the API route requires it
+        // beyond the getServerSession check. Let's omit for now.
+        'cookie': headers().get('cookie') ?? '',
+      },
+      // Ensure Next.js doesn't cache this aggressively if data changes often
+      cache: 'no-store', 
+    });
+
+    if (!response.ok) {
+      // Log detailed error info
+      const errorBody = await response.text();
+      console.error(`Error fetching exercises API: ${response.status} ${response.statusText}`, errorBody);
+      // Throw an error or return empty array based on desired handling
+      // throw new Error(`Failed to fetch exercises: ${response.status}`);
+      return []; // Return empty array on error
+    }
+
+    const exercises: ExerciseData[] = await response.json();
+    return exercises;
+
   } catch (error) {
-    console.error("Error fetching exercises:", error);
-    return []; 
+    console.error("Error in fetchExercises action:", error);
+    return []; // Return empty array on error
   }
 }
 
@@ -187,3 +229,86 @@ export async function fetchAllExercisesAction(): Promise<ExerciseData[]> {
   }
 }
 // --- END NEW Action --- 
+
+// Ensure getApiBaseUrl exists or define it
+function getApiBaseUrl(): string {
+    // Example implementation (adjust based on your setup)
+    if (process.env.NEXT_PUBLIC_VERCEL_URL) {
+        return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+    }    
+    return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'; // Fallback for local dev
+} 
+
+// --- NEW ACTION: Generate and save exercise image --- 
+export async function generateAndSaveExerciseImage(
+  exerciseId: string,
+  prompt: string
+): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
+  console.log(`[Action] generateAndSaveExerciseImage called for exercise ID: ${exerciseId}`);
+
+  // 1. Check for API Key
+  const apiKey = process.env.GROK_API_KEY;
+  if (!apiKey) {
+    console.error("[Action generateAndSaveExerciseImage] GROK_API_KEY environment variable not set.");
+    return { success: false, error: "Image generation API key is not configured." };
+  }
+
+  // 2. Call Image Generation API
+  const apiUrl = "https://api.x.ai/v1/images/generations";
+  try {
+    console.log(`[Action generateAndSaveExerciseImage] Sending request to ${apiUrl} with prompt: "${prompt}"`);
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: "grok-2-image",
+        prompt: prompt,
+        // Add other parameters like size if needed/available
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[Action generateAndSaveExerciseImage] API Error (${response.status}): ${errorBody}`);
+      return { success: false, error: `Image generation failed: ${response.statusText} (${errorBody})` };
+    }
+
+    const result = await response.json();
+    console.log("[Action generateAndSaveExerciseImage] API Response:", JSON.stringify(result));
+
+    // 3. Extract Image URL (adjust based on actual API response structure)
+    const imageUrl = result?.data?.[0]?.url; 
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      console.error("[Action generateAndSaveExerciseImage] Could not extract image URL from API response:", result);
+      return { success: false, error: "Failed to extract image URL from generation response." };
+    }
+    console.log(`[Action generateAndSaveExerciseImage] Generated image URL: ${imageUrl}`);
+
+    // 4. Update Exercise in DB
+    // We'll use $push to add the image URL to the images array
+    const updatedExercise = await updateExercise(exerciseId, { 
+      $push: { images: imageUrl } 
+    } as any); // Use 'as any' for MongoDB operators if type doesn't directly support it
+
+    if (!updatedExercise) {
+      console.error(`[Action generateAndSaveExerciseImage] Failed to update exercise ${exerciseId} in DB.`);
+      // Optionally try to delete the generated image if DB update fails?
+      return { success: false, error: "Failed to save generated image URL to the database." };
+    }
+
+    console.log(`[Action generateAndSaveExerciseImage] Successfully added image URL to exercise ${exerciseId}.`);
+
+    // 5. Revalidate Path
+    revalidatePath(`/exercises/${exerciseId}`);
+
+    return { success: true, imageUrl: imageUrl };
+
+  } catch (error: any) {
+    console.error("[Action generateAndSaveExerciseImage] Error:", error);
+    return { success: false, error: error.message || "An unexpected error occurred during image generation." };
+  }
+}
+// --- END NEW ACTION --- 

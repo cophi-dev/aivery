@@ -76,7 +76,8 @@ const PerformanceSummarySchema = new Schema({
 
 const RecordSchema = new Schema({
   value: { type: Number },
-  date: { type: Date }
+  date: { type: Date },
+  workoutId: { type: Schema.Types.ObjectId, ref: 'Workout', required: false }
 }, { _id: false })
 
 const PersonalRecordsSchema = new Schema({

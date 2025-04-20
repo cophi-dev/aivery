@@ -262,13 +262,20 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
         const processWorkout = (workout: SerializedWorkout) => {
             let volume = 0;
             let duration = 0;
-            let distance = 0;
+            let distance = 0; // This will now store distance in meters
 
             if (workout.type === 'strength') {
                 volume = workout.calculatedVolume ?? 0;
             } else if (['running', 'cycling', 'walking', 'cardio'].includes(workout.type)) {
                 duration = workout.duration || 0;
-                distance = workout.distance ?? workout.cardioDetails?.distance ?? 0;
+                // Get the raw distance value
+                const rawDistance = workout.distance ?? workout.cardioDetails?.distance ?? 0;
+                // Normalize the distance to meters (assuming values < 100 are km)
+                if (rawDistance > 0 && rawDistance < 100) {
+                    distance = rawDistance * 1000; // Convert km to meters
+                } else {
+                    distance = rawDistance; // Assume already meters or 0
+                }
             }
             return { volume, duration, distance };
         };
@@ -277,18 +284,18 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
 
         // Log metrics being processed for each workout
         if (metrics.volume > 0 || metrics.distance > 0 || metrics.duration > 0) {
-            console.log(`[Metrics Debug] Processing workout (${workout.type}, Date: ${workout.date}): Vol=${metrics.volume}, Dist=${metrics.distance}, Dur=${metrics.duration}`);
+            console.log(`[Metrics Debug] Processing workout (${workout.type}, Date: ${workout.date}): Vol=${metrics.volume}, Dist=${metrics.distance} (m), Dur=${metrics.duration}`); // Log distance in meters
         }
 
         if (isInCurrentPeriod) {
             strengthVolumeLast7Days += metrics.volume;
             cardioDurationLast7Days += metrics.duration;
-            cardioDistanceLast7Days += metrics.distance;
+            cardioDistanceLast7Days += metrics.distance; // Add normalized distance
         } else if (isInPreviousPeriod) {
              // Accumulate metrics for the previous period
             strengthVolumePrevious7Days += metrics.volume;
             cardioDurationPrevious7Days += metrics.duration;
-            cardioDistancePrevious7Days += metrics.distance;
+            cardioDistancePrevious7Days += metrics.distance; // Add normalized distance
         }
     }
 

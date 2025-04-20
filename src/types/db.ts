@@ -136,16 +136,22 @@ export interface ChatMessage {
 export interface ExerciseData {
   _id: string;
   name: string;
+  aliases?: string[];
   description?: string;
-  muscleGroups: string[];
-  category: "strength" | "cardio" | "flexibility";
-  equipment?: string;
-  instructions?: string;
+  primaryMuscles: string[];
+  secondaryMuscles?: string[];
+  category: "strength" | "cardio" | "flexibility" | "other";
+  level?: "beginner" | "intermediate" | "advanced";
+  equipment?: string[];
+  instructions: string[];
+  tips?: string[];
+  images?: string[];
+  videos?: string[];
+  tags?: string[];
   userId?: string;
   createdAt: string;
   updatedAt: string;
-  apiDescription?: string;
-  apiGifUrl?: string;
+  trackMaxReps?: boolean;
 }
 
 export interface WorkoutExerciseData {

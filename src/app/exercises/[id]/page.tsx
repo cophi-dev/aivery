@@ -16,8 +16,8 @@ import {
   SelectTrigger, 
   SelectValue
 } from "@/components/ui/select"
-import { LucideArrowLeft, LucideSave, LucideTrash, LucideEdit, LucideTrendingUp, LucidePlus, PlusCircle } from "lucide-react"
-import { fetchExercise, updateExerciseAction, deleteExerciseAction, getExerciseHistory } from "@/lib/exercise-actions"
+import { LucideArrowLeft, LucideSave, LucideTrash, LucideEdit, LucideTrendingUp, LucidePlus, PlusCircle, LucideImage, LucideLoader } from "lucide-react"
+import { fetchExercise, updateExerciseAction, deleteExerciseAction, getExerciseHistory, generateAndSaveExerciseImage } from "@/lib/exercise-actions"
 import { Badge } from "@/components/ui/badge"
 import { X } from "lucide-react"
 import { 
@@ -57,12 +57,14 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   const [history, setHistory] = useState<WorkoutExerciseData[]>([])
   const [chartData, setChartData] = useState<any[]>([])
   const [personalBest, setPersonalBest] = useState<{ weight: number, reps: number } | null>(null)
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+  const [generationError, setGenerationError] = useState<string | null>(null)
   
   // State for exercise form
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [category, setCategory] = useState<"strength" | "cardio" | "flexibility">("strength")
-  const [equipment, setEquipment] = useState("")
+  const [equipment, setEquipment] = useState<string[]>([])
   const [instructions, setInstructions] = useState("")
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>([])
@@ -84,14 +86,15 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
         
         if (isMounted) {
           setExercise(exerciseData)
+          console.log("Fetched Exercise Data:", exerciseData);
           
           // Also populate edit form fields
           setName(exerciseData.name)
           setDescription(exerciseData.description || "")
           setCategory(exerciseData.category as "strength" | "cardio" | "flexibility")
-          setEquipment(exerciseData.equipment || "")
+          setEquipment(exerciseData.equipment || [])
           setInstructions(exerciseData.instructions || "")
-          setMuscleGroups(exerciseData.muscleGroups || [])
+          setMuscleGroups(exerciseData.primaryMuscles || [])
           
           // Fetch history (no longer fetching API details here)
           try {
@@ -221,7 +224,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
         category,
         equipment,
         instructions,
-        muscleGroups
+        primaryMuscles: muscleGroups
       })
       
       if (updatedExercise) {
@@ -253,6 +256,44 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
       month: 'short',
       day: 'numeric'
     })
+  }
+  
+  const handleGenerateImage = async () => {
+    setIsGeneratingImage(true);
+    setGenerationError(null);
+
+    if (!exercise) {
+      setGenerationError("Exercise data not loaded.");
+      setIsGeneratingImage(false);
+      return;
+    }
+
+    // Construct a prompt (Improved logic)
+    const instructionsText = exercise.instructions && exercise.instructions.length > 0
+      ? `Instructions: ${exercise.instructions.join('. ')}`
+      : exercise.description || ''; // Fallback to description if no instructions
+
+    const prompt = `Minimalistic infographic, clear focus on correct technique for the ${exercise.name} exercise. ${instructionsText}`;
+
+    console.log("Generating image with prompt:", prompt);
+
+    try {
+      const result = await generateAndSaveExerciseImage(exercise._id, prompt);
+
+      if (result.success && result.imageUrl) {
+        console.log("Image generated successfully:", result.imageUrl);
+        // Update local state to show the new image immediately
+        setExercise(prev => prev ? { ...prev, images: [...(prev.images || []), result.imageUrl!] } : null);
+      } else {
+        console.error("Image generation failed:", result.error);
+        setGenerationError(result.error || "Failed to generate image.");
+      }
+    } catch (err: any) {
+      console.error("Error calling generateAndSaveExerciseImage action:", err);
+      setGenerationError(err.message || "An unexpected error occurred.");
+    } finally {
+      setIsGeneratingImage(false);
+    }
   }
   
   // Loading and error states
@@ -346,19 +387,41 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                 <CardTitle>About this Exercise</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {exercise.apiGifUrl ? (
-                  <div className="mb-4 bg-muted rounded-md overflow-hidden flex justify-center items-center aspect-video relative">
-                    <Image 
-                      src={exercise.apiGifUrl} 
-                      alt={`${exercise.name} demonstration GIF`} 
-                      layout="fill"
-                      objectFit="contain"
-                      unoptimized={true}
-                    />
-                  </div>
-                ) : (
-                   <div className="mb-4 text-center p-4 text-muted-foreground text-sm">No visual available.</div>
-                )}
+                <div className="mb-4">
+                  {exercise.images && exercise.images.length > 0 ? (
+                    <div className="bg-muted rounded-md overflow-hidden flex justify-center items-center aspect-video relative">
+                      <Image 
+                        src={exercise.images[0]} 
+                        alt={`${exercise.name} illustration`} 
+                        layout="fill"
+                        objectFit="contain"
+                        unoptimized={true}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-4 border rounded-md bg-muted/50 min-h-[150px]">
+                      <Button 
+                        onClick={handleGenerateImage}
+                        disabled={isGeneratingImage}
+                        variant="outline"
+                        size="sm"
+                      >
+                        {isGeneratingImage ? (
+                          <LucideLoader className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <LucideImage className="h-4 w-4 mr-2" />
+                        )}
+                        {isGeneratingImage ? "Generating..." : "Generate Image"}
+                      </Button>
+                      {generationError && (
+                        <p className="text-destructive text-xs mt-2 text-center">Error: {generationError}</p>
+                      )}
+                      {!isGeneratingImage && !generationError && (
+                         <p className="text-muted-foreground text-xs mt-2 text-center">No image available. Click to generate one.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <div>
                   <h3 className="font-medium mb-1">Category</h3>
@@ -368,7 +431,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                 <div>
                   <h3 className="font-medium mb-1">Target Muscle Groups</h3>
                   <div className="flex flex-wrap gap-1">
-                    {exercise.muscleGroups.map(muscle => (
+                    {(exercise.primaryMuscles || []).map((muscle: string) => (
                       <Badge key={muscle} variant="secondary" className="capitalize">
                         {muscle}
                       </Badge>
@@ -376,23 +439,24 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                   </div>
                 </div>
                 
-                {exercise.equipment && (
+                {exercise.equipment && exercise.equipment.length > 0 && (
                   <div>
                     <h3 className="font-medium mb-1">Equipment</h3>
-                    <p>{exercise.equipment}</p>
+                    <p>{exercise.equipment.join(", ")}</p>
                   </div>
                 )}
                 
-                {(exercise.apiDescription || exercise.instructions) && (
+                {exercise.instructions && (
                    <div>
                      <h3 className="font-medium mb-1">Instructions</h3>
                      <p className="whitespace-pre-line">
-                       {exercise.apiDescription || exercise.instructions}
+                       {exercise.instructions}
                      </p>
                    </div>
                 )}
                 
-                {exercise.description && !(exercise.apiDescription || exercise.instructions) && (                  <div>
+                {exercise.description && !exercise.instructions && (
+                  <div>
                     <h3 className="font-medium mb-1">Description</h3>
                     <p>{exercise.description}</p>
                   </div>
@@ -772,11 +836,18 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="equipment">Equipment (Optional)</Label>
+              <Label htmlFor="equipment">Equipment (comma-separated)</Label>
               <Input
                 id="equipment"
-                value={equipment}
-                onChange={(e) => setEquipment(e.target.value)}
+                value={equipment.join(", ")}
+                onChange={(e) => {
+                  // Split string by comma, trim whitespace, filter empty strings
+                  const newEquipment = e.target.value
+                    .split(',')
+                    .map(item => item.trim())
+                    .filter(item => item !== '');
+                  setEquipment(newEquipment);
+                }}
                 placeholder="e.g., Barbell, Dumbbell"
               />
             </div>
@@ -793,15 +864,72 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="instructions">Instructions (Optional)</Label>
-              <Textarea
-                id="instructions"
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                placeholder="Step-by-step instructions for performing the exercise"
-                rows={5}
-              />
+              <Label htmlFor="instructions">Instructions</Label>
+              <Textarea id="instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} />
             </div>
+            
+            {/* --- Add Videos Section --- */}
+            {exercise.videos && exercise.videos.length > 0 && (
+              <div className="mt-6 pt-4 border-t">
+                <h4 className="text-md font-semibold mb-3">Videos</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {exercise.videos.map((videoUrl: string, index: number) => {
+                    // Basic check for YouTube URL
+                    if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+                      // Attempt to extract video ID and create embed URL
+                      let embedUrl = '';
+                      try {
+                        const url = new URL(videoUrl);
+                        if (url.hostname === 'youtu.be') {
+                          embedUrl = `https://www.youtube.com/embed/${url.pathname.substring(1)}`;
+                        } else if (url.hostname === 'www.youtube.com' || url.hostname === 'youtube.com') {
+                          const videoId = url.searchParams.get('v');
+                          if (videoId) {
+                            embedUrl = `https://www.youtube.com/embed/${videoId}`;
+                          }
+                        }
+                      } catch (e) {
+                        console.error("Error parsing video URL:", videoUrl, e);
+                        embedUrl = ''; // Reset on error
+                      }
+
+                      // Render iframe if embedUrl is valid
+                      if (embedUrl) {
+                        return (
+                          <div key={index} className="aspect-video"> {/* Maintain aspect ratio */}
+                            <iframe
+                              width="100%"
+                              height="100%"
+                              src={embedUrl}
+                              title={`Exercise Video ${index + 1}`}
+                              frameBorder="0"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                              loading="lazy" // Add lazy loading
+                            ></iframe>
+                          </div>
+                        );
+                      } else {
+                        // Fallback for unparseable YouTube URLs
+                        return (
+                           <p key={index} className="text-sm text-muted-foreground">
+                             Unable to embed video: <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="underline">{videoUrl}</a>
+                           </p>
+                        )
+                      }
+                    } else {
+                      // Handle non-YouTube URLs (e.g., display as link)
+                      return (
+                        <p key={index} className="text-sm text-muted-foreground">
+                          Video Link: <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="underline">{videoUrl}</a>
+                        </p>
+                      );
+                    }
+                  })}
+                </div>
+              </div>
+            )}
+            {/* --- End Videos Section --- */}
             
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
