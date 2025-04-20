@@ -2,27 +2,22 @@
 
 import { revalidatePath } from "next/cache"
 import {
-  getAllExercises,
-  getExercisesByCategory,
-  getExercisesByMuscleGroup,
   getExerciseById,
   getExerciseByName,
   createExercise,
   updateExercise,
   deleteExercise,
-  searchAllExercisesByName,
-  getAllExercisesFromDB as getAllExercisesFromDBRepo,
   getUsedExercises as getUsedExercisesRepo,
+  getExercisesByCategory,
+  getExercisesByMuscleGroup,
+  getAllExercisesFromDB,
+  searchAllExercisesByName
 } from "./db/repositories/exerciseRepository"
+import { getWorkoutExercisesByExerciseId } from "./db/repositories/workoutExerciseRepository"
 import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { getCurrentUser } from "./auth"
-import { 
-  getWorkoutExercisesByExerciseId 
-} from "@/lib/db/repositories/workoutExerciseRepository"
 import { getSession } from "next-auth/react"
 import { headers } from 'next/headers'
-import { generateImage } from './openai-actions'
-import { saveImageToR2, deleteImageFromR2 } from './r2-actions'
 
 // Fetch exercises, potentially filtered by tags
 export async function fetchExercises(tags?: string): Promise<ExerciseData[]> {
@@ -173,28 +168,6 @@ export async function updateExerciseAction(id: string, exerciseData: Partial<Exe
   }
 }
 
-// Delete an exercise
-export async function deleteExerciseAction(id: string): Promise<boolean> {
-  try {
-    // Ensure user is authenticated (admin check could be added here)
-    const user = await getCurrentUser()
-    if (!user) {
-      throw new Error("User not authenticated");
-    }
-
-    const success = await deleteExercise(id);
-    
-    revalidatePath("/exercises");
-    revalidatePath(`/exercises/${id}`);
-    revalidatePath("/workouts/new");
-    
-    return success;
-  } catch (error) {
-    console.error(`Error deleting exercise ${id}:`, error);
-    throw new Error(`Failed to delete exercise ${id}`);
-  }
-}
-
 // Function to get exercise history
 export async function getExerciseHistory(exerciseId: string): Promise<WorkoutExerciseData[]> {
   try {
@@ -226,7 +199,7 @@ export async function searchAllExercisesAction(nameQuery: string): Promise<Exerc
 export async function fetchAllExercisesAction(): Promise<ExerciseData[]> {
   try {
     // No auth check needed here typically, adjust if needed
-    return await getAllExercises();
+    return await getAllExercisesFromDB(); 
   } catch (error) {
     console.error("Error fetching all exercises action:", error);
     return []; // Return empty array on error
@@ -318,14 +291,15 @@ export async function generateAndSaveExerciseImage(
 // --- END NEW ACTION --- 
 
 // Fetch ALL Exercises Action (NEW)
-export async function getAllExercisesFromDB(): Promise<ExerciseData[]> {
-  try {
-    return await getAllExercisesFromDBRepo();
-  } catch (error) {
-    console.error(`Action Error - getAllExercisesFromDB:`, error);
-    return []; // Return empty array on error
-  }
-}
+// Remove this duplicate definition
+// export async function getAllExercisesFromDB(): Promise<ExerciseData[]> {
+//   try {
+//     return await getAllExercisesFromDBRepo();
+//   } catch (error) {
+//     console.error(`Action Error - getAllExercisesFromDB:`, error);
+//     return []; // Return empty array on error
+//   }
+// }
 
 // Fetch USED Exercises Action (NEW - wraps renamed repo function)
 export async function getUsedExercises(): Promise<ExerciseData[]> {
@@ -334,73 +308,6 @@ export async function getUsedExercises(): Promise<ExerciseData[]> {
   } catch (error) {
     console.error(`Action Error - getUsedExercises:`, error);
     return []; // Return empty array on error
-  }
-}
-
-// Update Exercise Action
-export async function updateExerciseAction(
-  id: string, 
-  exerciseData: Partial<ExerciseData>
-): Promise<ExerciseData | null> {
-  try {
-    const updatedExercise = await updateExercise(id, exerciseData);
-    if (updatedExercise) {
-      revalidatePath("/exercises");       // Revalidate list page
-      revalidatePath(`/exercises/${id}`); // Revalidate detail page
-    }
-    return updatedExercise;
-  } catch (error) {
-    console.error(`Action Error - updateExerciseAction (ID: ${id}):`, error);
-    throw new Error("Failed to update exercise via action.");
-  }
-}
-
-// Delete Exercise Action
-export async function deleteExerciseAction(id: string): Promise<boolean> {
-  let imageUrlToDelete: string | undefined = undefined;
-  try {
-    // Optionally, fetch the exercise first to get the image URL if you need to delete it
-    const exerciseToDelete = await getExerciseById(id);
-    imageUrlToDelete = exerciseToDelete?.images?.[0]; // Assuming first image
-
-    const success = await deleteExercise(id);
-    if (success) {
-      revalidatePath("/exercises");
-       // Optionally, delete the associated image from R2
-      // if (imageUrlToDelete) {
-      //   try {
-      //     await deleteImageFromR2(imageUrlToDelete); 
-      //     console.log(`Deleted associated image from R2: ${imageUrlToDelete}`);
-      //   } catch (r2Error) {
-      //     console.error(`Failed to delete image from R2 (${imageUrlToDelete}):`, r2Error);
-      //     // Decide if you want to surface this error or just log it
-      //   }
-      // }
-    }
-    return success;
-  } catch (error) {
-    console.error(`Action Error - deleteExerciseAction (ID: ${id}):`, error);
-    throw new Error("Failed to delete exercise via action.");
-  }
-}
-
-// Fetch Exercises by Category Action
-export async function getExercisesByCategory(category: string): Promise<ExerciseData[]> {
-  try {
-    return await getExercisesByCategory(category);
-  } catch (error) {
-    console.error(`Action Error - getExercisesByCategory (Category: ${category}):`, error);
-    return [];
-  }
-}
-
-// Fetch Exercises by Muscle Group Action
-export async function getExercisesByMuscleGroup(muscleGroup: string): Promise<ExerciseData[]> {
-  try {
-    return await getExercisesByMuscleGroup(muscleGroup);
-  } catch (error) {
-    console.error(`Action Error - getExercisesByMuscleGroup (Muscle: ${muscleGroup}):`, error);
-    return [];
   }
 }
 
@@ -414,49 +321,29 @@ export async function searchAllExercisesByNameAction(nameQuery: string): Promise
    }
 }
 
-// Generate and Save Exercise Image Action
-export async function generateAndSaveExerciseImage(exerciseId: string, prompt: string): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
-  if (!exerciseId) return { success: false, error: "Exercise ID is required." };
-  if (!prompt) return { success: false, error: "Prompt is required." };
-
+// --- NEW Action: Delete an exercise ---
+export async function deleteExerciseAction(id: string): Promise<boolean> {
   try {
-    // 1. Generate Image using OpenAI
-    const generationResult = await generateImage(prompt);
-    if (!generationResult.success || !generationResult.imageUrl) {
-      return { success: false, error: generationResult.error || "Failed to generate image." };
-    }
-
-    const generatedImageUrl = generationResult.imageUrl;
-
-    // 2. Save Image URL to R2 (or just get the final URL if generateImage handles upload)
-    // Assuming generateImage returns a temporary URL and we need to save it permanently
-    // If generateImage already saves to R2 and returns the final URL, skip this
-    // For demonstration, let's assume generateImage gives a URL we need to process/store
-    // const r2Result = await saveImageToR2(generatedImageUrl, `${exerciseId}-${Date.now()}.png`);
-    // if (!r2Result.success || !r2Result.imageUrl) {
-    //   return { success: false, error: r2Result.error || "Failed to save image to storage." };
-    // }
-    // const finalImageUrl = r2Result.imageUrl;
-    const finalImageUrl = generatedImageUrl; // Use direct URL if generateImage handles storage
-
-    // 3. Update Exercise Document in DB
-    const updatedExercise = await updateExercise(exerciseId, { 
-      images: [finalImageUrl] // Replace or add to existing images array as needed
-    });
-
-    if (!updatedExercise) {
-      // Optional: Try to delete the uploaded image if DB update fails
-      // await deleteImageFromR2(finalImageUrl).catch(err => console.error("Failed to cleanup R2 image after DB update failure:", err));
-      return { success: false, error: "Failed to update exercise with new image URL." };
+    // Ensure user is authenticated (admin check could be added here)
+    const user = await getCurrentUser()
+    if (!user) {
+      throw new Error("User not authenticated");
     }
     
-    revalidatePath(`/exercises/${exerciseId}`); // Revalidate the specific exercise page
+    // TODO: Add check if exercise is currently used in any WorkoutExercise?
+    // Prevent deletion if it's linked?
 
-    return { success: true, imageUrl: finalImageUrl };
-
-  } catch (error: any) {
-    console.error(`Action Error - generateAndSaveExerciseImage (ID: ${exerciseId}):`, error);
-    return { success: false, error: error.message || "An unexpected error occurred." };
+    const success = await deleteExercise(id);
+    
+    if (success) {
+      revalidatePath("/exercises");
+      revalidatePath("/workouts/new"); // Revalidate workout form in case it used this exercise
+    }
+    
+    return success;
+  } catch (error) {
+    console.error(`Error deleting exercise action ${id}:`, error);
+    throw new Error(error instanceof Error ? error.message : `Failed to delete exercise ${id}`);
   }
 }
 

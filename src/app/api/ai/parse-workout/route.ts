@@ -191,7 +191,8 @@ EXPECTED JSON OUTPUT FOR EXAMPLE:
             throw new Error("Parsed JSON is missing the required 'exercises' array.");
         }
 
-        console.log('[AI Parse Workout] Successfully parsed data from AI:', parsedData);
+        // Log the full parsed data structure
+        console.log('[AI Parse Workout] Successfully parsed data from AI:', JSON.stringify(parsedData, null, 2));
         return NextResponse.json(parsedData);
        
     } catch (parseError) {

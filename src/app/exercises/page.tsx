@@ -1,4 +1,8 @@
-import { getAllExercisesFromDB, getUsedExercises, fetchExerciseByName } from "@/lib/exercise-actions"
+import { 
+  fetchAllExercisesAction, 
+  getUsedExercises, 
+  fetchExerciseByName 
+} from "@/lib/exercise-actions"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { 
@@ -39,7 +43,7 @@ export default async function ExercisesPage({
   }
   
   // Fetch ALL exercises for main list and category filtering
-  const allExercises = await getAllExercisesFromDB();
+  const allExercises = await fetchAllExercisesAction();
   // Fetch USED exercises for the new tab
   const usedExercises = await getUsedExercises();
   

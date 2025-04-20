@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { format, isToday, isPast, isFuture, parseISO } from "date-fns"
 import { useSession } from "next-auth/react"
-import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check } from "lucide-react"
+import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from 'react-hot-toast'
 
@@ -329,21 +329,19 @@ export default function NewWorkoutPage() {
   }, [workoutType, dbExercises, exercises]);
 
   // --- NEW: Moved AI Handler inside component ---
-  const handleAiProcess = async (aiLogInput: string) => { // Now it only needs the input text argument
+  // Modified to return parsed data on success
+  const handleAiProcess = async (aiLogInput: string) => { 
     if (!aiLogInput.trim()) {
       toast.error("Please enter your workout log first.");
-      return;
+      return; // Explicit return for early exit
     }
     setIsProcessingAi(true);
     setError(null);
 
-    // Access state variables directly (dbExercises, dbExercisesMap, workoutType, etc.)
     try {
       const response = await fetch('/api/ai/parse-workout', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logText: aiLogInput }),
       });
 
@@ -355,64 +353,53 @@ export default function NewWorkoutPage() {
       const parsedData: ParsedWorkoutData = await response.json();
       console.log("Received parsed data from AI API:", parsedData);
 
-      // Use the state setter directly
-      setExercises([]);
+      // --- Update State based on Parsed Data (for UI feedback) ---
+      // Still update state so the user sees the form populate
+      setExercises([]); // Clear existing before populating
 
-      // Access workoutTypeDisplayNames directly
       if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
         setWorkoutType(parsedData.workoutType as WorkoutTypeOption);
       } else {
         if (parsedData.exercises && parsedData.exercises.length > 0) {
-          // Access current workoutType state directly
-          if (!workoutType) { 
-             setWorkoutType("gym"); 
-          }
+          if (!workoutType) { setWorkoutType("gym"); }
         }
       }
 
-      if (parsedData.workoutName) {
-        setWorkoutName(parsedData.workoutName);
-      }
+      if (parsedData.workoutName) { setWorkoutName(parsedData.workoutName); }
 
       const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
         const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
-        // Access dbExercises and exerciseAliases directly
-        const canonicalExercise = findCanonicalExercise(parsedEx.name, dbExercises, exerciseAliases); 
-
-        const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => {
-          const setTempId = `set-temp-${Date.now()}-${Math.random()}`;
-          return {
-            id: setTempId,
-            weight: parsedSet.weight || "",
-            reps: parsedSet.reps || "",
-            notes: parsedSet.notes || "",
-          };
-        });
-
+        const canonicalExercise = findCanonicalExercise(parsedEx.name, dbExercises, exerciseAliases);
+        const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => ({
+          id: `set-temp-${Date.now()}-${Math.random()}`,
+          weight: parsedSet.weight || "",
+          reps: parsedSet.reps || "",
+          notes: parsedSet.notes || "",
+        }));
         return {
           id: exerciseTempId,
           exerciseId: canonicalExercise?._id,
-          name: canonicalExercise?.name || parsedEx.name, // Use canonical name if found
+          name: canonicalExercise?.name || parsedEx.name,
           notes: parsedEx.notes || "",
           sets: newSetsState,
         };
       });
-
-      // Use the state setter directly
       setExercises(newExercisesState);
       toast.success("Workout populated from AI!");
+      // --- End State Update ---
+
+      setAiLogInput(""); // Clear the input field after success
 
     } catch (err) {
       console.error("AI Processing failed:", err);
-      // Use setError directly
       setError(`AI Processing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
       toast.error("AI Processing failed.");
+      return; // Explicit return on error
     } finally {
-      // Use setIsProcessingAi directly
       setIsProcessingAi(false);
     }
   };
-  // --- END Moved AI Handler ---
+  // --- END AI Handler ---
 
   // Fetch ALL exercises from DB on mount
   useEffect(() => {
@@ -796,187 +783,189 @@ export default function NewWorkoutPage() {
     return `${workoutTypeDisplayNames[type]} - ${format(workoutDate, 'PP')}`;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!workoutType) {
-        setError("Please select a workout activity type.");
-        return;
-    }
-    if (!session?.user?.id) {
-        setError("You must be logged in to save a workout.");
-        return;
-    }
-    // Use the updated validExercises memo
-    const exercisesToSubmit = validExercises;
-    
-    // Updated Validation checks
-    const isSubmitStrengthType = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
-    if (isSubmitStrengthType && exercisesToSubmit.length === 0) {
-      setError("Please add at least one exercise with valid sets (reps > 0).");
-      return;
-    }
-    if (!isSubmitStrengthType && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
-      setError("Please enter a valid distance and duration for this activity type.");
-      return;
-    }
+  // Submit function using state data 
+  // Renamed from submitWorkout, removed map parameter
+  const handleSaveWorkout = async () => { 
+    // Get current state values at the time of clicking save
+    const currentExercises = exercises;
+    // No longer need currentDbMap here
+    const currentWorkoutType = workoutType;
 
-    setError(null);
+    if (!currentWorkoutType) {
+       // ... validation ...
+    }
+    // ... other initial checks ...
+
     setIsSubmitting(true);
+    setError(null);
 
-    // --- Determine the correct WorkoutType for the database ---
+    // ... determine finalWorkoutTypeForPayload based on currentWorkoutType ...
     let finalWorkoutTypeForPayload: AllowedWorkoutType;
+    const isSubmitStrengthType = currentWorkoutType === "gym" || currentWorkoutType === "home_strength" || currentWorkoutType === "strength";
     if (isSubmitStrengthType) {
-      finalWorkoutTypeForPayload = "strength";
-    } else if (["running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(workoutType)) {
-      finalWorkoutTypeForPayload = workoutType as AllowedWorkoutType;
+        finalWorkoutTypeForPayload = "strength";
+    } else if (["running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(currentWorkoutType)) {
+        finalWorkoutTypeForPayload = currentWorkoutType as AllowedWorkoutType;
     } else {
-      console.error("Invalid workoutType selected:", workoutType);
-      setError("Invalid activity type selected.");
-      setIsSubmitting(false);
-      return;
+        console.error("Invalid workoutType selected for submission:", currentWorkoutType);
+        setError("Invalid activity type selected.");
+        setIsSubmitting(false);
+        return;
     }
-    
-    const finalWorkoutName = workoutName.trim() || getDefaultWorkoutName(workoutType, date);
 
-    // --- Map form state (ExerciseState[]) to payload structure --- 
-    let exercisesPayload: WorkoutUpdatePayload['exercises'] = []; 
-
-    // --- Map form state (ExerciseState[]) to payload structure --- 
-    const mappedExercises = exercises
-      .map((exState, index): NonNullable<WorkoutUpdatePayload['exercises']>[number] | null => {
-        const canonicalExercise = exState.exerciseId ? dbExercisesMap.get(exState.exerciseId) : dbExercisesMap.get(exState.name);
-        
-        // Skip if no canonical exercise found or name is empty
-        if (!canonicalExercise || !exState.name) return null; 
-
-        const isCardioExercise = canonicalExercise.category === 'cardio';
-
-        // --- Handle Cardio Exercise --- 
-        if (isCardioExercise) {
-            const durationMinutes = Number.parseFloat(exState.duration || '0');
-            const distanceKm = Number.parseFloat(exState.distance || '0');
-            // Only include if duration or distance is provided
-            if (durationMinutes > 0 || distanceKm > 0) {
-                return {
-                  exerciseId: canonicalExercise._id,
-                  name: canonicalExercise.name,
-                  order: index,
-                  duration: durationMinutes > 0 ? durationMinutes * 60 : undefined, // Convert form minutes to seconds
-                  distance: distanceKm > 0 ? distanceKm * 1000 : undefined, // Convert form km to meters
-                  sets: [], // Ensure sets is empty array for cardio
-                  notes: exState.notes || undefined,
-                } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
-            } else {
-                return null; // Skip cardio exercise if no duration/distance entered
-            }
-        }
-        // --- Handle Strength Exercise --- 
-        else {
-            const exerciseSetsPayload: InputSetData[] = exState.sets
-              .map((setState, setIndex): InputSetData | null => {
-                const reps = Number.parseInt(setState.reps || '0');
-                if (reps > 0) { // Only include sets with reps
-                  return {
-                    weight: Number.parseFloat(setState.weight || '0') || 0,
-                    reps: reps,
-                    duration: setState.duration ? Number.parseInt(setState.duration) : undefined,
-                    distance: setState.distance ? Number.parseFloat(setState.distance) : undefined,
-                    notes: setState.notes || undefined,
-                    order: setIndex 
-                  };
-                } 
-                return null;
-              })
-              .filter(isDefined);
+    // Map the CURRENT exercises state using findCanonicalExercise
+    const mappedExercises = currentExercises
+        .map((exState, index): NonNullable<WorkoutUpdatePayload['exercises']>[number] | null => {
+            const sourceName = exState.name;
             
-            // Only include the exercise if it has valid sets
-            if (exerciseSetsPayload.length > 0) {
-              return {
-                _id: typeof exState.id === 'string' && exState.id.startsWith('loaded-') ? exState.id.replace('loaded-', '') : undefined,
-                exerciseId: canonicalExercise._id,
-                name: exState.name, 
-                order: index,
-                sets: exerciseSetsPayload,
-                notes: exState.notes || undefined, 
-              } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
-            } 
-            return null; // Skip strength exercise if no valid sets
-        }
-      });
+            // Always use findCanonicalExercise based on the name in the state
+            console.log(`[handleSaveWorkout] Finding canonical for: ${sourceName}`);
+            const canonicalExercise = findCanonicalExercise(sourceName, dbExercises, exerciseAliases);
+            console.log(`[handleSaveWorkout] Result: ${canonicalExercise ? canonicalExercise.name : 'Not Found'}`);
 
-    // Filter out nulls and assign to the payload
-    exercisesPayload = mappedExercises.filter(isDefined);
+            if (!canonicalExercise || !sourceName) { // Keep sourceName check just in case
+                console.warn(`[handleSaveWorkout] Skipping exercise (no canonical/name): ${sourceName}`);
+                return null;
+            }
+            
+            const isCardioExercise = canonicalExercise.category === 'cardio';
 
-    // --- Validation after mapping ---
-    if (finalWorkoutTypeForPayload === 'strength' && exercisesPayload.length === 0 && exercises.length > 0) {
-       // Check if the original form had exercises but none were valid after mapping
-       setError("Please ensure exercises have valid sets (reps > 0) or duration/distance for cardio.");
+            if (isCardioExercise) {
+               // ... cardio mapping logic using exState.duration/distance ...
+                 const durationMinutes = Number.parseFloat(exState.duration || '0');
+                 const distanceKm = Number.parseFloat(exState.distance || '0');
+                 if (durationMinutes > 0 || distanceKm > 0) {
+                     return {
+                         exerciseId: canonicalExercise._id,
+                         name: canonicalExercise.name,
+                         order: index,
+                         duration: durationMinutes * 60,
+                         distance: distanceKm * 1000,
+                         sets: [],
+                         notes: exState.notes || undefined,
+                     } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
+                 } else {
+                      return {
+                          exerciseId: canonicalExercise._id,
+                          name: canonicalExercise.name,
+                          order: index,
+                          sets: [],
+                          notes: exState.notes || undefined,
+                      } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
+                 }
+            } else {
+                // Strength specific payload using exState.sets
+                const exerciseSetsPayload: InputSetData[] = exState.sets
+                    .map((setState, setIndex): InputSetData | null => {
+                        const reps = Number.parseInt(setState.reps || '0');
+                        if (reps > 0) {
+                            const setDuration = setState.duration ? Number.parseInt(setState.duration) : undefined;
+                            const setDistance = setState.distance ? Number.parseFloat(setState.distance) : undefined;
+                            return {
+                                weight: Number.parseFloat(setState.weight || '0') || 0,
+                                reps: reps,
+                                duration: setDuration,
+                                distance: setDistance,
+                                notes: setState.notes || undefined,
+                                order: setIndex
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(isDefined);
+
+                if (exerciseSetsPayload.length > 0) {
+                    return {
+                        exerciseId: canonicalExercise._id,
+                        name: canonicalExercise.name,
+                        order: index,
+                        sets: exerciseSetsPayload,
+                        notes: exState.notes || undefined,
+                    } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
+                }
+                return null;
+            }
+        })
+        .filter(isDefined);
+
+    const exercisesPayload = mappedExercises;
+
+    // --- Validation (on mapped payload) ---
+    if (finalWorkoutTypeForPayload === 'strength' && exercisesPayload.length === 0) {
+       setError("Workout requires at least one exercise with valid sets (reps > 0).");
        setIsSubmitting(false);
        return;
     }
-    // (Keep existing validation for non-strength types)
+    // ... non-strength validation using component state distance/duration ...
     if (finalWorkoutTypeForPayload !== 'strength' && (!distance || !duration || Number(distance) <= 0 || Number(duration) <= 0)) {
-      setError("Please enter a valid distance and duration for this activity type.");
+      setError("Please enter a valid overall distance and duration for this activity type.");
       setIsSubmitting(false);
       return;
     }
+    // --- End Validation --- 
 
-    // --- Construct final WorkoutUpdatePayload --- 
+    // ... construct final workoutPayload using finalWorkoutName, date, component state distance/duration, etc. ...
+    const finalWorkoutName = workoutName.trim() || getDefaultWorkoutName(currentWorkoutType, date);
     let cardioDetailsPayload: WorkoutUpdatePayload['cardioDetails'] = undefined;
-    const parsedCardioDistance = distance ? Number.parseFloat(distance) * 1000 : undefined; // meters
-    const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined; // seconds
-
-    if (finalWorkoutTypeForPayload !== 'strength') {
-        cardioDetailsPayload = { distance: parsedCardioDistance ?? 0, duration: parsedCardioDuration ?? 0 };
+    const parsedCardioDistance = distance ? Number.parseFloat(distance) * 1000 : undefined;
+    const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined;
+    if (finalWorkoutTypeForPayload === 'strength') {
+        cardioDetailsPayload = undefined;
+    } else {
+        cardioDetailsPayload = { 
+            distance: parsedCardioDistance ?? 0, 
+            duration: parsedCardioDuration ?? 0 
+        };
     }
-    
+    let finalDuration = 0;
+    if (finalWorkoutTypeForPayload === 'strength') {
+        const manualDurationSeconds = duration ? Number.parseFloat(duration) * 60 : 0;
+        finalDuration = manualDurationSeconds > 0 ? manualDurationSeconds : estimateWorkoutDuration(currentExercises); // Use currentExercises for estimate
+    } else {
+        finalDuration = parsedCardioDuration || 0;
+    }
     const workoutPayload: Omit<WorkoutUpdatePayload, 'userId'> = {
-      date: date, 
+      date: date,
       name: finalWorkoutName,
       type: finalWorkoutTypeForPayload,
-      notes: getSummaryText() || "", 
-      // Use overall duration/distance for non-strength, calculate for strength
-      duration: finalWorkoutTypeForPayload === 'strength'
-        ? estimateWorkoutDuration(exercises) // Estimate based on potentially mixed exercises
-        : (parsedCardioDuration || 0),
-      exercises: exercisesPayload, // Use the filtered and mapped payload
-      cardioDetails: cardioDetailsPayload, // Use overall cardio details
+      notes: getSummaryText() || "",
+      duration: finalDuration,
+      exercises: exercisesPayload,
+      cardioDetails: cardioDetailsPayload,
     };
 
-    console.log("Submitting workout payload (Adjusted for Cardio Exercises):", JSON.stringify(workoutPayload, null, 2));
+    console.log("[handleSaveWorkout] Submitting payload:", JSON.stringify(workoutPayload, null, 2));
 
+    // ... try/catch block for submission (create/update action calls) ...
     try {
-      setIsLoadingData(true);
       let savedWorkout;
       if (isEditing && editingWorkoutId) {
-        console.log(`Attempting to update workout ID: ${editingWorkoutId}`);
         savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload);
         toast.success('Workout updated successfully!');
       } else {
-        console.log("Attempting to create new workout");
-        // Type assertion needed as createWorkout expects userId, but Omit removed it.
-        const createPayload = {
-            ...workoutPayload,
+        const createPayload = { 
+            ...workoutPayload, 
             userId: session!.user!.id, 
-        } as any; // Use `as any` or define a specific CreatePayload type
-        savedWorkout = await createWorkoutAction(createPayload); 
+            cardioDetails: undefined, 
+            exercises: workoutPayload.exercises as Array<{ name: string; notes?: string; sets?: InputSetData[]; duration?: number; distance?: number }>
+        };
+        savedWorkout = await createWorkoutAction(createPayload);
         toast.success('Workout created successfully!');
       }
-      
       if (savedWorkout && savedWorkout._id) {
         router.push(`/workouts/${savedWorkout._id}`);
       } else {
-        console.error("Workout save operation did not return a valid workout object or ID.", savedWorkout);
-        toast.error('Failed to get workout ID after saving.');
+        throw new Error("Save operation did not return a valid workout ID.");
       }
     } catch (err) {
-      console.error('Failed to save workout:', err);
+      console.error('[handleSaveWorkout] Failed:', err);
+      setError(`Error: ${err instanceof Error ? err.message : 'Failed to save workout'}`);
       toast.error(`Error: ${err instanceof Error ? err.message : 'Failed to save workout'}`);
     } finally {
       setIsSubmitting(false);
-      setIsLoadingData(false);
     }
   }
+  // --- END Submit function ---
 
   // Helper styles (remain the same)
   const inlineInputStyle = "w-20 h-auto inline-block border-0 border-b border-input rounded-none px-1 py-0 text-center focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 bg-transparent align-baseline text-base font-bold focus:border-primary transition-colors duration-200 ease-in-out"
@@ -1010,8 +999,7 @@ export default function NewWorkoutPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-
+      <div className="space-y-8">
         {/* Workout Metadata Section */}
         <div className="space-y-4 rounded-md border p-4 md:p-6">
            <h2 className="text-lg font-medium mb-4">Workout Details</h2>
@@ -1085,7 +1073,7 @@ export default function NewWorkoutPage() {
         </div>
 
         {/* NEW: AI Quick Log Section */}
-        <div className="space-y-4 rounded-md border p-4 md:p-6 opacity-50 cursor-not-allowed">
+        <div className="space-y-4 rounded-md border p-4 md:p-6">
           <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
           <div>
             <Label htmlFor="ai-quick-log">Paste your workout log</Label>
@@ -1095,17 +1083,24 @@ export default function NewWorkoutPage() {
               className="mt-1 min-h-[80px]"
               value={aiLogInput} 
               onChange={(e) => setAiLogInput(e.target.value)} 
-              disabled={true} // <-- Always disabled for now
+              disabled={isProcessingAi}
             />
-            <p className="text-sm text-muted-foreground mt-1">Enter your workout details in a simple format. (Temporarily Disabled)</p> {/* Added note */}
+            <p className="text-sm text-muted-foreground mt-1">Enter your workout details in simple format.</p>
           </div>
           <Button 
             type="button" 
             onClick={() => handleAiProcess(aiLogInput)} 
-            disabled={true} // <-- Always disabled for now
+            disabled={isProcessingAi || !aiLogInput.trim()}
             variant="outline"
           >
-            Process with AI {/* Removed dynamic text, it's always disabled */}
+            {isProcessingAi ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Process with AI"
+            )}
           </Button>
         </div>
         {/* END NEW: AI Quick Log Section */}
@@ -1366,13 +1361,26 @@ export default function NewWorkoutPage() {
           </Button>
         </div>
 
-        {/* Save Workout Button */}
+        {/* Save Button - onClick calls handleSaveWorkout */}
         <div className="flex justify-end pt-4">
-          <Button type="submit" disabled={isSubmitting || !workoutType || (!isStrengthWorkout && (!duration || Number(duration) <= 0) && (!distance || Number(distance) <= 0)) || (isStrengthWorkout && exercises.length === 0) }>
-            {isSubmitting ? "Saving..." : isEditing ? "Update Workout" : "Save Workout"}
+          <Button 
+            type="button" // Should be button
+            onClick={handleSaveWorkout} // Calls save handler directly
+            disabled={isSubmitting || !workoutType || isLoadingData || isProcessingAi}
+          >
+            {isSubmitting ? ( 
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : isEditing ? ( 
+              "Update Workout"
+            ) : ( 
+              "Save Workout"
+            )}
           </Button>
         </div>
-      </form>
+      </div> {/* End of the div replacing the form */} 
     </div>
   )
 }
