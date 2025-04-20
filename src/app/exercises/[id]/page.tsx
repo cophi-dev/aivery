@@ -65,7 +65,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   const [description, setDescription] = useState("")
   const [category, setCategory] = useState<"strength" | "cardio" | "flexibility">("strength")
   const [equipment, setEquipment] = useState<string[]>([])
-  const [instructions, setInstructions] = useState("")
+  const [instructions, setInstructions] = useState<string[]>([])
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>([])
   
@@ -93,7 +93,7 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
           setDescription(exerciseData.description || "")
           setCategory(exerciseData.category as "strength" | "cardio" | "flexibility")
           setEquipment(exerciseData.equipment || [])
-          setInstructions(exerciseData.instructions || "")
+          setInstructions(exerciseData.instructions || [])
           setMuscleGroups(exerciseData.primaryMuscles || [])
           
           // Fetch history (no longer fetching API details here)
@@ -446,13 +446,13 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                   </div>
                 )}
                 
-                {exercise.instructions && (
-                   <div>
-                     <h3 className="font-medium mb-1">Instructions</h3>
-                     <p className="whitespace-pre-line">
-                       {exercise.instructions}
-                     </p>
-                   </div>
+                {exercise.instructions && exercise.instructions.length > 0 && (
+                  <div>
+                    <h3 className="font-medium mb-1">Instructions</h3>
+                    <p className="whitespace-pre-line">
+                      {exercise.instructions.join('\n')}
+                    </p>
+                  </div>
                 )}
                 
                 {exercise.description && !exercise.instructions && (
@@ -865,7 +865,12 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
             
             <div className="space-y-2">
               <Label htmlFor="instructions">Instructions</Label>
-              <Textarea id="instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} />
+              <Textarea 
+                id="instructions" 
+                value={instructions.join('\n')} 
+                onChange={(e) => setInstructions(e.target.value.split('\n'))} 
+                rows={6} 
+              />
             </div>
             
             {/* --- Add Videos Section --- */}
