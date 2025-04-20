@@ -160,7 +160,7 @@ function ExerciseCard({ exercise }: { exercise: ExerciseData }) {
           <div>
             {/* Display Primary Muscles */}
             <div className="flex flex-wrap gap-1 mb-2">
-              {(exercise.primaryMuscles || []).map((muscle: string) => (
+              {(exercise.muscleGroups || []).map((muscle: string) => (
                 <Badge key={muscle} variant="secondary" className="capitalize">
                   {muscle}
                 </Badge>
