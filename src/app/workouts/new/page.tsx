@@ -904,11 +904,11 @@ export default function NewWorkoutPage() {
 
     // Define cardioDetailsPayload *before* notes generation
     let cardioDetailsPayload: WorkoutUpdatePayload['cardioDetails'] = undefined;
-    const parsedCardioDistance = distance ? Number.parseFloat(distance) * 1000 : undefined;
-    const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined;
+    const parsedCardioDistance = distance ? Number.parseFloat(distance) : undefined; // Distance from form state is KM
+    const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined; // Duration from form state is minutes, payload needs seconds
     if (finalWorkoutTypeForPayload !== 'strength') { // Assign only if not strength
         cardioDetailsPayload = { 
-            distance: parsedCardioDistance ?? 0, 
+            distance: parsedCardioDistance ?? 0, // Send KM to backend
             duration: parsedCardioDuration ?? 0 
         };
     }
@@ -944,8 +944,8 @@ export default function NewWorkoutPage() {
            finalNotes = `${verb} a total volume of ${Math.round(totalVolume)} kg over ${totalReps} reps. This was a ${intensityText} workout.`;
         }
     } else if (["running", "swimming", "cycling", "walking"].includes(finalWorkoutTypeForPayload)) {
-        const distKm = (cardioDetailsPayload?.distance ?? 0) / 1000;
-        const durMin = (cardioDetailsPayload?.duration ?? 0) / 60;
+        const distKm = cardioDetailsPayload?.distance ?? 0; // Distance is already in KM
+        const durMin = (cardioDetailsPayload?.duration ?? 0) / 60; // Duration is in seconds, convert to minutes
          if (distKm > 0 && durMin > 0) {
             const paceMinPerKm = durMin / distKm;
             const paceText = paceMinPerKm < 5 ? "quite fast" : paceMinPerKm < 7 ? "a good pace" : "a comfortable pace";
