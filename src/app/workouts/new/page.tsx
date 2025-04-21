@@ -162,24 +162,18 @@ const findCanonicalExercise = (
   if (!parsedName) return undefined;
 
   const normalizedParsedName = normalizeName(parsedName);
-  console.log(`[findCanonicalExercise] Attempting to match: "${parsedName}" (Normalized: "${normalizedParsedName}")`);
 
   // 1. Try direct normalized match
-  console.log(`[findCanonicalExercise] Checking direct match against ${dbExercises.length} DB exercises...`);
   let foundExercise = dbExercises.find(ex => {
       const normalizedDbName = normalizeName(ex.name);
-      console.log(`[findCanonicalExercise] Comparing "${normalizedParsedName}" with DB "${ex.name}" (Normalized: "${normalizedDbName}")`);
       return normalizedDbName === normalizedParsedName;
   });
 
   if (foundExercise) {
-    console.log(`[findCanonicalExercise] Found direct match:`, foundExercise);
     return foundExercise;
   }
-  console.log(`[findCanonicalExercise] No direct match found.`);
 
   // 2. Try alias match (normalize the alias key and the target)
-  console.log(`[findCanonicalExercise] Checking alias match...`);
   // First, check if normalized input matches a normalized alias *key*
   const normalizedAliasKey = Object.keys(aliases).find(key => {
       const normalizedKey = normalizeName(key);
@@ -188,26 +182,15 @@ const findCanonicalExercise = (
   const aliasTargetName = normalizedAliasKey ? aliases[normalizedAliasKey] : undefined;
 
   if (aliasTargetName) {
-    console.log(`[findCanonicalExercise] Found matching alias key: "${normalizedAliasKey}", Target: "${aliasTargetName}"`);
-    const normalizedAliasTarget = normalizeName(aliasTargetName);
-    console.log(`[findCanonicalExercise] Normalized alias target: "${normalizedAliasTarget}"`);
     // Find DB exercise matching the normalized alias *target*
-    console.log(`[findCanonicalExercise] Checking DB match against normalized alias target...`);
     foundExercise = dbExercises.find(ex => {
         const normalizedDbName = normalizeName(ex.name);
-        console.log(`[findCanonicalExercise] Comparing normalized target "${normalizedAliasTarget}" with DB "${ex.name}" (Normalized: "${normalizedDbName}")`);
-        return normalizeName(ex.name) === normalizedAliasTarget;
+        return normalizeName(ex.name) === normalizeName(aliasTargetName);
     });
     if (foundExercise) {
-      console.log(`[findCanonicalExercise] Found alias match:`, foundExercise);
       return foundExercise;
     }
-     console.log(`[findCanonicalExercise] No DB match found for normalized alias target.`);
-  } else {
-     console.log(`[findCanonicalExercise] No matching alias key found.`);
   }
-
-  // 3. Optional: Add fuzzy matching here later if needed
 
   console.warn(`[findCanonicalExercise] Could not find canonical match for: "${parsedName}" (Normalized: "${normalizedParsedName}")`);
   return undefined; // Not found
@@ -218,7 +201,7 @@ export default function NewWorkoutPage() {
   const searchParams = useSearchParams()
   const { data: session } = useSession()
   
-  const editingWorkoutId = searchParams?.get("edit");
+  const editingWorkoutId = searchParams?.get("id");
   const duplicateWorkoutId = searchParams?.get("duplicate");
 
   const [date, setDate] = useState<Date>(new Date())
@@ -351,7 +334,6 @@ export default function NewWorkoutPage() {
       }
 
       const parsedData: ParsedWorkoutData = await response.json();
-      console.log("Received parsed data from AI API:", parsedData);
 
       // --- Update State based on Parsed Data (for UI feedback) ---
       // Still update state so the user sees the form populate
@@ -453,7 +435,7 @@ export default function NewWorkoutPage() {
   // Fetch workout data if editing or duplicating
   useEffect(() => {
     const workoutIdToLoad = editingWorkoutId || duplicateWorkoutId;
-    if (workoutIdToLoad) {
+    if (workoutIdToLoad && dbExercises.length > 0 && dbExercisesMap.size > 0) {
       setIsLoadingData(true);
       setError(null);
       const fetchWorkoutData = async () => {
@@ -520,9 +502,11 @@ export default function NewWorkoutPage() {
           // If it's a strength workout and duration is missing or zero, estimate it
           if (data.type === 'strength' && (!data.duration || data.duration === 0)) {
             const estimatedDuration = estimateWorkoutDuration(mappedExercises);
-            setDuration(estimatedDuration.toString());
+            setDuration((estimatedDuration / 60).toString()); // Estimate in seconds, set state in minutes
           } else {
-            setDuration(data.duration?.toString() || "");
+            // Convert fetched duration (seconds) to minutes for the form
+            const durationInMinutes = data.duration ? Math.round(data.duration / 60) : "";
+            setDuration(durationInMinutes.toString()); 
           }
           
           console.log("Loaded workout data for edit/duplicate:", data);
@@ -535,8 +519,10 @@ export default function NewWorkoutPage() {
         }
       };
       fetchWorkoutData();
+    } else {
+      console.log(`[fetchWorkoutData Effect Check] Skipping fetch. Conditions not met.`);
     }
-  }, [editingWorkoutId, duplicateWorkoutId, dbExercises]); // Added dbExercises to dependencies
+  }, [editingWorkoutId, duplicateWorkoutId, dbExercises, dbExercisesMap]);
 
   // Set tense based on date
   useEffect(() => {
@@ -919,10 +905,12 @@ export default function NewWorkoutPage() {
     }
     let finalDuration = 0;
     if (finalWorkoutTypeForPayload === 'strength') {
-        const manualDurationSeconds = duration ? Number.parseFloat(duration) * 60 : 0;
-        finalDuration = manualDurationSeconds > 0 ? manualDurationSeconds : estimateWorkoutDuration(currentExercises); // Use currentExercises for estimate
+        const manualDurationMinutes = duration ? Number.parseFloat(duration) : 0;
+        // Estimate duration returns seconds, so we only convert manual input
+        finalDuration = manualDurationMinutes > 0 ? manualDurationMinutes * 60 : estimateWorkoutDuration(currentExercises);
     } else {
-        finalDuration = parsedCardioDuration || 0;
+        // Convert form duration (minutes) back to seconds for payload
+        finalDuration = duration ? Number.parseFloat(duration) * 60 : 0;
     }
     const workoutPayload: Omit<WorkoutUpdatePayload, 'userId'> = {
       date: date,
@@ -1072,38 +1060,40 @@ export default function NewWorkoutPage() {
            </div>
         </div>
 
-        {/* NEW: AI Quick Log Section */}
-        <div className="space-y-4 rounded-md border p-4 md:p-6">
-          <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
-          <div>
-            <Label htmlFor="ai-quick-log">Paste your workout log</Label>
-            <Textarea 
-              id="ai-quick-log"
-              placeholder="e.g., Squats: 1x5 60 kg, 3x5 50 kg, Bench Press: 4x5 60 kg..."
-              className="mt-1 min-h-[80px]"
-              value={aiLogInput} 
-              onChange={(e) => setAiLogInput(e.target.value)} 
-              disabled={isProcessingAi}
-            />
-            <p className="text-sm text-muted-foreground mt-1">Enter your workout details in simple format.</p>
+        {/* --> Conditionally render AI Quick Log Section <-- */}
+        {!isEditing && (
+          <div className="space-y-4 rounded-md border p-4 md:p-6">
+            <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
+            <div>
+              <Label htmlFor="ai-quick-log">Paste your workout log</Label>
+              <Textarea 
+                id="ai-quick-log"
+                placeholder="e.g., Squats: 1x5 60 kg, 3x5 50 kg, Bench Press: 4x5 60 kg..."
+                className="mt-1 min-h-[80px]"
+                value={aiLogInput} 
+                onChange={(e) => setAiLogInput(e.target.value)} 
+                disabled={isProcessingAi}
+              />
+              <p className="text-sm text-muted-foreground mt-1">Enter your workout details in simple format.</p>
+            </div>
+            <Button 
+              type="button" 
+              onClick={() => handleAiProcess(aiLogInput)} 
+              disabled={isProcessingAi || !aiLogInput.trim()}
+              variant="outline"
+            >
+              {isProcessingAi ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Process with AI"
+              )}
+            </Button>
           </div>
-          <Button 
-            type="button" 
-            onClick={() => handleAiProcess(aiLogInput)} 
-            disabled={isProcessingAi || !aiLogInput.trim()}
-            variant="outline"
-          >
-            {isProcessingAi ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              "Process with AI"
-            )}
-          </Button>
-        </div>
-        {/* END NEW: AI Quick Log Section */}
+        )}
+        {/* --> End Conditional Render <-- */}
 
         {/* Conditional Fields for Non-Strength Workouts */}
         {!isStrengthWorkout && workoutType && (
@@ -1116,7 +1106,7 @@ export default function NewWorkoutPage() {
                     id="duration"
                     type="number" 
                     placeholder="e.g., 30" 
-                    value={duration} 
+                    value={duration} // This now correctly holds minutes
                     onChange={(e) => setDuration(e.target.value)}
                     min="0" 
                   />

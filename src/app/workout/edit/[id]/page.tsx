@@ -1,27 +1,26 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 
 export default function EditWorkoutRedirect({ params }: { params: { id: string } }) {
   const router = useRouter()
+  console.log(`[EditWorkoutRedirect] Rendering for id: ${params?.id}`);
   
-  useEffect(() => {
-    // Check for query parameters
-    const searchParams = new URLSearchParams(window.location.search);
-    const duplicateIndex = searchParams.get('duplicate');
-    
-    // Build the redirect URL
-    let redirectUrl = `/workouts/new?edit=true&id=${params.id}`;
-    
-    // If we have a duplicate exercise instruction, add it to the URL
-    if (duplicateIndex) {
-      redirectUrl += `&duplicate=${duplicateIndex}`;
+  // --- Attempt direct redirect (diagnostic step) --- 
+  // Note: This is not standard React practice, usually done in useEffect
+  if (typeof window !== 'undefined') { // Basic check to ensure client-side
+    console.log('[EditWorkoutRedirect] Attempting direct redirect...');
+    const redirectUrl = `/workouts/new?edit=true&id=${params.id}`;
+    try {
+      router.push(redirectUrl); 
+      console.log('[EditWorkoutRedirect] Direct router.push called.');
+    } catch (error) {
+      console.error('[EditWorkoutRedirect] Error during direct router.push:', error);
     }
-    
-    // Redirect to the new workout page with appropriate parameters
-    router.push(redirectUrl);
-  }, [params.id, router])
+  } else {
+    console.log('[EditWorkoutRedirect] Skipping direct redirect on server render.');
+  }
+  // --- End diagnostic step ---
   
   return (
     <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
