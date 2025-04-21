@@ -69,6 +69,7 @@ export interface IWorkout extends Document {
   distance: number // <-- Uncomment this line
   // calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
   // REMOVED: exercises?: IExercise[] // This is now handled by WorkoutExercise collection
+  aiHighlight?: string
   cardioDetails?: ICardioDetails // Keep for potentially storing *overall* cardio summary if needed, distinct from individual exercise performance
   notes?: string // Overall workout notes
   completed?: boolean
@@ -198,7 +199,8 @@ const WorkoutSchema: Schema = new Schema(
     distance: { type: Number }, // <-- Uncomment this line
     // REMOVED: calories: { type: Number },
     // REMOVED: exercises: [ExerciseSchema], // Removed embedded exercises
-    cardioDetails: { type: CardioDetailsSchema }, // Keep overall details if needed
+    aiHighlight: { type: String, required: false }, // <-- Added field for AI highlight
+    cardioDetails: { type: CardioDetailsSchema, required: false }, // Ensure required: false if not always present
     notes: { type: String },
     completed: { type: Boolean, default: false },
     completedAt: { type: Date },

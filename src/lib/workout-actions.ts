@@ -377,6 +377,9 @@ export async function fetchWorkout(id: string): Promise<any | null> {
         deletedAt: workout.deletedAt?.toISOString(),
         // Use deepSerialize for cardioDetails
         cardioDetails: workout.cardioDetails ? deepSerialize(workout.cardioDetails) : undefined,
+        // <<< START CHANGE: Add aiHighlight field >>>
+        aiHighlight: workout.aiHighlight, // Include the AI highlight if it exists
+        // <<< END CHANGE >>>
     };
 
     // 6. Combine and return the fully plain object

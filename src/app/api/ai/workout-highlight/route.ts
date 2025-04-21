@@ -201,6 +201,13 @@ export async function GET(req: NextRequest) {
             }
             console.log(`[GET /ai/workout-highlight] Workout ${workoutId} fetched successfully.`);
 
+            // Check if the fetched workout data includes a pre-generated highlight
+            if (workoutData.aiHighlight) {
+                console.log(`[GET /ai/workout-highlight] Found existing AI highlight for workout ${workoutId}. Returning cached version.`);
+                return NextResponse.json({ highlight: workoutData.aiHighlight });
+            }
+            console.log(`[GET /ai/workout-highlight] No cached highlight found for workout ${workoutId}. Generating new one.`);
+
         } catch (fetchError) {
              console.error(`[GET /ai/workout-highlight] Error fetching workout ${workoutId}:`, fetchError);
              return NextResponse.json({ error: "Failed to fetch workout data" }, { status: 500 });
@@ -362,6 +369,15 @@ export async function GET(req: NextRequest) {
         }
 
         console.log(`[GET /ai/workout-highlight] Generated AI Highlight for ${userName}: "${aiHighlight}"`);
+
+        // Save highlight to DB
+        try {
+             await Workout.findByIdAndUpdate(workoutId, { $set: { aiHighlight: aiHighlight } });
+             console.log(`[GET /ai/workout-highlight] Successfully saved AI highlight to workout ${workoutId}`);
+         } catch (dbUpdateError) {
+             console.error(`[GET /ai/workout-highlight] Failed to save AI highlight for workout ${workoutId}:`, dbUpdateError);
+             // Don't fail the request, just log the error
+         }
 
         // 8. Return the highlight
         return NextResponse.json({ highlight: aiHighlight });
