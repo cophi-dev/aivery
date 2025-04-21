@@ -47,7 +47,7 @@ const ExerciseSchema: Schema<IExercise> = new Schema(
     tips: { type: [String], required: false },
     images: { type: [String], required: false },
     videos: { type: [String], required: false },
-    tags: { type: [String], default: [], index: true },
+    tags: { type: [String], default: [] },
     trackMaxReps: { type: Boolean, default: false },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
   },
