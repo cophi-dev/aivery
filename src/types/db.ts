@@ -89,6 +89,7 @@ export interface WorkoutData {
   importedFrom?: string;
   importId?: string;
   stravaLink?: string;
+  aiHighlight?: string;
   createdAt: string;
   updatedAt: string;
   progressMetrics?: {

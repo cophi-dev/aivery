@@ -3,6 +3,7 @@ import { getCollection } from "../mongodb"
 import type { WorkoutData } from "@/types/db"
 import dbConnect from '../mongodb'
 import WorkoutModel, { IWorkout } from '../models/workout'
+import WorkoutExerciseModel from '../models/workoutExercise'
 import mongoose, { Document, FlattenMaps } from 'mongoose'
 
 type LeanDocument<T> = {
@@ -225,85 +226,44 @@ function calculateExerciseVolume(exercise: any): number {
 export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
   try {
     await dbConnect()
-    const rawDoc = await WorkoutModel.findById(id).lean().exec();
-    if (!rawDoc) return null;
-    const doc: any = rawDoc;
+    
+    // 1. Fetch the main workout document without population
+    const workoutDoc = await WorkoutModel.findById(id)
+      .lean()
+      .exec();
+      
+    if (!workoutDoc) {
+      console.log(`[workoutRepository] Workout with ID ${id} not found.`);
+      return null;
+    }
 
-    // Create a clean object without using JSON.parse(JSON.stringify())
-    return {
-      _id: doc._id.toString(),
-      userId: doc.userId.toString(),
-      type: doc.type || '',
-      name: doc.name || '',
-      date: doc.date instanceof Date ? doc.date.toISOString() : new Date(doc.date).toISOString(),
-      duration: doc.duration || 0,
-      pace: (doc.cardioDetails?.distance && doc.cardioDetails.distance > 0 && doc.duration > 0)
-            ? (doc.duration / doc.cardioDetails.distance) / 60
-            : undefined,
-      calculatedVolume: doc.type === 'strength' && Array.isArray(doc.workoutExercises)
-            ? doc.workoutExercises.reduce((total: number, exercise: any) => total + calculateExerciseVolume(exercise), 0)
-            : undefined,
-      distance: doc.distance,
-      calories: doc.calories,
-      notes: doc.notes,
-      intensity: doc.intensity,
-      workoutExercises: Array.isArray(doc.workoutExercises) ? doc.workoutExercises.map((ex: any) => ({
-        _id: ex._id?.toString(),
-        workoutId: ex.workoutId?.toString(),
-        exerciseId: ex.exerciseId ? {
-          _id: ex.exerciseId._id?.toString(),
-          name: ex.exerciseId.name,
-          category: ex.exerciseId.category,
-          equipment: ex.exerciseId.equipment
-        } : null,
-        sets: Array.isArray(ex.sets) ? ex.sets.map((set: any) => ({
-          _id: set._id?.toString(),
-          weight: set.weight,
-          reps: set.reps,
-          duration: set.duration,
-          distance: set.distance,
-          notes: set.notes
-        })) : [],
-        notes: ex.notes,
-        duration: ex.duration,
-        distance: ex.distance
-      })) : [],
-      cardioDetails: doc.cardioDetails ? {
-        distance: doc.cardioDetails.distance,
-        duration: doc.cardioDetails.duration,
-        pace: doc.cardioDetails.pace,
-        speed: doc.cardioDetails.speed,
-        maxSpeed: doc.cardioDetails.maxSpeed,
-        elevationGain: doc.cardioDetails.elevationGain,
-        heartRate: doc.cardioDetails.heartRate ? {
-          average: doc.cardioDetails.heartRate.average,
-          max: doc.cardioDetails.heartRate.max,
-          zones: doc.cardioDetails.heartRate.zones
-        } : undefined,
-        power: doc.cardioDetails.power ? {
-          average: doc.cardioDetails.power.average,
-          max: doc.cardioDetails.power.max
-        } : undefined
-      } : undefined,
-      source: doc.source,
-      sourceId: doc.sourceId,
-      importedFrom: doc.importedFrom,
-      importId: doc.importId,
-      stravaLink: doc.stravaLink,
-      createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : new Date(doc.createdAt).toISOString(),
-      updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : new Date(doc.updatedAt).toISOString(),
-      records: Array.isArray(doc.records) ? doc.records.map((record: any) => ({
-        timestamp: record.timestamp instanceof Date ? record.timestamp.toISOString() : new Date(record.timestamp).toISOString(),
-        heart_rate: record.heart_rate,
-        distance: record.distance,
-        speed: record.speed,
-        altitude: record.altitude,
-        latitude: record.latitude,
-        longitude: record.longitude,
-        cadence: record.cadence,
-        power: record.power
-      })) : []
+    // 2. Fetch related WorkoutExercise documents and populate their exerciseId
+    const workoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutDoc._id })
+      .populate({ 
+          path: 'exerciseId', 
+          model: 'Exercise' // Ensure Exercise model is referenced correctly
+      })
+      .lean()
+      .exec() as any[]; // Assert as any array for now to bypass complex type inference
+
+    // 3. Combine the workout doc with the fetched exercises
+    // Create a new object to avoid modifying the lean workoutDoc directly if needed elsewhere
+    const combinedDoc = {
+      ...(workoutDoc as any), // Cast workoutDoc to any before spreading
+      workoutExercises: workoutExercises // Attach the fetched and populated exercises
     };
+
+    // Use the serialization helper function
+    const plainWorkout = convertToPlainObject(combinedDoc);
+
+    // Optional: Add a check or type assertion if needed, but convertToPlainObject should handle it
+    if (!plainWorkout || typeof plainWorkout !== 'object') {
+        console.error(`[workoutRepository] Failed to convert workout ${id} to plain object.`);
+        return null;
+    }
+    
+    // Ensure the final object matches the expected return type
+    return plainWorkout as WorkoutData;
   } catch (error) {
     console.error(`Error getting workout ${id}:`, error)
     throw new Error(`Failed to get workout ${id}`)
@@ -370,10 +330,19 @@ export async function updateWorkout(id: string, workoutData: Partial<WorkoutData
   try {
     await dbConnect()
     
+    // Separate fields for $set and $unset
+    const { aiHighlight, ...setData } = workoutData;
+    const updateOps: any = { $set: { ...setData, updatedAt: new Date() } };
+    
+    // Explicitly unset aiHighlight if it was passed as undefined (or null)
+    if (workoutData.hasOwnProperty('aiHighlight') && (aiHighlight === undefined || aiHighlight === null)) {
+      updateOps.$unset = { aiHighlight: "" }; 
+    }
+    
     const result = await WorkoutModel.findByIdAndUpdate(
       id,
-      { ...workoutData, updatedAt: new Date() },
-      { new: true }
+      updateOps, // Use the combined update operations object
+      { new: true } // Return the updated document
     ).lean().exec()
 
     if (!result) {

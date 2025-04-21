@@ -476,22 +476,35 @@ export default function NewWorkoutPage() {
           // Map DB WorkoutExercises to form state
           let mappedExercises: ExerciseState[] = [];
           if (data.workoutExercises && data.workoutExercises.length > 0) {
-            mappedExercises = data.workoutExercises.map((ex: WorkoutExerciseData): ExerciseState => { 
+            // Filter out the 'Running' exercise ONLY if the main workout type is 'running'
+            const exercisesToMap = formTypeOption === 'running' 
+              ? data.workoutExercises.filter(ex => ex.exerciseId?.name?.toLowerCase() !== 'running') 
+              : data.workoutExercises;
+
+            mappedExercises = exercisesToMap.map((ex: WorkoutExerciseData): ExerciseState => { 
               const setsArray = Array.isArray(ex.sets) ? ex.sets : [];
+              // Check if the specific exercise being mapped is cardio
+              const isMappedExerciseCardio = ex.exerciseId?.category === 'cardio';
+              
               return {
-                id: ex._id || `loaded-${Date.now()}`,
+                id: ex._id || `loaded-${Date.now()}-${Math.random()}`, // Use random ID for loaded state
                 exerciseId: ex.exerciseId?._id?.toString(),
                 name: ex.exerciseId?.name || 'Unknown Exercise',
                 notes: ex.notes || undefined,
-                sets: setsArray.map((set: Set, setIndex: number): SetState => ({ 
-                  id: set._id || `loaded-set-${setIndex}-${Date.now()}`,
+                // Only include sets if it's NOT a cardio exercise being mapped
+                sets: !isMappedExerciseCardio ? setsArray.map((set: Set, setIndex: number): SetState => ({ 
+                  id: set._id || `loaded-set-${setIndex}-${Date.now()}-${Math.random()}`,
                   order: set.order ?? setIndex,
                   weight: set.weight?.toString() || "",
                   reps: set.reps?.toString() || "",
                   duration: set.duration?.toString() || "",
                   distance: set.distance?.toString() || "",
                   notes: set.notes || undefined,
-                }))
+                })) : [], // Empty sets for cardio exercises mapped here
+                // Include duration/distance ONLY if it IS a cardio exercise being mapped
+                // Convert seconds/meters from DB to minutes/km for form state
+                duration: isMappedExerciseCardio ? (ex.duration ? (ex.duration / 60).toString() : "") : undefined,
+                distance: isMappedExerciseCardio ? (ex.distance ? (ex.distance / 1000).toString() : "") : undefined,
               };
             });
             setExercises(mappedExercises);
@@ -531,7 +544,9 @@ export default function NewWorkoutPage() {
 
   // Reset form fields when workout type changes
   useEffect(() => {
-    if (isLoadingData) return; 
+    if (isLoadingData) {
+        return;
+    }
     setError(null); 
 
     // Determine if the selected type is strength-related based on our options
@@ -542,10 +557,7 @@ export default function NewWorkoutPage() {
       if (!isEditing && !duplicateWorkoutId && exercises.length === 0) { 
           addExercise(); // addExercise will now add an ExerciseState with one SetState
       }
-      // Clear overall distance/duration if switching TO strength?
-      // setDistance(""); 
-      // setDuration(""); 
-    } else if (workoutType) { // Clear exercises if switching to a non-strength type
+    } else if (workoutType && !isEditing) { // Clear exercises if switching to a non-strength type AND NOT editing
       setExercises([]); 
       // Maybe prefill overall distance/duration based on type?
     }
@@ -683,7 +695,7 @@ export default function NewWorkoutPage() {
             const reps = Number.parseInt(set.reps || '0') || 0;
             const weight = Number.parseFloat(set.weight || '0') || 0; 
             if (reps > 0) {
-                const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exercise.name);
+                const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exercise.name!);
                 totalVolume += estimatedWeight * reps;
                 totalReps += reps;
                 exerciseHasValidSets = true;
@@ -890,19 +902,60 @@ export default function NewWorkoutPage() {
     }
     // --- End Validation --- 
 
-    // ... construct final workoutPayload using finalWorkoutName, date, component state distance/duration, etc. ...
-    const finalWorkoutName = workoutName.trim() || getDefaultWorkoutName(currentWorkoutType, date);
+    // Define cardioDetailsPayload *before* notes generation
     let cardioDetailsPayload: WorkoutUpdatePayload['cardioDetails'] = undefined;
     const parsedCardioDistance = distance ? Number.parseFloat(distance) * 1000 : undefined;
     const parsedCardioDuration = duration ? Number.parseFloat(duration) * 60 : undefined;
-    if (finalWorkoutTypeForPayload === 'strength') {
-        cardioDetailsPayload = undefined;
-    } else {
+    if (finalWorkoutTypeForPayload !== 'strength') { // Assign only if not strength
         cardioDetailsPayload = { 
             distance: parsedCardioDistance ?? 0, 
             duration: parsedCardioDuration ?? 0 
         };
     }
+
+    // --- Regenerate Notes based on final payload data ---
+    let finalNotes = ""; // Default empty notes
+    const verb = "I did"; // Assume past tense for saved workout notes
+    const linkingVerb = "which was"; // Assume past tense
+
+    // Get user weight (ideally passed down or fetched, using placeholder for now)
+    // This needs to be implemented properly if available
+    // const currentUserWeight = session?.user?.weight || null; // Removed use of session.user.weight
+
+    if (finalWorkoutTypeForPayload === 'strength') {
+        let totalVolume = 0;
+        let totalReps = 0;
+        exercisesPayload.forEach(ex => {
+            if (ex.sets && ex.name) { // Check ex.name exists
+                ex.sets.forEach(set => {
+                    const reps = set.reps ?? 0;
+                    const weight = set.weight ?? 0;
+                    if (reps > 0) {
+                        // Use bodyweight estimation if weight is 0, passing only the name
+                        const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(ex.name!);
+                        totalVolume += estimatedWeight * reps;
+                        totalReps += reps;
+                    }
+                });
+            }
+        });
+        if (totalReps > 0) { 
+           const intensityText = totalVolume > 10000 ? "heavy" : totalVolume > 3000 ? "moderate" : "light";
+           finalNotes = `${verb} a total volume of ${Math.round(totalVolume)} kg over ${totalReps} reps. This was a ${intensityText} workout.`;
+        }
+    } else if (["running", "swimming", "cycling", "walking"].includes(finalWorkoutTypeForPayload)) {
+        const distKm = (cardioDetailsPayload?.distance ?? 0) / 1000;
+        const durMin = (cardioDetailsPayload?.duration ?? 0) / 60;
+         if (distKm > 0 && durMin > 0) {
+            const paceMinPerKm = durMin / distKm;
+            const paceText = paceMinPerKm < 5 ? "quite fast" : paceMinPerKm < 7 ? "a good pace" : "a comfortable pace";
+            finalNotes = `${verb} a pace of ${Math.round(paceMinPerKm * 10) / 10} minutes per km, ${linkingVerb} ${paceText}.`;
+        }
+    }
+    // --- End Regenerate Notes ---
+
+    // ... construct final workoutPayload using finalWorkoutName, date, component state distance/duration, etc. ...
+    const finalWorkoutName = workoutName.trim() || getDefaultWorkoutName(currentWorkoutType, date);
     let finalDuration = 0;
     if (finalWorkoutTypeForPayload === 'strength') {
         const manualDurationMinutes = duration ? Number.parseFloat(duration) : 0;
@@ -916,7 +969,7 @@ export default function NewWorkoutPage() {
       date: date,
       name: finalWorkoutName,
       type: finalWorkoutTypeForPayload,
-      notes: getSummaryText() || "",
+      notes: finalNotes, // Use the newly generated notes
       duration: finalDuration,
       exercises: exercisesPayload,
       cardioDetails: cardioDetailsPayload,
@@ -1131,225 +1184,228 @@ export default function NewWorkoutPage() {
           </div>
         )}
 
-        {/* Exercises Section (Modified) */}
-        <div className="space-y-6">
-          <h2 className="text-xl font-semibold">Exercises</h2>
-          {exercises.map((exercise, index) => {
-            // Determine if the current exercise is cardio
-            const canonicalExercise = exercise.exerciseId ? dbExercisesMap.get(exercise.exerciseId) : null;
-            const isCardioExercise = canonicalExercise?.category === 'cardio';
+        {/* Exercises Section (Modified - Conditionally Rendered) */}
+        {isStrengthWorkout && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-semibold">Exercises</h2>
+            {exercises.map((exercise, index) => {
+              // Determine if the current exercise is cardio
+              const canonicalExercise = exercise.name ? dbExercisesMap.get(exercise.name) : null;
+              const isCardioExercise = canonicalExercise?.category === 'cardio';
 
-            return (
-              <div key={exercise.id} className="rounded-md border p-4 md:p-6 space-y-4 relative bg-background">
-                {/* Exercise Header (Selection + Remove Button) */}
-                <div className="flex justify-between items-start">
-                  <div className="flex-1 space-y-2 mr-2">
-                    <Label htmlFor={`exercise-name-${exercise.id}`}>Exercise #{index + 1}</Label>
-                    {/* RE-ADD Combobox for Exercise Selection */}
-                    <Popover open={showSearchList} onOpenChange={setShowSearchList}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={showSearchList}
-                          className="w-full justify-between font-normal"
-                          onClick={() => setShowSearchList(true)} // Open on click
-                        >
-                          {exercise.name || "Select exercise..."}
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0 bg-white dark:bg-slate-900">
-                        <Command shouldFilter={false}> {/* Filtering done via search state */}
-                          <CommandInput 
-                            placeholder="Search exercise..." 
-                            value={exerciseSearchQuery}
-                            onValueChange={setExerciseSearchQuery}
-                          />
-                          <CommandList> {/* Removed bg-popover */}
-                            <CommandEmpty>
-                              {isSearching ? "Searching..." : "No exercise found."}
-                            </CommandEmpty>
-                            <CommandGroup>
-                              {searchResults.map((dbExercise) => (
-                                <CommandItem
-                                  key={dbExercise._id}
-                                  value={dbExercise.name} // Use name for Command value
-                                  onSelect={() => {
-                                    handleExerciseSelection(exercise.id, dbExercise);
-                                    setShowSearchList(false); // Close on select
-                                  }}
-                                >
-                                  {dbExercise.name}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                            {/* Optionally show initially loaded/filtered exercises when not searching? */}
-                            {/* Or add a separator */} 
-                            {debouncedSearchQuery.length < 2 && (
-                                <CommandGroup heading="Recently Used / Suggested">
-                                    {filteredExercises.slice(0, 10).map((dbEx) => (
-                                        <CommandItem
-                                            key={dbEx._id}
-                                            value={dbEx.name}
-                                            onSelect={() => {
-                                                handleExerciseSelection(exercise.id, dbEx);
-                                                setShowSearchList(false);
-                                            }}
-                                        >
-                                            {dbEx.name}
-                                        </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                            )}
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+              return (
+                <div key={exercise.id} className="rounded-md border p-4 md:p-6 space-y-4 relative bg-background">
+                  {/* Exercise Header (Selection + Remove Button) */}
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 space-y-2 mr-2">
+                      <Label htmlFor={`exercise-name-${exercise.id}`}>Exercise #{index + 1}</Label>
+                      {/* RE-ADD Combobox for Exercise Selection */}
+                      <Popover open={showSearchList} onOpenChange={setShowSearchList}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={showSearchList}
+                            className="w-full justify-between font-normal"
+                            onClick={() => setShowSearchList(true)} // Open on click
+                          >
+                            <>
+                              {exercise.name || "Select exercise..."}
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0 bg-white dark:bg-slate-900">
+                          <Command shouldFilter={false}> {/* Filtering done via search state */}
+                            <CommandInput 
+                              placeholder="Search exercise..." 
+                              value={exerciseSearchQuery}
+                              onValueChange={setExerciseSearchQuery}
+                            />
+                            <CommandList> 
+                              <CommandEmpty>
+                                {isSearching ? "Searching..." : "No exercise found."}
+                              </CommandEmpty>
+                              <CommandGroup>
+                                {searchResults.map((dbExercise) => (
+                                  <CommandItem
+                                    key={dbExercise._id}
+                                    value={dbExercise.name} // Use name for Command value
+                                    onSelect={() => {
+                                      handleExerciseSelection(exercise.id, dbExercise);
+                                      setShowSearchList(false); // Close on select
+                                    }}
+                                  >
+                                    {dbExercise.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                              
+                              {debouncedSearchQuery.length < 2 && (
+                                  <CommandGroup heading="Recently Used / Suggested">
+                                      {filteredExercises.slice(0, 10).map((dbEx) => (
+                                          <CommandItem
+                                              key={dbEx._id}
+                                              value={dbEx.name}
+                                              onSelect={() => {
+                                                  handleExerciseSelection(exercise.id, dbEx);
+                                                  setShowSearchList(false);
+                                              }}
+                                          >
+                                              {dbEx.name}
+                                          </CommandItem>
+                                      ))}
+                                  </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                     <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => removeExercise(exercise.id)}
+                        className="absolute top-2 right-2 text-muted-foreground hover:text-destructive h-7 w-7"
+                        title="Remove Exercise"
+                      >
+                        <LucideX className="h-4 w-4" />
+                        <span className="sr-only">Remove Exercise</span>
+                     </Button>
                   </div>
-                   <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => removeExercise(exercise.id)}
-                      className="absolute top-2 right-2 text-muted-foreground hover:text-destructive h-7 w-7"
-                      title="Remove Exercise"
-                    >
-                      <LucideX className="h-4 w-4" />
-                      <span className="sr-only">Remove Exercise</span>
-                   </Button>
-                </div>
 
-                {/* --- Conditional Rendering based on Exercise Type --- */}
-                {isCardioExercise ? (
-                  // --- Render Duration/Distance Inputs for Cardio --- 
-                  <div className="space-y-3 pl-2 border-l-2 border-muted">
-                    <Label className="text-sm font-medium">Details</Label>
-                    <div className="flex items-end space-x-2">
-                      <div className="flex-1 grid grid-cols-2 gap-2 items-end">
-                        <div>
-                          <Label htmlFor={`ex-duration-${exercise.id}`} className="text-xs">Duration (min)</Label>
-                          <Input
-                            id={`ex-duration-${exercise.id}`}
-                            type="number"
-                            placeholder="Duration"
-                            value={exercise.duration || ""}
-                            onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
-                            min="0"
-                            step="0.1"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor={`ex-distance-${exercise.id}`} className="text-xs">Distance (km)</Label> 
-                          <Input
-                            id={`ex-distance-${exercise.id}`}
-                            type="number"
-                            placeholder="Distance"
-                            value={exercise.distance || ""}
-                            onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
-                            min="0"
-                            step="0.1"
-                          />
+                  {/* --- Conditional Rendering based on Exercise Type --- */}
+                  {isCardioExercise ? (
+                    // --- Render Duration/Distance Inputs for Cardio --- 
+                    <div className="space-y-3 pl-2 border-l-2 border-muted">
+                      <Label className="text-sm font-medium">Details</Label>
+                      <div className="flex items-end space-x-2">
+                        <div className="flex-1 grid grid-cols-2 gap-2 items-end">
+                          <div>
+                            <Label htmlFor={`ex-duration-${exercise.id}`} className="text-xs">Duration (min)</Label>
+                            <Input
+                              id={`ex-duration-${exercise.id}`}
+                              type="number"
+                              placeholder="Duration"
+                              value={exercise.duration || ""}
+                              onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`ex-distance-${exercise.id}`} className="text-xs">Distance (km)</Label> 
+                            <Input
+                              id={`ex-distance-${exercise.id}`}
+                              type="number"
+                              placeholder="Distance"
+                              value={exercise.distance || ""}
+                              onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
                         </div>
                       </div>
+                      {/* Add Exercise Notes for Cardio */} 
+                      <div>
+                        <Label htmlFor={`exercise-notes-${exercise.id}`}>Notes (Optional)</Label>
+                        <Textarea
+                          id={`exercise-notes-${exercise.id}`}
+                          placeholder="e.g., Felt good, easy pace"
+                          value={exercise.notes || ""}
+                          onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                          className="placeholder:text-muted-foreground/50"
+                          rows={2}
+                        />
+                      </div>
                     </div>
-                    {/* Add Exercise Notes for Cardio */} 
-                    <div>
-                      <Label htmlFor={`exercise-notes-${exercise.id}`}>Notes (Optional)</Label>
-                      <Textarea
-                        id={`exercise-notes-${exercise.id}`}
-                        placeholder="e.g., Felt good, easy pace"
-                        value={exercise.notes || ""}
-                        onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                        className="placeholder:text-muted-foreground/50"
-                        rows={2}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  // --- Render Sets Section for Non-Cardio ---
-                  <div className="space-y-3 pl-2 border-l-2 border-muted">
-                     <Label className="text-sm font-medium">Sets</Label>
-                     {exercise.sets.map((set, setIndex) => (
-                      <div key={set.id} className="flex items-end space-x-2">
-                         <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
-                         <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
-                           {/* Weight Input */}
-                           <div>
-                             <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
-                             <Input
-                                id={`weight-${exercise.id}-${set.id}`}
-                                type="number"
-                                placeholder="Weight"
-                                value={set.weight || ""}
-                                onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                                min="0"
-                                step="0.1"
-                             />
-                           </div>
-                           {/* Reps Input */}
-                           <div>
-                             <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
-                             <Input
-                                id={`reps-${exercise.id}-${set.id}`}
-                                type="number"
-                                placeholder="Reps"
-                                value={set.reps || ""}
-                                onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                                min="0"
-                             />
-                           </div>
-                            {/* Set Notes Input */}
-                            <div className="col-span-2 md:col-span-1">
-                                <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="text-xs">Set Notes (Opt.)</Label>
-                                <Input
-                                   id={`set-notes-${exercise.id}-${set.id}`}
-                                   placeholder="e.g., RPE 8"
-                                   value={set.notes || ""}
-                                   onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
-                                   className="placeholder:text-muted-foreground/50"
-                                />
+                  ) : (
+                    // --- Render Sets Section for Non-Cardio ---
+                    <div className="space-y-3 pl-2 border-l-2 border-muted">
+                       <Label className="text-sm font-medium">Sets</Label>
+                       {exercise.sets.map((set, setIndex) => (
+                        <div key={set.id} className="flex items-end space-x-2">
+                           <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
+                           <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                             {/* Weight Input */}
+                             <div>
+                               <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
+                               <Input
+                                  id={`weight-${exercise.id}-${set.id}`}
+                                  type="number"
+                                  placeholder="Weight"
+                                  value={set.weight || ""}
+                                  onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                                  min="0"
+                                  step="0.1"
+                               />
+                             </div>
+                             {/* Reps Input */}
+                             <div>
+                               <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
+                               <Input
+                                  id={`reps-${exercise.id}-${set.id}`}
+                                  type="number"
+                                  placeholder="Reps"
+                                  value={set.reps || ""}
+                                  onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                                  min="0"
+                               />
+                             </div>
+                              {/* Set Notes Input */}
+                              <div className="col-span-2 md:col-span-1">
+                                  <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="text-xs">Set Notes (Opt.)</Label>
+                                  <Input
+                                     id={`set-notes-${exercise.id}-${set.id}`}
+                                     placeholder="e.g., RPE 8"
+                                     value={set.notes || ""}
+                                     onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
+                                     className="placeholder:text-muted-foreground/50"
+                                  />
+                              </div>
                             </div>
+                             {/* Remove Set Button */}
+                             <Button
+                               type="button"
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => removeSet(exercise.id, set.id)}
+                               disabled={exercise.sets.length <= 1} // Disable removing the last set
+                               className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                               title="Remove Set"
+                             >
+                               <LucideX className="h-4 w-4" />
+                               <span className="sr-only">Remove Set</span>
+                             </Button>
                           </div>
-                           {/* Remove Set Button */}
-                           <Button
-                             type="button"
-                             variant="ghost"
-                             size="icon"
-                             onClick={() => removeSet(exercise.id, set.id)}
-                             disabled={exercise.sets.length <= 1} // Disable removing the last set
-                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                             title="Remove Set"
-                           >
-                             <LucideX className="h-4 w-4" />
-                             <span className="sr-only">Remove Set</span>
-                           </Button>
-                        </div>
-                       ))}
+                         ))}
 
-                       {/* Exercise Notes for Non-Cardio (Now correctly placed sibling to the map result) */}
-                       <div className="pt-2">
-                         <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
-                         <Textarea
-                           id={`exercise-notes-${exercise.id}`}
-                           placeholder="e.g., Focused on form, felt strong"
-                           value={exercise.notes || ""}
-                           onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                           className="placeholder:text-muted-foreground/50"
-                           rows={2}
-                         />
-                       </div>
-                    </div>
-                  )}
-                  {/* --- End Conditional Rendering --- */}
-              </div>
-            )
-          })}
-          {/* Add Exercise Button (Remains the same) */}
-          <Button type="button" variant="secondary" onClick={addExercise} className="w-full md:w-auto">
-             <LucidePlus className="h-4 w-4 mr-2" /> Add Exercise
-          </Button>
-        </div>
+                         {/* Exercise Notes for Non-Cardio (Now correctly placed sibling to the map result) */}
+                         <div className="pt-2">
+                           <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
+                           <Textarea
+                             id={`exercise-notes-${exercise.id}`}
+                             placeholder="e.g., Focused on form, felt strong"
+                             value={exercise.notes || ""}
+                             onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                             className="placeholder:text-muted-foreground/50"
+                             rows={2}
+                           />
+                         </div>
+                      </div>
+                    )}
+                    {/* --- End Conditional Rendering --- */}
+                </div>
+              )
+            })}
+            {/* Add Exercise Button (Remains the same) */}
+            <Button variant="secondary" onClick={addExercise} className="w-full md:w-auto">
+               <LucidePlus className="h-4 w-4 mr-2" /> Add Exercise
+            </Button>
+          </div>
+        )}
 
         {/* Save Button - onClick calls handleSaveWorkout */}
         <div className="flex justify-end pt-4">

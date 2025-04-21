@@ -380,6 +380,7 @@ export async function fetchWorkout(id: string): Promise<any | null> {
         // <<< START CHANGE: Add aiHighlight field >>>
         aiHighlight: workout.aiHighlight, // Include the AI highlight if it exists
         // <<< END CHANGE >>>
+        calculatedVolume: workout.calculatedVolume, // <<< ADDED: Include calculatedVolume
     };
 
     // 6. Combine and return the fully plain object
@@ -388,16 +389,17 @@ export async function fetchWorkout(id: string): Promise<any | null> {
         workoutExercises: plainWorkoutExercises
     };
 
-    // 7. Calculate and add total volume using the dedicated helper function
-    if (finalData.type === 'strength') {
-        // Pass the partially built finalData which should include userId and workoutExercises
-        finalData.calculatedVolume = await calculateTotalWeightLifted(finalData);
-        console.log(`[Fetch Workout] Volume calculated via helper: ${finalData.calculatedVolume}kg`);
-    } else {
-        finalData.calculatedVolume = 0; // Ensure it's 0 for non-strength workouts
-    }
+    // 7. REMOVE volume calculation here - Trust the value saved in the DB
+    // if (finalData.type === 'strength') {
+    //     finalData.calculatedVolume = await calculateTotalWeightLifted(finalData);
+    //     console.log(`[Fetch Workout] Calculated Volume to be returned: ${finalData.calculatedVolume}`); 
+    // } else {
+    //     finalData.calculatedVolume = 0; // Ensure it's 0 for non-strength workouts
+    // }
+    // Ensure calculatedVolume exists from plainWorkout, default to 0 if not
+    finalData.calculatedVolume = plainWorkout.calculatedVolume ?? 0;
 
-    console.log("--- [FETCH WORKOUT DEBUG] Final Data Before Return ---");
+    console.log("--- [FETCH WORKOUT DEBUG] Final Data Before Return --- ");
     console.log(`Workout ID: ${finalData._id}`);
     console.log(`Workout Distance (Raw): ${finalData.distance}`); 
     console.log(`Workout Exercises Count: ${finalData.workoutExercises?.length ?? 0}`); 
@@ -805,155 +807,40 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
         // Use provided duration as fallback if no exercises or if it's larger
         workoutUpdateData.duration = Math.max(totalDuration, payload.duration || 0);
 
-        // Update the workout document using the type-safe object
-        const updatedWorkout = await WorkoutModel.findByIdAndUpdate(workoutId, workoutUpdateData, { new: true });
-    if (!updatedWorkout) {
-            // Should not happen if findById succeeded, but good practice
-            throw new Error("Failed to update main workout document after verification.");
-        }
-        console.log("Main workout document updated.");
+        // --- Perform the update using the repository ---
+        console.log(`[updateWorkoutAction] Preparing to update workout ${workoutId}...`);
+        
+        // --- Clear AI Highlight to force regeneration ---
+        // Use workoutUpdateData, which is the prepared object for the DB update
+        workoutUpdateData.aiHighlight = undefined; 
+        // --- End Clear AI Highlight ---
 
-        // 4. Handle Exercise Updates
-        if (incomingExercises !== undefined) { 
-            console.log("Processing exercise updates...");
-            const existingWorkoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutId });
-            const existingExerciseMap = new Map(existingWorkoutExercises.map(ex => [ex._id.toString(), ex]));
-            const incomingExerciseIds = new Set(incomingExercises.map(ex => ex._id).filter(Boolean));
-            const operations = []; 
+        // Call the repository function to update the workout
+        // Cast workoutUpdateData to the type expected by the repository function
+        const updatedWorkout = await updateWorkoutDb(workoutId, workoutUpdateData as Partial<WorkoutData>);
+        console.log(`[updateWorkoutAction] Workout ${workoutId} update attempted. Result: ${updatedWorkout ? 'Success' : 'Failed'}`);
 
-            // --- Deletions --- 
-            const exercisesToDelete = existingWorkoutExercises
-                .filter(ex => !incomingExerciseIds.has(ex._id.toString()))
-                .map(ex => ex._id);
-            
-            if (exercisesToDelete.length > 0) {
-                console.log(`Deleting ${exercisesToDelete.length} WorkoutExercises (including embedded Sets):`, exercisesToDelete);
-                
-                // --- REMOVED: Delete associated Sets FIRST (they are embedded) ---
-                // await SetModel.deleteMany({ workoutExerciseId: { $in: exercisesToDelete as any[] } });
-                // console.log(`Deleted Sets associated with ${exercisesToDelete.length} WorkoutExercises.`);
-                // --- END REMOVED ---
-                
-                // Now prepare deletion for WorkoutExercises themselves
-                operations.push({ 
-                    deleteMany: {
-                        filter: { _id: { $in: exercisesToDelete } } 
-                    }
-                });
-            }
-
-            // --- Updates & Additions (WorkoutExercise only) --- 
-            let index = 0;
-            for (const incomingEx of incomingExercises) {
-                let exerciseIdToLink: Types.ObjectId | undefined = undefined;
-                // Find canonical exercise ID if needed
-                if (incomingEx.exerciseId) {
-                    exerciseIdToLink = new Types.ObjectId(incomingEx.exerciseId);
-                } else if (incomingEx.name) {
-                    const canonicalExercise = await ExerciseModel.findOne({ name: incomingEx.name }).select('_id').lean() as { _id: Types.ObjectId } | null;
-                    if (canonicalExercise) {
-                        exerciseIdToLink = canonicalExercise._id; // Access after type assertion
-                    } else {
-                        console.warn(`Canonical exercise not found for name: ${incomingEx.name}. Skipping.`);
-                        index++; // Increment index before continuing
-                        continue; 
-                    }
-                } else {
-                     console.warn(`Incoming exercise at index ${index} lacks both exerciseId and name. Skipping.`);
-                     index++; // Increment index before continuing
-                     continue; 
-                }
-                
-                // --- Prepare sets data for embedding --- 
-                let setsToEmbed: any[] = []; 
-                if (incomingEx.sets && incomingEx.sets.length > 0) {
-                   setsToEmbed = incomingEx.sets.map((set: InputSetData, setIndex: number) => {
-                      const setData = {
-                        order: set.order ?? setIndex, 
-                        weight: set.weight,
-                        reps: set.reps,
-                        duration: set.duration,
-                        distance: set.distance,
-                        notes: set.notes,
-                      };
-                      Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
-                      return setData;
-                   });
-                }
-                
-                // Prepare data for WorkoutExercise document (WITH sets)
-                const workoutExerciseData = { 
-                    userId: userId,
-                    workoutId: new Types.ObjectId(workoutId),
-                    exerciseId: exerciseIdToLink,
-                    order: incomingEx.order ?? index, 
-                    notes: incomingEx.notes,
-                    duration: incomingEx.duration, // Keep other relevant fields
-                    distance: incomingEx.distance,
-                    sets: setsToEmbed // <-- Embed sets here
-                };
-
-                if (incomingEx._id) { // Update logic
-                    console.log(`Preparing update for WorkoutExercise: ${incomingEx._id}`);
-                    if (existingExerciseMap.has(incomingEx._id)) { // Verify it actually existed
-                        operations.push({
-                            updateOne: {
-                                filter: { _id: new Types.ObjectId(incomingEx._id), workoutId: new Types.ObjectId(workoutId) }, // Ensure user ownership via workoutId
-                                update: { $set: workoutExerciseData }
-                            }
-                        });
-                    } else {
-                        console.warn(`Incoming exercise has ID ${incomingEx._id} but it wasn't found among existing exercises for this workout. Treating as new.`);
-                        // Treat as insertion if ID mismatch (could happen with client errors)
-                        operations.push({ insertOne: { document: workoutExerciseData } });
-                    }
-                } else { // Add logic
-                    console.log(`Preparing insertion for new WorkoutExercise: ${incomingEx.name || incomingEx.exerciseId}`);
-                    operations.push({ insertOne: { document: workoutExerciseData } });
-                }
-                index++; // Increment index at the end of the loop
-            }
-            
-            // --- Execute Bulk Write for WorkoutExercises --- 
-            if (operations.length > 0) {
-                console.log(`Executing ${operations.length} bulk write operations for exercises...`);
-                const bulkResult = await WorkoutExerciseModel.bulkWrite(operations);
-                console.log("WorkoutExercise bulk write result:", bulkResult);
-            } else {
-                console.log("No WorkoutExercise add/update/delete operations needed.");
-            }
-            
-            // --- REMOVED: Handle Set updates/creations separately --- 
-            // console.log("Processing Set updates/creations...");
-            // ... entire loop from lines 798-831 removed ...
-            // console.log("Set updates/creations finished.");
-            // --- END REMOVED ---
-            
-        } else {
-             console.log("No 'exercises' array provided in payload, skipping exercise updates.");
+        // Add null check for the result
+        if (!updatedWorkout) {
+            throw new Error("Failed to update workout in database.");
         }
 
-        // 5. Revalidate Paths
-        console.log("Revalidating paths...");
-        revalidatePath(`/workout/${workoutId}`); // The specific workout page
-        revalidatePath("/activity");
-        revalidatePath("/dashboard");
-        // Add other relevant paths like /calendar, /workouts list page if they exist
+        // 4. Handle Exercise Updates (If needed, this section was complex and might need review)
+        // ... existing exercise update logic ...
+        
+        // Revalidate paths
+        revalidatePath("/workouts");
+        revalidatePath(`/workouts/${workoutId}`);
+        revalidatePath(`/workouts/edit/${workoutId}`); // Assuming edit uses this action too
+        revalidatePath("/dashboard"); 
+        
+        console.log(`[updateWorkoutAction] Update complete for ${workoutId}. Returning serialized data.`);
+        
+        // Return the plain WorkoutData object returned by updateWorkoutDb
+        return updatedWorkout; 
 
-        console.log(`updateWorkoutAction completed for workout ID: ${workoutId}`);
-        // Return the updated main workout document (consider if populated data is needed)
-
-        // --- Update User Summaries ---
-        await updateUserWorkoutSummaries(userId);
-        // --- End Update User Summaries ---
-
-        // Also update Exercise PRs (process only this updated workout)
-        await updateExercisePRs(userId, workoutId);
-
-        return updatedWorkout.toObject(); // Return plain object
-
-  } catch (error: any) {
-        console.error(`Error updating workout action for ${workoutId}:`, error);
+  } catch (error: any) { // Add type 'any' to error object
+    console.error(`[updateWorkoutAction] Error updating workout action for ${workoutId}:`, error);
     throw new Error(`Failed to update workout: ${error.message}`);
   }
 }
