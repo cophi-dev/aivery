@@ -60,7 +60,7 @@ export function formatDuration(totalSeconds: number | undefined | null): string 
 // Format distance with units (accepts and displays km)
 export function formatDistance(distanceInKm: number): string {
   if (isNaN(distanceInKm) || distanceInKm < 0) {
-    return "0.000 km"; // Keep consistent formatting
+    return "0.0 km"; // Keep consistent formatting, changed to toFixed(1)
   }
 
   // Remove the meters to kilometers conversion
@@ -71,12 +71,14 @@ export function formatDistance(distanceInKm: number): string {
     console.warn(`Unreasonably large distance value detected: ${distanceInKm}km. Limiting display.`);
     return "Error: Invalid distance";
   } else if (distanceInKm > 1000) {
-     // Display large values with less precision if desired, or keep toFixed(3)
+     // Display large values with less precision if desired
     return `${distanceInKm.toFixed(1)} km`; // e.g., 5000.0 km 
+  } else if (distanceInKm === 0) {
+      return "0.0 km"; // Handle zero explicitly
   }
   
-  // Normal handling for reasonable values - use 3 decimal places for precision
-  return `${distanceInKm.toFixed(3)} km`;
+  // Normal handling for reasonable values - use 1 decimal place
+  return `${distanceInKm.toFixed(1)} km`;
 }
 
 // Format date nicely

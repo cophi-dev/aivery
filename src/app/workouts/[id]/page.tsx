@@ -223,29 +223,34 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
   const formattedDate = workout.date ? formatDate(workout.date) : "N/A"; // Use default format from utility
   const formattedDuration = formatDuration(workout.duration);
   
-  // NEW Distance Calculation (Assume stored values are METERS)
-  let rawDistanceMeters: number | null = null;
-  
-  if (workout.type !== 'strength') { 
+  // Get distance (assuming it's stored in KILOMETERS)
+  let distanceKm: number | null = null;
+
+  if (workout.type !== 'strength') {
     if (workout.cardioDetails?.distance != null && typeof workout.cardioDetails.distance === 'number') {
-        rawDistanceMeters = workout.cardioDetails.distance;
-        console.log(`>>> Distance Source: cardioDetails (${rawDistanceMeters} m)`);
+      distanceKm = workout.cardioDetails.distance;
+      console.log(`>>> Distance Source: cardioDetails (${distanceKm} km)`);
     } else if (workout.workoutExercises && workout.workoutExercises[0]?.distance != null && typeof workout.workoutExercises[0].distance === 'number') {
-        rawDistanceMeters = workout.workoutExercises[0].distance;
-        console.log(`>>> Distance Source: workoutExercises[0] (${rawDistanceMeters} m)`);
+      distanceKm = workout.workoutExercises[0].distance; // Assuming this is also KM
+      console.log(`>>> Distance Source: workoutExercises[0] (${distanceKm} km)`);
     } else if (workout.distance != null && typeof workout.distance === 'number') {
-        rawDistanceMeters = workout.distance;
-        console.log(`>>> Distance Source: workout.distance (${rawDistanceMeters} m)`);
+      distanceKm = workout.distance;
+      console.log(`>>> Distance Source: workout.distance (${distanceKm} km)`);
     }
   }
 
-  // Use formatDistance utility which expects meters
-  const formattedDistance = rawDistanceMeters != null && rawDistanceMeters >= 0 ? formatDistance(rawDistanceMeters) : null;
+  // Format distance (formatDistance expects KM)
+  const formattedDistance = distanceKm != null && distanceKm >= 0 ? formatDistance(distanceKm) : null;
   
-  // Calculate pace if possible (needs distance in METERS and duration in SECONDS)
+  // Calculate pace if possible (needs distance in KM and duration in SECONDS)
   let formattedPace: string | null = null;
-  if (rawDistanceMeters != null && rawDistanceMeters > 0 && workout.duration != null && workout.duration > 0) {
-    const paceMinPerKm = (workout.duration / 60) / (rawDistanceMeters / 1000);
+  if (distanceKm != null && distanceKm > 0 && workout.duration != null && workout.duration > 0) {
+    // --- DEBUG LOGGING START ---
+    console.log(`Pace Calculation Input: duration=${workout.duration}s, distance=${distanceKm}km`);
+    // Pace (min/km) = (Duration in seconds / 60) / Distance in km
+    const paceMinPerKm = (workout.duration / 60) / distanceKm;
+    console.log(`Pace Calculation Output: paceMinPerKm=${paceMinPerKm}`);
+    // --- DEBUG LOGGING END ---
     formattedPace = formatPace(paceMinPerKm);
   } else if (workout.cardioDetails?.pace != null) {
     // Fallback to stored pace if available
@@ -492,7 +497,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                                {workout.cardioDetails ? (
                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                    {/* --- Re-add Cardio Metric Blocks --- */}
-                                   {rawDistanceMeters != null && rawDistanceMeters >= 0 && (
+                                   {distanceKm != null && distanceKm >= 0 && (
                                      <div className="flex items-center space-x-2 p-3 bg-secondary/10 rounded-md">
                                        <LucideRuler className="h-5 w-5 text-accent-medium" />
                                        <div>
