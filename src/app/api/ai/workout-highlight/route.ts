@@ -119,31 +119,20 @@ Instructions:
 2. **Personalize**: Use the user's name and reference their goals/preferences if relevant.
 3. **Focus**: Highlight ONE key metric/achievement (e.g., Volume, Distance, Duration, Consistency, PB).
 4. **Compare**: If historical context exists, note improvement (e.g., "New PB!", "X% faster!").
-5. **Unique Pop Culture Metaphor**: Create a fresh, funny, workout-type-specific metaphor inspired by 2025 pop culture (e.g., sci-fi films, hit TV shows, music artists, video games, viral X trends, or memes). Do NOT reuse metaphors from examples or prior outputs. Ensure it's relatable, shareable, and tailored to the workout type:
-   - **Running**: Focus on Distance, Pace, or Duration. Metaphor: Speed or endurance (e.g., inspired by a high-energy chase in a blockbuster or a trending dance challenge).
-   - **Strength**: Emphasize Total Volume or PB. Metaphor: Power or heft (e.g., lifting iconic objects from games or superhero feats).
-   - **HIIT**: Highlight intensity, reps, or rounds. Metaphor: Chaos or speed (e.g., surviving a reality TV challenge or a fast-paced heist).
-   - **Pilates/Yoga**: Focus on reps, duration, or consistency. Metaphor: Grace or calm (e.g., elegance from period dramas or serene pop culture icons).
-   - **Cycling**: Prioritize Distance or Speed. Metaphor: Motion or thrill (e.g., racing in dystopian films or music festival vibes).
-   - **Swimming**: Focus on Distance or Time. Metaphor: Fluidity or exploration (e.g., oceanic adventures or fantasy quests).
-   - **Other (e.g., CrossFit, Dance)**: Pick a relevant metric. Metaphor: Energy or flair (e.g., battling epic foes or performing at a cultural event).
-6. **Maximize Variety**: Ensure metaphors are distinct across workouts, especially for runs. Track historical metaphors (if available) to avoid repetition. Vary sentence structure (e.g., "Blazed," "Smashed," "Nailed").
-7. **Tone**: Upbeat, meme-worthy, and modern. Include 1-2 relevant emojis for social media flair.
-8. **Avoid Example Overuse**: Use examples only as inspiration for tone and style, not as templates. Create original metaphors reflecting current trends.
-9. **Key Metrics Guide**:
-   - **Running**: Distance, Pace, Duration. Compare to PBs or goals.
-   - **Strength**: Total Volume (>0kg) or PB. Compare to historical volume.
-   - **HIIT**: Reps, rounds, or duration. Highlight intensity.
-   - **Pilates/Yoga**: Reps, duration, or consistency. Highlight form or flow.
-   - **Cycling**: Distance, Speed, or Duration. Compare to PBs.
-   - **Swimming**: Distance, Time, or Strokes. Compare to goals.
-   - **Other**: Choose the most relevant metric tied to goals or consistency.
+5. **Vivid Pop Culture Metaphor**: Create a unique, high-energy metaphor tied to 2025 pop culture (e.g., blockbuster movies, hit songs, viral X trends, iconic games, or TV moments). Avoid vague or abstract analogies (e.g., no "glitchy AI bosses"). Ensure it's visual, relatable, and meme-worthy for social media. Tailor to workout type:
+   - **Running**: Focus on Distance, Pace, or Duration. Metaphors: Epic racing or fleeing from iconic threats (e.g., 2025 action movie villains, X trend dance challenges, music festival sprints). Themes: chases, races, or cultural moments. Examples (inspiration only): "Like outrunning a *Jurassic World* T-Rex!", "Sprinting to a Billie Eilish encore!"
+   - **Strength**: Emphasize Total Volume or PB. Metaphors: Lifting iconic objects or superhero feats (e.g., 2025 comic book heroes, gaming power-ups). Examples: "Like hurling a *Marvel* shield!", "Stacking plates like a *Fortnite* skyscraper!"
+   - **HIIT**: Highlight intensity, reps, or rounds. Metaphors: Surviving chaotic or fast-paced scenarios (e.g., 2025 reality TV, heist films). Examples: "Like dodging traps in a *Mission: Impossible* run!", "As wild as a *Squid Game* sprint!"
+   - **Pilates/Yoga**: Focus on reps, duration, or consistency. Metaphors: Graceful or serene cultural icons (e.g., 2025 award shows, zen influencers). Examples: "Smooth as a *Bridgerton* waltz!", "Zen like a *Mandalorian* meditation!"
+   - **Cycling**: Prioritize Distance or Speed. Metaphors: High-speed races or vibrant journeys (e.g., 2025 sci-fi racers, music videos). Examples: "Like speeding in a *Tron* race!", "Pedaling to a *Dua Lipa* beat!"
+   - **Swimming**: Focus on Distance or Time. Metaphors: Oceanic adventures or fluid quests (e.g., 2025 fantasy epics, aquatic heroes). Examples: "Like surfing a *Moana* wave!", "Gliding like a *Aquaman* sprint!"
+   - **Other (e.g., CrossFit, Dance)**: Pick a relevant metric. Metaphors: Epic battles or performances (e.g., 2025 festivals, adventure games). Examples: "Like slaying a *Witcher* beast!", "Vibing like a *Coachella* star!"
+6. **Maximize Variety**: Ensure metaphors are unique per workout, especially for runs. Avoid repeating themes (e.g., no similar sci-fi or chase metaphors twice). Vary starters (e.g., "Blazed," "Smashed," "Rocked").
+7. **Tone**: Punchy, meme-worthy, and 2025-trendy. Include 1-2 vibrant emojis for social media pop.
+8. **Avoid Generic Metaphors**: Skip abstract or overused analogies (e.g., no "glitchy AI" or "zombie chases"). Create visual, specific images tied to recognizable pop culture.
+9. **Inspiration, Not Templates**: Use examples only for tone and energy, not as scripts. Invent fresh metaphors reflecting 2025 trends.
 
-Inspiration (Not to Copy):
-- Running: "Like outrunning a sci-fi alien invasion!" (Think high-energy 2025 blockbuster chases.)
-- Strength: "Like lifting a prop from a superhero flick!" (Think iconic 2025 comic book moments.)
-- HIIT: "As intense as a reality show showdown!" (Think viral 2025 TV drama.)
-- Pilates: "Smooth as a pop star's red carpet glide!" (Think 2025 award show elegance.)
+Generate the highlight now!
 
 Generate the highlight now!
 `;
