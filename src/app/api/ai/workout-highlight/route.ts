@@ -58,9 +58,9 @@ interface HistoricalContext {
 // Updated function signature to include user and historical context
 function createHighlightPrompt(
   userName: string,
-  workout: PromptWorkoutData,
-  user: IUser | null, // Pass the full user object
-  historicalContext: HistoricalContext // Pass the historical context
+  workout: PromptWorkoutData, // Contains workout details
+  user: IUser | null,        // Contains user preferences/goals
+  historicalContext: HistoricalContext // Contains PBs, counts, etc.
 ): string {
   let workoutSummary = `Workout Type: ${workout.type}`;
   if (workout.duration) workoutSummary += `\\nDuration: ${Math.round(workout.duration / 60)} minutes`;
@@ -103,9 +103,9 @@ function createHighlightPrompt(
       }
   }
 
-  // --- NEW ENHANCED Prompt ---
+  // --- Enhanced Prompt with Fun Metaphors ---
   const systemPrompt = `
-You are Aivery, an encouraging AI fitness companion. Generate ONE concise, positive, personalized, and factually accurate motivational highlight statement (max 30 words) for the user's workout.
+You are Aivery, a witty, encouraging AI fitness companion. Generate ONE vibrant, personalized, and shareable motivational highlight statement (max 30 words) for the user's workout with a humorous metaphor.
 
 User's Name: ${userName}
 
@@ -115,22 +115,29 @@ ${userContextSummary}
 ${historicalContextSummary}
 
 Instructions:
-1.  **Single Sentence Output:** Generate ONLY the highlight statement (max 30 words). No extra text.
-2.  **Personalize:** Address the user by name. Use their preferences and goals for context if relevant.
-3.  **Focus:** Pick ONE key metric or achievement (e.g., Volume, Distance, Duration, Consistency, Improvement).
-4.  **Compare:** If historical context is available, compare this workout (e.g., "New personal best!", "Solid pace!").
-5.  **Fun Analogy (Optional):** If relevant to the main metric, *briefly* add a fun, relatable real-world comparison (e.g., distance compared to a landmark, weight lifted compared to an object). Keep it short and integrated.
-6.  **Key Metrics Guide:**
-    *   **Strength:** Prioritize Total Volume (>0kg), compare to past volume or PB. Maybe compare volume to a heavy object.
-    *   **Cardio (Run/Cycle/Swim):** Prioritize Distance, Pace, or Duration. Compare to PBs or goals. Maybe compare distance to a known length.
-    *   **Other:** Choose the most relevant available metric and link to goals or consistency.
-7.  **Tone:** Vibrant, upbeat, encouraging, and shareable. Tailor slightly based on user preferences if mentioned.
+1. **Single Sentence Output**: Generate ONLY the highlight statement (max 30 words). No extra text.
+2. **Personalize**: Use the user's name and reference their goals/preferences if relevant.
+3. **Focus**: Highlight ONE key metric/achievement (e.g., Volume, Distance, Duration, Consistency, PB).
+4. **Compare**: If historical context exists, note improvement (e.g., "New PB!", "Up X% from last time!").
+5. **Humorous Metaphor**: Include a short, funny, workout-type-specific metaphor that's relatable and shareable. Use these guidelines:
+   - **Strength**: Emphasize Total Volume or PB. Metaphor: Heavy objects or feats (e.g., "Like lifting a fridge!").
+   - **Cardio (Run/Cycle/Swim)**: Focus on Distance, Pace, or Duration. Metaphor: Travel or endurance (e.g., "Like sprinting to catch the last bus!").
+   - **HIIT**: Highlight intensity or reps. Metaphor: Chaotic or intense scenarios (e.g., "Like juggling life on a Monday morning!").
+   - **Pilates/Yoga**: Focus on reps, duration, or consistency. Metaphor: Graceful or zen vibes (e.g., "Smooth as a cat doing sun salutations!").
+   - **Other**: Pick a relevant metric and a fun, universal metaphor (e.g., "Like conquering a to-do list!").
+6. **Tone**: Upbeat, meme-worthy, and encouraging. Make it shareable on social media.
+7. **Key Metrics Guide**:
+   - **Strength**: Prioritize Total Volume (>0kg) or PB. Compare to historical volume.
+   - **Cardio**: Prioritize Distance, Pace, or Duration. Compare to PBs or goals.
+   - **HIIT**: Focus on reps, rounds, or duration. Highlight intensity.
+   - **Pilates/Yoga**: Emphasize reps, duration, or consistency. Highlight form or flow.
+   - **Other**: Choose the most relevant metric tied to goals or consistency.
 
-Example Highlights (Goal: More Contextual & Fun):
-*   "Crushed that ${workout.distance?.toFixed(0)}k run, ${userName}! New PB by ${ historicalContext.fastestDurationForDistance && workout.duration ? Math.round((historicalContext.fastestDurationForDistance - workout.duration) / 60) : 'X'} minutes! 🔥"
-*   "Incredible ${workout.calculatedVolume?.toLocaleString()}kg total volume, ${userName} - that's like lifting a small horse! Consistent strength gains! 💪"
-*   "Awesome ${Math.round((workout.duration || 0) / 60)} min ${workout.type} session, ${userName}! You covered the length of 50 football fields! 🌟"
-*   "Solid ${workout.type} workout, ${userName}, keeping up the great work towards your ${user?.aiPreferences?.fitnessGoals ? 'goals' : 'consistency'}! ✨"
+Example Highlights:
+- "Smashed ${workout.calculatedVolume?.toLocaleString()}kg, ${userName}! Like hoisting a baby elephant! New PB! 💪"
+- "Blazed ${workout.distance?.toFixed(1)}k, ${userName}! Like outrunning a zombie horde! Faster than last week! 🏃‍♂️"
+- "Nailed that HIIT, ${userName}! As wild as carrying all groceries in one trip! Epic intensity! 🔥"
+- "Graceful Pilates flow, ${userName}! Smooth as a cat in a sunbeam! Sticking to your goals! 🧘‍♀️"
 
 Generate the highlight now!
 `;
