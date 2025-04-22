@@ -123,15 +123,25 @@ export function StravaImport({ onImportComplete }: StravaImportProps) {
               // Connection is valid, ensure no error is shown
               setError(null);
               
-              // Check if auto-sync (webhook) is enabled, if not, enable it automatically
-              // by calling loadWebhookStatus first, then setting it up if not already enabled
-              const webhookResult = await getStravaWebhookStatusAction();
-              console.log('[StravaImport] Auto-checking webhook status:', webhookResult);
-              
-              if (webhookResult.success && !webhookResult.subscribed) {
-                console.log('[StravaImport] Auto-enabling webhook/auto-sync on connection');
-                // Auto-enable webhook for the user
-                await handleSetupWebhook();
+              // Always fetch the current webhook status when integrated
+              setIsWebhookLoading(true); // Set loading state
+              try {
+                  const webhookResult = await getStravaWebhookStatusAction();
+                  console.log('[StravaImport] Fetched webhook status:', webhookResult);
+                  setWebhookStatus(webhookResult); // Update the state with the fetched status
+                  
+                  // Optional: Auto-enable if not subscribed (keep existing logic if desired)
+                  // if (webhookResult.success && !webhookResult.subscribed) {
+                  //   console.log('[StravaImport] Auto-enabling webhook/auto-sync on connection');
+                  //   await handleSetupWebhook(); // This will update the status again internally
+                  // }
+
+              } catch (webhookError) {
+                  console.error('[StravaImport] Error fetching webhook status:', webhookError);
+                  // Optionally set an error state specific to webhook loading
+                  setWebhookStatus({ success: false, subscribed: false, error: 'Failed to load auto-sync status' });
+              } finally {
+                  setIsWebhookLoading(false); // Clear loading state
               }
             }
           } catch (statusError) {
