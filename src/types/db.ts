@@ -168,6 +168,10 @@ export interface WorkoutExerciseData {
   order?: number;
   duration?: number;
   distance?: number;
+  pace?: number;
+  speed?: number;
+  elevationGain?: number;
+  calories?: number;
   createdAt: string;
   updatedAt: string;
 } 

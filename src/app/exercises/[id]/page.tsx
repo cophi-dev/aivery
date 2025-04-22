@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,8 @@ import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { LoadingIndicator } from "@/components/ui/loading-indicator"
 import Image from "next/image"
+import { subMonths, subWeeks } from "date-fns"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 // Fallback data if no history is available
 // const fallbackHistoryData = [
@@ -45,6 +47,27 @@ import Image from "next/image"
 //   { date: '2023-02-21', weight: 75, reps: 10 },
 //   { date: '2023-02-28', weight: 80, reps: 8 },
 // ]
+
+// Add helper function for formatting duration (seconds to MM:SS)
+const formatDuration = (seconds: number | undefined | null): string => {
+  if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) {
+    return "N/A";
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+// Add helper function for formatting pace (seconds per km to MM:SS/km)
+const formatPace = (pace: number | undefined | null): string => {
+  if (pace === undefined || pace === null || isNaN(pace) || pace <= 0) {
+    return "N/A";
+  }
+  // Assuming pace is in seconds per kilometer
+  const minutes = Math.floor(pace / 60);
+  const remainingSeconds = Math.round(pace % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')} /km`;
+};
 
 export default function ExerciseDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -60,6 +83,24 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   
+  // Add state for cardio stats
+  const [cardioStats, setCardioStats] = useState<{
+    bestDistance: number | null;
+    bestDuration: number | null; // For longest workout
+    fastestPace: number | null;
+    avgDistance: number | null;
+    avgDuration: number | null;
+    avgPace: number | null;
+    totalDistance: number;
+    totalDuration: number;
+    lastWorkout: { 
+      distance?: number | null; 
+      duration?: number | null; 
+      pace?: number | null; 
+      calories?: number | null;
+    } | null;
+  } | null>(null);
+  
   // State for exercise form
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -68,6 +109,9 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   const [instructions, setInstructions] = useState<string[]>([])
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>([])
+  
+  // Add state for date range selection
+  const [selectedDateRange, setSelectedDateRange] = useState<"allTime" | "3months" | "4weeks">("allTime");
   
   useEffect(() => {
     let isMounted = true
@@ -141,14 +185,24 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
     // Sort history by date (newest first)
     historyData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     
-    // Find personal best
+    // Find personal best (strength)
     let bestWeight = 0
     let bestReps = 0
     let bestTotal = 0
+
+    // Initialize cardio stats
+    let bestDistance = 0;
+    let bestDuration = 0; // Longest duration workout
+    let fastestPace = Infinity; // Lower is better
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let validPaceCount = 0;
+    let totalPace = 0; // Sum of paces for averaging
+    let workoutCount = historyData.length; // Count workouts with data
     
-    // Process data for chart
+    // Process data for chart and stats
     const chartPoints = historyData.map(workout => {
-      // Find the best set for this workout
+      // Strength processing
       let maxWeight = 0
       let maxReps = 0
       let maxTotal = 0
@@ -164,30 +218,211 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
           maxTotal = total
         }
         
-        // Update overall personal best
+        // Update overall personal best (strength)
         if (total > bestTotal) {
           bestWeight = weight
           bestReps = reps
           bestTotal = total
         }
       })
+
+      // Cardio processing
+      const workoutDistance = workout.distance ? Number(workout.distance) : 0; // Assuming distance is in km
+      const workoutDuration = workout.duration ? Number(workout.duration) : 0; // Assuming duration is in seconds
+      const workoutPace = workout.pace ? Number(workout.pace) : null; // Assuming pace is seconds/km
+
+      if (workoutDistance > bestDistance) {
+        bestDistance = workoutDistance;
+      }
+      if (workoutDuration > bestDuration) {
+        bestDuration = workoutDuration;
+      }
+      if (workoutPace !== null && workoutPace > 0 && workoutPace < fastestPace) {
+        fastestPace = workoutPace;
+      }
       
-      return {
+      totalDistance += workoutDistance;
+      totalDuration += workoutDuration;
+      if (workoutPace !== null && workoutPace > 0) {
+        totalPace += workoutPace;
+        validPaceCount++;
+      }
+      
+      return { // Chart data point (might need adjusting based on chart needs)
         date: new Date(workout.createdAt).toISOString().split('T')[0],
-        weight: maxWeight,
-        reps: maxReps,
-        total: maxTotal
+        weight: maxWeight, // Keep for potential strength chart
+        reps: maxReps,     // Keep for potential strength chart
+        total: maxTotal,   // Keep for potential strength chart
+        distance: workoutDistance, // Add cardio data
+        duration: workoutDuration, // Add cardio data
+        pace: workoutPace         // Add cardio data
       }
     })
     
     // Reverse to get chronological order for chart
     setChartData(chartPoints.reverse())
     
-    // Set personal best
+    // Set personal best (strength)
     if (bestTotal > 0) {
       setPersonalBest({ weight: bestWeight, reps: bestReps })
+    } else {
+      setPersonalBest(null); // Ensure it's null if no data
     }
+
+    // Set calculated cardio stats
+    setCardioStats({
+      bestDistance: bestDistance > 0 ? bestDistance : null,
+      bestDuration: bestDuration > 0 ? bestDuration : null,
+      fastestPace: fastestPace !== Infinity ? fastestPace : null,
+      avgDistance: workoutCount > 0 ? totalDistance / workoutCount : null,
+      avgDuration: workoutCount > 0 ? totalDuration / workoutCount : null,
+      avgPace: validPaceCount > 0 ? totalPace / validPaceCount : null,
+      totalDistance: totalDistance,
+      totalDuration: totalDuration,
+      lastWorkout: historyData.length > 0 ? {
+        distance: historyData[0].distance,
+        duration: historyData[0].duration,
+        pace: historyData[0].pace,
+        calories: historyData[0].calories // Assuming calories might be available
+      } : null
+    });
   }
+  
+  // Use useMemo to process history data based on selected date range
+  const progressionDisplayData = useMemo(() => {
+    const now = new Date();
+    let filteredHistory = history;
+
+    if (selectedDateRange === "3months") {
+      const threeMonthsAgo = subMonths(now, 3);
+      filteredHistory = history.filter(item => new Date(item.createdAt) >= threeMonthsAgo);
+    } else if (selectedDateRange === "4weeks") {
+      const fourWeeksAgo = subWeeks(now, 4);
+      filteredHistory = history.filter(item => new Date(item.createdAt) >= fourWeeksAgo);
+    }
+
+    // If no data for the selected range, return empty/default state
+    if (!filteredHistory.length) {
+      return {
+        chartPoints: [],
+        avgFirstDist: null,
+        avgLastDist: null,
+        distChange: null,
+        avgFirstPace: null,
+        avgLastPace: null,
+        paceChange: null,
+        avgFirstDur: null,
+        avgLastDur: null,
+        durChange: null,
+        avgFirstWeight: null,
+        avgLastWeight: null,
+        weightChange: null,
+        avgFirstReps: null,
+        avgLastReps: null,
+        repsChange: null,
+        avgFirstVolume: null,
+        avgLastVolume: null,
+        volumeChange: null,
+        firstNCount: 0,
+        lastNCount: 0
+      };
+    }
+
+    // Sort filtered history chronologically for chart and first/last calcs
+    filteredHistory.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    // Process for chart points
+    const chartPoints = filteredHistory.map(workout => {
+       // Strength processing
+       let maxWeight = 0
+       let maxReps = 0
+       let maxTotal = 0
+       workout.sets?.forEach(set => {
+         const weight = Number(set.weight) || 0
+         const reps = Number(set.reps) || 0
+         const total = weight * reps
+         if (total > maxTotal) {
+           maxWeight = weight
+           maxReps = reps
+           maxTotal = total
+         }
+       });
+       // Cardio processing
+       const workoutDistance = workout.distance ? Number(workout.distance) : 0;
+       const workoutDuration = workout.duration ? Number(workout.duration) : 0;
+       const workoutPace = workout.pace ? Number(workout.pace) : null;
+
+       return {
+        date: new Date(workout.createdAt).toISOString().split('T')[0],
+        weight: maxWeight,
+        reps: maxReps,
+        total: maxTotal,
+        distance: workoutDistance,
+        duration: workoutDuration,
+        pace: workoutPace
+      }
+    });
+
+    // Calculate first/last N averages for summary boxes
+    const firstNCount = Math.min(5, filteredHistory.length);
+    const lastNCount = Math.min(5, filteredHistory.length); // Use same N for consistency
+
+    const firstNData = chartPoints.slice(0, firstNCount);
+    const lastNData = chartPoints.slice(Math.max(0, chartPoints.length - lastNCount));
+
+    // Cardio Averages
+    const avgFirstDist = firstNData.reduce((sum, d) => sum + (d.distance || 0), 0) / firstNCount;
+    const avgLastDist = lastNData.reduce((sum, d) => sum + (d.distance || 0), 0) / lastNCount;
+    const distChange = avgLastDist - avgFirstDist;
+
+    const validFirstPace = firstNData.filter(d => d.pace && d.pace > 0);
+    const validLastPace = lastNData.filter(d => d.pace && d.pace > 0);
+    const avgFirstPace = validFirstPace.length > 0 ? validFirstPace.reduce((sum, d) => sum + d.pace!, 0) / validFirstPace.length : null;
+    const avgLastPace = validLastPace.length > 0 ? validLastPace.reduce((sum, d) => sum + d.pace!, 0) / validLastPace.length : null;
+    const paceChange = (avgLastPace !== null && avgFirstPace !== null) ? avgLastPace - avgFirstPace : null;
+
+    const avgFirstDur = firstNData.reduce((sum, d) => sum + (d.duration || 0), 0) / firstNCount;
+    const avgLastDur = lastNData.reduce((sum, d) => sum + (d.duration || 0), 0) / lastNCount;
+    const durChange = avgLastDur - avgFirstDur;
+
+    // Strength Averages
+    const avgFirstWeight = firstNData.reduce((sum, d) => sum + (d.weight || 0), 0) / firstNCount;
+    const avgLastWeight = lastNData.reduce((sum, d) => sum + (d.weight || 0), 0) / lastNCount;
+    const weightChange = avgLastWeight - avgFirstWeight;
+
+    const avgFirstReps = firstNData.reduce((sum, d) => sum + (d.reps || 0), 0) / firstNCount;
+    const avgLastReps = lastNData.reduce((sum, d) => sum + (d.reps || 0), 0) / lastNCount;
+    const repsChange = avgLastReps - avgFirstReps;
+
+    const avgFirstVolume = firstNData.reduce((sum, d) => sum + (d.total || 0), 0) / firstNCount;
+    const avgLastVolume = lastNData.reduce((sum, d) => sum + (d.total || 0), 0) / lastNCount;
+    const volumeChange = avgLastVolume - avgFirstVolume;
+
+    return {
+      chartPoints,
+      avgFirstDist,
+      avgLastDist,
+      distChange,
+      avgFirstPace,
+      avgLastPace,
+      paceChange,
+      avgFirstDur,
+      avgLastDur,
+      durChange,
+      avgFirstWeight,
+      avgLastWeight,
+      weightChange,
+      avgFirstReps,
+      avgLastReps,
+      repsChange,
+      avgFirstVolume,
+      avgLastVolume,
+      volumeChange,
+      firstNCount,
+      lastNCount
+    };
+
+  }, [history, selectedDateRange]); // Recompute when history or range changes
   
   const addMuscleGroup = () => {
     if (muscleGroup.trim() === "") return
@@ -473,9 +708,21 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                   <div>
                     <h3 className="text-sm text-muted-foreground">Personal Best</h3>
                     <p className="text-2xl font-bold">
-                      {personalBest 
-                        ? `${personalBest.weight} kg × ${personalBest.reps}` 
-                        : "No data yet"}
+                      {exercise.category === 'cardio' ? (
+                        cardioStats?.fastestPace || cardioStats?.bestDistance || cardioStats?.bestDuration ? (
+                          <span className="text-sm">
+                            {cardioStats.bestDistance ? `Dist: ${cardioStats.bestDistance.toFixed(2)} km` : ''}
+                            {cardioStats.bestDistance && cardioStats.bestDuration ? ' / ' : ''}
+                            {cardioStats.bestDuration ? `Time: ${formatDuration(cardioStats.bestDuration)}` : ''}
+                            {cardioStats.fastestPace && (cardioStats.bestDistance || cardioStats.bestDuration) ? ' / ' : ''}
+                            {cardioStats.fastestPace ? `Pace: ${formatPace(cardioStats.fastestPace)}` : ''}
+                          </span>
+                        ) : "No data yet"
+                      ) : (
+                        personalBest 
+                          ? `${personalBest.weight} kg × ${personalBest.reps}` 
+                          : "No data yet"
+                      )}
                     </p>
                   </div>
                   
@@ -486,6 +733,15 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                         ? formatDate(history[0].createdAt) 
                         : "No workouts yet"}
                     </p>
+                    {/* Add Last Workout details for Cardio */}
+                    {exercise.category === 'cardio' && cardioStats?.lastWorkout && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {cardioStats.lastWorkout.duration ? `${formatDuration(cardioStats.lastWorkout.duration)}` : ''}
+                        {cardioStats.lastWorkout.distance ? ` / ${cardioStats.lastWorkout.distance.toFixed(2)} km` : ''}
+                        {cardioStats.lastWorkout.pace ? ` / ${formatPace(cardioStats.lastWorkout.pace)}` : ''}
+                        {/* {cardioStats.lastWorkout.calories ? ` / ${Math.round(cardioStats.lastWorkout.calories)} kcal` : ''} */}
+                      </p>
+                    )}
                   </div>
                   
                   <div>
@@ -512,50 +768,117 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                   <CardTitle>Progress Summary</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {history.length > 0 ? (
+                  {history.length === 0 ? (
+                    <div className="text-center py-4 text-muted-foreground">
+                      No training history yet
+                    </div>
+                  ) : exercise.category === 'cardio' ? (
+                    // CARDIO Progress Summary
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Best Distance</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.bestDistance ? `${cardioStats.bestDistance.toFixed(2)} km` : 'N/A'}
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Longest Duration</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.bestDuration ? formatDuration(cardioStats.bestDuration) : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Fastest Pace</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.fastestPace ? formatPace(cardioStats.fastestPace) : 'N/A'}
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Avg Distance</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.avgDistance ? `${cardioStats.avgDistance.toFixed(2)} km` : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Avg Duration</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.avgDuration ? formatDuration(cardioStats.avgDuration) : 'N/A'}
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Avg Pace</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.avgPace ? formatPace(cardioStats.avgPace) : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Total Distance</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.totalDistance ? `${cardioStats.totalDistance.toFixed(2)} km` : '0 km'}
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm text-muted-foreground">Total Time</div>
+                          <div className="text-xl font-bold">
+                            {cardioStats?.totalDuration ? formatDuration(cardioStats.totalDuration) : '0:00'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    // STRENGTH Progress Summary (Original Logic)
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-muted/50 p-3 rounded-lg">
                           <div className="text-sm text-muted-foreground">Best Weight</div>
                           <div className="text-xl font-bold">
-                            {Math.max(...history.map(w => Math.max(...w.sets.map(s => Number(s.weight) || 0))))} kg
+                            {Math.max(0, ...history.flatMap(w => w.sets?.map(s => Number(s.weight) || 0) ?? []))} kg
                           </div>
                         </div>
                         <div className="bg-muted/50 p-3 rounded-lg">
                           <div className="text-sm text-muted-foreground">Best Reps</div>
                           <div className="text-xl font-bold">
-                            {Math.max(...history.map(w => Math.max(...w.sets.map(s => Number(s.reps) || 0))))}
+                            {Math.max(0, ...history.flatMap(w => w.sets?.map(s => Number(s.reps) || 0) ?? []))}
                           </div>
                         </div>
                       </div>
-                      
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-muted/50 p-3 rounded-lg">
                           <div className="text-sm text-muted-foreground">Avg Weight</div>
                           <div className="text-xl font-bold">
-                            {(history.reduce((sum, w) => sum + w.sets.reduce((s, set) => s + (Number(set.weight) || 0), 0), 0) / 
-                              history.reduce((sum, w) => sum + w.sets.length, 0)).toFixed(1)} kg
+                            {(() => {
+                              const allSets = history.flatMap(w => w.sets ?? []);
+                              const totalWeight = allSets.reduce((sum, set) => sum + (Number(set.weight) || 0), 0);
+                              const numSets = allSets.length;
+                              return numSets > 0 ? `${(totalWeight / numSets).toFixed(1)} kg` : 'N/A';
+                            })()}
                           </div>
                         </div>
                         <div className="bg-muted/50 p-3 rounded-lg">
                           <div className="text-sm text-muted-foreground">Avg Reps</div>
                           <div className="text-xl font-bold">
-                            {(history.reduce((sum, w) => sum + w.sets.reduce((s, set) => s + (Number(set.reps) || 0), 0), 0) / 
-                              history.reduce((sum, w) => sum + w.sets.length, 0)).toFixed(1)}
+                             {(() => {
+                              const allSets = history.flatMap(w => w.sets ?? []);
+                              const totalReps = allSets.reduce((sum, set) => sum + (Number(set.reps) || 0), 0);
+                              const numSets = allSets.length;
+                              return numSets > 0 ? (totalReps / numSets).toFixed(1) : 'N/A';
+                            })()}
                           </div>
                         </div>
                       </div>
-
                       <div className="bg-muted/50 p-3 rounded-lg">
                         <div className="text-sm text-muted-foreground">Total Volume</div>
                         <div className="text-xl font-bold">
-                          {history.reduce((sum, w) => sum + w.sets.reduce((s, set) => s + ((Number(set.weight) || 0) * (Number(set.reps) || 0)), 0), 0)} kg
+                          {history.reduce((sum, w) => sum + (w.sets?.reduce((s, set) => s + ((Number(set.weight) || 0) * (Number(set.reps) || 0)), 0) ?? 0), 0)} kg
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-muted-foreground">
-                      No training history yet
                     </div>
                   )}
                 </CardContent>
@@ -577,44 +900,73 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
                 <div className="relative overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="text-xs uppercase bg-muted">
-                      <tr>
-                        <th scope="col" className="px-6 py-3">Date</th>
-                        <th scope="col" className="px-6 py-3">Sets</th>
-                        <th scope="col" className="px-6 py-3">Best Set</th>
-                        <th scope="col" className="px-6 py-3">Volume</th>
-                        <th scope="col" className="px-6 py-3">Notes</th>
-                      </tr>
+                      {/* Conditional Headers based on category */}
+                      {exercise.category === 'cardio' ? (
+                        <tr>
+                          <th scope="col" className="px-6 py-3">Date</th>
+                          <th scope="col" className="px-6 py-3">Duration</th>
+                          <th scope="col" className="px-6 py-3">Distance</th>
+                          <th scope="col" className="px-6 py-3">Avg Pace</th>
+                          <th scope="col" className="px-6 py-3">Notes</th>
+                        </tr>
+                      ) : (
+                        // Default to Strength columns
+                        <tr>
+                          <th scope="col" className="px-6 py-3">Date</th>
+                          <th scope="col" className="px-6 py-3">Sets</th>
+                          <th scope="col" className="px-6 py-3">Best Set</th>
+                          <th scope="col" className="px-6 py-3">Volume</th>
+                          <th scope="col" className="px-6 py-3">Notes</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody>
                       {history.map((workout, index) => {
-                        // Calculate best set and total volume
-                        let bestSet = { weight: 0, reps: 0 }
-                        let bestVolume = 0
-                        let totalVolume = 0
+                        const workoutLink = workout.workoutId ? `/workouts/${workout.workoutId}` : '#';
                         
-                        workout.sets.forEach(set => {
-                          const weight = Number(set.weight) || 0
-                          const reps = Number(set.reps) || 0
-                          const volume = weight * reps
-                          
-                          totalVolume += volume
-                          
-                          if (volume > bestVolume) {
-                            bestSet = { weight, reps }
-                            bestVolume = volume
-                          }
-                        })
-                        
+                        // Render row based on category
                         return (
-                          <tr key={index} className="border-b">
-                            <td className="px-6 py-4">{formatDate(workout.createdAt)}</td>
-                            <td className="px-6 py-4">{workout.sets.length}</td>
-                            <td className="px-6 py-4">
-                              {bestSet.weight > 0 ? `${bestSet.weight} kg × ${bestSet.reps}` : "N/A"}
-                            </td>
-                            <td className="px-6 py-4">{totalVolume} kg</td>
-                            <td className="px-6 py-4 max-w-xs truncate">{workout.notes || "-"}</td>
-                          </tr>
+                          <Link href={workoutLink} key={index} passHref legacyBehavior>
+                            {exercise.category === 'cardio' ? (
+                              <tr className="border-b hover:bg-muted/50 cursor-pointer">
+                                <td className="px-6 py-4">{formatDate(workout.createdAt)}</td>
+                                <td className="px-6 py-4">{formatDuration(workout.duration)}</td>
+                                <td className="px-6 py-4">{workout.distance !== undefined ? `${workout.distance.toFixed(2)} km` : 'N/A'}</td>
+                                <td className="px-6 py-4">{formatPace(workout.pace)}</td>
+                                <td className="px-6 py-4 max-w-xs truncate">{workout.notes || "-"}</td>
+                              </tr>
+                            ) : (
+                              // STRENGTH ROW - Calculate metrics first, then return the row
+                              (() => {
+                                let bestSet = { weight: 0, reps: 0 };
+                                let bestVolume = 0;
+                                let totalVolume = 0;
+                                
+                                workout.sets?.forEach(set => {
+                                  const weight = Number(set.weight) || 0;
+                                  const reps = Number(set.reps) || 0;
+                                  const volume = weight * reps;
+                                  totalVolume += volume;
+                                  if (volume > bestVolume) {
+                                    bestSet = { weight, reps };
+                                    bestVolume = volume;
+                                  }
+                                });
+                                
+                                return (
+                                  <tr className="border-b hover:bg-muted/50 cursor-pointer">
+                                    <td className="px-6 py-4">{formatDate(workout.createdAt)}</td>
+                                    <td className="px-6 py-4">{workout.sets?.length ?? 0}</td>
+                                    <td className="px-6 py-4">
+                                      {bestSet.weight > 0 ? `${bestSet.weight} kg × ${bestSet.reps}` : "N/A"}
+                                    </td>
+                                    <td className="px-6 py-4">{totalVolume} kg</td>
+                                    <td className="px-6 py-4 max-w-xs truncate">{workout.notes || "-"}</td>
+                                  </tr>
+                                );
+                              })()
+                            )}
+                          </Link>
                         )
                       })}
                     </tbody>
@@ -634,119 +986,330 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
             <CardHeader>
               <CardTitle>Progression</CardTitle>
               <CardDescription>
-                Your strength progression over time
+                Your {exercise.category === 'cardio' ? 'cardio' : 'strength'} progression over time
               </CardDescription>
             </CardHeader>
             <CardContent>
               {chartData.length > 0 ? (
                 <div className="space-y-6">
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={chartData}
-                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis 
-                          dataKey="date" 
-                          tickFormatter={(value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        />
-                        <YAxis yAxisId="left" />
-                        <YAxis yAxisId="right" orientation="right" />
-                        <Tooltip 
-                          formatter={(value: number, name: string) => [`${value} ${name === 'weight' ? 'kg' : ''}`, name === 'weight' ? 'Weight' : 'Reps']}
-                          labelFormatter={(label: string) => new Date(label).toLocaleDateString()}
-                        />
-                        <Line 
-                          yAxisId="left"
-                          type="monotone" 
-                          dataKey="weight" 
-                          stroke="#8884d8" 
-                          name="Weight"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                        <Line 
-                          yAxisId="right"
-                          type="monotone" 
-                          dataKey="reps" 
-                          stroke="#82ca9d" 
-                          name="Reps"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                  {/* Date Range Toggle */}
+                  <div className="flex justify-center mb-4">
+                    <RadioGroup 
+                      defaultValue="allTime"
+                      value={selectedDateRange}
+                      onValueChange={(value: "allTime" | "3months" | "4weeks") => setSelectedDateRange(value)}
+                      className="flex items-center space-x-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="allTime" id="r-all" />
+                        <Label htmlFor="r-all">All Time</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="3months" id="r-3m" />
+                        <Label htmlFor="r-3m">Last 3 Months</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="4weeks" id="r-4w" />
+                        <Label htmlFor="r-4w">Last 4 Weeks</Label>
+                      </div>
+                    </RadioGroup>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-muted/50 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium mb-2">Weight Progression</h3>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Starting Weight:</span>
-                          <span className="font-medium">{chartData[0].weight} kg</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Current Weight:</span>
-                          <span className="font-medium">{chartData[chartData.length - 1].weight} kg</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Total Increase:</span>
-                          <span className="font-medium text-green-500">
-                            +{(chartData[chartData.length - 1].weight - chartData[0].weight).toFixed(1)} kg
-                          </span>
-                        </div>
-                      </div>
+                  {/* Conditional Chart Rendering using progressionDisplayData */} 
+                  {progressionDisplayData.chartPoints.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No data available for the selected date range.
                     </div>
+                  ) : exercise.category === 'cardio' ? (
+                    // CARDIO CHART
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={progressionDisplayData.chartPoints}
+                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="date" 
+                            tickFormatter={(value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          />
+                          <YAxis yAxisId="left" unit=" km" name="Distance" />
+                          <YAxis yAxisId="right" orientation="right" name="Pace" tickFormatter={(value) => formatPace(value)} domain={['dataMin - 10', 'dataMax + 10']} reversed={true} />
+                          <Tooltip 
+                            formatter={(value: number, name: string) => {
+                              if (name === 'distance') return [`${value.toFixed(2)} km`, 'Distance'];
+                              if (name === 'pace') return [formatPace(value), 'Avg Pace'];
+                              if (name === 'duration') return [formatDuration(value), 'Duration']; // Add duration if needed
+                              return [value, name];
+                            }}
+                            labelFormatter={(label: string) => new Date(label).toLocaleDateString()}
+                          />
+                          <Line 
+                            yAxisId="left"
+                            type="monotone" 
+                            dataKey="distance" 
+                            stroke="#8884d8" 
+                            name="Distance"
+                            unit="km"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                          <Line 
+                            yAxisId="right"
+                            type="monotone" 
+                            dataKey="pace" 
+                            stroke="#82ca9d" 
+                            name="Pace"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                            connectNulls // Connect line even if pace is missing for some points
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    // STRENGTH CHART
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={progressionDisplayData.chartPoints}
+                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="date" 
+                            tickFormatter={(value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          />
+                          <YAxis yAxisId="left" unit=" kg" name="Weight/Volume" />
+                          <YAxis yAxisId="right" orientation="right" name="Reps" />
+                          <Tooltip 
+                            formatter={(value: number, name: string) => {
+                               if (name === 'weight') return [`${value} kg`, 'Weight'];
+                               if (name === 'reps') return [value, 'Reps'];
+                               if (name === 'total') return [`${value} kg`, 'Volume'];
+                               return [value, name];
+                            }}
+                            labelFormatter={(label: string) => new Date(label).toLocaleDateString()}
+                          />
+                          <Line 
+                            yAxisId="left"
+                            type="monotone" 
+                            dataKey="weight" 
+                            stroke="#8884d8" 
+                            name="Weight"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                          <Line 
+                            yAxisId="right"
+                            type="monotone" 
+                            dataKey="reps" 
+                            stroke="#82ca9d" 
+                            name="Reps"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                           <Line 
+                            yAxisId="left" // Plot volume on the left axis with weight
+                            type="monotone" 
+                            dataKey="total" 
+                            stroke="#ffc658" 
+                            name="Volume"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
 
-                    <div className="bg-muted/50 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium mb-2">Rep Progression</h3>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Starting Reps:</span>
-                          <span className="font-medium">{chartData[0].reps}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Current Reps:</span>
-                          <span className="font-medium">{chartData[chartData.length - 1].reps}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Total Change:</span>
-                          <span className={`font-medium ${chartData[chartData.length - 1].reps - chartData[0].reps >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {chartData[chartData.length - 1].reps - chartData[0].reps >= 0 ? '+' : ''}
-                            {chartData[chartData.length - 1].reps - chartData[0].reps}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                  {/* SUMMARY BOXES - Conditional Rendering using progressionDisplayData */} 
+                  {progressionDisplayData.chartPoints.length === 0 ? null : exercise.category === 'cardio' ? (
+                     // CARDIO Summary Boxes
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <div className="bg-muted/50 p-4 rounded-lg">
+                         <h3 className="text-sm font-medium mb-2">Distance Progression</h3>
+                         <div className="space-y-1">
+                            {(() => {
+                              const { avgFirstDist, avgLastDist, distChange, firstNCount, lastNCount } = progressionDisplayData;
+                              
+                              return (
+                                <>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Avg First {firstNCount}:</span>
+                                    <span className="font-medium">{avgFirstDist !== null ? `${avgFirstDist.toFixed(2)} km` : 'N/A'}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Avg Last {lastNCount}:</span>
+                                    <span className="font-medium">{avgLastDist !== null ? `${avgLastDist.toFixed(2)} km` : 'N/A'}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Total Change:</span>
+                                    <span className={`font-medium ${distChange === null || isNaN(distChange) ? '' : distChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                      {distChange === null || isNaN(distChange) ? 'N/A' : `${distChange >= 0 ? '+' : ''}${distChange.toFixed(2)} km`}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                         </div>
+                       </div>
 
-                    <div className="bg-muted/50 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium mb-2">Volume Progression</h3>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Starting Volume:</span>
-                          <span className="font-medium">{chartData[0].total} kg</span>
+                       <div className="bg-muted/50 p-4 rounded-lg">
+                         <h3 className="text-sm font-medium mb-2">Pace Progression</h3>
+                         <div className="space-y-1">
+                            {(() => {
+                              const { avgFirstPace, avgLastPace, paceChange, firstNCount, lastNCount } = progressionDisplayData;
+                              
+                              return (
+                                <>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Avg First {firstNCount}:</span>
+                                    <span className="font-medium">{formatPace(avgFirstPace)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Avg Last {lastNCount}:</span>
+                                    <span className="font-medium">{formatPace(avgLastPace)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Total Change:</span>
+                                    {paceChange !== null ? (
+                                      <span className={`font-medium ${paceChange <= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                        {/* Pace change: lower is better */}
+                                        {formatDuration(paceChange)} /km
+                                      </span>
+                                    ) : (
+                                      <span className="font-medium">N/A</span>
+                                    )}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                         </div>
+                       </div>
+
+                       <div className="bg-muted/50 p-4 rounded-lg">
+                         <h3 className="text-sm font-medium mb-2">Duration Progression</h3>
+                         <div className="space-y-1">
+                            {(() => {
+                              const { avgFirstDur, avgLastDur, durChange, firstNCount, lastNCount } = progressionDisplayData;
+                              
+                              return (
+                                <>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Avg First {firstNCount}:</span>
+                                    <span className="font-medium">{avgFirstDur !== null ? formatDuration(avgFirstDur) : 'N/A'}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Avg Last {lastNCount}:</span>
+                                    <span className="font-medium">{avgLastDur !== null ? formatDuration(avgLastDur) : 'N/A'}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Total Change:</span>
+                                    <span className={`font-medium ${durChange === null || isNaN(durChange) ? '' : durChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                      {durChange === null || isNaN(durChange) ? 'N/A' : `${durChange >= 0 ? '+' : ''}${formatDuration(durChange)}`}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                         </div>
+                       </div>
+                     </div>
+                  ) : (
+                    // STRENGTH Summary Boxes
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-muted/50 p-4 rounded-lg">
+                        <h3 className="text-sm font-medium mb-2">Weight Progression</h3>
+                        <div className="space-y-1">
+                          {(() => {
+                            const { avgFirstWeight, avgLastWeight, weightChange, firstNCount, lastNCount } = progressionDisplayData;
+                            return (
+                              <>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Avg First {firstNCount}:</span>
+                                  <span className="font-medium">{avgFirstWeight !== null ? `${avgFirstWeight.toFixed(1)} kg` : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Avg Last {lastNCount}:</span>
+                                  <span className="font-medium">{avgLastWeight !== null ? `${avgLastWeight.toFixed(1)} kg` : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Total Change:</span>
+                                  <span className={`font-medium ${weightChange === null || isNaN(weightChange) ? '' : weightChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {weightChange === null || isNaN(weightChange) ? 'N/A' : `${weightChange >= 0 ? '+' : ''}${weightChange.toFixed(1)} kg`}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Current Volume:</span>
-                          <span className="font-medium">{chartData[chartData.length - 1].total} kg</span>
+                      </div>
+
+                      <div className="bg-muted/50 p-4 rounded-lg">
+                        <h3 className="text-sm font-medium mb-2">Rep Progression</h3>
+                        <div className="space-y-1">
+                          {(() => {
+                            const { avgFirstReps, avgLastReps, repsChange, firstNCount, lastNCount } = progressionDisplayData;
+                            return (
+                              <>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Avg First {firstNCount}:</span>
+                                  <span className="font-medium">{avgFirstReps !== null ? avgFirstReps.toFixed(1) : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Avg Last {lastNCount}:</span>
+                                  <span className="font-medium">{avgLastReps !== null ? avgLastReps.toFixed(1) : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Total Change:</span>
+                                  <span className={`font-medium ${repsChange === null || isNaN(repsChange) ? '' : repsChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {repsChange === null || isNaN(repsChange) ? 'N/A' : `${repsChange >= 0 ? '+' : ''}${repsChange.toFixed(1)}`}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Total Increase:</span>
-                          <span className="font-medium text-green-500">
-                            +{(chartData[chartData.length - 1].total - chartData[0].total).toFixed(1)} kg
-                          </span>
+                      </div>
+
+                      <div className="bg-muted/50 p-4 rounded-lg">
+                        <h3 className="text-sm font-medium mb-2">Volume Progression</h3>
+                        <div className="space-y-1">
+                          {(() => {
+                            const { avgFirstVolume, avgLastVolume, volumeChange, firstNCount, lastNCount } = progressionDisplayData;
+                            return (
+                              <>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Avg First {firstNCount}:</span>
+                                  <span className="font-medium">{avgFirstVolume !== null ? `${avgFirstVolume.toFixed(1)} kg` : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Avg Last {lastNCount}:</span>
+                                  <span className="font-medium">{avgLastVolume !== null ? `${avgLastVolume.toFixed(1)} kg` : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Total Change:</span>
+                                  <span className={`font-medium ${volumeChange === null || isNaN(volumeChange) ? '' : volumeChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {volumeChange === null || isNaN(volumeChange) ? 'N/A' : `${volumeChange >= 0 ? '+' : ''}${volumeChange.toFixed(1)} kg`}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  Not enough data to show progression chart.
+                  Not enough data to show progression chart yet.
                 </div>
               )}
             </CardContent>

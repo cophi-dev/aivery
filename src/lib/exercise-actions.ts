@@ -18,6 +18,8 @@ import type { ExerciseData, WorkoutExerciseData } from "@/types/db"
 import { getCurrentUser } from "./auth"
 import { getSession } from "next-auth/react"
 import { headers } from 'next/headers'
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
 
 // Fetch exercises, potentially filtered by tags
 export async function fetchExercises(tags?: string): Promise<ExerciseData[]> {
@@ -168,10 +170,19 @@ export async function updateExerciseAction(id: string, exerciseData: Partial<Exe
   }
 }
 
-// Function to get exercise history
+// Function to get exercise history for the current user
 export async function getExerciseHistory(exerciseId: string): Promise<WorkoutExerciseData[]> {
   try {
-    const workoutExercises = await getWorkoutExercisesByExerciseId(exerciseId)
+    const session = await getServerSession(authOptions)
+    const userId = session?.user?.id
+
+    if (!userId) {
+      console.error("User not authenticated for getExerciseHistory")
+      return [] // Return empty array if user is not logged in
+    }
+    
+    // Pass userId to the repository function
+    const workoutExercises = await getWorkoutExercisesByExerciseId(exerciseId, userId)
     return workoutExercises
   } catch (error) {
     console.error("Error fetching exercise history:", error)
@@ -301,10 +312,20 @@ export async function generateAndSaveExerciseImage(
 //   }
 // }
 
-// Fetch USED Exercises Action (NEW - wraps renamed repo function)
+// Fetch USED Exercises Action (wraps repo function)
 export async function getUsedExercises(): Promise<ExerciseData[]> {
   try {
-    return await getUsedExercisesRepo();
+    // Get current user session
+    const session = await getServerSession(authOptions)
+    const userId = session?.user?.id
+
+    if (!userId) {
+      console.warn("Attempted to get used exercises without authenticated user.")
+      return [] // Return empty if no user logged in
+    }
+    
+    // Pass userId to the repository function
+    return await getUsedExercisesRepo(userId);
   } catch (error) {
     console.error(`Action Error - getUsedExercises:`, error);
     return []; // Return empty array on error

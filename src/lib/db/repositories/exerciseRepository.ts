@@ -49,13 +49,15 @@ function convertDocToExerciseData(doc: IExercise | null): ExerciseData {
   };
 }
 
-// Renamed: Get all exercises THAT HAVE BEEN USED in a workout
-export async function getUsedExercises(): Promise<ExerciseData[]> {
+// Renamed: Get all exercises THAT HAVE BEEN USED in a workout BY A SPECIFIC USER
+export async function getUsedExercises(userId: string): Promise<ExerciseData[]> {
   try {
     await dbConnect()
     
-    // 1. Find all distinct exercise IDs from WorkoutExercise collection
-    const usedExerciseIds = await WorkoutExerciseModel.distinct('exerciseId')
+    // 1. Find all distinct exercise IDs from WorkoutExercise collection FOR THIS USER
+    const usedExerciseIds = await WorkoutExerciseModel.distinct('exerciseId', { 
+      userId: new ObjectId(userId) // Filter by userId
+    })
     
     // Filter out any potential invalid ObjectIds that might have crept in
     const validUsedExerciseIds = usedExerciseIds.filter(id => isValidObjectId(id))

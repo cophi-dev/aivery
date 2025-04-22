@@ -280,7 +280,7 @@ async function analyzeUserQuery(query: string, history: HistoryMessage[], userId
     .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
     .join('\n');
 
-  const systemPrompt = `\\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.\\n\\nCONVERSATION HISTORY:\\n${historyString}\\n\\nLATEST USER QUERY: \"${query}\"\\n\\nYour goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.\\n\\nAVAILABLE DATA TYPES OVERVIEW:\\n- User: name, goals, preferences, location, age, weight, height, ...\\n- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...\\n- Exercises (Library): name, description, muscles, category, equipment, ...\\n\\nSCHEMA:\\n\\\`\\\`\\\`json\\n${schemaString}\\n\\\`\\\`\\\`\\n\\nRULES:\\n- Analyze the LATEST USER QUERY: \"${query}\".\\n- Use the CONVERSATION HISTORY to understand context (e.g., what \"these\" refers to).\\n- Identify the primary intent of the LATEST QUERY.\\n- Extract all relevant entities mentioned or implied in the LATEST QUERY. Use context from history if needed (e.g., if the user says \"show me those\", infer the period/type from the previous message).\\n- **IMPORTANT CONTEXT RULE:** If the LATEST QUERY is a direct follow-up asking to list items mentioned previously (like \"show me those\", \"list them\"), **you MUST inherit the period, explicit_start_date, explicit_end_date, and workout_type entities from the context of the previous turn** unless the LATEST QUERY explicitly specifies a *new* period or type.\\n- **NEW FOLLOW-UP RULE:** If the LATEST QUERY is a simple follow-up asking about a *different time period* (e.g., \"how about last week?\", \"and yesterday?\", \"compare that to last month\") AND the *previous assistant message* provided a summary or list of metrics (like distance, duration, count), you MUST infer the user wants the *same metrics* for the *new period* mentioned in the LATEST QUERY. Extract the relevant \\\`metric\\\` entities based on the previous assistant turn.\\n- Use the current date ONLY for resolving relative time periods like 'today', 'last week', etc. The backend will handle the precise date calculations.\\n- If the LATEST QUERY is too vague, even with history context, set intent to \"unknown\" and optionally provide a suggestion for clarification in response_suggestion.\\n- For comparison intents, try to extract both the main period and the comparison period.\\n- If the user asks for a specific workout (e.g., 'my run yesterday', 'workout ID 123'), capture this in workout_identifier.\\n- Only return the JSON object adhering strictly to the schema.\\n- Do NOT add any explanations or commentary outside the JSON structure.\\n\\nCURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).\\n`;
+  const systemPrompt = `\\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.\\n\\nCONVERSATION HISTORY:\\n${historyString}\\n\\nLATEST USER QUERY: \"${query}\"\\n\\nYour goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.\\n\\nAVAILABLE DATA TYPES OVERVIEW:\\n- User: name, goals, preferences, location, age, weight, height, ...\\n- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...\\n- Exercises (Library): name, description, muscles, category, equipment, ...\\n\\nSCHEMA:\\n\\\`\\\`\\\`json\\n${schemaString}\\n\\\`\\\`\\\`\\n\\nRULES:\\n- Analyze the LATEST USER QUERY: \"${query}\".\\n- Use the CONVERSATION HISTORY to understand context (e.g., what \"these\" refers to).\\n- Identify the primary intent of the LATEST QUERY.\\n- Extract all relevant entities mentioned or implied in the LATEST QUERY. Use context from history if needed (e.g., if the user says \"show me those\", infer the period/type from the previous message).\\n+\n- **WORKOUT TYPE EXTRACTION (VERY IMPORTANT):** When extracting \\\`workout_type\\\`, prioritize types explicitly mentioned in the LATEST QUERY (e.g., "running workout", "strength session"). If the query refers to a specific workout by ID or reference (like \"it\", \"that workout\") and the type isn't explicitly mentioned in the *latest query*, look at the CONVERSATION HISTORY or any provided CONTEXT (like a workoutSummary) to determine the correct type associated with that specific workout. Avoid defaulting to \\\`other\\\` if a more specific type can be reliably determined from the query or context.\\n \n- **IMPORTANT CONTEXT RULE:** If the LATEST QUERY is a direct follow-up asking to list items mentioned previously (like \"show me those\", \"list them\"), **you MUST inherit the period, explicit_start_date, explicit_end_date, and workout_type entities from the context of the previous turn** unless the LATEST QUERY explicitly specifies a *new* period or type.\\n \n- **NEW FOLLOW-UP RULE:** If the LATEST QUERY is a simple follow-up asking about a *different time period* (e.g., \"how about last week?\", \"and yesterday?\", \"compare that to last month\") AND the *previous assistant message* provided a summary or list of metrics (like distance, duration, count), you MUST infer the user wants the *same metrics* for the *new period* mentioned in the LATEST QUERY. Extract the relevant \\\`metric\\\` entities based on the previous assistant turn.\\n- **PRONOUN/REFERENCE RESOLUTION (VERY IMPORTANT):** When the LATEST QUERY uses pronouns (\"it\", \"this\", \"that\") or vague references (\"this workout\", \"that session\") to refer to a workout discussed previously in the CONVERSATION HISTORY or provided in initial context, you MUST extract the specific **workout ID (ObjectId, e.g., '68060b1ec02d568dab4d8262')** if it's available in the recent history/context, and place it in the \\\`workout_identifier\\\` entity. Do **NOT** use the date as the identifier if the ObjectId is available. This is crucial for intents like \\\`get_workout_details\\\` and \\\`compare_metric\\\` (workout-vs-previous comparison mode).\\n-\n- Use the current date ONLY for resolving relative time periods like 'today', 'last week', etc. The backend will handle the precise date calculations.\\n- If the LATEST QUERY is too vague, even with history context, set intent to \"unknown\" and optionally provide a suggestion for clarification in response_suggestion.\\n- For comparison intents, try to extract both the main period and the comparison period.\\n- If the user asks for a specific workout (e.g., 'my run yesterday', 'workout ID 123'), capture this in workout_identifier.\\n- Only return the JSON object adhering strictly to the schema.\\n- Do NOT add any explanations or commentary outside the JSON structure.\\n\\nCURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).\\n`;
 
   const defaultUnknownResponse: QueryAnalysis = {
     intent: "unknown",
@@ -1465,59 +1465,127 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
              break;
 
           case "compare_metric":
-              if (!entities?.metric || !entities?.period || (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date))) {
-                   responseText = `To compare, ${currentUserName}, I need a metric (like distance) and two time periods (like 'this week' and 'last month' or a specific range like 'August 2024').`; 
-                   break; 
+              // Check if we have enough info for EITHER period-based comparison OR workout-vs-previous comparison
+              const isPeriodComparison = entities?.metric && entities?.period && (entities?.comparison_period || (entities?.explicit_start_date && entities?.explicit_end_date));
+              // We need workout_identifier, limit, and a *specific* workout_type for workout-vs-previous
+              const isWorkoutVsPreviousComparison = entities?.workout_identifier && entities?.limit && entities?.workout_type && entities.workout_type !== 'any';
+ 
+              if (!isPeriodComparison && !isWorkoutVsPreviousComparison) {
+                   // Updated fallback message if neither comparison type is possible
+                   responseText = `To compare workouts, ${currentUserName}, please tell me what you want to compare. For example:\n*   'Compare my distance this week vs last week.'\n*   'How did my run today compare to my last 5 runs?'`;
+                   break;
               }
-              
-              // Calculate range for the first period (always uses 'period')
-              const period1Range = calculateDateRange(entities.period);
+ 
+              if (isPeriodComparison) {
+                  // --- Existing Period-Based Comparison Logic --- 
+                  if (!entities?.metric) { responseText = `Which metric (like distance or duration) should I compare, ${currentUserName}?`; break; }
+                  if (!entities?.period) { responseText = `What's the first time period (like 'this week'), ${currentUserName}?`; break; }
+                  if (!entities?.comparison_period && !(entities?.explicit_start_date && entities?.explicit_end_date)) { responseText = `What's the second time period (like 'last month' or 'August 2024'), ${currentUserName}?`; break; }
+                  
+                  // Calculate range for the first period (always uses 'period')
+                  const period1Range = calculateDateRange(entities.period);
+    
+                  // Determine range for the second period: prioritize explicit dates over comparison_period
+                  let period2StartDate = entities.explicit_start_date;
+                  let period2EndDate = entities.explicit_end_date;
+                  let period2Label = entities.comparison_period;
+                  let period2Description = '';
 
-              // Determine range for the second period: prioritize explicit dates over comparison_period
-              let period2StartDate = entities.explicit_start_date;
-              let period2EndDate = entities.explicit_end_date;
-              let period2Label = entities.comparison_period;
-              let period2Description = '';
-
-              if (!period2StartDate || !period2EndDate) {
-                  // If no explicit dates, use comparison_period
-                  if (entities.comparison_period) {
-                    const period2RangeCalc = calculateDateRange(entities.comparison_period);
-                    period2StartDate = period2RangeCalc.start_date;
-                    period2EndDate = period2RangeCalc.end_date;
-                    // Keep period2Label as the enum value
+                  if (!period2StartDate || !period2EndDate) {
+                      // If no explicit dates, use comparison_period
+                      if (entities.comparison_period) {
+                        const period2RangeCalc = calculateDateRange(entities.comparison_period);
+                        period2StartDate = period2RangeCalc.start_date;
+                        period2EndDate = period2RangeCalc.end_date;
+                        // Keep period2Label as the enum value
+                      } else {
+                        // Should not happen due to initial check, but safeguard
+                        responseText = `Something went wrong determining the second period for comparison, ${currentUserName}.`;
+                        break;
+                      }
                   } else {
-                    // Should not happen due to initial check, but safeguard
-                    responseText = `Something went wrong determining the second period for comparison, ${currentUserName}.`;
-                    break;
+                     // Explicit dates provided, override period2Label for description purposes
+                     period2Label = undefined; // Indicate explicit dates were used
+                     period2Description = describePeriod(undefined, period2StartDate, period2EndDate); // Generate desc from dates
                   }
-              } else {
-                 // Explicit dates provided, override period2Label for description purposes
-                 period2Label = undefined; // Indicate explicit dates were used
-                 period2Description = describePeriod(undefined, period2StartDate, period2EndDate); // Generate desc from dates
+
+                  const comparison = await compareMetricBetweenPeriods(
+                      userId,
+                      entities.metric,
+                      entities.workout_type ?? "any",
+                      { start_date: period1Range.start_date, end_date: period1Range.end_date },
+                      // Use the determined start/end dates for period 2
+                      { start_date: period2StartDate, end_date: period2EndDate } 
+                  );
+                  // Use a distinct variable name for period comparison results
+                  const periodComparison = comparison; // Fix: Use the existing 'comparison' result here
+                  responseData = { comparison: periodComparison }; // Keep structure consistent if needed
+                  responseText = generateCompareResponse(
+                      periodComparison.value1,
+                      periodComparison.value2,
+                      entities.metric,
+                      entities.workout_type ?? "any",
+                      entities.period, // Label for period 1
+                      period2Label, // Label for period 2 (if used)
+                      period2Description, // Description if explicit dates used
+                      currentUserName 
+                  );
+                  break;
+              } else if (isWorkoutVsPreviousComparison) {
+                 // --- New Workout-vs-Previous Comparison Logic --- 
+                 // We know entities.workout_identifier, entities.limit, and entities.workout_type are defined and valid here
+                 console.log(`[Compare Metric] Workout vs Previous N comparison detected for workout ${entities.workout_identifier}, type ${entities.workout_type}, limit ${entities.limit}`);
+                 
+                 // 1. Fetch the target workout details (Identifier is guaranteed to be string here)
+                 const targetWorkout = await fetchWorkoutDetails(userId, entities.workout_identifier as string);
+                 if (!targetWorkout) {
+                    responseText = `Sorry ${currentUserName}, I couldn't find the specific workout (ID: ${entities.workout_identifier}) you want to compare.`;
+                    break;
+                 }
+                 // Check if the fetched workout's type matches the intent's type (consistency check)
+                 if (targetWorkout.type !== entities.workout_type) {
+                    console.warn(`[Compare Metric] Mismatch: Intent type was ${entities.workout_type}, but fetched workout ${targetWorkout.id} is type ${targetWorkout.type}. Proceeding with fetched type.`);
+                    // Potentially update entities.workout_type = targetWorkout.type; if needed downstream
+                 }
+                 
+                 // 2. Fetch the previous N workouts of the same type
+                 //    Requires listWorkouts to handle sorting and date filtering correctly.
+                 const previousWorkouts = await listWorkouts(
+                     userId,
+                     entities.workout_type, // Use the validated type from the intent entities
+                     undefined, // No specific start date for previous
+                     targetWorkout.date.toISOString(), // Fetch workouts *before* this one
+                     entities.limit! + 1 // Fetch one extra (limit is defined here)
+                 );
+                 // TODO: Filter out the targetWorkout itself if it's included and sort by date descending
+                 const filteredPreviousWorkouts = previousWorkouts.filter(w => w.id !== targetWorkout.id).slice(0, entities.limit!); // limit is defined here
+ 
+                 console.log(`[Compare Metric] Found ${filteredPreviousWorkouts.length} previous ${targetWorkout.type} workouts for comparison.`);
+ 
+                 // 3. Calculate relevant metrics for target and previous (e.g., average)
+                 const metricsToCompare = getDefaultMetricsForType(targetWorkout.type);
+                 const targetMetrics = calculateMetricsForWorkout(targetWorkout, metricsToCompare);
+                 const previousAvgMetrics = calculateAverageMetrics(filteredPreviousWorkouts, metricsToCompare);
+                 
+                 const workoutComparisonData = { 
+                    targetWorkoutId: targetWorkout.id,
+                    targetDate: targetWorkout.date.toISOString(),
+                    targetMetrics: targetMetrics, // Metrics object for the target workout
+                    previousCount: filteredPreviousWorkouts.length,
+                    previousAvgMetrics: previousAvgMetrics, // Avg metrics object for the previous N workouts
+                    limitRequested: entities.limit!, // limit is defined here
+                    workoutType: targetWorkout.type
+                 };
+                 responseData = { comparison: workoutComparisonData }; // Use a suitable structure
+ 
+                 // 4. Generate the response string (Needs a new helper function)
+                 responseText = generateWorkoutComparisonResponse(workoutComparisonData, currentUserName);
+                 
+                 break; // End of workout-vs-previous logic
               }
-
-              const comparison = await compareMetricBetweenPeriods(
-                  userId,
-                  entities.metric,
-                  entities.workout_type ?? "any",
-                  { start_date: period1Range.start_date, end_date: period1Range.end_date },
-                  // Use the determined start/end dates for period 2
-                  { start_date: period2StartDate, end_date: period2EndDate } 
-              );
-              responseData = { comparison };
-              responseText = generateCompareResponse(
-                  comparison.value1,
-                  comparison.value2,
-                  entities.metric,
-                  entities.workout_type ?? "any",
-                  entities.period, // Label for period 1
-                  period2Label, // Label for period 2 (if used)
-                  period2Description, // Description if explicit dates used
-                  currentUserName 
-              );
+ 
+              // Fallback if logic somehow misses a case (shouldn't happen with the initial checks)
               break;
-
           case "unknown":
           default:
              responseText = response_suggestion || `Sorry ${currentUserName}, I couldn't quite understand that request. Could you try phrasing it differently?`;
@@ -1775,8 +1843,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
     `;
         if (details.calories) response += `*   **Calories Burned:** ≈${details.calories} kcal
     `;
-        if (details.intensity) response += `*   **Intensity:** ${details.intensity}
-    `;
+        if (details.intensity) response += `*   **Intensity:** ${details.intensity}\n    `;
 
         // Add exercise details if available (assuming strength)
         if (details.exercises && details.exercises.length > 0) {
@@ -1789,7 +1856,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                         if (set.reps) setStr += `${set.reps} reps`;
                         if (set.weight) setStr += ` x ${set.weight} kg`;
                         // Remove unsupported fields from set string
-                        // if (set.duration) setStr += ` for ${formatDuration(set.duration)}`; 
+                        // if (set.duration) setStr += ` for ${formatDuration(set.duration)}`;
                         // if (set.distance) setStr += ` at ${formatDistance(set.distance)}`;
                         return setStr.trim();
                     }).filter(Boolean);
@@ -1799,8 +1866,11 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 }
                 response += `\n`;
             });
+        } else {
+            // Add this block if no exercises are found
+            response += `\n*   **Exercises:** (No specific exercises were logged for this workout.)\n`;
         }
-        
+
         // Add notes if available
         if (details.notes) {
             response += `\n*   **Notes:** ${details.notes}\n`;
@@ -1889,3 +1959,83 @@ INSTRUCTIONS:
 6. Do NOT ask questions.
 7. Only output the highlight statement itself, no extra text.`;
     } 
+
+    // --- PLACEHOLDER HELPER FUNCTIONS for Workout Comparison ---
+
+    function getDefaultMetricsForType(workoutType: string): Array<z.infer<typeof ValidMetrics>> {
+        console.log(`[Helper] TODO: Define default metrics for ${workoutType}`);
+        if (workoutType === 'running' || workoutType === 'cycling') {
+             return ['duration', 'distance', 'pace', 'speed', 'calories'];
+         } else if (workoutType === 'strength') {
+             return ['duration', 'volume', 'calories']; // Example
+         } else {
+             return ['duration', 'calories']; // Fallback
+         }
+    }
+
+    function calculateMetricsForWorkout(workout: WorkoutDetailItem, metrics: Array<z.infer<typeof ValidMetrics>>): Record<string, number | null> {
+        console.log(`[Helper] TODO: Calculate metrics for single workout ${workout.id}`);
+        const calculatedMetrics: Record<string, number | null> = {};
+        metrics.forEach(metric => {
+           // Placeholder: just grab value if exists, else null
+           calculatedMetrics[metric] = workout[metric as keyof WorkoutDetailItem] as number | null ?? null; 
+        });
+        // TODO: Calculate pace/speed if not directly stored
+        return calculatedMetrics;
+    }
+
+    function calculateAverageMetrics(workouts: WorkoutListItem[], metrics: Array<z.infer<typeof ValidMetrics>>): Record<string, number | null> {
+        console.log(`[Helper] TODO: Calculate average metrics for ${workouts.length} workouts`);
+        const avgMetrics: Record<string, number | null> = {};
+        const count = workouts.length;
+        if (count === 0) return metrics.reduce((acc, m) => ({ ...acc, [m]: null }), {});
+
+        metrics.forEach(metric => {
+             const sum = workouts.reduce((total, workout) => {
+                 const value = workout[metric as keyof WorkoutListItem] as number | null;
+                 return total + (value ?? 0);
+             }, 0);
+             avgMetrics[metric] = sum / count;
+        });
+        // TODO: Calculate average pace/speed correctly
+        return avgMetrics;
+    }
+
+    interface WorkoutComparisonData {
+        targetWorkoutId: string;
+        targetDate: string;
+        targetMetrics: Record<string, number | null>;
+        previousCount: number;
+        previousAvgMetrics: Record<string, number | null>;
+        limitRequested: number;
+        workoutType: string;
+    }
+
+    function generateWorkoutComparisonResponse(data: WorkoutComparisonData, userName: string): string {
+        console.log(`[Helper] TODO: Generate comparison response string`);
+        let response = `Okay ${userName}, let's compare your ${data.workoutType} workout from ${new Date(data.targetDate).toLocaleDateString()} to the average of your previous ${data.previousCount} ${data.workoutType} sessions (out of ${data.limitRequested} requested):
+\n`;
+        
+        if (data.previousCount === 0) {
+            response += "I couldn't find any previous workouts of this type to compare against.\n";
+        } else {
+            response += "| Metric     | This Workout | Previous Avg | Change    |\n";
+            response += "| :--------- | :----------- | :----------- | :-------- |\n";
+            for (const metric in data.targetMetrics) {
+                const targetVal = data.targetMetrics[metric];
+                const avgVal = data.previousAvgMetrics[metric];
+                const formattedTarget = formatValue(targetVal, metric as z.infer<typeof ValidMetrics>);
+                const formattedAvg = formatValue(avgVal, metric as z.infer<typeof ValidMetrics>);
+                let changeStr = "N/A";
+                if (targetVal !== null && avgVal !== null && avgVal !== 0) {
+                    const change = targetVal - avgVal;
+                    const percentChange = (change / avgVal) * 100;
+                    const sign = change > 0 ? '+' : '';
+                    changeStr = `${sign}${percentChange.toFixed(0)}%`;
+                }
+                response += `| ${capitalizeFirstLetter(metric)} | ${formattedTarget} | ${formattedAvg} | ${changeStr} |\n`;
+            }
+        }
+        response += "\n(Note: This comparison logic is still under development and might need refinement, especially for pace/speed averages.)";
+        return response;
+    }
