@@ -237,6 +237,13 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
       return null;
     }
 
+    // Add an assertion to ensure workoutDoc is not an array
+    if (Array.isArray(workoutDoc)) {
+      // This case should ideally not happen with findById, but handle defensively
+      console.error(`[workoutRepository] Expected single document for ID ${id}, but received array.`);
+      throw new Error(`Unexpected array received for workout ID ${id}`);
+    }
+
     // 2. Fetch related WorkoutExercise documents and populate their exerciseId
     const workoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutDoc._id })
       .populate({ 
