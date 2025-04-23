@@ -50,6 +50,7 @@ async function dbConnect(): Promise<Mongoose> {
     const opts = {
       bufferCommands: true,
       serverSelectionTimeoutMS: 30000,
+      bufferTimeoutMS: 30000,
     }
 
     console.log('Creating new MongoDB connection with options:', opts);

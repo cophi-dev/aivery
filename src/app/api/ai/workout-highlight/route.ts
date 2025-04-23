@@ -117,20 +117,25 @@ ${historicalContextSummary}
 Instructions:
 1. **Single Sentence Output**: Generate ONLY the highlight statement (max 30 words). No extra text.
 2. **Personalize**: Use the user's name and reference their goals/preferences if relevant.
-3. **Focus**: Highlight ONE key metric/achievement (e.g., Volume, Distance, Duration, Consistency, PB).
+3. **Focus**: Highlight ONE key metric/achievement (e.g., Distance, Pace, Duration, Volume, PB).
 4. **Compare**: If historical context exists, note improvement (e.g., "New PB!", "X% faster!").
-5. **Vivid Pop Culture Metaphor**: Create a unique, high-energy metaphor tied to 2025 pop culture (e.g., blockbuster movies, hit songs, viral X trends, iconic games, or TV moments). Avoid vague or abstract analogies (e.g., no "glitchy AI bosses"). Ensure it's visual, relatable, and meme-worthy for social media. Tailor to workout type:
-   - **Running**: Focus on Distance, Pace, or Duration. Metaphors: Epic racing or fleeing from iconic threats (e.g., 2025 action movie villains, X trend dance challenges, music festival sprints). Themes: chases, races, or cultural moments. Examples (inspiration only): "Like outrunning a *Jurassic World* T-Rex!", "Sprinting to a Billie Eilish encore!"
-   - **Strength**: Emphasize Total Volume or PB. Metaphors: Lifting iconic objects or superhero feats (e.g., 2025 comic book heroes, gaming power-ups). Examples: "Like hurling a *Marvel* shield!", "Stacking plates like a *Fortnite* skyscraper!"
-   - **HIIT**: Highlight intensity, reps, or rounds. Metaphors: Surviving chaotic or fast-paced scenarios (e.g., 2025 reality TV, heist films). Examples: "Like dodging traps in a *Mission: Impossible* run!", "As wild as a *Squid Game* sprint!"
-   - **Pilates/Yoga**: Focus on reps, duration, or consistency. Metaphors: Graceful or serene cultural icons (e.g., 2025 award shows, zen influencers). Examples: "Smooth as a *Bridgerton* waltz!", "Zen like a *Mandalorian* meditation!"
-   - **Cycling**: Prioritize Distance or Speed. Metaphors: High-speed races or vibrant journeys (e.g., 2025 sci-fi racers, music videos). Examples: "Like speeding in a *Tron* race!", "Pedaling to a *Dua Lipa* beat!"
-   - **Swimming**: Focus on Distance or Time. Metaphors: Oceanic adventures or fluid quests (e.g., 2025 fantasy epics, aquatic heroes). Examples: "Like surfing a *Moana* wave!", "Gliding like a *Aquaman* sprint!"
-   - **Other (e.g., CrossFit, Dance)**: Pick a relevant metric. Metaphors: Epic battles or performances (e.g., 2025 festivals, adventure games). Examples: "Like slaying a *Witcher* beast!", "Vibing like a *Coachella* star!"
-6. **Maximize Variety**: Ensure metaphors are unique per workout, especially for runs. Avoid repeating themes (e.g., no similar sci-fi or chase metaphors twice). Vary starters (e.g., "Blazed," "Smashed," "Rocked").
-7. **Tone**: Punchy, meme-worthy, and 2025-trendy. Include 1-2 vibrant emojis for social media pop.
-8. **Avoid Generic Metaphors**: Skip abstract or overused analogies (e.g., no "glitchy AI" or "zombie chases"). Create visual, specific images tied to recognizable pop culture.
-9. **Inspiration, Not Templates**: Use examples only for tone and energy, not as scripts. Invent fresh metaphors reflecting 2025 trends.
+5. **Factual Real-World Comparison**: Create a fun, accurate comparison using the workout's metric, tied to a real-world distance, object, or activity. Ensure the comparison is precise (e.g., 4.22km = a specific landmark distance). Make it relatable and shareable, with a 2025 pop culture or everyday-life twist (e.g., landmarks, sports, movies, or viral trends). Avoid generic or fantastical metaphors (e.g., no "T-Rex chases"). Tailor to workout type:
+   - **Running**: Focus on Distance, Pace, or Duration. Comparison: Match distance to real-world equivalents (e.g., city landmarks, sports fields, movie scenes, or events). Examples (inspiration only):
+     - Distance: "4.22km, like running from Big Ben to Trafalgar Square!" (Verify exact distance.)
+     - Pace: "6:10/km, as fast as a pro cyclist's warm-up lap!"
+     - Duration: "26min, the length of a *Stranger Things* episode sans ads!"
+     - Themes: Iconic city routes, sports metrics, pop culture distances (e.g., length of a festival stage), or everyday scenarios.
+   - **Strength**: Focus on Total Volume or PB. Comparison: Weight of real objects (e.g., animals, vehicles, props). Example: "5,000kg, like lifting 10 motorcycles!"
+   - **HIIT**: Highlight reps, rounds, or duration. Comparison: Time or reps in real events (e.g., TV ads, dance challenges). Example: "20 reps, like a viral X dance routine!"
+   - **Pilates/Yoga**: Focus on reps or duration. Comparison: Time or reps in serene activities (e.g., meditation apps, award show moments). Example: "30min, like a *Bridgerton* dance scene!"
+   - **Cycling**: Focus on Distance or Speed. Comparison: Real-world routes or speeds (e.g., racetracks, commutes). Example: "20km, like biking across Manhattan!"
+   - **Swimming**: Focus on Distance or Time. Comparison: Pool lengths or aquatic distances (e.g., rivers, movie scenes). Example: "500m, like crossing a *Moana* lagoon!"
+   - **Other (e.g., CrossFit, Dance)**: Pick a relevant metric. Comparison: Event or activity equivalents (e.g., festival sets, game challenges). Example: "50 reps, like a *Coachella* dance-off!"
+6. **Metric Accuracy**: Ensure the comparison matches the metric exactly (e.g., 4.22km = 4.22km between two points or equivalent). Use realistic, verifiable values (e.g., landmark distances, object weights).
+7. **Maximize Variety**: Use diverse comparison types (e.g., landmarks, sports, pop culture, daily life) to avoid repetition, especially for runs. Vary starters (e.g., "Blazed," "Smashed," "Rocked").
+8. **Tone**: Punchy, meme-worthy, and 2025-trendy. Include 1-2 emojis for social media flair.
+9. **Avoid Generic Metaphors**: Skip vague, fantastical, or overused analogies (e.g., no "AI bosses" or "zombie chases"). Use concrete, relatable comparisons.
+10. **Inspiration, Not Templates**: Use examples only for tone and style, not as scripts. Create original comparisons based on 2025 trends or real-world facts.
 
 Generate the highlight now!
 
