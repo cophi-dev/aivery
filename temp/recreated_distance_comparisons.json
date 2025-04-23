@@ -1,0 +1,149 @@
+[
+  {
+    "distance_km": 3.2,
+    "city": "New York",
+    "from": "Central Park",
+    "to": "Times Square",
+    "description": "Roughly the distance from Central Park to Times Square in New York."
+  },
+  {
+    "distance_km": 9.1,
+    "city": "New York",
+    "from": "Central Park",
+    "to": "Brooklyn Bridge",
+    "description": "Roughly the distance from Central Park to Brooklyn Bridge in New York."
+  },
+  {
+    "distance_km": 4.3,
+    "city": "New York",
+    "from": "Central Park",
+    "to": "Empire State Building",
+    "description": "Roughly the distance from Central Park to Empire State Building in New York."
+  },
+  {
+    "distance_km": 9.4,
+    "city": "New York",
+    "from": "Central Park",
+    "to": "Wall Street",
+    "description": "Roughly the distance from Central Park to Wall Street in New York."
+  },
+  {
+    "distance_km": 5.9,
+    "city": "New York",
+    "from": "Times Square",
+    "to": "Brooklyn Bridge",
+    "description": "Roughly the distance from Times Square to Brooklyn Bridge in New York."
+  },
+  {
+    "distance_km": 1.1,
+    "city": "New York",
+    "from": "Times Square",
+    "to": "Empire State Building",
+    "description": "Roughly the distance from Times Square to Empire State Building in New York."
+  },
+  {
+    "distance_km": 6.2,
+    "city": "New York",
+    "from": "Times Square",
+    "to": "Wall Street",
+    "description": "Roughly the distance from Times Square to Wall Street in New York."
+  },
+  {
+    "distance_km": 4.8,
+    "city": "New York",
+    "from": "Brooklyn Bridge",
+    "to": "Empire State Building",
+    "description": "Roughly the distance from Brooklyn Bridge to Empire State Building in New York."
+  },
+  {
+    "distance_km": 1.0,
+    "city": "New York",
+    "from": "Brooklyn Bridge",
+    "to": "Wall Street",
+    "description": "Roughly the distance from Brooklyn Bridge to Wall Street in New York."
+  },
+  {
+    "distance_km": 5.1,
+    "city": "New York",
+    "from": "Empire State Building",
+    "to": "Wall Street",
+    "description": "Roughly the distance from Empire State Building to Wall Street in New York."
+  },
+  {
+    "distance_km": 3.5,
+    "city": "London",
+    "from": "Big Ben",
+    "to": "Tower Bridge",
+    "description": "Roughly the distance from Big Ben to Tower Bridge in London."
+  },
+  {
+    "distance_km": 1.2,
+    "city": "London",
+    "from": "Big Ben",
+    "to": "Buckingham Palace",
+    "description": "Roughly the distance from Big Ben to Buckingham Palace in London."
+  },
+  {
+    "distance_km": 3.1,
+    "city": "London",
+    "from": "Tower Bridge",
+    "to": "London Eye",
+    "description": "Roughly the distance from Tower Bridge to London Eye in London."
+  },
+  {
+    "distance_km": 4.6,
+    "city": "London",
+    "from": "Tower Bridge",
+    "to": "Buckingham Palace",
+    "description": "Roughly the distance from Tower Bridge to Buckingham Palace in London."
+  },
+  {
+    "distance_km": 1.6,
+    "city": "London",
+    "from": "London Eye",
+    "to": "Buckingham Palace",
+    "description": "Roughly the distance from London Eye to Buckingham Palace in London."
+  },
+  {
+    "distance_km": 4.1,
+    "city": "Tokyo",
+    "from": "Shibuya Crossing",
+    "to": "Tokyo Tower",
+    "description": "Roughly the distance from Shibuya Crossing to Tokyo Tower in Tokyo."
+  },
+  {
+    "distance_km": 10.7,
+    "city": "Tokyo",
+    "from": "Shibuya Crossing",
+    "to": "Sensoji Temple",
+    "description": "Roughly the distance from Shibuya Crossing to Sensoji Temple in Tokyo."
+  },
+  {
+    "distance_km": 5.5,
+    "city": "Tokyo",
+    "from": "Shibuya Crossing",
+    "to": "Imperial Palace",
+    "description": "Roughly the distance from Shibuya Crossing to Imperial Palace in Tokyo."
+  },
+  {
+    "distance_km": 7.8,
+    "city": "Tokyo",
+    "from": "Tokyo Tower",
+    "to": "Sensoji Temple",
+    "description": "Roughly the distance from Tokyo Tower to Sensoji Temple in Tokyo."
+  },
+  {
+    "distance_km": 3.0,
+    "city": "Tokyo",
+    "from": "Tokyo Tower",
+    "to": "Imperial Palace",
+    "description": "Roughly the distance from Tokyo Tower to Imperial Palace in Tokyo."
+  },
+  {
+    "distance_km": 5.2,
+    "city": "Tokyo",
+    "from": "Sensoji Temple",
+    "to": "Imperial Palace",
+    "description": "Roughly the distance from Sensoji Temple to Imperial Palace in Tokyo."
+  }
+]

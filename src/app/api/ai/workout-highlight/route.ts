@@ -10,6 +10,7 @@ import { fetchWorkout } from "@/lib/workout-actions";
 // import { connectToDb } from "@/lib/db"; // Import DB connection - Removed: Assuming implicit connection
 import User, { IUser } from "@/lib/db/models/user"; // Import User model and IUser interface
 import Workout, { IWorkout } from "@/lib/db/models/workout"; // Import Workout model AND IWorkout interface
+import { generateDistanceComparisonText } from '@/lib/workout-distance-comparisons'; // <<< ADDED IMPORT
 
 // Explicitly mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -55,91 +56,61 @@ interface HistoricalContext {
   workoutCountForType?: number;
 }
 
-// Updated function signature to include user and historical context
+// Updated function signature to include user, historical context, AND landmark comparison
 function createHighlightPrompt(
   userName: string,
-  workout: PromptWorkoutData, // Contains workout details
-  user: IUser | null,        // Contains user preferences/goals
-  historicalContext: HistoricalContext // Contains PBs, counts, etc.
+  workout: PromptWorkoutData,           // Contains workout details
+  user: IUser | null,                 // Contains user preferences/goals
+  historicalContext: HistoricalContext, // Contains PBs, counts, etc.
+  landmarkComparison?: string | null    // <<< ADDED Optional Landmark Comparison
 ): string {
   let workoutSummary = `Workout Type: ${workout.type}`;
-  if (workout.duration) workoutSummary += `\\nDuration: ${Math.round(workout.duration / 60)} minutes`;
-  if (workout.distance) workoutSummary += `\\nDistance: ${workout.distance.toFixed(2)} km`; // Assuming km
-  if (workout.calculatedVolume) workoutSummary += `\\nTotal Volume: ${workout.calculatedVolume.toLocaleString()} kg`; // Assuming kg
-  if (workout.calories) workoutSummary += `\\nCalories Burned: ~${workout.calories} kcal`;
+  if (workout.duration) workoutSummary += `\nDuration: ${Math.round(workout.duration / 60)} minutes`;
+  if (workout.distance) workoutSummary += `\nDistance: ${workout.distance.toFixed(2)} km`; // Assuming km
+  if (workout.calculatedVolume) workoutSummary += `\nTotal Volume: ${workout.calculatedVolume.toLocaleString()} kg`; // Assuming kg
+  if (workout.calories) workoutSummary += `\nCalories Burned: ~${workout.calories} kcal`;
   if (workout.workoutExercises && workout.workoutExercises.length > 0) {
     const exerciseNames = workout.workoutExercises
       .map((ex: any) => ex?.exerciseId?.name || 'Unnamed Exercise')
       .slice(0, 3);
-    workoutSummary += `\\nExercises: ${exerciseNames.join(', ')}${workout.workoutExercises.length > 3 ? '...' : ''}`;
+    workoutSummary += `\nExercises: ${exerciseNames.join(', ')}${workout.workoutExercises.length > 3 ? '...' : ''}`;
   }
-  if (workout.notes) workoutSummary += `\\nNotes: ${workout.notes}`;
+  if (workout.notes) workoutSummary += `\nNotes: ${workout.notes}`;
 
   // --- Add User Preferences and Goals to Prompt ---
   let userContextSummary = "";
   if (user?.aiPreferences) {
-    userContextSummary += "\\n\\nUser Preferences & Goals:";
-    if (user.aiPreferences.location) userContextSummary += `\\n- Location: ${user.aiPreferences.location}`;
-    if (user.aiPreferences.units) userContextSummary += `\\n- Prefers Units: ${user.aiPreferences.units}`;
-    if (user.aiPreferences.fitnessGoals) userContextSummary += `\\n- Fitness Goals: ${user.aiPreferences.fitnessGoals}`;
-    if (user.aiPreferences.trainingPreferences) userContextSummary += `\\n- Training Preferences: ${user.aiPreferences.trainingPreferences}`;
+    userContextSummary += "\n\nUser Preferences & Goals:";
+    if (user.aiPreferences.location) userContextSummary += `\n- Location: ${user.aiPreferences.location}`;
+    if (user.aiPreferences.units) userContextSummary += `\n- Prefers Units: ${user.aiPreferences.units}`;
+    if (user.aiPreferences.fitnessGoals) userContextSummary += `\n- Fitness Goals: ${user.aiPreferences.fitnessGoals}`;
+    if (user.aiPreferences.trainingPreferences) userContextSummary += `\n- Training Preferences: ${user.aiPreferences.trainingPreferences}`;
   }
 
   // --- Add Historical Context to Prompt ---
   let historicalContextSummary = "";
   if (Object.keys(historicalContext).length > 0) {
-      historicalContextSummary += "\\n\\nHistorical Context for this Workout Type:";
+      historicalContextSummary += "\n\nHistorical Context for this Workout Type:";
       if (historicalContext.workoutCountForType) {
-          historicalContextSummary += `\\n- Total ${workout.type} workouts logged: ${historicalContext.workoutCountForType}`;
+          historicalContextSummary += `\n- Total ${workout.type} workouts logged: ${historicalContext.workoutCountForType}`;
       }
       if (historicalContext.bestDistance) {
-          historicalContextSummary += `\\n- Best distance: ${historicalContext.bestDistance.toFixed(2)} km`;
+          historicalContextSummary += `\n- Best distance: ${historicalContext.bestDistance.toFixed(2)} km`;
       }
       if (historicalContext.fastestDurationForDistance && workout.distance) {
-          historicalContextSummary += `\\n- Fastest ${workout.distance.toFixed(2)} km time: ${Math.round(historicalContext.fastestDurationForDistance / 60)} minutes`;
+          historicalContextSummary += `\n- Fastest ${workout.distance.toFixed(2)} km time: ${Math.round(historicalContext.fastestDurationForDistance / 60)} minutes`;
       }
       if (historicalContext.highestVolume) {
-          historicalContextSummary += `\\n- Highest volume: ${historicalContext.highestVolume.toLocaleString()} kg`;
+          historicalContextSummary += `\n- Highest volume: ${historicalContext.highestVolume.toLocaleString()} kg`;
       }
   }
 
-  // --- Enhanced Prompt for Creative, Varied Metaphors ---
-  const systemPrompt = `
-You are Aivery, a witty, trend-savvy AI fitness companion. Generate ONE vibrant, personalized, shareable highlight statement (max 30 words) for the user's workout with a unique, pop culture-inspired metaphor.
+  // --- Add Landmark Comparison if available ---
+  const comparisonContext = landmarkComparison ? `\n\nLandmark Comparison: ${landmarkComparison}` : ''; // <<< ADDED
 
-User's Name: ${userName}
-
-Workout Data:
-${workoutSummary}
-${userContextSummary}
-${historicalContextSummary}
-
-Instructions:
-1. **Single Sentence Output**: Generate ONLY the highlight statement (max 30 words). No extra text.
-2. **Personalize**: Use the user's name and reference their goals/preferences if relevant.
-3. **Focus**: Highlight ONE key metric/achievement (e.g., Distance, Pace, Duration, Volume, PB).
-4. **Compare**: If historical context exists, note improvement (e.g., "New PB!", "X% faster!").
-5. **Factual Real-World Comparison**: Create a fun, accurate comparison using the workout's metric, tied to a real-world distance, object, or activity. Ensure the comparison is precise (e.g., 4.22km = a specific landmark distance). Make it relatable and shareable, with a 2025 pop culture or everyday-life twist (e.g., landmarks, sports, movies, or viral trends). Avoid generic or fantastical metaphors (e.g., no "T-Rex chases"). Tailor to workout type:
-   - **Running**: Focus on Distance, Pace, or Duration. Comparison: Match distance to real-world equivalents (e.g., city landmarks, sports fields, movie scenes, or events). Examples (inspiration only):
-     - Distance: "4.22km, like running from Big Ben to Trafalgar Square!" (Verify exact distance.)
-     - Pace: "6:10/km, as fast as a pro cyclist's warm-up lap!"
-     - Duration: "26min, the length of a *Stranger Things* episode sans ads!"
-     - Themes: Iconic city routes, sports metrics, pop culture distances (e.g., length of a festival stage), or everyday scenarios.
-   - **Strength**: Focus on Total Volume or PB. Comparison: Weight of real objects (e.g., animals, vehicles, props). Example: "5,000kg, like lifting 10 motorcycles!"
-   - **HIIT**: Highlight reps, rounds, or duration. Comparison: Time or reps in real events (e.g., TV ads, dance challenges). Example: "20 reps, like a viral X dance routine!"
-   - **Pilates/Yoga**: Focus on reps or duration. Comparison: Time or reps in serene activities (e.g., meditation apps, award show moments). Example: "30min, like a *Bridgerton* dance scene!"
-   - **Cycling**: Focus on Distance or Speed. Comparison: Real-world routes or speeds (e.g., racetracks, commutes). Example: "20km, like biking across Manhattan!"
-   - **Swimming**: Focus on Distance or Time. Comparison: Pool lengths or aquatic distances (e.g., rivers, movie scenes). Example: "500m, like crossing a *Moana* lagoon!"
-   - **Other (e.g., CrossFit, Dance)**: Pick a relevant metric. Comparison: Event or activity equivalents (e.g., festival sets, game challenges). Example: "50 reps, like a *Coachella* dance-off!"
-6. **Metric Accuracy**: Ensure the comparison matches the metric exactly (e.g., 4.22km = 4.22km between two points or equivalent). Use realistic, verifiable values (e.g., landmark distances, object weights).
-7. **Maximize Variety**: Use diverse comparison types (e.g., landmarks, sports, pop culture, daily life) to avoid repetition, especially for runs. Vary starters (e.g., "Blazed," "Smashed," "Rocked").
-8. **Tone**: Punchy, meme-worthy, and 2025-trendy. Include 1-2 emojis for social media flair.
-9. **Avoid Generic Metaphors**: Skip vague, fantastical, or overused analogies (e.g., no "AI bosses" or "zombie chases"). Use concrete, relatable comparisons.
-10. **Inspiration, Not Templates**: Use examples only for tone and style, not as scripts. Create original comparisons based on 2025 trends or real-world facts.
-
-Generate the highlight now!
-
-Generate the highlight now!
+  // --- Simplified Prompt ---
+  const systemPrompt = `\
+You are Aivery, a friendly AI fitness companion. Generate ONE concise, positive highlight statement (around 15-25 words) for the user's workout.\n\nUser's Name: ${userName}\n\nWorkout Data:\n${workoutSummary}\n${userContextSummary}\n${historicalContextSummary}${comparisonContext}\n\nInstructions:\n1. **Output**: Single sentence highlight statement ONLY. No extra text.\n2. **Tone**: Positive and encouraging.\n3. **Personalize**: Use the user's name (${userName}).\n4. **Focus**: Mention ONE key metric (e.g., Distance, Duration, Volume). Note PBs if historicalContext shows improvement.\n5. **Use Provided Comparison**: If 'Landmark Comparison' is provided above (not empty), incorporate that specific comparison phrase into your highlight. Otherwise, do not make up a comparison.\n6. **Keep it Brief**: Aim for 15-25 words total.\n7. **Emoji**: Add one relevant emoji at the end. 🚀\n\nGenerate the highlight statement now.\
 `;
 
   return systemPrompt;
@@ -288,13 +259,27 @@ export async function GET(req: NextRequest) {
             // Continue without historical context
         }
 
+        // <<< START: Generate Landmark Comparison >>>
+        let landmarkComparison: string | null = null;
+        const workoutTypeLower = validatedWorkoutData.type.toLowerCase();
+        if ((workoutTypeLower === 'running' || workoutTypeLower === 'run' || workoutTypeLower === 'cycling' || workoutTypeLower === 'cycle') && validatedWorkoutData.distance && validatedWorkoutData.distance > 0) {
+            try {
+                landmarkComparison = generateDistanceComparisonText(validatedWorkoutData.distance);
+                console.log(`[GET /ai/workout-highlight] Generated landmark comparison: "${landmarkComparison}"`);
+            } catch (comparisonError) {
+                console.error(`[GET /ai/workout-highlight] Error generating landmark comparison:`, comparisonError);
+                // Continue without landmark comparison if generation fails
+            }
+        }
+        // <<< END: Generate Landmark Comparison >>>
 
         // 5. Create Enhanced Prompt for AI
         const systemPrompt = createHighlightPrompt(
             userName,
             validatedWorkoutData,
             user, // Pass fetched user data
-            historicalContext // Pass fetched historical context
+            historicalContext, // Pass fetched historical context
+            landmarkComparison // <<< Pass the generated comparison (or null)
         );
         console.log(`[GET /ai/workout-highlight] Generated enhanced prompt for Grok. Length: ${systemPrompt.length}`);
 
@@ -322,7 +307,7 @@ export async function GET(req: NextRequest) {
               // Simplified user message, maybe just trigger generation
               { role: 'user', content: `Generate the highlight.` }
             ],
-            max_tokens: 1024, // Increased max_tokens again to 1024
+            max_tokens: 2048, // <<< INCREASED max_tokens from 1024 to 2048
             temperature: 0.7, // Slightly reduced temperature for more focused output
             stream: false,
           })
@@ -453,6 +438,7 @@ export async function POST(req: NextRequest) {
             workoutData, // Use workout data from request body
             null, // Pass null for user in POST context for now
             {} // Pass empty object for historical context in POST for now
+            // We are NOT passing landmarkComparison here in POST
         );
 
         // Call Grok API (similar logic as GET)
