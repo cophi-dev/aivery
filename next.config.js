@@ -102,23 +102,28 @@ const nextConfig = {
         // '@playwright/test' // If you were using the full test runner
       );
       
-      // Resolve fix for chromium-bidi (might not be needed if excluded, but can help)
-      // If the chromium-bidi errors persist, uncomment this section:
-      // config.resolve.alias = {
-      //   ...config.resolve.alias,
-      //   'chromium-bidi/lib/cjs/bidiMapper/BidiMapper': false,
-      //   'chromium-bidi/lib/cjs/cdp/CdpConnection': false,
-      // };
+      // Resolve fix for chromium-bidi
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        // Ignore these specific problematic imports
+        'chromium-bidi/lib/cjs/bidiMapper/BidiMapper': false, 
+        'chromium-bidi/lib/cjs/cdp/CdpConnection': false,
+      };
       
-      // Ignore font files (or add a file-loader if needed)
+      // Ignore font files
       config.module.rules.push({
         test: /\.(woff|woff2|eot|ttf|otf)$/i,
         type: 'asset/resource',
         generator: {
             filename: 'static/media/[name].[hash][ext]', // Output path
         },
-        // Alternatively, just ignore them if they are not needed:
-        // use: 'ignore-loader',
+      });
+      
+      // Ignore .html files specifically from playwright-core to prevent parse errors
+      config.module.rules.push({
+          test: /index\.html$/,
+          include: [/node_modules\/playwright-core/], // Only target html within playwright-core
+          use: 'ignore-loader',
       });
     }
 
