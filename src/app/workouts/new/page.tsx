@@ -1022,7 +1022,7 @@ export default function NewWorkoutPage() {
   const isStrengthWorkout = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-3xl"> 
+    <div className="container mx-auto px-4 py-8 max-w-4xl"> 
       <div className="flex items-center mb-6">
         <Button variant="ghost" size="icon" onClick={() => router.back()} className="mr-2">
           <LucideArrowLeft className="h-5 w-5" />
@@ -1040,9 +1040,9 @@ export default function NewWorkoutPage() {
         </div>
       )}
 
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Workout Metadata Section */}
-        <div className="space-y-4 rounded-md border p-4 md:p-6">
+        <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
            <h2 className="text-lg font-medium mb-4">Workout Details</h2>
             
            {/* Workout Type Selection */}
@@ -1101,33 +1101,29 @@ export default function NewWorkoutPage() {
            
            {/* Workout Name Input */}
            <div>
-             <Label htmlFor="workout-name">Workout Name</Label>
              <Input
                 id="workout-name"
-                placeholder={workoutType ? `e.g., ${workoutTypeDisplayNames[workoutType]}` : "Workout Name"}
+                placeholder={workoutName || getDefaultWorkoutName(workoutType, date)}
                 value={workoutName}
                 onChange={(e) => setWorkoutName(e.target.value)}
-                className="placeholder:text-muted-foreground/50"
+                className="placeholder:text-muted-foreground/80"
              />
-             <p className="text-sm text-muted-foreground mt-1">Give your workout a descriptive name.</p>
            </div>
         </div>
 
         {/* --> Conditionally render AI Quick Log Section <-- */}
         {!isEditing && (
-          <div className="space-y-4 rounded-md border p-4 md:p-6">
+          <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
             <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
             <div>
-              <Label htmlFor="ai-quick-log">Paste your workout log</Label>
               <Textarea 
                 id="ai-quick-log"
-                placeholder="e.g., Squats: 1x5 60 kg, 3x5 50 kg, Bench Press: 4x5 60 kg..."
-                className="mt-1 min-h-[80px]"
+                placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
+                className="mt-1 min-h-[80px] placeholder:text-muted-foreground/80"
                 value={aiLogInput} 
                 onChange={(e) => setAiLogInput(e.target.value)} 
                 disabled={isProcessingAi}
               />
-              <p className="text-sm text-muted-foreground mt-1">Enter your workout details in simple format.</p>
             </div>
             <Button 
               type="button" 
@@ -1150,34 +1146,30 @@ export default function NewWorkoutPage() {
 
         {/* Conditional Fields for Non-Strength Workouts */}
         {!isStrengthWorkout && workoutType && (
-          <div className="space-y-4 rounded-md border p-4 md:p-6">
+          <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
              <h2 className="text-lg font-medium mb-4">{workoutTypeDisplayNames[workoutType]} Details</h2>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="duration">Duration (minutes)</Label>
                   <Input 
                     id="duration"
                     type="number" 
-                    placeholder="e.g., 30" 
-                    value={duration} // This now correctly holds minutes
+                    placeholder="Duration (minutes)"
+                    value={duration} 
                     onChange={(e) => setDuration(e.target.value)}
                     min="0" 
                   />
                 </div>
-                {/* Add distance field only for relevant types */}
                 {(workoutType === 'running' || workoutType === 'cycling' || workoutType === 'walking' || workoutType === 'swimming') && (
                   <div>
-                    <Label htmlFor="distance">Distance (km/miles)</Label> 
                     <Input 
                       id="distance"
                       type="number" 
-                      placeholder="e.g., 5" 
+                      placeholder="Distance (km/miles)"
                       value={distance} 
                       onChange={(e) => setDistance(e.target.value)}
                       min="0"
                       step="0.1" 
                     />
-                    {/* Consider adding unit toggle (km/miles) later */}
                   </div>
                 )}
              </div>
@@ -1194,7 +1186,7 @@ export default function NewWorkoutPage() {
               const isCardioExercise = canonicalExercise?.category === 'cardio';
 
               return (
-                <div key={exercise.id} className="rounded-md border p-4 md:p-6 space-y-4 relative bg-background">
+                <div key={exercise.id} className="rounded-xl shadow-sm p-6 space-y-4 relative bg-card">
                   {/* Exercise Header (Selection + Remove Button) */}
                   <div className="flex justify-between items-start">
                     <div className="flex-1 space-y-2 mr-2">
@@ -1278,7 +1270,7 @@ export default function NewWorkoutPage() {
                   {/* --- Conditional Rendering based on Exercise Type --- */}
                   {isCardioExercise ? (
                     // --- Render Duration/Distance Inputs for Cardio --- 
-                    <div className="space-y-3 pl-2 border-l-2 border-muted">
+                    <div className="space-y-3 pl-2">
                       <Label className="text-sm font-medium">Details</Label>
                       <div className="flex items-end space-x-2">
                         <div className="flex-1 grid grid-cols-2 gap-2 items-end">
@@ -1309,7 +1301,7 @@ export default function NewWorkoutPage() {
                         </div>
                       </div>
                       {/* Add Exercise Notes for Cardio */} 
-                      <div>
+                      <div className="pt-4">
                         <Label htmlFor={`exercise-notes-${exercise.id}`}>Notes (Optional)</Label>
                         <Textarea
                           id={`exercise-notes-${exercise.id}`}
@@ -1323,80 +1315,75 @@ export default function NewWorkoutPage() {
                     </div>
                   ) : (
                     // --- Render Sets Section for Non-Cardio ---
-                    <div className="space-y-3 pl-2 border-l-2 border-muted">
-                       <Label className="text-sm font-medium">Sets</Label>
+                    <div className="space-y-3 pl-2">
                        {exercise.sets.map((set, setIndex) => (
-                        <div key={set.id} className="flex items-end space-x-2">
-                           <span className="text-sm text-muted-foreground w-6 text-right pr-1">{setIndex + 1}.</span>
-                           <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
-                             {/* Weight Input */}
-                             <div>
-                               <Label htmlFor={`weight-${exercise.id}-${set.id}`} className="text-xs">Weight (kg)</Label>
-                               <Input
-                                  id={`weight-${exercise.id}-${set.id}`}
-                                  type="number"
-                                  placeholder="Weight"
-                                  value={set.weight || ""}
-                                  onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                                  min="0"
-                                  step="0.1"
-                               />
-                             </div>
-                             {/* Reps Input */}
-                             <div>
-                               <Label htmlFor={`reps-${exercise.id}-${set.id}`} className="text-xs">Reps</Label>
-                               <Input
-                                  id={`reps-${exercise.id}-${set.id}`}
-                                  type="number"
-                                  placeholder="Reps"
-                                  value={set.reps || ""}
-                                  onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                                  min="0"
-                               />
-                             </div>
-                              {/* Set Notes Input */}
-                              <div className="col-span-2 md:col-span-1">
-                                  <Label htmlFor={`set-notes-${exercise.id}-${set.id}`} className="text-xs">Set Notes (Opt.)</Label>
-                                  <Input
-                                     id={`set-notes-${exercise.id}-${set.id}`}
-                                     placeholder="e.g., RPE 8"
-                                     value={set.notes || ""}
-                                     onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
-                                     className="placeholder:text-muted-foreground/50"
-                                  />
-                              </div>
-                            </div>
-                             {/* Remove Set Button */}
-                             <Button
-                               type="button"
-                               variant="ghost"
-                               size="icon"
-                               onClick={() => removeSet(exercise.id, set.id)}
-                               disabled={exercise.sets.length <= 1} // Disable removing the last set
-                               className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                               title="Remove Set"
-                             >
-                               <LucideX className="h-4 w-4" />
-                               <span className="sr-only">Remove Set</span>
-                             </Button>
-                          </div>
-                         ))}
-
-                         {/* Exercise Notes for Non-Cardio (Now correctly placed sibling to the map result) */}
-                         <div className="pt-2">
-                           <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
-                           <Textarea
-                             id={`exercise-notes-${exercise.id}`}
-                             placeholder="e.g., Focused on form, felt strong"
-                             value={exercise.notes || ""}
-                             onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                             className="placeholder:text-muted-foreground/50"
-                             rows={2}
+                        <div key={set.id} className="flex items-center gap-2">
+                           <span className="text-sm text-muted-foreground w-5 text-right">{setIndex + 1}.</span>
+                           <Input
+                              id={`weight-${exercise.id}-${set.id}`}
+                              type="number"
+                              placeholder="Weight (kg)" 
+                              value={set.weight || ""}
+                              onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                              min="0"
+                              step="0.1"
+                              className="w-24"
                            />
-                         </div>
-                      </div>
-                    )}
-                    {/* --- End Conditional Rendering --- */}
+                           <Input
+                              id={`reps-${exercise.id}-${set.id}`}
+                              type="number"
+                              placeholder="Reps" 
+                              value={set.reps || ""}
+                              onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                              min="0"
+                              className="w-20"
+                           />
+                           <Input
+                              id={`set-notes-${exercise.id}-${set.id}`}
+                              placeholder="Set Notes (e.g., RPE 8)" 
+                              value={set.notes || ""}
+                              onChange={(e) => updateSetField(exercise.id, set.id, 'notes', e.target.value)}
+                              className="placeholder:text-muted-foreground/50 flex-1"
+                           />
+                           <Button
+                             type="button"
+                             variant="ghost"
+                             size="icon"
+                             onClick={() => removeSet(exercise.id, set.id)}
+                             disabled={exercise.sets.length <= 1} 
+                             className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+                             title="Remove Set"
+                           >
+                             <LucideX className="h-4 w-4" />
+                             <span className="sr-only">Remove Set</span>
+                           </Button>
+                        </div>
+                       ))}
+                       <div className="pt-2">
+                         <Button 
+                           type="button" 
+                           variant="secondary" 
+                           size="sm" 
+                           onClick={() => addSet(exercise.id)}
+                         >
+                           <LucidePlus className="h-4 w-4 mr-1.5" /> Add Set
+                         </Button>
+                       </div>
+                       {/* Exercise Notes */}
+                       <div className="pt-4">
+                         <Label htmlFor={`exercise-notes-${exercise.id}`}>Exercise Notes (Optional)</Label>
+                         <Textarea
+                           id={`exercise-notes-${exercise.id}`}
+                           placeholder="e.g., Focused on form, felt strong"
+                           value={exercise.notes || ""}
+                           onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                           className="placeholder:text-muted-foreground/50"
+                           rows={2}
+                         />
+                       </div>
+                    </div>
+                  )}
+                  {/* --- End Conditional Rendering --- */}
                 </div>
               )
             })}
@@ -1410,8 +1397,8 @@ export default function NewWorkoutPage() {
         {/* Save Button - onClick calls handleSaveWorkout */}
         <div className="flex justify-end pt-4">
           <Button 
-            type="button" // Should be button
-            onClick={handleSaveWorkout} // Calls save handler directly
+            type="button" 
+            onClick={handleSaveWorkout} 
             disabled={isSubmitting || !workoutType || isLoadingData || isProcessingAi}
           >
             {isSubmitting ? ( 

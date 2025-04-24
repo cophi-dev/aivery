@@ -193,7 +193,7 @@ export default function DashboardPage() {
                      <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
                 ) : metrics && metrics.workoutCount === 0 ? (
                     // --- Getting Started Card ---
-                    <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-none rounded-xl">
+                    <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-sm rounded-xl">
                         <CardHeader>
                             <CardTitle className="text-primary dark:text-primary text-xl font-semibold">🚀 Let's Get Started!</CardTitle>
                             <CardDescription className="text-primary/80 dark:text-primary/70">Your Aivery journey begins now. How do you want to add your first workout?</CardDescription>

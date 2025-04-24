@@ -44,8 +44,8 @@ export function LoadingIndicator({ /* props */ }: LoadingIndicatorProps) {
   }, []); // Empty dependency array ensures this runs only once on mount
 
   return (
-    // Main container ensures centering and background (can be overridden by parent)
-    <div className="flex flex-col items-center justify-center min-h-screen w-full bg-primary text-primary-dark-bg">
+    // Remove bg-primary, use bg-background, adjust text color
+    <div className="flex flex-col items-center justify-center min-h-screen w-full bg-background">
       <Image
         src="/icon.svg"
         alt="Loading..."
@@ -55,7 +55,7 @@ export function LoadingIndicator({ /* props */ }: LoadingIndicatorProps) {
         priority // Prioritize loading the logo image
       />
       {/* Add loading text below logo */}
-      <span className="text-lg text-secondary-dark-bg">{loadingText}</span>
+      <span className="text-lg text-muted-foreground">{loadingText}</span> {/* Use muted-foreground */}
     </div>
   );
 } 

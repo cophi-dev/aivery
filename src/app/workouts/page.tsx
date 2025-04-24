@@ -31,9 +31,8 @@ export default async function WorkoutsPage() {
   }
 
   try {
-    // // Fetch workouts on the server
+    // // Fetch workouts on the server (Commented out - handled by client component)
     // const workouts: WorkoutData[] = await getWorkoutsByUserId(session.user.id);
-    // console.log(`[Workouts Page RSC] Fetched ${workouts.length} workouts. Newest workout ID: ${workouts[0]?._id}, Date: ${workouts[0]?.date}`);
     
     return (
       <div className="container mx-auto px-4 py-8">
@@ -55,14 +54,7 @@ export default async function WorkoutsPage() {
           </div>
         </div>
 
-        <Card className="mb-8 border-2 border-indigo-200">
-          <CardHeader className="pb-2 bg-gradient-to-r from-indigo-50 to-cyan-50">
-            <CardTitle>Workouts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <WorkoutListView />
-          </CardContent>
-        </Card>
+        <WorkoutListView />
       </div>
     );
   } catch (error) {

@@ -5,7 +5,7 @@ export default function Loading() {
   return (
     <div 
       id="page-loading-indicator"
-      className="fixed inset-0 flex items-center justify-center bg-white z-50"
+      className="fixed inset-0 flex items-center justify-center bg-background z-50"
     >
       <Image 
         src="/icons/aivery.svg" 

@@ -58,8 +58,8 @@
     --popover-foreground: 222.2 84% 4.9%;
  
     /* Brand Colors - Light Theme */
-    --primary: 214 80% 75%; /* Softer, lighter blue */
-    --primary-foreground: 210 20% 25%; /* Darker foreground for better contrast on lighter blue */
+    --primary: 214 100% 67%; /* Original brand-blue */
+    --primary-foreground: 0 0% 100%; /* Original white */
  
     /* Swapped secondary/muted */
     --secondary: 216 100% 95%; /* Very light blue */
@@ -68,8 +68,8 @@
     --muted: 216 100% 88%; /* Light blue */
     --muted-foreground: 222.2 84% 4.9%; /* Dark grey */
  
-    --accent: 19 80% 80%; /* Softer, lighter orange */
-    --accent-foreground: 0 0% 20%; /* Dark foreground for contrast on lighter orange */
+    --accent: 19 94% 73%; /* Original brand-orange */
+    --accent-foreground: 0 0% 100%; /* Original white */
  
     --destructive: 0 84.2% 60.2%; /* Keep existing red */
     --destructive-foreground: 0 0% 100%; /* white */
@@ -77,7 +77,7 @@
     /* Adjusted border/input */
     --border: 210 20% 94%; /* Lighter grey border */
     --input: 210 20% 94%; /* Lighter grey input border */
-    --ring: 214 100% 67%; /* brand-blue */
+    --ring: 214 100% 67%; /* Original brand-blue */
  
     --radius: 0.5rem;
   }
@@ -93,8 +93,8 @@
     --popover-foreground: 210 40% 98%; /* light grey */
  
     /* Brand Colors - Dark Theme */
-    --primary: 214 85% 70%; /* Slightly softer/lighter blue */
-    --primary-foreground: 0 0% 100%; /* White (unchanged) */
+    --primary: 214 100% 67%; /* Original brand-blue */
+    --primary-foreground: 0 0% 100%; /* Original white */
  
     /* Swapped secondary/muted */
     --secondary: 216 50% 25%; /* Darker muted blue */
@@ -103,8 +103,8 @@
     --muted: 216 50% 30%; /* Dark muted blue */
     --muted-foreground: 210 40% 98%; /* light grey */
  
-    --accent: 19 85% 75%; /* Slightly softer/lighter orange */
-    --accent-foreground: 0 0% 100%; /* White (unchanged) */
+    --accent: 19 94% 73%; /* Original brand-orange */
+    --accent-foreground: 0 0% 100%; /* Original white */
  
     --destructive: 0 70% 50%; /* Slightly adjusted red */
     --destructive-foreground: 0 0% 100%; /* white */
@@ -112,7 +112,7 @@
     /* Adjusted border/input */
     --border: 216 10% 40%; /* Slightly lighter dark border */
     --input: 216 10% 40%; /* Slightly lighter dark input border */
-    --ring: 214 100% 67%; /* brand-blue */
+    --ring: 214 100% 67%; /* Original brand-blue */
   }
 }
 

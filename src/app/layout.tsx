@@ -140,8 +140,16 @@ export default async function RootLayout({
         */}
       </head>
       <body className={`${poppins.variable} ${inter.variable} ${dmSerif.variable} font-sans antialiased`} suppressHydrationWarning>
-        {/* Initial Load Splash Screen */}
-        <div id="splash-screen" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, transition: 'opacity 0.5s ease-out' }}>
+        {/* Initial Load Splash Screen - Apply background variable directly */}
+        <div
+          id="splash-screen"
+          style={{
+            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, transition: 'opacity 0.5s ease-out',
+            backgroundColor: 'hsl(var(--background))'
+          }}
+        >
           <img src="/icons/aivery.svg" alt="Loading Aivery..." style={{ width: '150px', height: '150px' }} />
         </div>
 

@@ -24,7 +24,8 @@ import {
   Info,
   TrendingUp,
   Trophy,
-  History
+  History,
+  Route
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
@@ -478,101 +479,51 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   // Main return
   return (
     <WorkoutListErrorBoundary>
-      <div>
+      <Card className="rounded-xl shadow-sm bg-card p-6">
         {error && errorContent}
         
-        {/* Workout Stats - Enhanced for better visibility */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {/* Total Workouts */} 
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Workouts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{workoutStats.totalWorkouts}</div>
-            </CardContent>
-          </Card>
-          {/* Total Time */} 
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Time</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Calculate total hours and display in the new format */}
-              <div className="text-2xl font-bold">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+          <div className="flex flex-col">
+            <div className="flex items-center text-sm font-medium text-muted-foreground mb-1">
+              <History className="h-4 w-4 mr-1.5" />
+              Total Workouts
+            </div>
+            <div className="text-2xl font-bold">
+              {workoutStats.totalWorkouts}
+            </div>
+          </div>
+          <div className="flex flex-col">
+             <div className="flex items-center text-sm font-medium text-muted-foreground mb-1">
+               <Clock className="h-4 w-4 mr-1.5" />
+               Total Time
+             </div>
+             <div className="text-2xl font-bold">
                 {`over ${Math.floor(workoutStats.totalSeconds / 3600)} hours`}
-              </div>
-            </CardContent>
-          </Card>
-          {/* Total Distance (Running/Cycling) */} 
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Distance</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{Math.round(workoutStats.totalDistance)} km</div>
-              <p className="text-xs text-muted-foreground">(Running/Cycling)</p>
-            </CardContent>
-          </Card>
-          {/* Favorite Type */} 
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Favorite Type</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{workoutStats.favoriteType}</div>
-            </CardContent>
-          </Card>
-          
-          {/* --- NEW Exercise PR Cards --- START */} 
-          {loadingPRs ? (
-            <Card className="border-border/50"><CardContent className="pt-6"><p className="text-sm text-muted-foreground text-center">Loading PRs...</p></CardContent></Card>
-          ) : dashboardPRs.length > 0 ? (
-            dashboardPRs.map((pr) => (
-              <Card key={pr._id} className="border-border/50 hover:border-primary/40 transition-colors duration-150">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground truncate" title={pr.exerciseName}>{pr.exerciseName}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {pr.workoutId ? (
-                    <Link href={`/workouts/${pr.workoutId}`} className="block group">
-                      <div className="text-xl sm:text-2xl font-bold group-hover:text-primary transition-colors">
-                        {pr.value} <span className="text-lg">{pr.unit}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        on {formatDate(pr.date)}
-                        <ChevronRight className="inline-block h-3 w-3 ml-1 group-hover:translate-x-0.5 transition-transform" />
-                      </p>
-                    </Link>
-                  ) : (
-                    // Render without link if no workoutId
-                    <>
-                      <div className="text-xl sm:text-2xl font-bold">
-                        {pr.value} <span className="text-lg">{pr.unit}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        on {formatDate(pr.date)}
-                      </p>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Card className="border-border/50"><CardContent className="pt-6"><p className="text-sm text-muted-foreground text-center">No PRs found</p></CardContent></Card>
-          )}
-          {/* --- NEW Exercise PR Cards --- END */} 
-
+             </div>
+          </div>
+          <div className="flex flex-col">
+             <div className="flex items-center text-sm font-medium text-muted-foreground mb-1">
+                <Route className="h-4 w-4 mr-1.5" />
+                Total Distance
+             </div>
+             <div className="text-2xl font-bold">{Math.round(workoutStats.totalDistance)} km</div>
+             <p className="text-xs text-muted-foreground">(Running/Cycling)</p>
+          </div>
+          <div className="flex flex-col">
+             <div className="flex items-center text-sm font-medium text-muted-foreground mb-1">
+                <Trophy className="h-4 w-4 mr-1.5" />
+                Favorite Type
+             </div>
+             <div className="text-2xl font-bold">{workoutStats.favoriteType}</div>
+          </div>
         </div>
         
-        {/* Results info and compact filters */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4">
           <span className="text-sm text-muted-foreground">
             Showing {filteredWorkouts.length} of {workouts.length} workouts
           </span>
           
           <div className="flex gap-2 items-center">
-            {/* Type Quick Filter */}
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="h-9 w-[130px]">
                 <SelectValue placeholder="All types" />
@@ -587,7 +538,6 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               </SelectContent>
             </Select>
             
-            {/* Search */}
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -598,7 +548,6 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               />
             </div>
             
-            {/* Reset filters */}
             {filtersActive && (
               <Button variant="ghost" onClick={resetFilters} size="icon" className="h-9 w-9">
                 <X className="h-4 w-4" />
@@ -607,54 +556,52 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
           </div>
         </div>
         
-        {/* Workouts Table */}
         <div className="grid grid-cols-1 gap-4">
           {filteredWorkouts.length > 0 ? (
             filteredWorkouts.map((workout) => {
               const typeStyle = getWorkoutTypeStyle(workout.type);
               const volume = getWorkoutVolume(workout);
               return (
-                <Link href={`/workouts/${workout._id}`} key={workout._id} className="block group">
-                  <Card className="hover:border-primary/40 transition-colors duration-150 border-border/50">
-                    <CardContent className="p-4 flex justify-between items-center">
-                      {/* Left Side: Date & Type */} 
-                      <div className="flex items-center gap-3">
-                         <Badge variant="outline" className={`flex items-center gap-1.5 px-2 py-1 text-xs h-7 ${typeStyle.colorClasses}`}>
-                           <span className="flex items-center gap-1.5">
-                             {typeStyle.icon}
-                             <span className="font-medium">
-                               {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
-                             </span>
+                <Link 
+                  href={`/workouts/${workout._id}`} 
+                  key={workout._id} 
+                  className="block group p-4 border-b border-border/50 last:border-b-0 hover:bg-muted/50 transition-colors rounded-md"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className={`flex items-center gap-1.5 px-2 py-1 text-xs h-7 ${typeStyle.colorClasses}`}>
+                         <span className="flex items-center gap-1.5">
+                           {typeStyle.icon}
+                           <span className="font-medium">
+                             {workout.type.charAt(0).toUpperCase() + workout.type.slice(1)}
                            </span>
-                         </Badge>
-                         <div>
-                           <div className="font-medium text-sm group-hover:text-primary transition-colors">
-                             {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
-                           </div>
-                           <div className="text-xs text-muted-foreground">
-                             {formatDate(new Date(workout.date))}
-                           </div>
-                         </div>
+                         </span>
+                      </Badge>
+                      <div>
+                        <div className="font-medium text-sm group-hover:text-primary transition-colors">
+                           {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                           {formatDate(new Date(workout.date))}
+                        </div>
                       </div>
-                      
-                      {/* Right Side: Metrics & Arrow */}
-                      <div className="flex items-center gap-4">
-                         <div className="flex flex-col items-end text-xs">
-                           <div className="flex items-center gap-1">
-                             <Clock className="h-3 w-3 text-muted-foreground" />
-                             {formatDuration(workout.duration)}
+                    </div>
+                    
+                    <div className="flex items-center gap-3"> 
+                      <div className="flex flex-col items-end text-xs">
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-3 w-3 text-muted-foreground" />
+                          {formatDuration(workout.duration)}
+                        </div>
+                        {volume.value > 0 && (
+                           <div className="flex items-center gap-1 mt-0.5">
+                              {volume.unit === 'km' ? <Route className="h-3 w-3 text-muted-foreground"/> : <Dumbbell className="h-3 w-3 text-muted-foreground" />}
+                              {volume.value.toFixed(volume.unit === 'km' ? 1 : 0)} {volume.unit}
                            </div>
-                           {volume.value > 0 && (
-                             <div className="flex items-center gap-1 mt-0.5">
-                               {volume.unit === 'km' ? <Ruler className="h-3 w-3 text-muted-foreground"/> : <Dumbbell className="h-3 w-3 text-muted-foreground" />}
-                               {volume.value.toFixed(volume.unit === 'km' ? 1 : 0)} {volume.unit}
-                             </div>
-                           )}
-                         </div>
-                         <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                         )}
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 </Link>
               );
             })
@@ -669,7 +616,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             </div>
           )}
         </div>
-      </div>
+      </Card>
     </WorkoutListErrorBoundary>
   )
 } 

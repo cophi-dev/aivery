@@ -50,7 +50,7 @@ export function SpotlightCards() {
     <div className="grid grid-cols-1 gap-6">
       {/* Concept Spotlight Card */}
       {spotlightKeyword && (
-        <Card className="hover:bg-muted/50 transition-colors rounded-xl">
+        <Card className="hover:bg-muted/50 transition-colors rounded-xl shadow-sm">
           <Link 
             href={`/chat?keyword=${encodeURIComponent(spotlightKeyword)}`} 
             className="block p-4" 
@@ -60,7 +60,7 @@ export function SpotlightCards() {
               <Lightbulb className="h-5 w-5 text-primary flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium">Concept Spotlight</p>
-                <p className="text-base font-semibold text-primary">
+                <p className="text-base font-medium text-foreground">
                   What is {spotlightKeyword}?
                 </p>
               </div>
@@ -71,7 +71,7 @@ export function SpotlightCards() {
 
       {/* Data Insights Card */}
       {dataInsightQuestion && (
-        <Card className="hover:bg-muted/50 transition-colors rounded-xl">
+        <Card className="hover:bg-muted/50 transition-colors rounded-xl shadow-sm">
           <Link 
             href={`/chat?dataQuery=${encodeURIComponent(dataInsightQuestion)}`} 
             className="block p-4"
@@ -81,7 +81,7 @@ export function SpotlightCards() {
               <Search className="h-5 w-5 text-primary flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium">Explore Your Data</p>
-                <p className="text-base font-semibold text-primary">
+                <p className="text-base font-medium text-foreground">
                   {dataInsightQuestion}
                 </p>
               </div>
