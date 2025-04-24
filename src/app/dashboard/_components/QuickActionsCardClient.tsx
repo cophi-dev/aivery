@@ -62,7 +62,7 @@ export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
     };
 
     return (
-        <Card>
+        <Card className="rounded-xl">
             <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
             </CardHeader>

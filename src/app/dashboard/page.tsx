@@ -152,20 +152,20 @@ export default function DashboardPage() {
     console.log(`[Dashboard Page] Rendering. isLoadingMetrics: ${isLoadingMetrics}, metrics: ${JSON.stringify(metrics, null, 2)}, workoutCount: ${metrics?.workoutCount}`);
 
     return (
-        <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-6 md:space-y-8 bg-background">
+        <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-8 md:space-y-10 bg-background">
             <DashboardHeader 
                 displayName={displayName} 
                 userImage={userImage} 
             />
 
-            <div className="flex flex-col gap-6 w-full max-w-4xl">
+            <div className="flex flex-col gap-8 w-full max-w-4xl">
                 <LogWorkoutButton />
                 <SubscriptionStatus /> 
 
                 {/* --- NEW: AI Preferences Prompt --- */} 
                 {/* Use the real flag from metrics */}
                 {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
-                    <Card className="border-secondary/70 dark:border-secondary/80 bg-secondary/50 dark:bg-secondary/30 shadow-sm hover:shadow-md transition-shadow duration-200">
+                    <Card className="border-secondary/70 dark:border-secondary/80 bg-secondary/50 dark:bg-secondary/30 shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl">
                          <CardHeader className="flex flex-row items-center justify-between pb-3">
                              <div className="space-y-1">
                                 <CardTitle className="text-base font-semibold text-secondary-foreground dark:text-secondary-foreground flex items-center">
@@ -193,13 +193,13 @@ export default function DashboardPage() {
                      <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
                 ) : metrics && metrics.workoutCount === 0 ? (
                     // --- Getting Started Card ---
-                    <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-none">
+                    <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-none rounded-xl">
                         <CardHeader>
                             <CardTitle className="text-primary dark:text-primary text-xl font-semibold">🚀 Let's Get Started!</CardTitle>
                             <CardDescription className="text-primary/80 dark:text-primary/70">Your Aivery journey begins now. How do you want to add your first workout?</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="flex flex-col sm:flex-row gap-4">
+                            <div className="flex flex-col sm:flex-row gap-5">
                                 {/* Option 1: Import */}
                                 <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
                                     <div className="flex items-center mb-2">
@@ -248,7 +248,7 @@ export default function DashboardPage() {
                             cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
                         />
                         {/* Wrap Spotlight and QuickActions in a grid first */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <SpotlightCards />
                             <QuickActionsCard sendAiMessage={handleSendAiMessage} /> {/* Restore sendAiMessage prop */}
                         </div>

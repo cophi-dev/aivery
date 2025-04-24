@@ -57,7 +57,7 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
   // --- End Log ---
 
   return (
-    <Card>
+    <Card className="rounded-xl">
       <CardHeader className="pb-4">
         <CardTitle className="text-lg flex items-center justify-center">
           <Zap className="mr-2 h-5 w-5 text-primary" /> Personal Records

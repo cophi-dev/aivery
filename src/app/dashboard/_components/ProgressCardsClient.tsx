@@ -60,7 +60,7 @@ export function ProgressCards({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
       {/* Strength Progress Card */}
-      <Card>
+      <Card className="rounded-xl">
         <CardHeader className="text-center">
           <CardTitle className="text-lg flex items-center justify-center">
             <Dumbbell className="mr-2 h-5 w-5 text-primary" /> Strength Progress
@@ -87,7 +87,7 @@ export function ProgressCards({
       </Card>
 
       {/* Cardio Progress Card */}
-      <Card>
+      <Card className="rounded-xl">
         <CardHeader className="text-center">
           <CardTitle className="text-lg flex items-center justify-center">
             <HeartPulse className="mr-2 h-5 w-5 text-accent" /> Cardio Progress

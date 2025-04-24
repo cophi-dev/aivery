@@ -50,7 +50,7 @@ export function SpotlightCards() {
     <div className="grid grid-cols-1 gap-6">
       {/* Concept Spotlight Card */}
       {spotlightKeyword && (
-        <Card className="hover:bg-muted/50 transition-colors">
+        <Card className="hover:bg-muted/50 transition-colors rounded-xl">
           <Link 
             href={`/chat?keyword=${encodeURIComponent(spotlightKeyword)}`} 
             className="block p-4" 
@@ -71,7 +71,7 @@ export function SpotlightCards() {
 
       {/* Data Insights Card */}
       {dataInsightQuestion && (
-        <Card className="hover:bg-muted/50 transition-colors">
+        <Card className="hover:bg-muted/50 transition-colors rounded-xl">
           <Link 
             href={`/chat?dataQuery=${encodeURIComponent(dataInsightQuestion)}`} 
             className="block p-4"
