@@ -16,10 +16,25 @@ import { LucideArrowLeft, LucidePlus } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ExerciseData } from "@/types/db"
 import { redirect } from "next/navigation"
+import type { Metadata } from 'next'
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Exercises | Aivery",
   description: "Browse and manage exercises",
+  openGraph: {
+    title: "Exercises | Aivery",
+    description: "Browse and manage exercises",
+    url: "https://your-aivery-app-url.com/exercises",
+    images: [
+      {
+        url: "/images/og-exercises.png",
+        width: 1200,
+        height: 630,
+        alt: "Aivery Exercises Page",
+      }
+    ],
+    type: 'website',
+  },
 }
 
 // Revalidate this page on demand or periodically if needed

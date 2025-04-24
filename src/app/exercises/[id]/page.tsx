@@ -1,5 +1,137 @@
 "use client"
 
+// Add helper function for formatting duration (seconds to MM:SS)
+const formatDuration = (seconds: number | undefined | null): string => {
+  if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) {
+    return "N/A";
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+// Add helper function for formatting pace (seconds per km to MM:SS/km)
+const formatPace = (pace: number | undefined | null): string => {
+  if (pace === undefined || pace === null || isNaN(pace) || pace <= 0) {
+    return "N/A";
+  }
+  // Assuming pace is in seconds per kilometer
+  const minutes = Math.floor(pace / 60);
+  const remainingSeconds = Math.round(pace % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')} /km`;
+};
+
+// --- Metadata Generation (Server-Side) ---
+
+type Props = {
+  params: { id: string }
+}
+
+export async function generateMetadata(
+  { params }: Props,
+  parent: ResolvingMetadata
+): Promise<Metadata> {
+  // 1. Fetch exercise data on the server
+  const exercise = await fetchExercise(params.id);
+
+  if (!exercise) {
+    // Optionally handle not found case for metadata
+    return {
+      title: "Exercise Not Found | Aivery",
+      description: "The requested exercise could not be found.",
+    }
+  }
+
+  // 2. Construct Image URLs
+  // Base URL for Vercel Blob storage (automatically set by Vercel)
+  const blobBaseUrl = process.env.BLOB_URL;
+  // Construct filename matching the one used in the API route
+  const screenshotFilename = `og-images_exercises_${params.id}.png`;
+  const screenshotUrl = blobBaseUrl ? `${blobBaseUrl}/${screenshotFilename}` : '/images/og-fallback.png'; // Use fallback if BLOB_URL missing
+  const fallbackImageUrl = '/images/og-fallback.png'; // Define a static fallback
+
+  // 3. Generate Metadata
+  const title = `${exercise.name} | Aivery Exercises`;
+  const description = exercise.description || `Details and history for the ${exercise.name} exercise.`;
+  const pageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/exercises/${params.id}`; // Construct canonical URL
+
+  return {
+    title: title,
+    description: description,
+    openGraph: {
+      title: title,
+      description: description,
+      url: pageUrl,
+      // Provide both the generated screenshot and a fallback
+      images: [
+        {
+          url: screenshotUrl, 
+          width: 1200,
+          height: 630,
+          alt: `${exercise.name} Exercise Preview`,
+        },
+        // Optional: Include the fallback image as a secondary option
+        // {
+        //   url: fallbackImageUrl,
+        //   width: 1200, // Specify dimensions for fallback too
+        //   height: 630,
+        //   alt: "Aivery Logo", 
+        // }
+      ],
+      type: 'article', // 'article' might be suitable for a specific exercise page
+      // Optional: Add article specific tags if relevant
+      // article: {
+      //   tags: exercise.tags || exercise.muscleGroups || [],
+      // },
+    },
+    // Optional: Twitter specific tags
+    // twitter: {
+    //   card: "summary_large_image",
+    //   title: title,
+    //   description: description,
+    //   images: [screenshotUrl], // Use the primary screenshot URL
+    // },
+  };
+}
+
+// --- Server Component (Default Export) ---
+
+export default async function ExerciseDetailPage({ params }: Props) {
+  // Fetch initial data on the server
+  let initialExercise: ExerciseData | null = null;
+  let initialHistory: WorkoutExerciseData[] = [];
+  let error: string | undefined = undefined;
+
+  try {
+    initialExercise = await fetchExercise(params.id);
+    if (initialExercise) {
+      initialHistory = await getExerciseHistory(params.id);
+    } else {
+      error = "Exercise not found";
+      // Consider using notFound() from next/navigation for a proper 404 page
+      // import { notFound } from 'next/navigation'
+      // notFound();
+    }
+  } catch (err) {
+    console.error("Server-side fetch error for Exercise Detail Page:", err);
+    error = "Failed to load exercise data.";
+  }
+
+  // Render the client component with initial data
+  return (
+    <ExerciseDetailPageClient 
+      initialExercise={initialExercise}
+      initialHistory={initialHistory}
+      error={error}
+      params={params}
+    />
+  );
+}
+
+// --- Client Component (Renamed) ---
+
+"use client"
+
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -35,49 +167,24 @@ import { LoadingIndicator } from "@/components/ui/loading-indicator"
 import Image from "next/image"
 import { subMonths, subWeeks } from "date-fns"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import type { Metadata, ResolvingMetadata } from 'next'
 
-// Fallback data if no history is available
-// const fallbackHistoryData = [
-//   { date: '2023-01-10', weight: 60, reps: 10 },
-//   { date: '2023-01-17', weight: 65, reps: 8 },
-//   { date: '2023-01-24', weight: 65, reps: 10 },
-//   { date: '2023-01-31', weight: 70, reps: 8 },
-//   { date: '2023-02-07', weight: 70, reps: 10 },
-//   { date: '2023-02-14', weight: 75, reps: 8 },
-//   { date: '2023-02-21', weight: 75, reps: 10 },
-//   { date: '2023-02-28', weight: 80, reps: 8 },
-// ]
-
-// Add helper function for formatting duration (seconds to MM:SS)
-const formatDuration = (seconds: number | undefined | null): string => {
-  if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) {
-    return "N/A";
-  }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-};
-
-// Add helper function for formatting pace (seconds per km to MM:SS/km)
-const formatPace = (pace: number | undefined | null): string => {
-  if (pace === undefined || pace === null || isNaN(pace) || pace <= 0) {
-    return "N/A";
-  }
-  // Assuming pace is in seconds per kilometer
-  const minutes = Math.floor(pace / 60);
-  const remainingSeconds = Math.round(pace % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')} /km`;
-};
-
-export default function ExerciseDetailPage({ params }: { params: { id: string } }) {
+// Renamed component
+function ExerciseDetailPageClient({ initialExercise, initialHistory, error: initialError, params }: { 
+  initialExercise: ExerciseData | null;
+  initialHistory: WorkoutExerciseData[];
+  error?: string;
+  params: { id: string };
+}) {
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [exercise, setExercise] = useState<ExerciseData | null>(null)
+  // Use initial props for state initialization
+  const [isLoading, setIsLoading] = useState(!initialExercise && !initialError) // Start loading only if no initial data/error
+  const [error, setError] = useState(initialError || "")
+  const [exercise, setExercise] = useState<ExerciseData | null>(initialExercise)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [history, setHistory] = useState<WorkoutExerciseData[]>([])
+  const [history, setHistory] = useState<WorkoutExerciseData[]>(initialHistory)
   const [chartData, setChartData] = useState<any[]>([])
   const [personalBest, setPersonalBest] = useState<{ weight: number, reps: number } | null>(null)
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
@@ -102,79 +209,34 @@ export default function ExerciseDetailPage({ params }: { params: { id: string } 
   } | null>(null);
   
   // State for exercise form
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
-  const [category, setCategory] = useState<"strength" | "cardio" | "flexibility">("strength")
-  const [equipment, setEquipment] = useState<string[]>([])
-  const [instructions, setInstructions] = useState<string[]>([])
+  const [name, setName] = useState(initialExercise?.name || "")
+  const [description, setDescription] = useState(initialExercise?.description || "")
+  const [category, setCategory] = useState<"strength" | "cardio" | "flexibility">(initialExercise?.category as "strength" | "cardio" | "flexibility" || "strength")
+  const [equipment, setEquipment] = useState<string[]>(initialExercise?.equipment || [])
+  const [instructions, setInstructions] = useState<string[]>(initialExercise?.instructions || [])
   const [muscleGroup, setMuscleGroup] = useState("")
-  const [muscleGroups, setMuscleGroups] = useState<string[]>([])
+  const [muscleGroups, setMuscleGroups] = useState<string[]>(initialExercise?.muscleGroups || [])
   
   // Add state for date range selection
   const [selectedDateRange, setSelectedDateRange] = useState<"allTime" | "3months" | "4weeks">("allTime");
   
+  // useEffect to process history when it changes (passed via props or updated later)
   useEffect(() => {
-    let isMounted = true
-    
-    async function loadExerciseAndHistory() {
-      try {
-        setIsLoading(true)
-        setError("")
+    processHistoryData(history); // Process initial or updated history
+  }, [history]);
 
-        const exerciseData = await fetchExercise(params.id)
-        
-        if (!exerciseData) {
-          if (isMounted) setError("Exercise not found")
-          return
-        }
-        
-        if (isMounted) {
-          setExercise(exerciseData)
-          console.log("Fetched Exercise Data:", exerciseData);
-          
-          // Also populate edit form fields
-          setName(exerciseData.name)
-          setDescription(exerciseData.description || "")
-          setCategory(exerciseData.category as "strength" | "cardio" | "flexibility")
-          setEquipment(exerciseData.equipment || [])
-          setInstructions(exerciseData.instructions || [])
-          setMuscleGroups(exerciseData.muscleGroups || [])
-          
-          // Fetch history (no longer fetching API details here)
-          try {
-            const historyData = await getExerciseHistory(params.id)
-            if (isMounted) {
-              setHistory(historyData)
-              processHistoryData(historyData)
-            }
-          } catch (historyErr) {
-            console.error("Error loading exercise history:", historyErr)
-            if (isMounted) {
-              setHistory([])
-              processHistoryData([])
-            }
-          }
-        }
-        
-      } catch (err) {
-        console.error("Failed to load exercise page data:", err)
-        if (isMounted) setError("Failed to load exercise data. Please try again.")
-      } finally {
-        if (isMounted) {
-          setIsLoading(false)
-        }
-      }
+  // useEffect to set form fields if exercise data becomes available after initial load (e.g., refetch)
+  useEffect(() => {
+    if (exercise) {
+      setName(exercise.name || "")
+      setDescription(exercise.description || "")
+      setCategory(exercise.category as "strength" | "cardio" | "flexibility" || "strength")
+      setEquipment(exercise.equipment || [])
+      setInstructions(exercise.instructions || [])
+      setMuscleGroups(exercise.muscleGroups || [])
     }
-    
-    loadExerciseAndHistory()
-
-    // Cleanup function to set isMounted to false when the component unmounts
-    return () => {
-      isMounted = false
-    }
-  }, [params.id])
+  }, [exercise]);
   
-  // Process workout history data for display and charts
   const processHistoryData = (historyData: WorkoutExerciseData[]) => {
     if (!historyData.length) {
       // setChartData(fallbackHistoryData) - REMOVED

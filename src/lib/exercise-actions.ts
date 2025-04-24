@@ -129,6 +129,18 @@ export async function createExerciseAction(exerciseData: Partial<ExerciseData>):
 
     const newExercise = await createExercise(exerciseData);
     
+    // Trigger OG image generation (fire and forget, don't block return)
+    if (newExercise && newExercise._id) {
+      const targetPath = `/exercises/${newExercise._id}`;
+      fetch(`${getApiBaseUrl()}/api/og-screenshot`, { // Use getApiBaseUrl helper
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetPath })
+      }).catch(err => {
+        console.error(`[createExerciseAction] Failed to trigger OG screenshot for ${targetPath}:`, err);
+      });
+    }
+    
     revalidatePath("/exercises");
     revalidatePath(`/exercises/${newExercise._id}`);
     revalidatePath("/workouts/new");
@@ -158,6 +170,18 @@ export async function updateExerciseAction(id: string, exerciseData: Partial<Exe
     }
 
     const updatedExercise = await updateExercise(id, exerciseData);
+    
+    // Trigger OG image generation (fire and forget, don't block return)
+    if (updatedExercise && updatedExercise._id) {
+      const targetPath = `/exercises/${updatedExercise._id}`;
+      fetch(`${getApiBaseUrl()}/api/og-screenshot`, { // Use getApiBaseUrl helper
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetPath, forceUpdate: true }) // Add forceUpdate flag maybe?
+      }).catch(err => {
+        console.error(`[updateExerciseAction] Failed to trigger OG screenshot for ${targetPath}:`, err);
+      });
+    }
     
     revalidatePath("/exercises");
     revalidatePath(`/exercises/${id}`);
