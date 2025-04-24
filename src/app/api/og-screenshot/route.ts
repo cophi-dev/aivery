@@ -95,9 +95,13 @@ export async function POST(request: Request) {
 
 // Optional: Increase the max duration for the serverless function 
 // (Default is 10s on Hobby, 60s on Pro - might need more for Playwright)
-export const config = {
-  maxDuration: 60, // Set max duration in seconds (adjust as needed, max 300 on Pro)
-};
+// Replace the deprecated config object:
+// export const config = {
+//   maxDuration: 60,
+// };
+
+// Use direct export for route segment config (Next.js 14+)
+export const maxDuration = 60; 
 
 // Optional: Add a GET handler for testing or simple checks if needed
 // export async function GET() {
