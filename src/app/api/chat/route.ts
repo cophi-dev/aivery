@@ -200,62 +200,76 @@ export async function POST(req: Request) {
       currentQuery
     );
 
-    // --- Attempt to fetch data based on query ---
+    // --- Check for General Fitness Questions ---
     const queryLower = currentQuery.toLowerCase();
-    // Simple check for distance-related queries
-    if (queryLower.includes("distance") || (queryLower.includes("how far") && (queryLower.includes("run") || queryLower.includes("cycle") || queryLower.includes("swim") )) ) {
-      console.log("[CHAT] Detected potential distance query.");
-      const workoutType = getWorkoutTypeFromQuery(queryLower);
-      const timeframeMatch = queryLower.match(/(?:in|last|this|during|for)\s+([a-zA-Z0-9\s]+)/); // Basic timeframe extraction
-      const timeframe = timeframeMatch ? timeframeMatch[1].trim() : "this month"; // Default to this month if not found
+    const generalKeywords = ['what is', 'explain', 'define', 'benefits of', 'how does', 'compare', 'difference between'];
+    const fitnessConcepts = ['lactate threshold', 'vo2 max', 'hiit', 'macros', 'progressive overload', 'heart rate zones', 'hydration', 'protein synthesis', 'muscle hypertrophy']; // Add more concepts
 
-      console.log(`[CHAT] Extracted type: ${workoutType}, timeframe: ${timeframe}`);
+    let isGeneralQuestion = generalKeywords.some(keyword => queryLower.startsWith(keyword)) ||
+                            fitnessConcepts.some(concept => queryLower.includes(concept));
 
-      if (workoutType) {
-        const dateRange = getDateRangeFromTimeframe(timeframe);
-        if (dateRange) {
-          console.log(`[CHAT] Fetching ${workoutType} distance for range:`, dateRange);
-          if (userId) {
-            try {
-              await dbConnect(); // Ensure DB connection
-              // Call the repository function - it returns a number or throws an error
-              const totalDistance: number = await getWorkoutDistanceForDateRange(
-                userId,
-                workoutType,
-                dateRange.start,
-                dateRange.end
-              );
-              console.log("[CHAT] Total distance fetched:", totalDistance);
-              
-              // Check if totalDistance is a valid number and greater than 0
-              if (typeof totalDistance === 'number' && totalDistance > 0) {
-                 // Note: We don't get the count from this specific function
-                 dataContext = `Data for ${userName}: Total ${workoutType} distance for timeframe '${timeframe}' was ${totalDistance.toFixed(1)} km. Use this data to answer.`;
-              } else {
-                 // Handle case where distance is 0 (or potentially NaN/undefined, though caught by check)
-                 dataContext = `Data for ${userName}: No ${workoutType} workouts with distance were found for timeframe '${timeframe}'. Inform the user.`;
+    if (isGeneralQuestion) {
+      console.log("[CHAT] Detected general fitness question.");
+      dataContext = "User is asking a general fitness question. Please answer using your base knowledge.";
+      // Skip specific data fetching logic below
+    } else {
+      // --- Attempt to fetch data based on query (Existing Logic) ---
+      // Simple check for distance-related queries
+      if (queryLower.includes("distance") || (queryLower.includes("how far") && (queryLower.includes("run") || queryLower.includes("cycle") || queryLower.includes("swim") )) ) {
+        console.log("[CHAT] Detected potential distance query.");
+        const workoutType = getWorkoutTypeFromQuery(queryLower);
+        const timeframeMatch = queryLower.match(/(?:in|last|this|during|for)\s+([a-zA-Z0-9\s]+)/); // Basic timeframe extraction
+        const timeframe = timeframeMatch ? timeframeMatch[1].trim() : "this month"; // Default to this month if not found
+
+        console.log(`[CHAT] Extracted type: ${workoutType}, timeframe: ${timeframe}`);
+
+        if (workoutType) {
+          const dateRange = getDateRangeFromTimeframe(timeframe);
+          if (dateRange) {
+            console.log(`[CHAT] Fetching ${workoutType} distance for range:`, dateRange);
+            if (userId) {
+              try {
+                await dbConnect(); // Ensure DB connection
+                // Call the repository function - it returns a number or throws an error
+                const totalDistance: number = await getWorkoutDistanceForDateRange(
+                  userId,
+                  workoutType,
+                  dateRange.start,
+                  dateRange.end
+                );
+                console.log("[CHAT] Total distance fetched:", totalDistance);
+                
+                // Check if totalDistance is a valid number and greater than 0
+                if (typeof totalDistance === 'number' && totalDistance > 0) {
+                   // Note: We don't get the count from this specific function
+                   dataContext = `Data for ${userName}: Total ${workoutType} distance for timeframe '${timeframe}' was ${totalDistance.toFixed(1)} km. Use this data to answer.`;
+                } else {
+                   // Handle case where distance is 0 (or potentially NaN/undefined, though caught by check)
+                   dataContext = `Data for ${userName}: No ${workoutType} workouts with distance were found for timeframe '${timeframe}'. Inform the user.`;
+                }
+              } catch (dbError) {
+                 console.error("[CHAT] Database error fetching distance:", dbError);
+                 dataContext = `Error fetching workout data for ${timeframe}. Inform the user an error occurred.`;
               }
-            } catch (dbError) {
-               console.error("[CHAT] Database error fetching distance:", dbError);
-               dataContext = `Error fetching workout data for ${timeframe}. Inform the user an error occurred.`;
+            } else {
+                console.error("[CHAT] Cannot fetch distance, userId is undefined after authentication check.");
+                // Optionally set context indicating user ID issue, or keep default
             }
           } else {
-              console.error("[CHAT] Cannot fetch distance, userId is undefined after authentication check.");
-              // Optionally set context indicating user ID issue, or keep default
+              console.log("[CHAT] Could not determine date range from timeframe:", timeframe);
+              dataContext = `Could not determine the date range for timeframe '${timeframe}'. Ask the user to clarify the period.`;
           }
         } else {
-            console.log("[CHAT] Could not determine date range from timeframe:", timeframe);
-            dataContext = `Could not determine the date range for timeframe '${timeframe}'. Ask the user to clarify the period.`;
+           console.log("[CHAT] Could not determine workout type for distance query.");
+           // Keep default dataContext
         }
-        } else {
-         console.log("[CHAT] Could not determine workout type for distance query.");
-         // Keep default dataContext
+      } else {
+          console.log("[CHAT] Query not identified as a distance query or general question. Skipping data fetch.");
+          // Keep default dataContext: "No specific data provided for this query."
       }
-    } else {
-        console.log("[CHAT] Query not identified as a distance query. Skipping data fetch.");
+      // --- End Data Fetching Logic ---
     }
-    // --- End Data Fetching Logic ---
-
+    // --- End Check for General Fitness Questions ---
 
     const validHistory = messageHistory.filter(
       (msg: { role: string }) => msg.role === "user" || msg.role === "assistant"
