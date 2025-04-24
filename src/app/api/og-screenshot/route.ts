@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import playwright from 'playwright-core';
-import chromium from '@sparticuz/chromium';
 import { put } from '@vercel/blob';
 
 // Determine the base URL based on Vercel environment or fallback to localhost
@@ -10,6 +8,10 @@ const baseUrl = process.env.VERCEL_URL
 
 // We'll use POST requests to trigger screenshot generation
 export async function POST(request: Request) {
+  // Dynamically import playwright and chromium INSIDE the handler
+  const playwright = await import('playwright-core');
+  const chromium = await import('@sparticuz/chromium');
+
   let browser = null;
   try {
     const body = await request.json();
@@ -31,9 +33,9 @@ export async function POST(request: Request) {
     // 1. Launch Browser
     console.log('[OG Screenshot] Launching browser...');
     browser = await playwright.chromium.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath(), // Use @sparticuz/chromium 
-      headless: !!chromium.headless, // Explicitly cast to boolean
+      args: chromium.default.args,
+      executablePath: await chromium.default.executablePath(), 
+      headless: !!chromium.default.headless, 
     });
 
     // 2. Create Page and Set Viewport

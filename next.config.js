@@ -98,6 +98,8 @@ const nextConfig = {
     if (isServer) {
       config.externals.push(
         'electron',
+        'bufferutil',        // Add bufferutil
+        'utf-8-validate',    // Add utf-8-validate
         // Add other modules if they cause issues
         // '@playwright/test' // If you were using the full test runner
       );
