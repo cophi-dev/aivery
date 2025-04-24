@@ -1,6 +1,11 @@
-"use client"
+// --- Server Component (Default Export) ---
 
-// Add helper function for formatting duration (seconds to MM:SS)
+// Define Props type here for server component
+type Props = {
+  params: { id: string }
+}
+
+// Define helper functions in server scope (accessible by client component)
 const formatDuration = (seconds: number | undefined | null): string => {
   if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) {
     return "N/A";
@@ -10,91 +15,14 @@ const formatDuration = (seconds: number | undefined | null): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-// Add helper function for formatting pace (seconds per km to MM:SS/km)
 const formatPace = (pace: number | undefined | null): string => {
   if (pace === undefined || pace === null || isNaN(pace) || pace <= 0) {
     return "N/A";
   }
-  // Assuming pace is in seconds per kilometer
   const minutes = Math.floor(pace / 60);
   const remainingSeconds = Math.round(pace % 60);
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')} /km`;
 };
-
-// --- Metadata Generation (Server-Side) ---
-
-type Props = {
-  params: { id: string }
-}
-
-export async function generateMetadata(
-  { params }: Props,
-  parent: ResolvingMetadata
-): Promise<Metadata> {
-  // 1. Fetch exercise data on the server
-  const exercise = await fetchExercise(params.id);
-
-  if (!exercise) {
-    // Optionally handle not found case for metadata
-    return {
-      title: "Exercise Not Found | Aivery",
-      description: "The requested exercise could not be found.",
-    }
-  }
-
-  // 2. Construct Image URLs
-  // Base URL for Vercel Blob storage (automatically set by Vercel)
-  const blobBaseUrl = process.env.BLOB_URL;
-  // Construct filename matching the one used in the API route
-  const screenshotFilename = `og-images_exercises_${params.id}.png`;
-  const screenshotUrl = blobBaseUrl ? `${blobBaseUrl}/${screenshotFilename}` : '/images/og-fallback.png'; // Use fallback if BLOB_URL missing
-  const fallbackImageUrl = '/images/og-fallback.png'; // Define a static fallback
-
-  // 3. Generate Metadata
-  const title = `${exercise.name} | Aivery Exercises`;
-  const description = exercise.description || `Details and history for the ${exercise.name} exercise.`;
-  const pageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/exercises/${params.id}`; // Construct canonical URL
-
-  return {
-    title: title,
-    description: description,
-    openGraph: {
-      title: title,
-      description: description,
-      url: pageUrl,
-      // Provide both the generated screenshot and a fallback
-      images: [
-        {
-          url: screenshotUrl, 
-          width: 1200,
-          height: 630,
-          alt: `${exercise.name} Exercise Preview`,
-        },
-        // Optional: Include the fallback image as a secondary option
-        // {
-        //   url: fallbackImageUrl,
-        //   width: 1200, // Specify dimensions for fallback too
-        //   height: 630,
-        //   alt: "Aivery Logo", 
-        // }
-      ],
-      type: 'article', // 'article' might be suitable for a specific exercise page
-      // Optional: Add article specific tags if relevant
-      // article: {
-      //   tags: exercise.tags || exercise.muscleGroups || [],
-      // },
-    },
-    // Optional: Twitter specific tags
-    // twitter: {
-    //   card: "summary_large_image",
-    //   title: title,
-    //   description: description,
-    //   images: [screenshotUrl], // Use the primary screenshot URL
-    // },
-  };
-}
-
-// --- Server Component (Default Export) ---
 
 export default async function ExerciseDetailPage({ params }: Props) {
   // Fetch initial data on the server
@@ -128,10 +56,9 @@ export default async function ExerciseDetailPage({ params }: Props) {
   );
 }
 
-// --- Client Component (Renamed) ---
-
-"use client"
-
+// --- Client Component Boundary --- 
+"use client" 
+// --- ALL Client Imports START Here ---
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -167,7 +94,12 @@ import { LoadingIndicator } from "@/components/ui/loading-indicator"
 import Image from "next/image"
 import { subMonths, subWeeks } from "date-fns"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import type { Metadata, ResolvingMetadata } from 'next'
+// type { Metadata, ResolvingMetadata } -> No longer needed here
+// --- ALL Client Imports END Here ---
+
+
+// --- Client Component (Renamed) ---
+// Note: Removed the second "use client" directive from here
 
 // Renamed component
 function ExerciseDetailPageClient({ initialExercise, initialHistory, error: initialError, params }: { 

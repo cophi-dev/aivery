@@ -90,7 +90,41 @@ const nextConfig = {
         ],
       }
     ];
-  }
+  },
+
+  // Add Webpack configuration to handle Playwright bundling issues
+  webpack: (config, { isServer }) => {
+    // Exclude problematic modules from server bundle
+    if (isServer) {
+      config.externals.push(
+        'electron',
+        // Add other modules if they cause issues
+        // '@playwright/test' // If you were using the full test runner
+      );
+      
+      // Resolve fix for chromium-bidi (might not be needed if excluded, but can help)
+      // If the chromium-bidi errors persist, uncomment this section:
+      // config.resolve.alias = {
+      //   ...config.resolve.alias,
+      //   'chromium-bidi/lib/cjs/bidiMapper/BidiMapper': false,
+      //   'chromium-bidi/lib/cjs/cdp/CdpConnection': false,
+      // };
+      
+      // Ignore font files (or add a file-loader if needed)
+      config.module.rules.push({
+        test: /\.(woff|woff2|eot|ttf|otf)$/i,
+        type: 'asset/resource',
+        generator: {
+            filename: 'static/media/[name].[hash][ext]', // Output path
+        },
+        // Alternatively, just ignore them if they are not needed:
+        // use: 'ignore-loader',
+      });
+    }
+
+    // Important: return the modified config
+    return config;
+  },
 }
 
 // Vercel deployment configuration
