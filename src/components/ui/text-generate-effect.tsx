@@ -33,11 +33,14 @@ export const TextGenerateEffect = ({
     return (
       <motion.div ref={scope}>
         {charactersArray.map((char, idx) => {
-          const displayChar = char === ' ' ? '\\u00A0' : char;
+          if (char === '\n') {
+            return <br key={`br-${idx}`} />;
+          }
+          const displayChar = char === ' ' ? ' ' : char;
           return (
             <motion.span
               key={char + idx}
-              className="dark:text-white text-black opacity-0"
+              className="opacity-0"
             >
               {displayChar}
             </motion.span>
@@ -48,8 +51,8 @@ export const TextGenerateEffect = ({
   };
 
   return (
-    <div className={cn("font-normal text-left", className)}>
-      <div className="dark:text-white text-black text-lg sm:text-xl md:text-2xl leading-snug tracking-wide">
+    <div className={cn("font-bold", className)}>
+      <div className="text-foreground text-2xl md:text-4xl lg:text-5xl leading-normal">
         {renderWords()}
       </div>
     </div>

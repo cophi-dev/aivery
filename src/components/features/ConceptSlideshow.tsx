@@ -88,7 +88,7 @@ function stripMarkdown(markdown: string): string {
     text = text.replace(/^(\s*(\*|-|\d+\.)\s+)+/gm, ''); 
     text = text.replace(/^>\s+/gm, ''); 
     text = text.replace(/^(---|___|\*\*\*)\s*$/gm, ''); 
-    text = text.replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    text = text.replace(/\s*\n\s*/g, '\n').replace(/\s{2,}/g, ' ').trim();
     return text;
 }
 
@@ -195,10 +195,9 @@ export function ConceptSlideshow({ keyword, markdownContent, isOpen, onClose }: 
           ) : !currentSlide ? (
             <p className="text-destructive">Error: Could not load slide content.</p>
           ) : animatedText ? (
-            <div className="prose prose-sm sm:prose dark:prose-invert max-w-none text-center flex flex-col items-center w-full px-4">
+            <div className="max-w-prose px-4">
                  <TextGenerateEffect 
                      words={animatedText} 
-                     className="text-center"
                  /> 
             </div>
           ) : (
