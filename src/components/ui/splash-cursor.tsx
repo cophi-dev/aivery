@@ -21,8 +21,12 @@ function SplashCursor({
   const canvasRef = useRef(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvasRefTarget = canvasRef.current;
+    if (!canvasRefTarget) {
+      console.warn("SplashCursor: Canvas element not found.");
+      return;
+    }
+    const canvas: HTMLCanvasElement = canvasRefTarget;
 
     // Define the structure of a pointer
     interface Pointer {
@@ -246,7 +250,7 @@ function SplashCursor({
         let program = this.programs[hash];
         if (program == null) {
           let fragmentShader = compileShader(
-            gl!,
+            gl!.FRAGMENT_SHADER,
             this.fragmentShaderSource,
             keywords
           );
@@ -921,18 +925,17 @@ function SplashCursor({
     }
 
     function resizeCanvas() {
-      let width = scaleByPixelRatio(canvas.clientWidth);
-      let height = scaleByPixelRatio(canvas.clientHeight);
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
+      let width = scaleByPixelRatio(canvas!.clientWidth);
+      let height = scaleByPixelRatio(canvas!.clientHeight);
+      if (canvas!.width !== width || canvas!.height !== height) {
+        canvas!.width = width;
+        canvas!.height = height;
         return true;
       }
       return false;
     }
 
     function updateColors(dt: number) {
-      if (!dye) return;
       colorUpdateTimer += dt * config.COLOR_UPDATE_SPEED;
       if (colorUpdateTimer >= 1) {
         colorUpdateTimer = wrap(colorUpdateTimer, 0, 1);
@@ -1100,14 +1103,14 @@ function SplashCursor({
     }
 
     function splatPointer(pointer: Pointer) {
-      if (!velocity || !dye || !canvas) return;
+      if (!velocity || !dye) return;
       let dx = pointer.deltaX * config.SPLAT_FORCE;
       let dy = pointer.deltaY * config.SPLAT_FORCE;
       splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color);
     }
 
     function clickSplat(pointer: Pointer) {
-      if (!velocity || !dye || !canvas) return;
+      if (!velocity || !dye) return;
       const color = generateColor();
       color.r *= 10.0;
       color.g *= 10.0;
@@ -1118,12 +1121,12 @@ function SplashCursor({
     }
 
     function splat(x: number, y: number, dx: number, dy: number, color: { r: number; g: number; b: number }) {
-      if (!velocity || !dye || !canvas) return;
+      if (!velocity || !dye) return;
       splatProgram.bind();
       gl!.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
       gl!.uniform1f(
         splatProgram.uniforms.aspectRatio,
-        canvas.width / canvas.height
+        canvas!.width / canvas!.height
       );
       gl!.uniform2f(splatProgram.uniforms.point, x, y);
       gl!.uniform3f(splatProgram.uniforms.color, dx, dy, 0.0);
@@ -1141,19 +1144,17 @@ function SplashCursor({
     }
 
     function correctRadius(radius: number): number {
-      if (!canvas) return radius;
-      let aspectRatio = canvas.width / canvas.height;
+      let aspectRatio = canvas!.width / canvas!.height;
       if (aspectRatio > 1) radius *= aspectRatio;
       return radius;
     }
 
     function updatePointerDownData(pointer: Pointer, id: number, posX: number, posY: number) {
-      if (!canvas) return;
       pointer.id = id;
       pointer.down = true;
       pointer.moved = false;
-      pointer.texcoordX = posX / canvas.width;
-      pointer.texcoordY = 1.0 - posY / canvas.height;
+      pointer.texcoordX = posX / canvas!.width;
+      pointer.texcoordY = 1.0 - posY / canvas!.height;
       pointer.prevTexcoordX = pointer.texcoordX;
       pointer.prevTexcoordY = pointer.texcoordY;
       pointer.deltaX = 0;
@@ -1162,11 +1163,10 @@ function SplashCursor({
     }
 
     function updatePointerMoveData(pointer: Pointer, posX: number, posY: number, color: { r: number; g: number; b: number }) {
-      if (!canvas) return;
       pointer.prevTexcoordX = pointer.texcoordX;
       pointer.prevTexcoordY = pointer.texcoordY;
-      pointer.texcoordX = posX / canvas.width;
-      pointer.texcoordY = 1.0 - posY / canvas.height;
+      pointer.texcoordX = posX / canvas!.width;
+      pointer.texcoordY = 1.0 - posY / canvas!.height;
       pointer.deltaX = correctDeltaX(pointer.texcoordX - pointer.prevTexcoordX);
       pointer.deltaY = correctDeltaY(pointer.texcoordY - pointer.prevTexcoordY);
       pointer.moved =
@@ -1179,15 +1179,13 @@ function SplashCursor({
     }
 
     function correctDeltaX(delta: number): number {
-      if (!canvas) return delta;
-      let aspectRatio = canvas.width / canvas.height;
+      let aspectRatio = canvas!.width / canvas!.height;
       if (aspectRatio < 1) delta *= aspectRatio;
       return delta;
     }
 
     function correctDeltaY(delta: number): number {
-      if (!canvas) return delta;
-      let aspectRatio = canvas.width / canvas.height;
+      let aspectRatio = canvas!.width / canvas!.height;
       if (aspectRatio > 1) delta /= aspectRatio;
       return delta;
     }
