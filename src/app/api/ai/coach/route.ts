@@ -869,27 +869,48 @@ async function compareMetricBetweenPeriods(
     return { value1, value2 };
 }
 
-// --- Helper Function to Get Direct AI Text Response ---
-async function getDirectTextResponse(query: string, userId: string): Promise<string | null> { // <-- Added userId
+// --- Helper Function to Get Direct AI Text Response --- V4 (Concise Slideshow Content)
+async function getDirectTextResponse(query: string, userId: string, userName: string, userContext: { preferences?: IUser['aiPreferences'] | null, exercisePRs?: IExercisePR[] | null }): Promise<string | null> { 
     const grokApiKey = process.env.GROK_API_KEY;
     if (!grokApiKey) {
         console.error("[getDirectTextResponse] GROK_API_KEY not configured.");
         return "Sorry, the AI is unavailable right now.";
     }
 
-    // Updated system prompt for detailed, article-style explanations
-    const systemPrompt = `You are Aivery, an expert fitness coach AI. The user has asked for an explanation of a fitness concept.
+    // Prepare context strings (remains the same)
+    const userGoals = userContext.preferences?.fitnessGoals || "Not specified";
+    const userPrefs = userContext.preferences?.trainingPreferences || "Not specified";
+    let prSummary = "No recent PRs available.";
+    if (userContext.exercisePRs && userContext.exercisePRs.length > 0) {
+        prSummary = "Recent Exercise PRs:\n" + userContext.exercisePRs.slice(0, 3).map(pr => `- ${pr.exerciseName}: ${pr.value} ${pr.unit}`).join('\n'); 
+    }
 
-Your task is to explain the concept mentioned in the user query in detail, like a helpful mini-article. Use clear, easy-to-understand language.
+    // Updated system prompt for CONCISE SLIDESHOW CONTENT
+    const systemPrompt = `You are Aivery, an expert, knowledgeable, and supportive AI fitness coach creating content for a concept explanation slideshow for the user named ${userName}.
 
-Structure your response using markdown:
-- Start with a clear definition.
-- Elaborate on the key aspects, benefits, and potential drawbacks or considerations.
-- Briefly discuss how someone might typically incorporate this concept into their fitness routine.
-- Go into reasonable depth to provide a comprehensive understanding.
-- Conclude the explanation with an engaging, open-ended question related to the concept to encourage discussion with the user.
+**User Context:**
+- **Name:** ${userName}
+- **Stated Fitness Goals:** ${userGoals}
+- **Stated Training Preferences:** ${userPrefs}
+- **Recent PR Summary:** ${prSummary}
 
-Do NOT just give a short definition. Aim for an informative, article-style explanation.`;
+**Your Task:** Generate concise, informative content for a slideshow explaining the fitness concept mentioned in the user query below. **Personalize the content based on the User Context.** Use clear, professional language and apply markdown formatting as specified.
+
+**Structure and Formatting Guidelines (for Parsing into Slides):**
+- **Title Slide:** Start with the concept name as a Level 3 Markdown header (### Concept Name). This will be the first slide.
+- **Definition Slide:** Provide a clear, concise definition in a short paragraph immediately following the title. **Bold** key terms.
+- **Subheading Slides:** Use Level 4 Markdown headers (#### Importance & Benefits, #### Application Strategies, #### Key Considerations) to introduce subsequent slides. 
+- **Content per Slide:** Under each subheading, provide **concise explanations (1-2 short paragraphs MAXIMUM)**. Use **bold text** for emphasis. Tailor content to the user context where appropriate (goals, preferences).
+- **Application Slide (#### Application Strategies):** Keep examples brief. Use bullet points (-) for specific steps/examples if needed, but keep the list short and focused.
+- **Considerations Slide (#### Key Considerations):** Briefly mention key points.
+- **Final Question Slide:** Conclude the *entire output* with a single, insightful, open-ended question (in *italics*) that relates to the user's context. This will be the final slide.
+
+**Key Change: Brevity is essential.** Each section (Definition, Importance, Application, Considerations, Question) should correspond to a single, easily digestible slide.
+
+**Tone:** Professional, knowledgeable, informative, and supportive. Avoid overly casual slang or excessive hype.
+Do NOT write long, continuous text. Structure the output clearly with the specified headers for parsing into individual slides.
+
+**User Query containing the concept:**`; // Query will be appended in the user message
 
     // Add AbortController for timeout
     const controller = new AbortController();
@@ -1129,6 +1150,35 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         let dataContext = ""; // Initialize as empty string
         let dateRangeString = ""; // Initialize as empty string
 
+        // **** ADDED: Explicit check for "What is [keyword]?" BEFORE general analysis ****
+        const keywordMatch = query.match(/^What is (.*)\?$/i); 
+        if (keywordMatch && keywordMatch[1]) {
+            const keyword = keywordMatch[1].trim().replace(/\?$/, '').trim();
+            if (keyword) {
+                console.log(`[POST] Detected direct keyword explanation request for: "${keyword}"`);
+                // Construct the original query for getDirectTextResponse
+                const explanationQuery = `What is ${keyword}?`; // Pass the simple question
+                
+                // Call getDirectTextResponse with the simple query and user context
+                const explanation = await getDirectTextResponse(explanationQuery, userId, userName, { preferences: userPreferences, exercisePRs: exercisePRs });
+                if (explanation) {
+                    const endTime = Date.now();
+                    console.log(`--- [AI Coach Request Completed - Keyword Explanation] Latency: ${endTime - startTime}ms ---`);
+                    return NextResponse.json({ response: explanation, data: null });
+                } else {
+                    // Handle failure
+                    console.warn(`[POST] Failed to get direct explanation for keyword: ${keyword}`);
+                    const endTime = Date.now();
+                    console.log(`--- [AI Coach Request FAILED - Keyword Explanation] Latency: ${endTime - startTime}ms ---`);
+                    return NextResponse.json({ response: `Sorry ${userName}, I had trouble explaining "${keyword}" right now. Please try again later or ask about your workouts.`, data: null });
+                }
+            } else {
+                 console.warn("[POST] Keyword explanation requested but keyword was empty after processing.");
+                 // Fall through to normal analysis if keyword is empty
+            }
+        }
+        // **** END ADDED BLOCK ****
+
         // Check for initial workout context
         if (context && context.type === 'initial_workout' && context.workoutId) {
           // ... logic for initial workout insight ...
@@ -1194,7 +1244,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 if (recentWorkouts && recentWorkouts.length > 0) {
                     historyString = "Recent Workout History (Last 5):\n"; // Update title
                     historyString += recentWorkouts.map(w => 
-                        `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.name || w.type} (${formatDuration(w.duration)})`
+                        `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.name || w.type} (${formatDuration(w.duration || 0)}${w.distance ? ', ' + formatDistance(w.distance) : ''}${w.calories ? ', ~' + w.calories + 'kcal' : ''})`
                     ).join('\n');
                 }
 
@@ -1327,27 +1377,29 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         const currentUserName = userDisplayName; 
 
         // Check for simple keyword explanation request (can potentially be handled by analysis too, but keep explicit check for now)
-        const keywordMatch = query.match(/^What is (.*)\?$/i); // Keep the regex as is for now
-        if (keywordMatch && keywordMatch[1]) {
+        // This block is effectively disabled by renaming variables due to earlier check.
+        const unusedKeywordMatch = query.match(/^What is (.*)\?$/i); 
+        if (unusedKeywordMatch && unusedKeywordMatch[1]) {
             // Remove trailing question mark from the captured keyword
-            const keyword = keywordMatch[1].trim().replace(/\?$/, '').trim(); 
+            const unusedKeyword = unusedKeywordMatch[1].trim().replace(/\?$/, '').trim(); 
             
             // Check if keyword is empty after trimming/removing '?'
-            if (!keyword) {
-                 console.warn("[POST] Keyword explanation requested but keyword was empty.");
+            if (!unusedKeyword) {
+                 console.warn("[POST] Keyword explanation requested but keyword was empty. (Second check - should be disabled)");
                  // Fall through to normal analysis if keyword is empty
             } else {
-                 // Construct the prompt using the cleaned keyword
-                 const explanationQuery = `Explain the fitness concept \"${keyword}\" clearly and concisely. What are its main benefits and potential drawbacks or considerations? Briefly mention how someone might incorporate it into their routine. Ask if the user has follow-up questions.`;
+                 // This part should not be reached if the earlier check works
+                 console.warn(`[POST] Reached second keyword check for: ${unusedKeyword}. This indicates an issue.`);
+                 const explanationQuery = `Explain the fitness concept "${unusedKeyword}" briefly.`; // Simplified fallback
 
                  // Directly call Grok or another LLM for explanation
-                 const explanation = await getDirectTextResponse(explanationQuery, userId);
+                 const explanation = await getDirectTextResponse(explanationQuery, userId, userName, { preferences: userPreferences, exercisePRs: exercisePRs });
                  if (explanation) {
                      return NextResponse.json({ response: explanation, data: null });
                  } else {
                      // Handle failure
-                     console.warn(`[POST] Failed to get direct explanation for keyword: ${keyword}`);
-                     return NextResponse.json({ response: `Sorry ${userName}, I had trouble explaining \"${keyword}\" right now. Please try again later or ask about your workouts.`, data: null });
+                     console.warn(`[POST] Failed to get direct explanation for keyword (second check): ${unusedKeyword}`);
+                     return NextResponse.json({ response: `Sorry ${userName}, I had trouble explaining "${unusedKeyword}" right now. Please try again later.`, data: null });
                  }
             }
         }
