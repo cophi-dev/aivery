@@ -5,13 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { format, isToday, isPast, isFuture, parseISO } from "date-fns"
 import { useSession } from "next-auth/react"
-import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2 } from "lucide-react"
+import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2, Dumbbell, Home, Footprints, Bike, PersonStanding, Waves } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from 'react-hot-toast'
+import { motion } from 'motion/react'
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
@@ -29,6 +29,8 @@ import { IWorkout } from "@/lib/db/models/workout"
 import { estimateBodyweightForExercise } from "@/lib/utils"
 import { Textarea } from "@/components/ui/textarea"
 import { useDebounce } from "@/hooks/useDebounce"
+import { GlowEffect } from "@/components/ui/glow-effect"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 // Type guard to filter out nulls
 function isDefined<T>(value: T | null | undefined): value is T {
@@ -195,6 +197,16 @@ const findCanonicalExercise = (
   console.warn(`[findCanonicalExercise] Could not find canonical match for: "${parsedName}" (Normalized: "${normalizedParsedName}")`);
   return undefined; // Not found
 };
+
+// Define the main types for the toggle group
+const mainWorkoutTypes: { value: WorkoutTypeOption; label: string; icon: React.ElementType }[] = [
+  { value: 'gym', label: 'Gym', icon: Dumbbell },
+  { value: 'home_strength', label: 'Home', icon: Home },
+  { value: 'running', label: 'Run', icon: Footprints },
+  { value: 'swimming', label: 'Swim', icon: Waves },
+  { value: 'cycling', label: 'Bike', icon: Bike },
+  { value: 'yoga', label: 'Yoga', icon: PersonStanding }, // Using yoga state value
+];
 
 export default function NewWorkoutPage() {
   const router = useRouter()
@@ -1043,45 +1055,56 @@ export default function NewWorkoutPage() {
       )}
 
       <div className="space-y-6">
-        {/* Workout Metadata Section */}
-        <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
-           <h2 className="text-lg font-medium mb-4">Workout Details</h2>
+        {/* Workout Metadata Section - Apply subtle styling */}
+        <div className="space-y-4 p-4"> {/* Increased vertical spacing slightly */}
             
-           {/* Workout Type Selection */}
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+           {/* Replace Select with ToggleGroup */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start"> {/* Increased gap */}
               <div>
-                 <Label htmlFor="workout-type">Activity Type</Label>
-                 <Select 
-                    value={workoutType} 
-                    onValueChange={(value) => setWorkoutType(value as WorkoutTypeOption)}
+                 <Label className="text-xs font-medium text-muted-foreground/80 mb-2 block">Activity Type</Label>
+                 {/* Toggle Group for main types */}
+                 <ToggleGroup 
+                    type="single"
+                    variant="outline"
+                    value={workoutType}
+                    onValueChange={(value) => {
+                       if (value) setWorkoutType(value as WorkoutTypeOption);
+                    }}
+                    className="flex flex-wrap justify-start gap-2" // Allow wrapping
                  >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select activity type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(workoutTypeDisplayNames)
-                      .map(([value, displayName]) => (
-                        <SelectItem key={value} value={value}>{displayName}</SelectItem>
+                    {mainWorkoutTypes.map((type) => (
+                      <ToggleGroupItem 
+                        key={type.value} 
+                        value={type.value} 
+                        aria-label={type.label}
+                        className="h-12 w-12 flex flex-col items-center justify-center gap-1 p-1 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground"
+                      >
+                        <type.icon className="h-5 w-5" />
+                        <span className="text-[10px]">{type.label}</span>
+                      </ToggleGroupItem>
                     ))}
-                  </SelectContent>
-                </Select>
+                    {/* TODO: Add an "Other" button here if needed */}
+                 </ToggleGroup>
               </div>
 
               {/* Date Picker */}
                <div>
-                 <Label htmlFor="workout-date">Date</Label>
+                 {/* Make label smaller and lighter */}
+                 <Label htmlFor="workout-date" className="text-xs font-medium text-muted-foreground/80">Date</Label>
                  <Popover modal={false}>
                     <PopoverTrigger asChild>
                       <Button
                         id="workout-date"
-                        variant={"outline"}
                         className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !date && "text-muted-foreground"
+                          "w-full justify-start text-left font-normal", 
+                          "bg-transparent hover:bg-transparent", 
+                          "p-0", // Remove padding to rely on parent spacing
+                          !date && "text-muted-foreground",
+                           date && "text-foreground" // Ensure text color is visible
                         )}
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, "PPP") : <span>Pick a date</span>}
+                        {date ? (isToday(date) ? 'Today' : format(date, "PPP")) : <span>Pick a date</span>}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0 bg-white dark:bg-slate-900">
@@ -1103,46 +1126,66 @@ export default function NewWorkoutPage() {
            
            {/* Workout Name Input */}
            <div>
+             {/* Remove border from input, use placeholder as label concept */}
              <Input
                 id="workout-name"
                 placeholder={workoutName || getDefaultWorkoutName(workoutType, date)}
                 value={workoutName}
                 onChange={(e) => setWorkoutName(e.target.value)}
-                className="placeholder:text-muted-foreground/80"
+                className="placeholder:text-muted-foreground/80 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-base font-medium"
              />
            </div>
         </div>
 
         {/* --> Conditionally render AI Quick Log Section <-- */}
         {!isEditing && (
-          <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
-            <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
-            <div>
-              <Textarea 
-                id="ai-quick-log"
-                placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
-                className="mt-1 min-h-[80px] placeholder:text-muted-foreground/80"
-                value={aiLogInput} 
-                onChange={(e) => setAiLogInput(e.target.value)} 
-                disabled={isProcessingAi}
-              />
+            // Outer container: Only relative positioning
+            <div className="relative">
+              
+              {/* Glow Effect Layer */}
+              <motion.div
+                className='pointer-events-none absolute inset-0' // Fills the outer container
+                animate={{ opacity: 1 }}
+              >
+                <GlowEffect
+                  colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']} 
+                  mode='colorShift'
+                  blur='strong' // Adjust blur if needed
+                  scale={1}       // Revert scale to 1
+                  duration={4}
+                />
+              </motion.div>
+
+              {/* Inner Content Block - gets card styling and masks glow center */}
+              <div className="relative z-10 space-y-4 rounded-xl shadow-sm p-6 bg-card"> 
+                <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
+                <div>
+                  <Textarea 
+                    id="ai-quick-log"
+                    placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
+                    className="mt-1 min-h-[80px] placeholder:text-muted-foreground/80"
+                    value={aiLogInput} 
+                    onChange={(e) => setAiLogInput(e.target.value)} 
+                    disabled={isProcessingAi}
+                  />
+                </div>
+                <Button 
+                  type="button" 
+                  onClick={() => handleAiProcess(aiLogInput)} 
+                  disabled={isProcessingAi || !aiLogInput.trim()}
+                  variant="outline"
+                >
+                  {isProcessingAi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Process with AI"
+                  )}
+                </Button>
+              </div>
             </div>
-            <Button 
-              type="button" 
-              onClick={() => handleAiProcess(aiLogInput)} 
-              disabled={isProcessingAi || !aiLogInput.trim()}
-              variant="outline"
-            >
-              {isProcessingAi ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Process with AI"
-              )}
-            </Button>
-          </div>
         )}
         {/* --> End Conditional Render <-- */}
 
