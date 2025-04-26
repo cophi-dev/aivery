@@ -2,6 +2,12 @@ import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { formatDistanceStrict, formatDuration as formatDurationFns, differenceInSeconds, isValid } from 'date-fns';
 
+// Imports needed for new helpers
+import React from 'react';
+// Remove Badge and icon imports, moved to workout-utils.tsx
+// import { Badge } from "@/components/ui/badge"; 
+// import { Dumbbell, Ruler, Activity } from 'lucide-react'; 
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
@@ -168,7 +174,9 @@ export function formatPace(pace: number | null): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')} min/km`;
 };
 
-// --- NEW: Calculate Distance Helper ---
+// --- REMOVED getWorkoutTypeStyle Helper --- 
+
+// --- Existing Calculate Distance Helper ---
 /**
  * Calculates the distance between two geographical points using the Haversine formula.
  * @param lat1 Latitude of the first point in degrees.
@@ -191,5 +199,25 @@ export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c; // in metres
+}
+// --- END EXISTING ---
+
+// --- NEW: Percentage Change Helper ---
+/**
+ * Calculates the percentage change between two numbers.
+ * @param current The current value.
+ * @param previous The previous value.
+ * @returns The percentage change (e.g., 10.5 for +10.5%) or null if previous is 0 or invalid.
+ */
+export function calculatePercentageChange(current: number | undefined | null, previous: number | undefined | null): number | null {
+    if (previous === undefined || previous === null || previous === 0 || current === undefined || current === null) {
+        return null; // Cannot calculate change if previous is zero or values are missing
+    }
+    if (isNaN(current) || isNaN(previous) || !isFinite(current) || !isFinite(previous)) {
+        return null; // Invalid numbers
+    }
+    const change = ((current - previous) / previous) * 100;
+    // Round to one decimal place
+    return Math.round(change * 10) / 10;
 }
 // --- END NEW ---
