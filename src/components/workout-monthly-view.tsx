@@ -5,21 +5,28 @@ import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isBef
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide-react';
 import type { WorkoutData } from '@/types/db';
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
 import { MetricCard } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 
 // Import recharts components
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line } from 'recharts';
 
 const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 
-// Chart data type
+// Use same workout type constants
+const CARDIO_TYPES = ['running', 'run', 'cycling', 'bike', 'ride', 'swimming', 'swim'];
+const STRENGTH_TYPES = ['strength', 'workout'];
+
+// Updated Chart data type (per week)
 interface WeeklyChartData {
     week: string; // e.g., 'W1', 'W2'
-    duration: number; // in minutes
+    cardioDuration: number; // minutes
+    strengthDuration: number; // minutes
+    cardioDistance: number; // km
+    strengthVolume: number; // kg
 }
 
 // Updated type for aggregated monthly stats
@@ -32,8 +39,9 @@ interface MonthlyWorkoutMetrics {
     allWorkoutsInMonth: WorkoutData[];
 }
 
-// Function to get metrics for a given month
+// Updated Function to get metrics for a given month
 async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts: WorkoutData[]): Promise<MonthlyWorkoutMetrics> {
+    // console.log(`Calculating metrics for month: ${format(monthStart, 'yyyy-MM')}`);
     const monthlyWorkouts = allWorkouts.filter(w => {
         if (!w.date) return false;
         const workoutDate = startOfDay(parseISO(w.date.toString()));
@@ -44,36 +52,62 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
     let totalDuration = 0;
     let totalDistance = 0;
     let totalVolume = 0;
-    const weeklyChartDataMap: { [weekNum: number]: { duration: number } } = {};
+    // Initialize map to hold weekly aggregates
+    const weeklyChartDataMap: { [weekNum: number]: Omit<WeeklyChartData, 'week'> } = {};
 
     monthlyWorkouts.forEach(w => {
         const duration = w.duration || 0;
-        totalDuration += duration;
-        if (w.distance) totalDistance += w.distance;
-        if (w.calculatedVolume) totalVolume += w.calculatedVolume;
+        // Prioritize cardioDetails.distance, fallback to top-level distance. Assume meters.
+        const distance = w.cardioDetails?.distance ?? w.distance ?? 0;
+        const volume = w.calculatedVolume || 0;
+        const typeLower = w.type?.toLowerCase() || 'other';
 
-        // Group by week number within the month
+        totalDuration += duration;
+        totalDistance += distance;
+        totalVolume += volume;
+
         const workoutDate = parseISO(w.date.toString());
-        // weekStartsOn: 1 for Monday start - adjust if needed
-        const weekOfMonth = getWeekOfMonth(workoutDate, { weekStartsOn: 1 }); 
+        const weekOfMonth = getWeekOfMonth(workoutDate, { weekStartsOn: 1 });
+
+        // Initialize week if it doesn't exist
         if (!weeklyChartDataMap[weekOfMonth]) {
-            weeklyChartDataMap[weekOfMonth] = { duration: 0 };
+            weeklyChartDataMap[weekOfMonth] = {
+                cardioDuration: 0,
+                strengthDuration: 0,
+                cardioDistance: 0,
+                strengthVolume: 0,
+            };
         }
-        weeklyChartDataMap[weekOfMonth].duration += Math.round(duration / 60); // Add duration in minutes
+
+        // Aggregate metrics based on type for the specific week
+        const durationMinutes = Math.round(duration / 60);
+        if (CARDIO_TYPES.includes(typeLower)) {
+            weeklyChartDataMap[weekOfMonth].cardioDuration += durationMinutes;
+            weeklyChartDataMap[weekOfMonth].cardioDistance += distance;
+        } else if (STRENGTH_TYPES.includes(typeLower)) {
+            weeklyChartDataMap[weekOfMonth].strengthDuration += durationMinutes;
+            weeklyChartDataMap[weekOfMonth].strengthVolume += volume;
+        }
     });
 
     // Convert map to array for recharts, sorted by week number
     const weeklyChartData = Object.entries(weeklyChartDataMap)
-        .map(([weekNum, data]) => ({ week: `W${weekNum}`, duration: data.duration }))
+        .map(([weekNum, data]) => ({
+            week: `W${weekNum}`,
+            ...data,
+            // Distance is already in KM from source, just round
+            cardioDistance: Math.round(data.cardioDistance * 10) / 10, // Round km to 1 decimal
+        }))
         .sort((a, b) => parseInt(a.week.substring(1)) - parseInt(b.week.substring(1)));
 
+    // console.log("Calculated Monthly Metrics:", { totalWorkouts, totalDuration, totalDistance, totalVolume, weeklyChartData });
     return { 
         totalWorkouts, 
         totalDuration, 
         totalDistance, 
         totalVolume, 
         weeklyChartData,
-        allWorkoutsInMonth: monthlyWorkouts // Return filtered list
+        allWorkoutsInMonth: monthlyWorkouts 
     };
 }
 
@@ -153,13 +187,17 @@ export default function WorkoutMonthlyView() {
 
     const monthDisplay = format(selectedMonthStart, 'MMMM yyyy');
 
-    // Custom Tooltip for Chart
+    // Updated Custom Tooltip for Chart
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
+            const data = payload[0].payload; // The data point for the hovered item
             return (
-            <div className="bg-background border p-2 rounded shadow-lg">
-                <p className="label font-semibold">{`${label}`}</p>
-                <p className="intro text-sm">{`Duration: ${payload[0].value} min`}</p>
+            <div className="bg-background/90 backdrop-blur-sm border p-3 rounded shadow-lg text-xs">
+                <p className="label font-semibold mb-1">{`${label}`}</p> {/* Shows W1, W2 etc. */}
+                {data.cardioDuration > 0 && <p style={{ color: '#8884d8' }}>Cardio Time: {data.cardioDuration} min</p>}
+                {data.strengthDuration > 0 && <p style={{ color: '#82ca9d' }}>Strength Time: {data.strengthDuration} min</p>}
+                {data.cardioDistance > 0 && <p style={{ color: '#ff7300' }}>Cardio Dist: {data.cardioDistance.toFixed(1)} km</p>}
+                {data.strengthVolume > 0 && <p style={{ color: '#ffc658' }}>Strength Vol: {data.strengthVolume.toLocaleString()} kg</p>}
             </div>
             );
         }
@@ -216,21 +254,48 @@ export default function WorkoutMonthlyView() {
                 </CardContent>
             </Card>
             
-            {/* Monthly Chart */}
+            {/* Updated Monthly Chart - Composed */}
              {monthlyMetrics && monthlyMetrics.totalWorkouts > 0 && (
                  <Card>
                     <CardHeader>
-                        <CardTitle className="text-base font-semibold">Weekly Duration (Minutes)</CardTitle>
+                         {/* Updated Title */}
+                        <CardTitle className="text-base font-semibold">Weekly Activity Breakdown</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <ResponsiveContainer width="100%" height={200} minHeight={150}>
-                            <BarChart data={monthlyMetrics.weeklyChartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                        <ResponsiveContainer width="100%" height={250} minHeight={200}> 
+                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="week" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} unit="m"/>
+                                {/* Left Y Axis (Time - minutes) */}
+                                <YAxis 
+                                    yAxisId="left"
+                                    orientation="left" 
+                                    fontSize={12} 
+                                    tickLine={false} 
+                                    axisLine={false} 
+                                    allowDecimals={false} 
+                                    unit="m"
+                                />
+                                {/* Right Y Axis (Distance/Volume) */}
+                                <YAxis 
+                                    yAxisId="right" 
+                                    orientation="right" 
+                                    fontSize={12} 
+                                    tickLine={false} 
+                                    axisLine={false} 
+                                    allowDecimals={false} 
+                                    width={40} 
+                                />
                                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))' }} />
-                                <Bar dataKey="duration" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                            </BarChart>
+                                
+                                {/* Stacked Bars for Duration (Left Axis) */}
+                                <Bar dataKey="cardioDuration" stackId="a" fill="#8884d8" radius={[4, 4, 0, 0]} yAxisId="left" name="Cardio Time" />
+                                <Bar dataKey="strengthDuration" stackId="a" fill="#82ca9d" radius={[4, 4, 0, 0]} yAxisId="left" name="Strength Time" />
+                                
+                                {/* Lines for Distance/Volume (Right Axis) */}
+                                <Line type="monotone" dataKey="cardioDistance" stroke="#ff7300" strokeWidth={2} yAxisId="right" name="Cardio Distance (km)" dot={false} />
+                                <Line type="monotone" dataKey="strengthVolume" stroke="#ffc658" strokeWidth={2} yAxisId="right" name="Strength Volume (kg)" dot={false} />
+                            </ComposedChart>
                         </ResponsiveContainer>
                     </CardContent>
                  </Card>
@@ -243,21 +308,31 @@ export default function WorkoutMonthlyView() {
                          <CardTitle className="text-base font-semibold">Workouts This Month</CardTitle>
                      </CardHeader>
                      <CardContent>
-                         <ul className="space-y-3">
+                         <ul className="space-y-2">
                              {monthlyMetrics.allWorkoutsInMonth.map(workout => {
                                  const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
                                  return (
-                                     <li key={workout._id} className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 p-3 border rounded-md hover:bg-muted/50 transition-colors">
-                                         <Badge variant="outline" className={`row-span-2 flex items-center self-start mt-1 px-2 py-0.5 ${colorClasses}`}>
-                                             {icon}
-                                             <span className="ml-1.5">{workout.type}</span>
-                                         </Badge>
-                                         <p className="font-semibold text-sm col-start-2">{workout.name || 'Unnamed Workout'} <span className="text-xs text-muted-foreground ml-1">({format(parseISO(workout.date.toString()), 'MMM d')})</span></p>
-                                         <div className="col-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-                                             <span>Duration: {formatDuration(workout.duration || 0)}</span>
-                                             {workout.distance != null && workout.distance > 0 && <span>Distance: {formatDistance(workout.distance)}</span>}
-                                             {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span>Volume: {workout.calculatedVolume.toLocaleString()} kg</span>}
-                                         </div>
+                                     <li key={workout._id} 
+                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30"
+                                     >
+                                        {/* Badge (Column 1, Row 1 & 2) */}
+                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses}`}>
+                                            {icon}
+                                            <span className="ml-1.5 text-xs">{workout.type}</span>
+                                        </Badge>
+
+                                        {/* Workout Name & Date (Column 2, Row 1) */}
+                                        <div className="col-start-2 row-start-1 flex justify-between items-center">
+                                            <p className="font-semibold text-sm truncate pr-2">{workout.name || 'Unnamed Workout'}</p>
+                                            <span className="text-xs text-muted-foreground flex-shrink-0">{format(parseISO(workout.date.toString()), 'MMM d')}</span>
+                                        </div>
+                                        
+                                        {/* Metrics (Column 2, Row 2) */}
+                                        <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
+                                            {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance)}</span>}
+                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {workout.calculatedVolume.toLocaleString()} kg</span>}
+                                        </div>
                                      </li>
                                  );
                              })}

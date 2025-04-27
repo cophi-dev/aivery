@@ -522,6 +522,10 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
         if (Object.keys(details).length > 0) {
              // Type assertion needed as we build Partial<ICardioDetails>
              workoutDocData.cardioDetails = details as ICardioDetails; 
+             // ALSO set the top-level distance property for consistency
+             if (details.distance !== undefined) {
+                 workoutDocData.distance = details.distance;
+             }
         }
     }
 
@@ -1181,8 +1185,11 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       }
     }
 
+    const distanceInKm = data.distance || 0;
+    const distanceInMeters = distanceInKm * 1000; // Convert km to meters
+
     // Always log what's being saved to help with debugging
-    console.log(`Creating cardio workout with: name=${workoutName}, type=${exerciseType}, duration=${data.duration} minutes, distance=${data.distance || 0}km`);
+    console.log(`Creating cardio workout with: name=${workoutName}, type=${exerciseType}, duration=${data.duration} minutes (or seconds if Strava), distance=${distanceInKm}km`); // Log KM distance
 
     // Create cardio workout document with detailed information
     const workout = await WorkoutModel.create({
@@ -1191,8 +1198,8 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       type: exerciseType,  // Use the specific exercise type (running, cycling, etc.) instead of 'cardio'
       userId: data.userId,
       // Don't multiply by 60 if source is strava since it's already in seconds
-      duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
-      distance: data.distance || 0, // Distance in km
+      duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60, // Saved in SECONDS
+      distance: distanceInMeters, // Save distance in METERS
       calories: data.calories || 0,
       intensity: data.intensity || 'Medium',
       notes: data.description || '',
@@ -1201,7 +1208,7 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       sourceData: data.sourceData,
       stravaLink: data.stravaLink,
       cardioDetails: {
-        distance: data.distance || 0, // Expects KILOMETERS (KM)
+        distance: distanceInKm, // Keep cardioDetails distance in KM
         duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60, // Expects SECONDS
         pace: data.pace || 0, // Expects min/km to be passed in data
         speed: data.speed || 0, // Expects km/h to be passed in data
@@ -1227,7 +1234,7 @@ export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
       userId: data.userId,
       // Don't multiply by 60 if source is strava since it's already in seconds
       duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
-      distance: data.distance || 0, // Distance in km
+      distance: distanceInMeters, // Distance in meters
       order: 1,
       sets: [],
       createdAt: new Date(),

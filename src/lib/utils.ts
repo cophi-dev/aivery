@@ -79,8 +79,8 @@ export function formatDistance(distanceInKm: number): string {
   } else if (distanceInKm > 1000) {
      // Display large values with less precision if desired
     return `${distanceInKm.toFixed(1)} km`; // e.g., 5000.0 km 
-  } else if (distanceInKm === 0) {
-      return "0.0 km"; // Handle zero explicitly
+  } else if (distanceInKm < 0.01) { // Use a small threshold instead of === 0
+      return "0.0 km"; // Handle zero or very small values explicitly
   }
   
   // Normal handling for reasonable values - use 1 decimal place

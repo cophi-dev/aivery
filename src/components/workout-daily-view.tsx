@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, Activity, Dumbbell, Ruler } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, Activity, Dumbbell, Ruler, Clock, Route, Weight } from 'lucide-react';
 import type { WorkoutData } from '@/types/db'; // Assuming WorkoutData type exists
 // import { getWorkoutsByDateRange } from '@/lib/workout-actions'; // Assuming an action exists/will exist
 
@@ -221,28 +221,32 @@ export default function WorkoutDailyView() {
                              {dailyMetrics.workouts.length > 0 && (
                                  <div className="mt-4 border-t pt-4">
                                      <h3 className="text-lg font-semibold mb-3">Workouts on this day:</h3>
-                                     <ul className="space-y-3">
+                                     <ul className="space-y-2"> {/* Reduced space slightly */} 
                                          {dailyMetrics.workouts.map(workout => {
-                                             const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
+                                             const { icon, colorClasses } = getWorkoutTypeStyle(workout.type); // Uses imported helper
                                              return (
-                                                 // More appealing layout: Badge on left, Title top-right, Details bottom-right
-                                                 <li key={workout._id} className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                                                     {/* Badge in first column, spanning both rows implicitly if needed */}
-                                                     <Badge variant="outline" className={`row-span-2 flex items-center self-start mt-1 px-2 py-0.5 ${colorClasses}`}>
+                                                 // Updated styling: Subtle background, padding, grid layout, icons
+                                                 <li key={workout._id} 
+                                                     className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30"
+                                                 >
+                                                     {/* Badge (Column 1, Row 1 & 2) */}
+                                                     <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses}`}>
                                                          {icon}
-                                                         <span className="ml-1.5">{workout.type}</span>
+                                                         <span className="ml-1.5 text-xs">{workout.type}</span>
                                                      </Badge>
-                                                     {/* Workout Name in second column, first row */}
-                                                     <p className="font-semibold text-base col-start-2">{workout.name || 'Unnamed Workout'}</p>
-                                                     {/* Details in second column, second row - horizontal layout */}
-                                                     <div className="col-start-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-                                                         {/* Maybe add icons here? */}
-                                                         <span>Duration: {formatDuration(workout.duration || 0)}</span>
-                                                         {workout.distance != null && workout.distance > 0 && <span>Distance: {formatDistance(workout.distance)}</span>}
-                                                         {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span>Volume: {workout.calculatedVolume.toLocaleString()} kg</span>}
+                                                     
+                                                     {/* Workout Name & Date (Column 2, Row 1) */}
+                                                     <div className="col-start-2 row-start-1 flex justify-between items-center">
+                                                         <p className="font-semibold text-sm truncate pr-2">{workout.name || 'Unnamed Workout'}</p>
+                                                         {/* Date is already implied by the view, so no need to show it here */}
                                                      </div>
-                                                      {/* Optional: Add link icon or chevron */}
-                                                      {/* <ChevronRight className="h-4 w-4 text-muted-foreground" /> */}
+                                                     
+                                                     {/* Metrics (Column 2, Row 2) */}
+                                                     <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                         <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
+                                                         {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance)}</span>}
+                                                         {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {workout.calculatedVolume.toLocaleString()} kg</span>}
+                                                     </div>
                                                  </li>
                                              );
                                          })}

@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import type { WorkoutData } from "@/types/db"
-import { formatDuration } from "@/lib/utils"
+import { formatDuration, formatDistance } from "@/lib/utils"
 
 export default function ActivityDetailClient({ id }: { id: string }) {
   const router = useRouter()
@@ -201,7 +201,9 @@ export default function ActivityDetailClient({ id }: { id: string }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-medium">{workout.distance ? `${workout.distance} km` : "N/A"}</div>
+            <div className="text-2xl font-medium">
+              {workout.distance != null ? formatDistance(workout.distance / 1000) : "N/A"}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -222,7 +224,20 @@ export default function ActivityDetailClient({ id }: { id: string }) {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {workout.type === "running" && (
+                {workout.distance != null && (
+                   <div className="flex items-center">
+                      <div className="bg-primary/10 p-2 rounded-full mr-3">
+                        <LucideRuler className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">Distance</p>
+                        <p className="text-muted-foreground text-sm">
+                          {formatDistance(workout.distance / 1000)}
+                        </p>
+                      </div>
+                    </div>
+                )}
+                {workout.type === "running" && workout.cardioDetails?.pace != null && (
                   <>
                     <div className="flex items-center">
                       <div className="bg-primary/10 p-2 rounded-full mr-3">
@@ -231,7 +246,7 @@ export default function ActivityDetailClient({ id }: { id: string }) {
                       <div>
                         <p className="font-medium">Pace</p>
                         <p className="text-muted-foreground text-sm">
-                          {workout.cardioDetails?.pace ? formatPace(workout.cardioDetails.pace) : "N/A"}
+                          {formatPace(workout.cardioDetails.pace)}
                         </p>
                       </div>
                     </div>
