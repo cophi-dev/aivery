@@ -4,9 +4,9 @@ import { type NextRequest } from 'next/server';
 // Placeholder type for the structured data we expect from the AI
 // TODO: Refine this based on the actual AI output format and form state needs
 type ParsedWorkoutData = {
-  workoutType?: string; // e.g., "gym", "home_strength"
-  workoutName?: string; // e.g., "Morning Strength Session"
-  exercises: Array<{
+  workoutType?: string; // e.g., "gym", "home_strength", "running"
+  workoutName?: string; // e.g., "Morning Strength Session", "10k Run"
+  exercises: Array<{ // Keep empty array [] for non-strength/non-exercise specific logs
     name: string; // e.g., "Squats"
     notes?: string;
     sets: Array<{
@@ -16,6 +16,11 @@ type ParsedWorkoutData = {
       // Add duration/distance if needed for AI parsing
     }>;
   }>;
+  // NEW: Add cardio details
+  cardioDetails?: {
+      distance?: number; // in km
+      duration?: number; // in minutes
+  };
   // Add other potential top-level fields if needed (e.g., date?)
 };
 
@@ -41,10 +46,12 @@ export async function POST(request: NextRequest) {
     const jsonSchema = JSON.stringify({
         type: "object",
         properties: {
-            workoutType: { type: "string", description: "Infer the activity type (e.g., gym, home_strength, strength, running, cycling). Default to 'strength' if multiple exercise types are present." },
-            workoutName: { type: "string", description: "Infer a suitable name for the workout based on the content, or generate one like 'Strength Session'" },
+            workoutType: { type: "string", description: "Infer the activity type (e.g., strength, running, cycling, swimming, walking, yoga). Use 'strength' for gym/home strength. If multiple types seem present, prioritize the most specific (e.g., 'running' over 'strength' if a run is mentioned alongside exercises)." },
+            workoutName: { type: "string", description: "Infer a suitable name (e.g., 'Morning Run', 'Leg Day'). If distance/duration present, use that (e.g., '10k Run')." },
+            // Make exercises optional, default to empty array if not applicable
             exercises: {
                 type: "array",
+                description: "List of strength exercises performed. Leave empty [] for pure cardio activities unless specific intervals are logged.",
                 items: {
                     type: "object",
                     properties: {
@@ -55,81 +62,101 @@ export async function POST(request: NextRequest) {
                             items: {
                                 type: "object",
                                 properties: {
-                                    weight: { type: "string", description: "Weight used for the set. Handle variations like 'bw', '+5kg', '10 lbs'. Extract only the number. Use '0' for bodyweight." },
+                                    weight: { type: "string", description: "Weight used for the set (number only). Use '0' for bodyweight. Extract number even if units (kg/lbs) or '+' are present." },
                                     reps: { type: "string", description: "Number of repetitions performed." },
                                     notes: { type: "string", description: "Any notes specific to this set (e.g., RPE, failure)." },
                                 },
-                                required: ["reps"]
+                                required: ["reps"] // Weight is not strictly required (bodyweight)
                             }
                         }
                     },
                     required: ["name", "sets"]
-                }
+                },
+                default: [] // Default to empty array
+            },
+            // NEW: Add cardioDetails block
+            cardioDetails: {
+                type: "object",
+                description: "Details for cardio activities like running, cycling, swimming. Only populate if distance or duration is mentioned.",
+                properties: {
+                    distance: { type: "number", description: "Distance covered, converted to kilometers (km). E.g., '5 miles' becomes 8.05. '10k' becomes 10." },
+                    duration: { type: "number", description: "Total duration of the activity, converted to minutes. E.g., '1 hour' becomes 60. '1h 30min' becomes 90." }
+                },
+                // Not required, only include if applicable
             }
         },
-        required: ["exercises"]
+        // Only exercises is technically required, but often workoutType is inferrable
+        required: ["exercises"] // Keep exercises required, but it can be empty
     }, null, 2);
 
-    const systemPrompt = `You are an expert workout log parser. Your task is to analyze the provided raw workout log text and extract the information into a structured JSON object adhering strictly to the following schema. ONLY return the JSON object, nothing else.
+    const systemPrompt = `You are an expert workout log parser. Your task is to analyze the provided raw workout log text and extract the information into a structured JSON object adhering strictly to the following schema. ONLY return the JSON object, nothing else. No introductory text, no markdown formatting like \`\`\`json ... \`\`\`.
 
 RULES:
-- Parse the structure like "Exercise Name: Set1, Set2, ...". Sets can be separated by commas or semicolons.
-- A set is typically defined as "[Sets]x[Reps] [Weight] [Units]" (e.g., "1x5 60 kg", "3x8 bw", "1x10 +5kg").
-- Extract the number of sets and create a distinct JSON entry for each set.
-- If weight is specified as "bw" or "bodyweight", use "0" for the weight value.
-- If weight has a plus sign (e.g., "+5kg", "+10 lbs"), extract only the number ("5", "10").
-- Ignore units (kg, lbs) for weight, just return the number as a string.
-- Extract reps accurately.
-- Capture any notes associated with a set (e.g., "RPE 8", "to failure").
-- Capture any notes associated with the whole exercise.
-- Infer workoutType and workoutName if possible, otherwise default workoutType to 'strength' if exercises are present.
-- Strictly adhere to the JSON schema format provided below. DO NOT add any introduction, explanation, or markdown formatting.
+*   **Output Format:** Strictly JSON. No extra text or markdown.
+*   **Workout Type:** Infer 'workoutType' (e.g., 'running', 'strength', 'cycling'). Prioritize specific cardio types if mentioned. Default to 'strength' if only set-based exercises are found.
+*   **Workout Name:** Create a concise 'workoutName'. If distance/duration given (e.g., '10k run in 50 min'), use that (e.g., '10k Run'). Otherwise, infer (e.g., 'Strength Session', 'Morning Swim').
+*   **Cardio Parsing:**
+    *   If the log describes a cardio activity (run, cycle, swim, walk) with distance and/or duration, populate the 'cardioDetails' object.
+    *   Convert distance to **kilometers (km)** (e.g., '5 miles' -> 8.05, '10k' -> 10).
+    *   Convert duration to **total minutes** (e.g., '1 hour' -> 60, '1h 30min' -> 90, '50 min' -> 50).
+    *   If it's primarily cardio, the 'exercises' array should usually be empty [].
+*   **Strength Exercise Parsing:**
+    *   Parse structure like "Exercise Name: Set1, Set2...". Sets are separated by commas or semicolons.
+    *   A set is often "[Sets]x[Reps] [Weight] [Units]" (e.g., "1x5 60 kg", "3x8 bw", "1x10 +5kg").
+    *   Create a distinct JSON entry in the 'exercises' array for each *exercise*, and within that, a distinct entry in 'sets' for *each individual set* (e.g., "3x5 50kg" becomes 3 set entries).
+    *   Extract 'weight' as a string number only. Ignore units (kg, lbs). Use "0" for "bw" or bodyweight. Extract number if '+' is present (e.g., "+5kg" -> "5").
+    *   Extract 'reps' accurately as a string.
+    *   Capture 'notes' for sets or the whole exercise.
+*   **Consistency:** If both cardio and strength seem present, try to determine the primary 'workoutType' and populate fields accordingly. If unsure, default to 'strength' and parse exercises.
 
 JSON SCHEMA:
-\`\`\`json
 ${jsonSchema}
-\`\`\`
 
-EXAMPLE INPUT:
+EXAMPLE INPUT 1 (Strength):
 Squats: 1x5 60 kg, 3x5 50 kg; Bench Press: 4x5 60 kg (RPE 8), 1x3 65kg (fail); Pull-ups: 3x6 +5 kg
 
-EXPECTED JSON OUTPUT FOR EXAMPLE:
+EXPECTED JSON OUTPUT 1:
 {
   "workoutType": "strength",
   "workoutName": "Strength Session",
   "exercises": [
-    {
-      "name": "Squats",
-      "sets": [
-        { "weight": "60", "reps": "5" },
-        { "weight": "50", "reps": "5" },
-        { "weight": "50", "reps": "5" },
-        { "weight": "50", "reps": "5" }
-      ]
-    },
-    {
-      "name": "Bench Press",
-      "sets": [
-        { "weight": "60", "reps": "5", "notes": "RPE 8" },
-        { "weight": "60", "reps": "5", "notes": "RPE 8" },
-        { "weight": "60", "reps": "5", "notes": "RPE 8" },
-        { "weight": "60", "reps": "5", "notes": "RPE 8" },
-        { "weight": "65", "reps": "3", "notes": "fail" }
-      ]
-    },
-    {
-      "name": "Pull-ups",
-      "sets": [
-        { "weight": "5", "reps": "6" },
-        { "weight": "5", "reps": "6" },
-        { "weight": "5", "reps": "6" }
-      ]
-    }
+    {"name": "Squats", "sets": [{"weight": "60", "reps": "5"},{"weight": "50", "reps": "5"},{"weight": "50", "reps": "5"},{"weight": "50", "reps": "5"}]},
+    {"name": "Bench Press", "sets": [{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "65", "reps": "3", "notes": "fail"}]},
+    {"name": "Pull-ups", "sets": [{"weight": "5", "reps": "6"},{"weight": "5", "reps": "6"},{"weight": "5", "reps": "6"}]}
   ]
+}
+
+EXAMPLE INPUT 2 (Cardio):
+10 km run in 50 min
+
+EXPECTED JSON OUTPUT 2:
+{
+  "workoutType": "running",
+  "workoutName": "10k Run",
+  "cardioDetails": {
+    "distance": 10,
+    "duration": 50
+  },
+  "exercises": []
+}
+
+EXAMPLE INPUT 3 (Cardio with Notes):
+Easy 5 mile cycle, felt good. Took 1 hour 5 mins.
+
+EXPECTED JSON OUTPUT 3:
+{
+  "workoutType": "cycling",
+  "workoutName": "5 Mile Cycle",
+  "cardioDetails": {
+    "distance": 8.05,
+    "duration": 65
+  },
+  "exercises": [],
+  "notes": "Easy cycle, felt good." // Example: Allow top-level notes if schema supported, otherwise omit.
 }
 `;
 
-    console.log("[AI Parse Workout] Calling Grok API...");
+    console.log("[AI Parse Workout] Calling Grok API with updated prompt/schema...");
     const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -188,7 +215,16 @@ EXPECTED JSON OUTPUT FOR EXAMPLE:
 
         // Basic validation (can be enhanced with Zod later)
         if (!parsedData || !Array.isArray(parsedData.exercises)) {
-            throw new Error("Parsed JSON is missing the required 'exercises' array.");
+            throw new Error("Parsed JSON is missing the required 'exercises' array (even if empty).");
+        }
+        if (parsedData.cardioDetails && (typeof parsedData.cardioDetails !== 'object' || parsedData.cardioDetails === null)) {
+            throw new Error("Parsed JSON has invalid 'cardioDetails' structure.");
+        }
+        if (parsedData.cardioDetails?.distance && typeof parsedData.cardioDetails.distance !== 'number') {
+             throw new Error("Parsed JSON 'cardioDetails.distance' must be a number.");
+        }
+         if (parsedData.cardioDetails?.duration && typeof parsedData.cardioDetails.duration !== 'number') {
+             throw new Error("Parsed JSON 'cardioDetails.duration' must be a number.");
         }
 
         // Log the full parsed data structure

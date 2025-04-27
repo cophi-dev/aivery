@@ -68,7 +68,7 @@ type ExerciseState = {
 type ParsedWorkoutData = {
   workoutType?: string;
   workoutName?: string;
-  exercises: Array<{
+  exercises: Array<{ // Should be empty [] for pure cardio unless intervals are logged
     name: string;
     notes?: string;
     sets: Array<{
@@ -77,6 +77,11 @@ type ParsedWorkoutData = {
       notes?: string;
     }>;
   }>;
+  // NEW: Align with backend type - Add cardioDetails
+  cardioDetails?: {
+    distance?: number; // in km
+    duration?: number; // in minutes
+  };
 };
 // --- END Type for AI Response Data ---
 
@@ -356,12 +361,29 @@ export default function NewWorkoutPage() {
       if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
         setWorkoutType(parsedData.workoutType as WorkoutTypeOption);
       } else {
+        // If type isn't explicitly set, infer from exercises or default
         if (parsedData.exercises && parsedData.exercises.length > 0) {
-          if (!workoutType) { setWorkoutType("gym"); }
+           // If exercises exist but no type, assume 'gym' for strength
+           if (!workoutType) { setWorkoutType("gym"); }
+        } else if (parsedData.cardioDetails?.distance || parsedData.cardioDetails?.duration) {
+           // If cardio details exist but no type, assume 'running'
+           if (!workoutType) { setWorkoutType("running"); }
         }
       }
 
       if (parsedData.workoutName) { setWorkoutName(parsedData.workoutName); }
+
+      // --- NEW: Update Distance and Duration from AI ---
+      // AI response might include distance (km) and duration (minutes) directly or in cardioDetails
+      // Convert distance (km) to string
+      if (parsedData.cardioDetails?.distance !== undefined) {
+        setDistance(String(parsedData.cardioDetails.distance));
+      }
+      // Convert duration (minutes) to string
+      if (parsedData.cardioDetails?.duration !== undefined) {
+        setDuration(String(parsedData.cardioDetails.duration));
+      }
+      // --- END NEW ---
 
       const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
         const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
