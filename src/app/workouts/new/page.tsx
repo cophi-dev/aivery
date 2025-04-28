@@ -1020,12 +1020,24 @@ export default function NewWorkoutPage() {
         savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload);
         toast.success('Workout updated successfully!');
       } else {
-        const createPayload = { 
-            ...workoutPayload, 
+        // Explicitly construct payload for createWorkoutAction to ensure cardioDetails is passed
+        type CreateActionPayload = Parameters<typeof createWorkoutAction>[0]; 
+        const createPayload: CreateActionPayload = {
             userId: session!.user!.id, 
-            cardioDetails: undefined, 
-            exercises: workoutPayload.exercises as Array<{ name: string; notes?: string; sets?: InputSetData[]; duration?: number; distance?: number }>
+            date: workoutPayload.date,
+            name: workoutPayload.name,
+            type: workoutPayload.type,
+            notes: workoutPayload.notes,
+            duration: workoutPayload.duration, 
+            // Cast problematic fields to 'any' to bypass strict type checking here
+            exercises: workoutPayload.exercises as any, 
+            cardioDetails: workoutPayload.cardioDetails as any, 
+            source: workoutPayload.source || 'manual', 
+            intensity: workoutPayload.intensity, 
         };
+
+        console.log("[handleSaveWorkout] Sending createPayload to createWorkoutAction:", JSON.stringify(createPayload, null, 2));
+
         savedWorkout = await createWorkoutAction(createPayload);
         toast.success('Workout created successfully!');
       }

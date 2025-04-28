@@ -422,6 +422,7 @@ export async function fetchWorkout(id: string): Promise<any | null> {
 }
 
 // Create a new workout (Refactored for WorkoutExercise schema)
+// REVERTED: Use original parameter type definition to avoid cascading errors
 export async function createWorkout(workoutData: Partial<WorkoutData> & { 
   exercises?: Array<{ 
     name: string; 
@@ -429,6 +430,7 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     sets?: InputSetData[]; 
     duration?: number;
     distance?: number;
+    exerciseId?: string; // Keep this for the find logic below
   }> 
 }): Promise<IWorkout> { 
   let savedWorkout: IWorkout | null = null;
@@ -436,6 +438,9 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
   
   try {
     console.log('Starting workout creation (new schema)...');
+    // <<< Add Logging: Log incoming cardioDetails >>>
+    console.log('[CreateWorkout Action] Received workoutData.cardioDetails:', JSON.stringify(workoutData.cardioDetails, null, 2));
+    // <<< End Logging >>>
     const user = await getCurrentUser();
     if (!user || !user.id) {
       throw new Error("User not authenticated or user ID missing");
@@ -463,13 +468,77 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     await dbConnect();
     console.log('Database connection confirmed for workout creation');
 
+    // --- Define workoutType early --- 
+    const workoutType = workoutData.type || "strength";
+
+    // --- Pre-calculate Cardio Details & Distance for Doc --- 
+    let distanceInMeters: number | undefined = undefined; // Variable to hold final distance
+    let cardioDetailsToAssign: ICardioDetails | undefined = undefined; // Variable to hold final details
+
+    // --- Process cardioDetails and calculate distance --- 
+    // Use direct equality checks for reliability
+    if (workoutType === 'running' || workoutType === 'cycle' || workoutType === 'swim') { // MODIFIED: Include cycle and swim
+        const details: Partial<ICardioDetails> = {};
+        if (workoutData.cardioDetails) {
+            if (workoutData.cardioDetails.distance !== undefined) details.distance = workoutData.cardioDetails.distance; // KM
+            if (workoutData.cardioDetails.duration !== undefined) details.duration = workoutData.cardioDetails.duration; // Seconds
+            if (workoutData.cardioDetails.pace !== undefined) details.pace = workoutData.cardioDetails.pace;
+            if (workoutData.cardioDetails.elevationGain !== undefined) details.elevationGain = workoutData.cardioDetails.elevationGain;
+        }
+        // Fallbacks
+        if (details.distance === undefined && workoutData.distance !== undefined) { details.distance = workoutData.distance; }
+        if (details.duration === undefined && workoutData.duration !== undefined) { details.duration = workoutData.duration; }
+
+        if (Object.keys(details).length > 0) {
+             cardioDetailsToAssign = details as ICardioDetails; // Stage for assignment later
+        } else {
+             // Handle case where details might be empty after checks
+        }
+        
+        // Calculate distance in METERS
+        const distanceKm = details.distance; // Use the final distance from details (could be from cardioDetails or fallback)
+        if (distanceKm !== undefined) {
+            distanceInMeters = distanceKm * 1000;
+            console.log(`[CreateWorkout Action] Calculated distanceInMeters: ${distanceInMeters}`); 
+        } else {
+             // Handle case where distanceKm is undefined
+        }
+    } else {
+        // Log if the type doesn't match the specific cardio types we handle here
+        console.log(`[CreateWorkout Action] workoutType '${workoutType}' does not require distance/cardioDetails processing in this block.`); // MODIFIED: Changed else log
+    }
+    // --- End cardio processing block ---
+
+    // --- Calculate Total Duration --- 
+    let totalDuration = 0;
+    if (workoutData.exercises && Array.isArray(workoutData.exercises)) {
+      workoutData.exercises.forEach(exercise => {
+        if (exercise.duration) { totalDuration += exercise.duration; }
+        if (exercise.sets && Array.isArray(exercise.sets)) {
+          exercise.sets.forEach(set => { if (set.duration) { totalDuration += set.duration; } });
+        }
+      });
+    }
+    // Use provided duration OR the calculated duration from exercises/sets
+    const finalDuration = workoutData.duration ?? totalDuration; 
+    // --- End Calculate Total Duration ---
+
+    // --- Calculate Volume --- 
+    let calculatedVolumeForDoc = 0;
+    if (workoutType === 'strength') {
+        calculatedVolumeForDoc = calculateWorkoutVolumeWithBodyweight(
+            workoutData.exercises, userWeight
+        );
+    }
+    // --- End Calculate Volume ---
+    
     // --- Create Workout Document --- 
-    console.log('Formatting workout document data...');
-    const workoutType = workoutData.type || "strength"; 
+    console.log('Formatting workout document data object...');
     const isValidWorkoutType = ["strength", "running", "swimming", "cycling", "hiit", "flexibility", "walking", "yoga", "pilates", "other"].includes(workoutType);
     const isValidSource = ["manual", "garmin", "coros", "strava", "apple", "ai"].includes(workoutData.source || '');
     const isValidIntensity = ["Low", "Medium", "High"].includes(workoutData.intensity || '');
 
+    // Initialize workoutDocData WITH pre-calculated values
     const workoutDocData: Partial<IWorkout> = {
       userId: userId,
       name: workoutData.name || "Workout", 
@@ -478,106 +547,62 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
       notes: workoutData.notes || "",
       source: isValidSource ? workoutData.source as IWorkout['source'] : 'manual',
       intensity: isValidIntensity ? workoutData.intensity as IWorkout['intensity'] : undefined,
-      cardioDetails: undefined, // Initialize cardioDetails
-      calculatedVolume: 0 // Initialize calculatedVolume explicitly
+      duration: finalDuration, // Use pre-calculated final duration
+      cardioDetails: cardioDetailsToAssign, // Use pre-calculated cardio details
+      distance: distanceInMeters, // Use pre-calculated distance in meters
+      calculatedVolume: calculatedVolumeForDoc // Use pre-calculated volume
     };
-
-    // Calculate total duration from exercises if available
-    let totalDuration = 0;
-    if (workoutData.exercises && Array.isArray(workoutData.exercises)) {
-      workoutData.exercises.forEach(exercise => {
-        // Add exercise duration if it exists
-        if (exercise.duration) {
-          totalDuration += exercise.duration;
-        }
-        // Add durations from sets if they exist
-        if (exercise.sets && Array.isArray(exercise.sets)) {
-          exercise.sets.forEach(set => {
-            if (set.duration) {
-              totalDuration += set.duration;
-            }
-          });
-        }
-      });
-    }
-    // Use provided duration as fallback if no exercises or if it's larger
-    workoutDocData.duration = Math.max(totalDuration, workoutData.duration || 0);
     
-    // Build cardioDetails only if relevant and data exists
-    if (['run', 'cycle', 'swim', 'walk', 'hike', 'row'].includes(workoutType) && (workoutData.distance !== undefined || workoutData.duration !== undefined)) {
-        const details: Partial<ICardioDetails> = {};
-        if (workoutData.distance !== undefined) {
-            details.distance = workoutData.distance;
-        }
-        if (workoutData.duration !== undefined) {
-            details.duration = workoutData.duration;
-        }
-        // Add other cardio fields from workoutData.cardioDetails if they exist
-        if (workoutData.cardioDetails) {
-            if (workoutData.cardioDetails.pace !== undefined) details.pace = workoutData.cardioDetails.pace;
-            if (workoutData.cardioDetails.elevationGain !== undefined) details.elevationGain = workoutData.cardioDetails.elevationGain;
-            // Add more fields as needed, ensuring type compatibility
-        }
-        // Only assign if we actually added details
-        if (Object.keys(details).length > 0) {
-             // Type assertion needed as we build Partial<ICardioDetails>
-             workoutDocData.cardioDetails = details as ICardioDetails; 
-             // ALSO set the top-level distance property for consistency
-             if (details.distance !== undefined) {
-                 workoutDocData.distance = details.distance;
-             }
-        }
+    // Assign staged values AFTER initial object creation
+    // This might be redundant now but ensures assignment happens explicitly
+    if (cardioDetailsToAssign) {
+        workoutDocData.cardioDetails = cardioDetailsToAssign;
+        console.log(`[CreateWorkout Action] Assigned workoutDocData.cardioDetails.`);
+        // console.log('workoutDocData after assigning cardioDetails:', JSON.stringify(workoutDocData)); // REMOVED LOG
+    }
+    if (distanceInMeters !== undefined) {
+        workoutDocData.distance = distanceInMeters;
+        console.log(`[CreateWorkout Action] Assigned workoutDocData.distance: ${workoutDocData.distance}`);
+        // console.log('workoutDocData after assigning distance:', JSON.stringify(workoutDocData)); // REMOVED LOG
     }
 
-    // Initialize calculatedVolume (will be overwritten if strength)
-    workoutDocData.calculatedVolume = 0; 
-    
-    // Calculate total volume for strength workouts USING HELPER
-    if (workoutType === 'strength') {
-        workoutDocData.calculatedVolume = calculateWorkoutVolumeWithBodyweight(
-            workoutData.exercises,
-            userWeight // Pass the fetched user weight
-        );
-        console.log(`Calculated total volume for new strength workout (incl. bodyweight): ${workoutDocData.calculatedVolume}kg`);
-    }
-
-    // Filter out undefined fields before saving (optional, Mongoose handles undefined)
-    // Object.keys(workoutDocData).forEach(key => workoutDocData[key as keyof typeof workoutDocData] === undefined && delete workoutDocData[key as keyof typeof workoutDocData]);
-    
-    console.log('Formatted workout document:', JSON.stringify(workoutDocData, null, 2));
-
-    console.log('Creating workout document in database...');
+    console.log('[CreateWorkout Action] workoutDocData before save:', JSON.stringify(workoutDocData, null, 2));
     const workout = new WorkoutModel(workoutDocData);
     savedWorkout = await workout.save();
+    
+    // <<< FIX: Add null check for savedWorkout >>>
     if (!savedWorkout || !savedWorkout._id) {
+        // Rollback logic might need adjustment if save failed here
         console.error("Failed to save workout document or obtain its ID.");
         throw new Error("Workout document creation failed unexpectedly.");
     }
-    console.log('Workout document saved successfully:', savedWorkout._id.toString());
-    const workoutId = savedWorkout._id;
+    const workoutId = savedWorkout._id; 
+    // <<< End Fix >>>
 
-    // --- Create WorkoutExercise Documents and related Set Documents --- 
+    // --- Create WorkoutExercise Documents (using workoutData.exercises) --- 
     console.log('Processing exercises for workout...');
     if (workoutData.exercises && workoutData.exercises.length > 0) {
       let exerciseOrderIndex = 0;
       for (const exerciseInput of workoutData.exercises) { 
-        if (!exerciseInput.name) {
+        const exerciseName = exerciseInput.name;
+        if (!exerciseName) {
             console.warn(`Skipping exercise at index ${exerciseOrderIndex} due to missing name.`);
             exerciseOrderIndex++;
             continue; 
         }
 
-        // --- Find or Create Canonical Exercise --- (Keep existing logic)
+        // --- Find or Create Canonical Exercise (Restore original logic) --- 
         let exerciseId: Types.ObjectId | null = null;
-        if ((exerciseInput as any).exerciseId) {
+        // Check if exerciseId was passed in the input (might need `as any`)
+        if ((exerciseInput as any).exerciseId && Types.ObjectId.isValid((exerciseInput as any).exerciseId)) {
             exerciseId = new Types.ObjectId((exerciseInput as any).exerciseId);
             console.log(`Using provided exercise ID: ${exerciseId}`);
         } else {
-            console.log(`Finding exercise by name: ${exerciseInput.name}`);
-            const exercise = await ExerciseModel.findOne({ name: exerciseInput.name }).lean() as (IExercise & { _id: Types.ObjectId }) | null;
+            // Fallback to finding by name
+            console.log(`Finding exercise by name: ${exerciseName}`);
+            const exercise = await ExerciseModel.findOne({ name: exerciseName }).lean() as (IExercise & { _id: Types.ObjectId }) | null;
             if (!exercise) {
-                 // Keep existing logic for handling missing/cardio exercises
-                 console.warn(`Exercise '${exerciseInput.name}' not found or handled. Skipping.`);
+                 console.warn(`Exercise '${exerciseName}' not found. Skipping.`);
                  exerciseOrderIndex++;
                  continue;
             } else {
@@ -585,18 +610,14 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
                 console.log(`Found exercise ID: ${exerciseId}`);
             }
         }
-        if (!exerciseId) {
-            console.warn(`No exercise ID found or created for '${exerciseInput.name}'. Skipping.`);
-            exerciseOrderIndex++;
-            continue;
-        }
+        // --- (End Find/Create Exercise) ---
 
         // --- Prepare sets data for embedding --- 
-        let setsToEmbed: any[] = []; // Define as any[] for simplicity, could use a Mongoose subdocument type
+        let setsToEmbed: any[] = [];
         if (exerciseInput.sets && exerciseInput.sets.length > 0) {
            setsToEmbed = exerciseInput.sets.map((set: InputSetData, setIndex: number) => {
+              // ... (rest of set preparation logic) ...
               const setData = {
-                // workoutExerciseId: savedWorkoutExercise._id, // No longer needed for embedding
                 order: set.order ?? setIndex, 
                 weight: set.weight,
                 reps: set.reps,
@@ -604,32 +625,27 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
                 distance: set.distance,
                 notes: set.notes,
               };
-              // Filter out undefined fields
               Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
               return setData;
            });
-           console.log(`Prepared ${setsToEmbed.length} sets for embedding in WorkoutExercise ${exerciseOrderIndex}`);
         }
 
-        // --- Create WorkoutExercise (WITH embedded sets) --- 
+        // --- Create WorkoutExercise --- 
         const workoutExerciseData = {
             userId: userId,
             workoutId: workoutId,
             exerciseId: exerciseId,
             order: exerciseOrderIndex, 
             notes: exerciseInput.notes, 
-            sets: setsToEmbed, // <-- Embed the sets array directly
-            // Keep duration/distance if relevant for non-set based exercises
-            duration: (exerciseInput as any).duration, 
-            distance: (exerciseInput as any).distance,
+            sets: setsToEmbed, 
+            duration: exerciseInput.duration, // Use exerciseInput.duration
+            distance: exerciseInput.distance, // Use exerciseInput.distance
         };
-        console.log(`Formatted WorkoutExercise ${exerciseOrderIndex} with embedded sets:`, JSON.stringify(workoutExerciseData, null, 2));
         const workoutExercise = new WorkoutExerciseModel(workoutExerciseData);
         const savedWorkoutExercise = await workoutExercise.save();
         createdWorkoutExerciseIds.push(savedWorkoutExercise._id);
-        console.log(`Saved WorkoutExercise ${exerciseOrderIndex} with ID: ${savedWorkoutExercise._id}`);
-
-        exerciseOrderIndex++; // Increment order for the next exercise
+        
+        exerciseOrderIndex++; 
       }
     } else {
         console.log('No exercises provided in input data.');
@@ -791,7 +807,7 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
         }
 
         // Calculate total duration from exercises if available
-        let totalDuration = 0;
+    let totalDuration = 0;
         if (incomingExercises && Array.isArray(incomingExercises)) {
           incomingExercises.forEach(exercise => {
             // Add exercise duration if it exists
@@ -799,13 +815,13 @@ export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpd
               totalDuration += exercise.duration;
             }
             // Add durations from sets if they exist
-            if (exercise.sets && Array.isArray(exercise.sets)) {
+        if (exercise.sets && Array.isArray(exercise.sets)) {
               exercise.sets.forEach(set => {
                 if (set.duration) {
                   totalDuration += set.duration;
-                }
-              });
-            }
+        }
+      });
+    }
           });
         }
         // Use provided duration as fallback if no exercises or if it's larger
@@ -2198,3 +2214,4 @@ export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPRE
     return []; 
   }
 }
+    
