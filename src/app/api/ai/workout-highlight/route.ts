@@ -50,10 +50,20 @@ type HighlightRequest = z.infer<typeof HighlightRequestSchema>;
 
 // Type for basic historical context
 interface HistoricalContext {
-  bestDistance?: number | null;
+  bestDistance?: number | null; // Original distance in meters from DB
+  bestDistanceKm?: number | null; // Added: Best distance in KM
   fastestDurationForDistance?: number | null;
   highestVolume?: number | null;
   workoutCountForType?: number;
+}
+
+// New interface for data passed to createHighlightPrompt
+interface HistoricalContextPrompt {
+    bestDistance?: number | null; // Expects KM
+    fastestDurationForDistance?: number | null;
+    highestVolume?: number | null;
+    workoutCountForType?: number;
+    currentWorkoutDistance?: number | null; // Current workout distance in KM
 }
 
 // Updated function signature to include user, historical context, AND landmark comparison
@@ -61,12 +71,12 @@ function createHighlightPrompt(
   userName: string,
   workout: PromptWorkoutData,           // Contains workout details
   user: IUser | null,                 // Contains user preferences/goals
-  historicalContext: HistoricalContext, // Contains PBs, counts, etc.
+  historicalContext: HistoricalContextPrompt, // Contains PBs, counts, etc.
   landmarkComparison?: string | null    // <<< ADDED Optional Landmark Comparison
 ): string {
   let workoutSummary = `Workout Type: ${workout.type}`;
   if (workout.duration) workoutSummary += `\nDuration: ${Math.round(workout.duration / 60)} minutes`;
-  if (workout.distance) workoutSummary += `\nDistance: ${workout.distance.toFixed(2)} km`; // Assuming km
+  if (workout.distance != null) workoutSummary += `\nDistance: ${workout.distance.toFixed(2)} km`;
   if (workout.calculatedVolume) workoutSummary += `\nTotal Volume: ${workout.calculatedVolume.toLocaleString()} kg`; // Assuming kg
   if (workout.calories) workoutSummary += `\nCalories Burned: ~${workout.calories} kcal`;
   if (workout.workoutExercises && workout.workoutExercises.length > 0) {
@@ -94,11 +104,11 @@ function createHighlightPrompt(
       if (historicalContext.workoutCountForType) {
           historicalContextSummary += `\n- Total ${workout.type} workouts logged: ${historicalContext.workoutCountForType}`;
       }
-      if (historicalContext.bestDistance) {
+      if (historicalContext.bestDistance != null) {
           historicalContextSummary += `\n- Best distance: ${historicalContext.bestDistance.toFixed(2)} km`;
       }
-      if (historicalContext.fastestDurationForDistance && workout.distance) {
-          historicalContextSummary += `\n- Fastest ${workout.distance.toFixed(2)} km time: ${Math.round(historicalContext.fastestDurationForDistance / 60)} minutes`;
+      if (historicalContext.fastestDurationForDistance && historicalContext.currentWorkoutDistance != null) {
+          historicalContextSummary += `\n- Fastest ${historicalContext.currentWorkoutDistance.toFixed(2)} km time: ${Math.round(historicalContext.fastestDurationForDistance / 60)} minutes`;
       }
       if (historicalContext.highestVolume) {
           historicalContextSummary += `\n- Highest volume: ${historicalContext.highestVolume.toLocaleString()} kg`;
@@ -208,12 +218,18 @@ export async function GET(req: NextRequest) {
              console.warn(`[GET /ai/workout-highlight] Proceeding with workout data despite validation errors.`);
         }
 
+        // --- Convert distance to KM *before* using it ---
+        let workoutDistanceKm: number | null = null;
+        if (validatedWorkoutData.distance != null) {
+            workoutDistanceKm = validatedWorkoutData.distance / 1000;
+        }
+
         // --- Fetch Historical Context ---
         let historicalContext: HistoricalContext = {};
         try {
             console.log(`[GET /ai/workout-highlight] Fetching historical context for user ${userId}, type: ${validatedWorkoutData.type}`);
             const workoutType = validatedWorkoutData.type;
-            const workoutDistance = validatedWorkoutData.distance;
+            // const workoutDistance = validatedWorkoutData.distance; // Use original meter value for DB queries
 
             // Count total workouts of this type
             const count = await Workout.countDocuments({ userId: userId, type: workoutType });
@@ -224,15 +240,17 @@ export async function GET(req: NextRequest) {
                 // Best Distance - Use IWorkout type hint
                 const bestDistWorkout = await Workout.findOne({ userId: userId, type: workoutType, distance: { $ne: null } })
                                                      .sort({ distance: -1 }).limit(1).lean<IWorkout>();
-                historicalContext.bestDistance = bestDistWorkout?.distance;
+                // Convert best distance to KM if it exists
+                historicalContext.bestDistanceKm = bestDistWorkout?.distance ? bestDistWorkout.distance / 1000 : null;
 
                 // Fastest time for *this* distance (if distance exists and > 0)
-                if (workoutDistance && workoutDistance > 0) {
+                // Query uses the ORIGINAL distance in meters
+                if (validatedWorkoutData.distance && validatedWorkoutData.distance > 0) {
                     // Use IWorkout type hint
                     const fastestTimeWorkout = await Workout.findOne({
                         userId: userId,
                         type: workoutType,
-                        distance: workoutDistance, // Match exact distance
+                        distance: validatedWorkoutData.distance, // Match exact distance (METERS)
                         duration: { $ne: null }
                     }).sort({ duration: 1 }).limit(1).lean<IWorkout>();
 
@@ -262,10 +280,12 @@ export async function GET(req: NextRequest) {
         // <<< START: Generate Landmark Comparison >>>
         let landmarkComparison: string | null = null;
         const workoutTypeLower = validatedWorkoutData.type.toLowerCase();
-        if ((workoutTypeLower === 'running' || workoutTypeLower === 'run' || workoutTypeLower === 'cycling' || workoutTypeLower === 'cycle') && validatedWorkoutData.distance && validatedWorkoutData.distance > 0) {
+        // Use the converted KM distance for comparison generation
+        if ((workoutTypeLower === 'running' || workoutTypeLower === 'run' || workoutTypeLower === 'cycling' || workoutTypeLower === 'cycle') && workoutDistanceKm && workoutDistanceKm > 0) {
             try {
-                landmarkComparison = generateDistanceComparisonText(validatedWorkoutData.distance);
-                console.log(`[GET /ai/workout-highlight] Generated landmark comparison: "${landmarkComparison}"`);
+                // Pass distance in KM to the comparison function
+                landmarkComparison = generateDistanceComparisonText(workoutDistanceKm);
+                console.log(`[GET /ai/workout-highlight] Generated landmark comparison: \"${landmarkComparison}\"`);
             } catch (comparisonError) {
                 console.error(`[GET /ai/workout-highlight] Error generating landmark comparison:`, comparisonError);
                 // Continue without landmark comparison if generation fails
@@ -274,12 +294,30 @@ export async function GET(req: NextRequest) {
         // <<< END: Generate Landmark Comparison >>>
 
         // 5. Create Enhanced Prompt for AI
+        // Prepare a version of workout data with distance in KM for the prompt
+        const promptWorkoutDataKm = {
+            ...validatedWorkoutData,
+            distance: workoutDistanceKm, // Use distance in KM
+        };
+
+        // Prepare a version of historical context with distance in KM for the prompt
+        const promptHistoricalContextKm: HistoricalContextPrompt = {
+             workoutCountForType: historicalContext.workoutCountForType,
+             bestDistance: historicalContext.bestDistanceKm, // Use best distance in KM
+             fastestDurationForDistance: historicalContext.fastestDurationForDistance,
+             highestVolume: historicalContext.highestVolume,
+             // Keep original distance (meters) for matching fastest time query if needed,
+             // although the prompt function only uses the KM value.
+             // Or just pass the already converted workoutDistanceKm for clarity in the prompt.
+             currentWorkoutDistance: workoutDistanceKm // Pass current distance in KM
+        };
+
         const systemPrompt = createHighlightPrompt(
             userName,
-            validatedWorkoutData,
-            user, // Pass fetched user data
-            historicalContext, // Pass fetched historical context
-            landmarkComparison // <<< Pass the generated comparison (or null)
+            promptWorkoutDataKm,         // Pass workout data with distance in KM
+            user,                        // Pass fetched user data
+            promptHistoricalContextKm,   // Pass historical context with distance in KM
+            landmarkComparison           // Pass the generated comparison (or null)
         );
         console.log(`[GET /ai/workout-highlight] Generated enhanced prompt for Grok. Length: ${systemPrompt.length}`);
 

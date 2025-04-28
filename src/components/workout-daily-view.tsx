@@ -213,7 +213,7 @@ export default function WorkoutDailyView() {
                              <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
                                  <MetricCard title="Workouts" value={dailyMetrics.workoutCount.toString()} />
                                  <MetricCard title="Total Duration" value={formatDuration(dailyMetrics.totalDuration)} />
-                                 {dailyMetrics.totalDistance > 0 && <MetricCard title="Total Distance" value={formatDistance(dailyMetrics.totalDistance)} />}
+                                 {dailyMetrics.totalDistance > 0 && <MetricCard title="Total Distance" value={formatDistance(dailyMetrics.totalDistance / 1000)} />}
                                  {dailyMetrics.totalVolume > 0 && <MetricCard title="Total Volume" value={`${dailyMetrics.totalVolume.toLocaleString()} kg`} />}
                              </div>
 
@@ -244,7 +244,7 @@ export default function WorkoutDailyView() {
                                                      {/* Metrics (Column 2, Row 2) */}
                                                      <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
                                                          <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
-                                                         {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance)}</span>}
+                                                         {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance / 1000)}</span>}
                                                          {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {workout.calculatedVolume.toLocaleString()} kg</span>}
                                                      </div>
                                                  </li>

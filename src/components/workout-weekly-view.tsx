@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 
 // Import recharts components
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList } from 'recharts';
 
 // Import helpers from utils and the new MetricCard location
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
@@ -49,7 +49,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     // console.log(`Calculating metrics for week: ${formatDateKey(weekStart)} to ${formatDateKey(weekEnd)}`);
     let totalWorkouts = weeklyWorkouts.length;
     let totalDuration = 0;
-    let totalDistance = 0;
+    let totalDistanceKm = 0; // Renamed to clarify unit, initialize to 0
     let totalVolume = 0;
     const workoutsByDay: { [day: string]: WorkoutData[] } = {};
     // Initialize map to hold daily aggregates
@@ -70,23 +70,35 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
         };
     });
 
+    // NEW: Initialize total durations map
+    const dailyDurationMap: { [day: string]: { cardio: number, strength: number } } = {};
+    daysInWeek.forEach(day => {
+        dailyDurationMap[format(day, 'eee')] = { cardio: 0, strength: 0 };
+    });
+    // END NEW
+
     weeklyWorkouts.forEach(w => {
         const duration = w.duration || 0;
-        const workoutDistance = w.cardioDetails?.distance ?? w.distance ?? 0;
+        // Use w.distance consistently, assuming it's stored in meters
+        const workoutDistanceMeters = w.distance ?? 0; 
         const volume = w.calculatedVolume || 0;
         const typeLower = w.type?.toLowerCase() || 'other';
 
-        // DEBUG LOGGING for distance:
-        if (CARDIO_TYPES.includes(typeLower)) {
-            console.log(`[DEBUG] Cardio Workout (${w._id}, Type: ${w.type}): `,
-                        `w.distance = ${w.distance}, `,
-                        `w.cardioDetails?.distance = ${w.cardioDetails?.distance}, `,
-                        `Calculated distance (m?) = ${workoutDistance}`);
-        }
-
+        // Add duration and volume
         totalDuration += duration;
-        totalDistance += workoutDistance;
         totalVolume += volume;
+        
+        // Add distance in KM only if it's a cardio type
+        if (CARDIO_TYPES.includes(typeLower)) {
+             const distanceKm = workoutDistanceMeters / 1000;
+             totalDistanceKm += distanceKm;
+
+             // DEBUG LOGGING for distance:
+             console.log(`[DEBUG] Cardio Workout (${w._id}, Type: ${w.type}): ` +
+                         `w.distance = ${w.distance}, ` +
+                         `w.cardioDetails?.distance = ${w.cardioDetails?.distance}, ` +
+                         `Calculated distance (m) = ${workoutDistanceMeters}, Added distance (km) = ${distanceKm}`);
+        }
         
         const workoutDate = startOfDay(parseISO(w.date.toString()));
         const dayKey = formatDateKey(workoutDate);
@@ -101,10 +113,12 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
             const durationMinutes = Math.round(duration / 60);
             if (CARDIO_TYPES.includes(typeLower)) {
                 dailyChartDataMap[dayName].cardioDuration += durationMinutes;
-                dailyChartDataMap[dayName].cardioDistance += (workoutDistance / 1000); // Convert m to km before summing
+                dailyChartDataMap[dayName].cardioDistance += (workoutDistanceMeters / 1000); 
+                dailyDurationMap[dayName].cardio += durationMinutes; // Add to duration map
             } else if (STRENGTH_TYPES.includes(typeLower)) {
                 dailyChartDataMap[dayName].strengthDuration += durationMinutes;
                 dailyChartDataMap[dayName].strengthVolume += volume; // Accumulate volume
+                dailyDurationMap[dayName].strength += durationMinutes; // Add to duration map
             } else {
                 // Handle 'other' types if needed - maybe add to a general duration?
             }
@@ -115,6 +129,9 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     const dailyChartData = Object.entries(dailyChartDataMap).map(([day, data]) => ({
         day,
         ...data,
+        // Add combined durations from the new map for labeling
+        cardioDurationLabel: dailyDurationMap[day].cardio,
+        strengthDurationLabel: dailyDurationMap[day].strength,
         // Round the already-KM distance to 2 decimal places
         cardioDistance: Math.round(data.cardioDistance * 100) / 100, 
     }));
@@ -126,11 +143,8 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     const result: WeeklyWorkoutMetrics = { 
         totalWorkouts, 
         totalDuration, 
-        // totalDistance should now be correctly summed KM
-        totalDistance: weeklyWorkouts.reduce((sum, w) => {
-            const dist = w.cardioDetails?.distance ?? w.distance ?? 0;
-            return CARDIO_TYPES.includes(w.type?.toLowerCase() || 'other') ? sum + (dist / 1000) : sum;
-        }, 0), 
+        // Use the correctly summed distance in KM from the loop
+        totalDistance: totalDistanceKm, 
         totalVolume, 
         workoutsByDay, 
         dailyChartData,
@@ -266,19 +280,31 @@ export default function WorkoutWeeklyView() {
     // Updated Custom Tooltip for Chart
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
-            const data = payload[0].payload; // The data point for the hovered item
+            // Access the original data point for durations
+            const dataPoint = payload[0].payload; 
+            const strengthDuration = dataPoint.strengthDuration; // Use actual duration
+            const cardioDuration = dataPoint.cardioDuration; // Use actual duration
+
+            // Find line data (volume and distance)
+            const strengthVolumeData = payload.find((p: any) => p.dataKey === 'strengthVolume');
+            const cardioDistanceData = payload.find((p: any) => p.dataKey === 'cardioDistance');
+
+            // Find bar data for colors (optional, could use fixed colors too)
+            const strengthBarData = payload.find((p: any) => p.dataKey === 'strengthDuration');
+            const cardioBarData = payload.find((p: any) => p.dataKey === 'cardioDuration');
+
             return (
-            <div className="bg-background/90 backdrop-blur-sm border p-3 rounded shadow-lg text-xs">
-                <p className="label font-semibold mb-1">{`${label}`}</p>
-                {data.cardioDuration > 0 && <p style={{ color: '#8884d8' }}>Cardio Time: {data.cardioDuration} min</p>}
-                {data.strengthDuration > 0 && <p style={{ color: '#82ca9d' }}>Strength Time: {data.strengthDuration} min</p>}
-                {data.cardioDistance > 0 && <p style={{ color: '#ff7300' }}>Cardio Dist: {data.cardioDistance.toFixed(1)} km</p>}
-                {data.strengthVolume > 0 && <p style={{ color: '#ffc658' }}>Strength Vol: {data.strengthVolume.toLocaleString()} kg</p>}
-            </div>
+                <div className="bg-background border border-border shadow-lg rounded-md p-3 text-sm">
+                    <p className="font-semibold mb-2">{label}</p>
+                    {strengthVolumeData && strengthVolumeData.value > 0 && <p style={{ color: strengthVolumeData.stroke }}>{`Volume: ${strengthVolumeData.value.toLocaleString()} kg`}</p>}
+                    {cardioDistanceData && cardioDistanceData.value > 0 && <p style={{ color: cardioDistanceData.stroke }}>{`Distance: ${cardioDistanceData.value.toFixed(1)} km`}</p>}
+                    {strengthDuration > 0 && <p style={{ color: strengthBarData?.fill ?? 'var(--color-strength)' }}>{`Strength: ${strengthDuration} min`}</p>}
+                    {cardioDuration > 0 && <p style={{ color: cardioBarData?.fill ?? 'var(--color-cardio)' }}>{`Cardio: ${cardioDuration} min`}</p>}
+                </div>
             );
         }
         return null;
-        };
+    };
 
     return (
         <div className="space-y-6">
@@ -340,10 +366,10 @@ export default function WorkoutWeeklyView() {
                     </CardHeader>
                     <CardContent>
                         <ResponsiveContainer width="100%" height={250} minHeight={200}>
-                            <ComposedChart data={weeklyMetrics.dailyChartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}> 
+                            <ComposedChart data={weeklyMetrics.dailyChartData} margin={{ top: 5, right: 5, left: 20, bottom: 5 }}> 
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="day" fontSize={12} tickLine={false} axisLine={false} />
-                                {/* Left Y Axis (Time - minutes) */}
+                                {/* Left Y Axis (Volume - kg) */}
                                 <YAxis 
                                     yAxisId="left"
                                     orientation="left" 
@@ -351,27 +377,71 @@ export default function WorkoutWeeklyView() {
                                     tickLine={false} 
                                     axisLine={false} 
                                     allowDecimals={false} 
-                                    unit="m" 
+                                    unit="kg" 
+                                    width={60} // Adjusted width
                                 />
-                                {/* Right Y Axis (Distance/Volume) */}
+                                {/* Right Y Axis (Distance - km) */}
                                 <YAxis 
                                     yAxisId="right" 
                                     orientation="right" 
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false} 
-                                    allowDecimals={false} 
-                                    width={40} // Give it some space
+                                    allowDecimals={true} 
+                                    tickFormatter={(value) => value.toFixed(1)} 
+                                    unit="km" 
+                                    width={40} 
+                                    domain={[0, 'auto']} // Keep domain starting at 0
                                 />
+                                {/* Hidden Y Axis for Duration Scaling */}
+                                <YAxis yAxisId="durationAxis" hide={true} />
+
                                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))' }} />
                                 
-                                {/* Stacked Bars for Duration (Left Axis) */}
-                                <Bar dataKey="cardioDuration" stackId="a" fill="#8884d8" radius={[4, 4, 0, 0]} yAxisId="left" name="Cardio Time" />
-                                <Bar dataKey="strengthDuration" stackId="a" fill="#82ca9d" radius={[4, 4, 0, 0]} yAxisId="left" name="Strength Time" />
+                                {/* Strength Duration Bar - Stacked, tied to hidden duration axis */}
+                                <Bar 
+                                    dataKey="strengthDuration" 
+                                    yAxisId="durationAxis" // Use hidden axis
+                                    fill="#58a3ff" // Brand blue for Strength
+                                    stackId="a" 
+                                    radius={[4, 4, 0, 0]} 
+                                    barSize={30}
+                                >
+                                    {/* Removed LabelList */}
+                                </Bar>
                                 
-                                {/* Lines for Distance/Volume (Right Axis) */}
-                                <Line type="monotone" dataKey="cardioDistance" stroke="#ff7300" strokeWidth={2} yAxisId="right" name="Cardio Distance (km)" dot={false} />
-                                <Line type="monotone" dataKey="strengthVolume" stroke="#ffc658" strokeWidth={2} yAxisId="right" name="Strength Volume (kg)" dot={false} />
+                                {/* Cardio Duration Bar - Stacked, tied to hidden duration axis */}
+                                <Bar 
+                                    dataKey="cardioDuration" 
+                                    yAxisId="durationAxis" // Use hidden axis
+                                    fill="#fa9f7b" // Brand orange for Cardio
+                                    stackId="a" 
+                                    radius={[4, 4, 0, 0]} 
+                                    barSize={30}
+                                >
+                                     {/* Removed LabelList */}
+                                </Bar>
+                                
+                                {/* Strength Volume Line (Left Axis) - Revert color */}
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="strengthVolume" 
+                                    stroke="#58a3ff" // Brand blue for Volume
+                                    strokeWidth={2} 
+                                    yAxisId="left" // Tied to left axis (Volume)
+                                    dot={false} 
+                                    name="Volume" 
+                                />
+                                {/* Cardio Distance Line (Right Axis) - Revert color */}
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="cardioDistance" 
+                                    stroke="#fa9f7b" // Brand orange for Distance
+                                    strokeWidth={2} 
+                                    yAxisId="right" // Tied to right axis (Distance)
+                                    dot={false} 
+                                    name="Distance" 
+                                />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </CardContent>

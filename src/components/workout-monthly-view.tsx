@@ -187,22 +187,34 @@ export default function WorkoutMonthlyView() {
 
     const monthDisplay = format(selectedMonthStart, 'MMMM yyyy');
 
-    // Updated Custom Tooltip for Chart
+    // Updated Custom Tooltip for Chart - Copied & adjusted from Weekly View
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
-            const data = payload[0].payload; // The data point for the hovered item
+            // Access the original data point for durations
+            const dataPoint = payload[0].payload; 
+            const strengthDuration = dataPoint.strengthDuration; // Use actual duration
+            const cardioDuration = dataPoint.cardioDuration; // Use actual duration
+
+            // Find line data (volume and distance)
+            const strengthVolumeData = payload.find((p: any) => p.dataKey === 'strengthVolume');
+            const cardioDistanceData = payload.find((p: any) => p.dataKey === 'cardioDistance');
+
+            // Find bar data for colors (optional, could use fixed colors too)
+            const strengthBarData = payload.find((p: any) => p.dataKey === 'strengthDuration');
+            const cardioBarData = payload.find((p: any) => p.dataKey === 'cardioDuration');
+
             return (
-            <div className="bg-background/90 backdrop-blur-sm border p-3 rounded shadow-lg text-xs">
-                <p className="label font-semibold mb-1">{`${label}`}</p> {/* Shows W1, W2 etc. */}
-                {data.cardioDuration > 0 && <p style={{ color: '#8884d8' }}>Cardio Time: {data.cardioDuration} min</p>}
-                {data.strengthDuration > 0 && <p style={{ color: '#82ca9d' }}>Strength Time: {data.strengthDuration} min</p>}
-                {data.cardioDistance > 0 && <p style={{ color: '#ff7300' }}>Cardio Dist: {data.cardioDistance.toFixed(1)} km</p>}
-                {data.strengthVolume > 0 && <p style={{ color: '#ffc658' }}>Strength Vol: {data.strengthVolume.toLocaleString()} kg</p>}
-            </div>
+                <div className="bg-background border border-border shadow-lg rounded-md p-3 text-sm">
+                    <p className="font-semibold mb-2">{label}</p> {/* Will show W1, W2 etc. */}
+                    {strengthVolumeData && strengthVolumeData.value > 0 && <p style={{ color: strengthVolumeData.stroke }}>{`Volume: ${strengthVolumeData.value.toLocaleString()} kg`}</p>}
+                    {cardioDistanceData && cardioDistanceData.value > 0 && <p style={{ color: cardioDistanceData.stroke }}>{`Distance: ${cardioDistanceData.value.toFixed(1)} km`}</p>}
+                    {strengthDuration > 0 && <p style={{ color: strengthBarData?.fill ?? '#58a3ff' }}>{`Strength: ${strengthDuration} min`}</p>}
+                    {cardioDuration > 0 && <p style={{ color: cardioBarData?.fill ?? '#fa9f7b' }}>{`Cardio: ${cardioDuration} min`}</p>}
+                </div>
             );
         }
         return null;
-        };
+    };
 
     return (
         <div className="space-y-6">
@@ -263,10 +275,11 @@ export default function WorkoutMonthlyView() {
                     </CardHeader>
                     <CardContent>
                         <ResponsiveContainer width="100%" height={250} minHeight={200}> 
-                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                            {/* Apply same margin as weekly view */}
+                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={{ top: 5, right: 5, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="week" fontSize={12} tickLine={false} axisLine={false} />
-                                {/* Left Y Axis (Time - minutes) */}
+                                {/* Left Y Axis (Volume - kg) */}
                                 <YAxis 
                                     yAxisId="left"
                                     orientation="left" 
@@ -274,27 +287,71 @@ export default function WorkoutMonthlyView() {
                                     tickLine={false} 
                                     axisLine={false} 
                                     allowDecimals={false} 
-                                    unit="m"
+                                    unit="kg"
+                                    width={60} // Match weekly view
                                 />
-                                {/* Right Y Axis (Distance/Volume) */}
+                                {/* Right Y Axis (Distance - km) */}
                                 <YAxis 
                                     yAxisId="right" 
                                     orientation="right" 
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false} 
-                                    allowDecimals={false} 
-                                    width={40} 
+                                    allowDecimals={true} 
+                                    tickFormatter={(value) => value.toFixed(1)} 
+                                    unit="km" 
+                                    width={40} // Match weekly view
+                                    domain={[0, 'auto']} // Match weekly view
                                 />
+                                {/* Hidden Y Axis for Duration Scaling */}
+                                <YAxis yAxisId="durationAxis" hide={true} />
+                                
                                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))' }} />
                                 
-                                {/* Stacked Bars for Duration (Left Axis) */}
-                                <Bar dataKey="cardioDuration" stackId="a" fill="#8884d8" radius={[4, 4, 0, 0]} yAxisId="left" name="Cardio Time" />
-                                <Bar dataKey="strengthDuration" stackId="a" fill="#82ca9d" radius={[4, 4, 0, 0]} yAxisId="left" name="Strength Time" />
+                                {/* Strength Duration Bar - Stacked, tied to hidden duration axis */}
+                                <Bar 
+                                    dataKey="strengthDuration" 
+                                    yAxisId="durationAxis" 
+                                    fill="#58a3ff" // Brand blue
+                                    stackId="a" 
+                                    radius={[4, 4, 0, 0]} 
+                                    barSize={30}
+                                >
+                                    {/* No LabelList */}
+                                </Bar>
                                 
-                                {/* Lines for Distance/Volume (Right Axis) */}
-                                <Line type="monotone" dataKey="cardioDistance" stroke="#ff7300" strokeWidth={2} yAxisId="right" name="Cardio Distance (km)" dot={false} />
-                                <Line type="monotone" dataKey="strengthVolume" stroke="#ffc658" strokeWidth={2} yAxisId="right" name="Strength Volume (kg)" dot={false} />
+                                {/* Cardio Duration Bar - Stacked, tied to hidden duration axis */}
+                                <Bar 
+                                    dataKey="cardioDuration" 
+                                    yAxisId="durationAxis" 
+                                    fill="#fa9f7b" // Brand orange
+                                    stackId="a" 
+                                    radius={[4, 4, 0, 0]} 
+                                    barSize={30}
+                                >
+                                     {/* No LabelList */}
+                                </Bar>
+                                
+                                {/* Strength Volume Line (Left Axis) */}
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="strengthVolume" 
+                                    stroke="#58a3ff" // Brand blue
+                                    strokeWidth={2} 
+                                    yAxisId="left" 
+                                    dot={false} 
+                                    name="Volume" 
+                                />
+                                {/* Cardio Distance Line (Right Axis) */}
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="cardioDistance" 
+                                    stroke="#fa9f7b" // Brand orange
+                                    strokeWidth={2} 
+                                    yAxisId="right" 
+                                    dot={false} 
+                                    name="Distance" 
+                                />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </CardContent>
