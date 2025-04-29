@@ -12,26 +12,6 @@ type Props = {
   params: { id: string }
 }
 
-// Define helper functions needed by the Client Component (passed as props)
-// These are defined here in the server scope but accessible via props on the client.
-const formatDuration = (seconds: number | undefined | null): string => {
-  if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) {
-    return "N/A";
-  }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-};
-
-const formatPace = (pace: number | undefined | null): string => {
-  if (pace === undefined || pace === null || isNaN(pace) || pace <= 0) {
-    return "N/A";
-  }
-  const minutes = Math.floor(pace / 60);
-  const remainingSeconds = Math.round(pace % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')} /km`;
-};
-
 // --- Metadata Generation (Server-Side) ---
 export async function generateMetadata(
   { params }: Props,
@@ -77,18 +57,16 @@ export default async function ExerciseDetailPage({ params }: Props) {
     initialHistory = await getExerciseHistory(params.id);
   } catch (err) {
     console.error(`[Server Page Error] Failed fetching data for exercise ${params.id}:`, err);
-    // Let the client component handle showing an error based on null data or throw
-    // throw new Error("Failed to load exercise data."); 
+    // Re-throw the error to let Next.js handle it (e.g., display error.tsx)
+    throw err;
   }
 
-  // Render the client component, passing necessary data and functions
+  // Render the client component, passing necessary data ONLY
   return (
     <ExerciseDetailPageClient 
       initialExercise={initialExercise} 
       initialHistory={initialHistory}
-      params={params} // Pass params for client-side actions if needed
-      formatDuration={formatDuration} // Pass helper function
-      formatPace={formatPace}         // Pass helper function
+      params={params} 
     />
   );
 } 

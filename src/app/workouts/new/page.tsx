@@ -82,6 +82,7 @@ type ParsedWorkoutData = {
     distance?: number; // in km
     duration?: number; // in minutes
   };
+  workoutDate?: string;
 };
 // --- END Type for AI Response Data ---
 
@@ -357,6 +358,24 @@ export default function NewWorkoutPage() {
       // --- Update State based on Parsed Data (for UI feedback) ---
       // Still update state so the user sees the form populate
       setExercises([]); // Clear existing before populating
+
+      // NEW: Update Date from AI if available
+      if (parsedData.workoutDate) {
+        try {
+          const parsedDate = parseISO(parsedData.workoutDate); // Expects YYYY-MM-DD
+          // Basic validation: Check if the parsed date is valid
+          if (!isNaN(parsedDate.getTime())) {
+            setDate(parsedDate);
+            console.log("Set date from AI:", parsedDate);
+          } else {
+            console.warn(`AI provided invalid date format: ${parsedData.workoutDate}`);
+            toast.error(`AI provided an invalid date: ${parsedData.workoutDate}. Please set manually.`);
+          }
+        } catch (dateParseError) {
+          console.error(`Failed to parse date from AI: ${parsedData.workoutDate}`, dateParseError);
+          toast.error(`AI provided an unparseable date: ${parsedData.workoutDate}. Please set manually.`);
+        }
+      }
 
       if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
         setWorkoutType(parsedData.workoutType as WorkoutTypeOption);

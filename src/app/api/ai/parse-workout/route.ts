@@ -6,6 +6,7 @@ import { type NextRequest } from 'next/server';
 type ParsedWorkoutData = {
   workoutType?: string; // e.g., "gym", "home_strength", "running"
   workoutName?: string; // e.g., "Morning Strength Session", "10k Run"
+  workoutDate?: string; // NEW: Date of the workout (YYYY-MM-DD format)
   exercises: Array<{ // Keep empty array [] for non-strength/non-exercise specific logs
     name: string; // e.g., "Squats"
     notes?: string;
@@ -48,6 +49,8 @@ export async function POST(request: NextRequest) {
         properties: {
             workoutType: { type: "string", description: "Infer the activity type (e.g., strength, running, cycling, swimming, walking, yoga). Use 'strength' for gym/home strength. If multiple types seem present, prioritize the most specific (e.g., 'running' over 'strength' if a run is mentioned alongside exercises)." },
             workoutName: { type: "string", description: "Infer a suitable name (e.g., 'Morning Run', 'Leg Day'). If distance/duration present, use that (e.g., '10k Run')." },
+            // NEW: Add workoutDate property
+            workoutDate: { type: "string", format: "date", description: "Infer the date of the workout. Look for explicit dates (e.g., 'Mar 6', '6. März', '2024-03-06'), relative dates ('Today', 'Yesterday'). If year is missing, assume the current year. Format as YYYY-MM-DD." },
             // Make exercises optional, default to empty array if not applicable
             exercises: {
                 type: "array",
@@ -93,6 +96,7 @@ export async function POST(request: NextRequest) {
 
 RULES:
 *   **Output Format:** Strictly JSON. No extra text or markdown.
+*   **Workout Date:** Infer the 'workoutDate' if mentioned. Look for explicit dates (e.g., 'Mar 6', '6. März', '2024-03-06') or relative terms ('Today', 'Yesterday'). If a year isn't specified, assume the current year. Return the date in **YYYY-MM-DD** format. If no date is mentioned, omit the field.
 *   **Workout Type:** Infer 'workoutType' (e.g., 'running', 'strength', 'cycling'). Prioritize specific cardio types if mentioned. Default to 'strength' if only set-based exercises are found.
 *   **Workout Name:** Create a concise 'workoutName'. If distance/duration given (e.g., '10k run in 50 min'), use that (e.g., '10k Run'). Otherwise, infer (e.g., 'Strength Session', 'Morning Swim').
 *   **Cardio Parsing:**
@@ -112,25 +116,26 @@ RULES:
 JSON SCHEMA:
 ${jsonSchema}
 
-EXAMPLE INPUT 1 (Strength):
-Squats: 1x5 60 kg, 3x5 50 kg; Bench Press: 4x5 60 kg (RPE 8), 1x3 65kg (fail); Pull-ups: 3x6 +5 kg
+EXAMPLE INPUT 1 (Strength with Date):
+6. März: Gym, Squats: 1x5 60 kg, 3x5 50 kg; Bench Press: 4x5 60 kg (RPE 8)
 
-EXPECTED JSON OUTPUT 1:
+EXPECTED JSON OUTPUT 1 (Assuming current year is 2024):
 {
+  "workoutDate": "2024-03-06",
   "workoutType": "strength",
   "workoutName": "Strength Session",
   "exercises": [
     {"name": "Squats", "sets": [{"weight": "60", "reps": "5"},{"weight": "50", "reps": "5"},{"weight": "50", "reps": "5"},{"weight": "50", "reps": "5"}]},
-    {"name": "Bench Press", "sets": [{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "65", "reps": "3", "notes": "fail"}]},
-    {"name": "Pull-ups", "sets": [{"weight": "5", "reps": "6"},{"weight": "5", "reps": "6"},{"weight": "5", "reps": "6"}]}
+    {"name": "Bench Press", "sets": [{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"},{"weight": "60", "reps": "5", "notes": "RPE 8"}]}
   ]
 }
 
 EXAMPLE INPUT 2 (Cardio):
-10 km run in 50 min
+Yesterday: 10 km run in 50 min
 
-EXPECTED JSON OUTPUT 2:
+EXPECTED JSON OUTPUT 2 (Assuming today is 2024-04-30):
 {
+  "workoutDate": "2024-04-29",
   "workoutType": "running",
   "workoutName": "10k Run",
   "cardioDetails": {
@@ -211,7 +216,13 @@ EXPECTED JSON OUTPUT 3:
         const jsonMatch = parsedJsonString.match(/```(?:json)?\n?([^\s\S]*?)\n?```/);
         const jsonToParse = jsonMatch ? jsonMatch[1] : parsedJsonString;
 
-        const parsedData: ParsedWorkoutData = JSON.parse(jsonToParse);
+        let parsedData: ParsedWorkoutData;
+        try {
+           parsedData = JSON.parse(jsonToParse);
+        } catch (innerParseError) {
+          console.error("[AI Parse Workout] Initial JSON parse failed. Raw string:", jsonToParse);
+          throw innerParseError; // Re-throw if basic parsing fails
+        }
 
         // Basic validation (can be enhanced with Zod later)
         if (!parsedData || !Array.isArray(parsedData.exercises)) {
@@ -225,6 +236,12 @@ EXPECTED JSON OUTPUT 3:
         }
          if (parsedData.cardioDetails?.duration && typeof parsedData.cardioDetails.duration !== 'number') {
              throw new Error("Parsed JSON 'cardioDetails.duration' must be a number.");
+        }
+        // NEW: Validate workoutDate format if present
+        if (parsedData.workoutDate && !/^\d{4}-\d{2}-\d{2}$/.test(parsedData.workoutDate)) {
+            console.warn(`[AI Parse Workout] Parsed workoutDate "${parsedData.workoutDate}" does not match YYYY-MM-DD format. Attempting to continue, but might cause issues.`);
+            // Optionally, try to reformat or discard it here if needed.
+            // For now, just warn and proceed.
         }
 
         // Log the full parsed data structure
