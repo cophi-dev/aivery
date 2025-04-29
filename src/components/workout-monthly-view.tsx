@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isBefore, isAfter, startOfDay, getWeekOfMonth } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -112,6 +113,7 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
 }
 
 export default function WorkoutMonthlyView() {
+    const router = useRouter();
     const [allWorkouts, setAllWorkouts] = useState<WorkoutData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -176,6 +178,11 @@ export default function WorkoutMonthlyView() {
     const shiftMonth = (months: number) => {
         setSelectedMonthStart(prev => addMonths(prev, months));
     };
+
+    // Define handleWorkoutClick
+    const handleWorkoutClick = useCallback((workoutId: string) => {
+        router.push(`/workouts/${workoutId}`);
+    }, [router]);
 
     if (isLoading) {
         return <div className="flex justify-center items-center p-8"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /> <span className="ml-2">Loading workouts...</span></div>;
@@ -369,8 +376,9 @@ export default function WorkoutMonthlyView() {
                              {monthlyMetrics.allWorkoutsInMonth.map(workout => {
                                  const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
                                  return (
-                                     <li key={workout._id} 
-                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30"
+                                     <li key={workout._id}
+                                        onClick={() => handleWorkoutClick(workout._id)}
+                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30 cursor-pointer"
                                      >
                                         {/* Badge (Column 1, Row 1 & 2) */}
                                         <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses}`}>
@@ -387,7 +395,7 @@ export default function WorkoutMonthlyView() {
                                         {/* Metrics (Column 2, Row 2) */}
                                         <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
                                             <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
-                                            {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance)}</span>}
+                                            {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance / 1000)}</span>}
                                             {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {workout.calculatedVolume.toLocaleString()} kg</span>}
                                         </div>
                                      </li>
