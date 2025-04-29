@@ -162,6 +162,12 @@ EXPECTED JSON OUTPUT 3:
 `;
 
     console.log("[AI Parse Workout] Calling Grok API with updated prompt/schema...");
+
+    // --- NEW: Remove potential colon after date before sending to AI ---
+    const cleanedLogText = rawLogText.replace(/(\d{1,2}\.\s+\w+):/, '$1'); 
+    console.log('[AI Parse Workout] Cleaned log text for AI:', cleanedLogText);
+    // --- END NEW ---
+
     const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -173,7 +179,7 @@ EXPECTED JSON OUTPUT 3:
         messages: [
             { role: 'system', content: systemPrompt },
             // Pass the raw log text as the user message for parsing
-            { role: 'user', content: rawLogText }
+            { role: 'user', content: cleanedLogText }
         ],
         max_tokens: 2048, // Increased to accommodate potentially large JSON output
         temperature: 0.1, // Low temperature for deterministic JSON parsing
