@@ -594,8 +594,8 @@ export default function ExerciseDetailPageClient({
                   {isStrengthExercise && (
                     <>
                       <MetricCard title="Avg Weight" value={progressionDisplayData.avgLastWeight?.toFixed(1) + ' kg'} change={progressionDisplayData.weightChange} />
-                      <MetricCard title="Avg Reps" value={progressionDisplayData.avgLastReps?.toFixed(1)} change={progressionDisplayData.repsChange} />
-                      <MetricCard title="Avg Volume" value={progressionDisplayData.avgLastVolume?.toFixed(0) + ' kg'} change={progressionDisplayData.volumeChange} />
+                      <MetricCard title="Avg Reps" value={progressionDisplayData.avgLastReps?.toFixed(1) ?? '--'} change={progressionDisplayData.repsChange} />
+                      <MetricCard title="Avg Volume" value={(progressionDisplayData.avgLastVolume?.toFixed(0) ?? '--') + (progressionDisplayData.avgLastVolume != null ? ' kg' : '')} change={progressionDisplayData.volumeChange} />
                     </>
                   )}
                    {isCardioExercise && (
