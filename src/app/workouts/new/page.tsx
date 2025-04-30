@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { format, isToday, isPast, isFuture, parseISO } from "date-fns"
 import { useSession } from "next-auth/react"
-import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2, Dumbbell, Home, Footprints, Bike, PersonStanding, Waves } from "lucide-react"
+import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2, Dumbbell, Home, Footprints, Bike, PersonStanding, Waves, LucideMinus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from 'react-hot-toast'
 import { motion } from 'motion/react'
@@ -20,6 +20,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { 
   createWorkout as createWorkoutAction, 
   updateWorkoutAction,
+  getRecentPerformedExercisesAction,
   type WorkoutUpdatePayload,
   type InputSetData
 } from "@/lib/workout-actions"
@@ -31,6 +32,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { useDebounce } from "@/hooks/useDebounce"
 import { GlowEffect } from "@/components/ui/glow-effect"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Type guard to filter out nulls
 function isDefined<T>(value: T | null | undefined): value is T {
@@ -242,6 +245,8 @@ export default function NewWorkoutPage() {
   const [searchResults, setSearchResults] = useState<ExerciseData[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchList, setShowSearchList] = useState(false); // To control combobox popover visibility
+  const [isExerciseDialogOpen, setIsExerciseDialogOpen] = useState(false); // NEW state for dialog
+  const [performedExercises, setPerformedExercises] = useState<ExerciseData[]>([]); // NEW state for performed exercises
   const debouncedSearchQuery = useDebounce(exerciseSearchQuery, 300); // Debounce search input
   // --- END Search State ---
 
@@ -458,6 +463,25 @@ export default function NewWorkoutPage() {
     };
     loadAllExercises(); 
   }, []); // Run only once on mount
+
+  // --- NEW Effect to fetch recently performed exercises --- 
+  useEffect(() => {
+    const loadPerformedExercises = async () => {
+      try {
+        // TODO: Ensure getRecentPerformedExercisesAction exists and handles fetching/uniqueness
+        const recentExercises = await getRecentPerformedExercisesAction();
+        setPerformedExercises(recentExercises);
+        console.log(`Fetched ${recentExercises.length} recently performed unique exercises.`);
+      } catch (err) {
+        console.error("Failed to fetch performed exercises:", err);
+        // Don't block UI, just log error for now
+      }
+    };
+    // Fetch only if user is logged in
+    if (session?.user?.id) { 
+      loadPerformedExercises();
+    }
+  }, [session]); // Re-run if session changes
 
   // --- NEW Effect for searching ALL exercises ---
   useEffect(() => {
@@ -827,7 +851,11 @@ export default function NewWorkoutPage() {
     // Clear search after selection
     setExerciseSearchQuery("");
     setSearchResults([]);
-    setShowSearchList(false);
+    
+    // Close DIALOG asynchronously 
+    setTimeout(() => {
+      setIsExerciseDialogOpen(false); // Use the correct state setter for the dialog
+    }, 0); // 0ms delay pushes execution to next event loop tick
   };
   // --- END Modified: Handle Exercise Selection ---
 
@@ -1284,103 +1312,128 @@ export default function NewWorkoutPage() {
               const isCardioExercise = canonicalExercise?.category === 'cardio';
 
               return (
-                <div key={exercise.id} className="border rounded-lg shadow-sm p-6 space-y-5 relative bg-card">
+                // Card Styling: Remove border, increase rounding, maintain shadow and padding
+                <div key={exercise.id} className="rounded-xl shadow-sm p-6 space-y-5 relative bg-card"> 
                   {/* Exercise Header: Increased spacing mb-4 */}
-                  <div className="flex justify-between items-start mb-4"> 
+                  <div className="flex justify-between items-start mb-4">
                     <div className="flex-1 space-y-2 mr-4"> {/* Increased mr-4 */}
                       {/* Changed Label style */}
                       <Label htmlFor={`exercise-name-${exercise.id}`} className="text-xs font-medium text-muted-foreground">
                         EXERCISE #{index + 1}
                       </Label>
-                      {/* RE-ADD Combobox for Exercise Selection */}
-                      <Popover open={showSearchList} onOpenChange={setShowSearchList} modal={false}>
-                        <PopoverTrigger asChild>
+                      {/* --- DIALOG TRIGGER --- */}
+                      <Dialog open={isExerciseDialogOpen} onOpenChange={setIsExerciseDialogOpen}>
+                        <DialogTrigger asChild>
                           <Button
                             variant="outline"
-                            role="combobox"
-                            aria-expanded={showSearchList}
                             // Slightly larger, consistent height
                             className="w-full h-10 justify-between font-normal text-base" 
-                            onClick={() => setShowSearchList(true)} // Open on click
                           >
-                            <>
+                            <> 
                               {exercise.name || "Select exercise..."}
                               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </>
                           </Button>
-                        </PopoverTrigger>
-                        {/* Ensure PopoverContent has relative positioning for z-index context */}
-                        <PopoverContent 
-                            className="w-[--radix-popover-trigger-width] p-0 bg-popover border shadow-md rounded-md relative z-40"
-                         > 
-                          <Command shouldFilter={false}> 
-                            <CommandInput 
-                              placeholder="Search exercise..." 
-                              value={exerciseSearchQuery}
-                              onValueChange={setExerciseSearchQuery}
-                              className="h-9" // Slightly smaller input
-                            />
-                            {/* Add scrollable container styles */}
-                            <CommandList className="max-h-[300px] overflow-y-auto"> 
-                              <CommandEmpty>
-                                {isSearching ? "Searching..." : "No exercise found."}
-                              </CommandEmpty>
-                              <CommandGroup>
-                                {searchResults.map((dbExercise) => (
-                                  <CommandItem
-                                    key={dbExercise._id}
-                                    value={dbExercise.name} // Use name for Command value
-                                    onSelect={() => {
-                                      // This should handle keyboard Enter and mouse clicks
-                                      console.log('[onSelect Fired - Search Result]:', dbExercise.name); 
-                                      handleExerciseSelection(exercise.id, dbExercise);
-                                      // setShowSearchList(false); // onOpenChange should handle this
-                                    }}
-                                    onClick={() => {
-                                      // Explicitly handle click for testing
-                                      console.log('[onClick Fired - Search Result]:', dbExercise.name);
-                                      handleExerciseSelection(exercise.id, dbExercise);
-                                      // setShowSearchList(false); // onOpenChange should handle this
-                                    }}
-                                    className="cursor-pointer" 
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", exercise.name === dbExercise.name ? "opacity-100" : "opacity-0")} />
-                                    {dbExercise.name}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                              
-                              {debouncedSearchQuery.length < 2 && searchResults.length === 0 && ( // Show only if no search results yet
-                                  <CommandGroup heading="Suggestions"> {/* Changed heading */}
-                                      {/* Using filteredExercises which depends on workout type */}
-                                      {filteredExercises.slice(0, 5).map((dbEx) => ( 
-                                          <CommandItem
-                                              key={dbEx._id}
-                                              value={dbEx.name}
-                                              onSelect={() => {
-                                                  // This should handle keyboard Enter and mouse clicks
-                                                  console.log('[onSelect Fired - Suggestion]:', dbEx.name); 
-                                                  handleExerciseSelection(exercise.id, dbEx);
-                                                  // setShowSearchList(false); // onOpenChange should handle this
-                                              }}
-                                              onClick={() => {
-                                                // Explicitly handle click for testing
-                                                console.log('[onClick Fired - Suggestion]:', dbEx.name);
-                                                handleExerciseSelection(exercise.id, dbEx);
-                                                // setShowSearchList(false); // onOpenChange should handle this
-                                              }}
-                                              className="cursor-pointer"
-                                          >
-                                             <Check className={cn("mr-2 h-4 w-4", exercise.name === dbEx.name ? "opacity-100" : "opacity-0")} />
-                                              {dbEx.name}
-                                          </CommandItem>
-                                      ))}
-                                  </CommandGroup>
-                              )}
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[600px]"> {/* Adjust max width as needed */}
+                          <DialogHeader>
+                            <DialogTitle>Select Exercise</DialogTitle>
+                            <DialogDescription>
+                              Choose an exercise from the list or search.
+                            </DialogDescription>
+                          </DialogHeader>
+                          {/* --- TABS --- */}
+                          <Tabs defaultValue="performed" className="w-full">
+                            <TabsList className="grid w-full grid-cols-4"> {/* Adjust grid-cols based on # of tabs */}
+                              <TabsTrigger value="performed">Performed</TabsTrigger>
+                              <TabsTrigger value="chest">Chest</TabsTrigger>
+                              <TabsTrigger value="back">Back</TabsTrigger>
+                              <TabsTrigger value="legs">Legs</TabsTrigger>
+                            </TabsList>
+                            {/* --- TAB CONTENT --- */}
+                            <TabsContent value="performed">
+                              <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                {performedExercises.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground p-2">No recently performed exercises found.</p>
+                                ) : (
+                                    performedExercises.map((dbEx) => (
+                                      <button 
+                                        key={dbEx._id} 
+                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                      >
+                                          {dbEx.name}
+                                      </button>
+                                    ))
+                                )}
+                              </div>
+                            </TabsContent>
+                            <TabsContent value="chest">
+                               <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                {dbExercises
+                                  .filter(ex => 
+                                    // Corrected: Use muscleGroups (plural) and add type annotation
+                                    Array.isArray(ex.muscleGroups) && 
+                                    ex.muscleGroups.some((m: string) => m.toLowerCase() === 'chest')
+                                  )
+                                  .map((dbEx) => (
+                                    <button 
+                                      key={dbEx._id} 
+                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)} // Use existing handler
+                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                    >
+                                        {dbEx.name}
+                                    </button>
+                                  ))}
+                               </div>
+                            </TabsContent>
+                            <TabsContent value="back">
+                               <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                {dbExercises
+                                  .filter(ex => 
+                                    // Corrected: Use muscleGroups (plural) and add type annotation
+                                    Array.isArray(ex.muscleGroups) && 
+                                    ex.muscleGroups.some((m: string) => m.toLowerCase() === 'back')
+                                  )
+                                  .map((dbEx) => (
+                                    <button 
+                                      key={dbEx._id} 
+                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                    >
+                                        {dbEx.name}
+                                    </button>
+                                  ))}
+                               </div>
+                            </TabsContent>
+                            <TabsContent value="legs">
+                              <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                {dbExercises
+                                  .filter(ex => 
+                                    // Corrected: Use muscleGroups (plural) and add type annotation
+                                    Array.isArray(ex.muscleGroups) && 
+                                    ex.muscleGroups.some((m: string) => [
+                                        'legs', 
+                                        'quadriceps', 
+                                        'hamstrings', 
+                                        'glutes', 
+                                        'calves'
+                                      ].includes(m.toLowerCase()))
+                                  )
+                                  .map((dbEx) => (
+                                    <button 
+                                      key={dbEx._id} 
+                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                    >
+                                        {dbEx.name}
+                                    </button>
+                                  ))}
+                               </div>
+                            </TabsContent>
+                          </Tabs>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                     {/* Remove Exercise Button: Use ghost variant, slightly larger */}
                     <Button 
@@ -1396,41 +1449,105 @@ export default function NewWorkoutPage() {
 
                   {/* Sets Section: Only show if not cardio and exercise name is selected */}
                   {exercise.name && !isCardioExercise && (
-                    <div className="space-y-3 pt-2"> {/* Added padding-top */}
-                      {/* Sets Header Row - Added labels */}
-                      <div className="grid grid-cols-[1fr_1fr_auto] gap-x-3 items-center px-2 pb-1 border-b">
-                        <Label className="text-xs font-medium text-muted-foreground justify-self-center">WEIGHT (KG)</Label>
-                        <Label className="text-xs font-medium text-muted-foreground justify-self-center">REPS</Label>
-                        <div className="w-8"></div> {/* Spacer for alignment */}
-                      </div>
-
-                      {/* Sets List */}
-                      <div className="space-y-2">
+                    // Remove padding-top from here
+                    <div> 
+                      {/* Sets List - Remove border-t, adjust spacing if needed */}
+                      <div className="space-y-4 pt-2"> {/* Increased spacing slightly, adjust pt */} 
                         {exercise.sets.map((set, setIndex) => (
-                          // Use grid for better alignment, gap-x-3
-                          <div key={set.id} className="grid grid-cols-[1fr_1fr_auto] gap-x-3 items-center group"> 
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={set.weight}
-                              onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                              className="h-9 text-center tabular-nums" // Smaller height, centered text
-                              min="0"
-                            />
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={set.reps}
-                              onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                              className="h-9 text-center tabular-nums" // Smaller height, centered text
-                              min="0"
-                            />
-                            {/* Remove Set Button: Ghost, icon only, appears on hover/focus */}
+                          // Main row for a set - Remove border-b, adjust padding/gap
+                          <div key={set.id} className="flex items-center gap-x-3 group pb-2"> {/* Reduced pb slightly */} 
+                            {/* Set Number */}
+                            <span className="text-sm font-medium text-muted-foreground w-6 text-center tabular-nums">{setIndex + 1}</span> 
+                            
+                            {/* Weight Section with Steppers */}
+                            <div className="flex-1 flex flex-col items-center space-y-1">
+                               <Label className="text-xs font-medium text-muted-foreground/80 mb-1">WEIGHT (KG)</Label>
+                               <div className="flex items-center justify-center gap-x-2 w-full">
+                                   <Button 
+                                       variant="outline" 
+                                       size="icon" 
+                                       className="h-8 w-8 shrink-0 rounded-full" // Circular steppers
+                                       onClick={() => {
+                                           const currentWeight = parseFloat(set.weight || '0') || 0;
+                                           // Define step (e.g., 1kg, 2.5kg) - Let's use 1 for now
+                                           const step = 1; 
+                                           const newValue = Math.max(0, currentWeight - step); // Prevent negative weight
+                                           updateSetField(exercise.id, set.id, 'weight', newValue.toString());
+                                       }}
+                                   >
+                                       <LucideMinus className="h-4 w-4" />
+                                   </Button>
+                                   <Input
+                                     type="number" // Keep type for keyboard input fallback
+                                     placeholder="0" 
+                                     value={set.weight}
+                                     onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                                     // Minimal input: focus on text, subtle background
+                                     className="h-9 w-16 text-center text-base font-medium tabular-nums border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded" 
+                                     min="0"
+                                   />
+                                   <Button 
+                                       variant="outline" 
+                                       size="icon" 
+                                       className="h-8 w-8 shrink-0 rounded-full"
+                                       onClick={() => {
+                                          const currentWeight = parseFloat(set.weight || '0') || 0;
+                                          const step = 1; // Define step
+                                          const newValue = currentWeight + step;
+                                          updateSetField(exercise.id, set.id, 'weight', newValue.toString());
+                                       }}
+                                   >
+                                       <LucidePlus className="h-4 w-4" />
+                                   </Button>
+                               </div>
+                            </div>
+
+                            {/* Reps Section with Steppers */}
+                             <div className="flex-1 flex flex-col items-center space-y-1">
+                               <Label className="text-xs font-medium text-muted-foreground/80 mb-1">REPS</Label>
+                               <div className="flex items-center justify-center gap-x-2 w-full">
+                                   <Button 
+                                       variant="outline" 
+                                       size="icon" 
+                                       className="h-8 w-8 shrink-0 rounded-full"
+                                       onClick={() => {
+                                           const currentReps = parseInt(set.reps || '0') || 0;
+                                           const newValue = Math.max(0, currentReps - 1); // Prevent negative reps
+                                           updateSetField(exercise.id, set.id, 'reps', newValue.toString());
+                                       }}
+                                        disabled={(parseInt(set.reps || '0') || 0) <= 0} // Disable if reps are 0
+                                   >
+                                       <LucideMinus className="h-4 w-4" />
+                                   </Button>
+                                    <Input
+                                      type="number"
+                                      placeholder="0"
+                                      value={set.reps}
+                                      onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                                      className="h-9 w-16 text-center text-base font-medium tabular-nums border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded"
+                                      min="0"
+                                    />
+                                   <Button 
+                                       variant="outline" 
+                                       size="icon" 
+                                       className="h-8 w-8 shrink-0 rounded-full"
+                                       onClick={() => {
+                                           const currentReps = parseInt(set.reps || '0') || 0;
+                                           const newValue = currentReps + 1;
+                                           updateSetField(exercise.id, set.id, 'reps', newValue.toString());
+                                       }}
+                                   >
+                                       <LucidePlus className="h-4 w-4" />
+                                   </Button>
+                                </div>
+                            </div>
+
+                            {/* Remove Set Button: Slightly larger, positioned at the end */}
                             <Button 
                               variant="ghost" 
                               size="icon" 
                               onClick={() => removeSet(exercise.id, set.id)} 
-                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity" // Show on hover/focus within row
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 self-center ml-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex-shrink-0" 
                             >
                               <LucideX className="h-4 w-4" />
                               <span className="sr-only">Remove Set {setIndex + 1}</span>
@@ -1439,11 +1556,17 @@ export default function NewWorkoutPage() {
                         ))}
                       </div>
 
-                      {/* Add Set Button: Outline variant, centered */}
-                      <div className="flex justify-center pt-2">
-                        <Button variant="outline" size="sm" onClick={() => addSet(exercise.id)} className="w-full md:w-auto">
-                          <LucidePlus className="h-4 w-4 mr-2" />
-                          Add Set
+                      {/* Add Set Button: Minimalist icon button centered - Remove dashed border? */}
+                      <div className="flex justify-center pt-4"> 
+                        <Button 
+                           variant="ghost" 
+                           size="icon" 
+                           onClick={() => addSet(exercise.id)} 
+                           // Simpler style: Subtle background on hover, no explicit border
+                           className="rounded-full h-9 w-9 text-muted-foreground hover:bg-muted/50 hover:text-accent-foreground" 
+                        >
+                          <LucidePlus className="h-4 w-4" />
+                          <span className="sr-only">Add Set</span>
                         </Button>
                       </div>
                     </div>
@@ -1486,12 +1609,14 @@ export default function NewWorkoutPage() {
                   {/* Exercise Notes: Added label, slightly more space */}
                   <div className="pt-2"> 
                     <Label htmlFor={`exercise-notes-${exercise.id}`} className="text-xs font-medium text-muted-foreground">Notes (Optional)</Label>
+                    {/* Minimal Textarea Style */}
                     <Textarea
                       id={`exercise-notes-${exercise.id}`}
                       placeholder="e.g., Focused on form, felt strong..."
                       value={exercise.notes || ""}
                       onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                      className="mt-1 min-h-[60px] text-sm" // Reduced min-height, smaller text
+                      // Remove border, add subtle bg, focus ring
+                      className="mt-1 min-h-[60px] text-sm border-0 bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded-md px-3 py-2" 
                     />
                   </div>
                 </div>
