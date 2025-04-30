@@ -1271,144 +1271,150 @@ export default function NewWorkoutPage() {
   const exerciseBodyStyle = "px-6 pb-6 space-y-6"
   const exerciseStatsStyle = "flex items-center gap-2 text-sm text-muted-foreground"
   const exerciseStatBadgeStyle = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20"
-  const setRowStyle = "group relative flex items-center gap-4 rounded-xl p-4 transition-colors hover:bg-muted/50"
-  const inputGroupStyle = "flex flex-col items-center space-y-2"
+  const setRowStyle = "group relative grid grid-cols-[auto_1fr_1fr_auto] items-center gap-6 rounded-xl p-4 transition-colors hover:bg-muted/50"
+  const inputGroupStyle = "flex flex-col items-center space-y-2 w-full"
   const inputLabelStyle = "text-xs font-medium text-muted-foreground/80"
-  const numberControlStyle = "flex items-center justify-center gap-2 w-full"
+  const numberControlStyle = "flex items-center justify-center gap-2 w-full max-w-[160px]"
+
+  // Add these style constants at the top with other styles
+  const pageHeaderStyle = "sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+  const pageContentStyle = "container max-w-2xl mx-auto px-4 py-6 space-y-8"
+  const sectionStyle = "space-y-4"
+  const sectionHeaderStyle = "flex items-center justify-between"
+  const sectionTitleStyle = "text-lg font-semibold tracking-tight"
+  const activityTypeStyle = "grid grid-cols-6 gap-2"
+  const activityButtonStyle = "flex flex-col items-center justify-center gap-1 rounded-2xl p-3 hover:bg-accent transition-colors"
+  const activityIconStyle = "h-6 w-6"
+  const activityLabelStyle = "text-xs font-medium"
+  const quickLogStyle = "relative overflow-hidden rounded-2xl bg-card shadow-lg border border-border/40"
+  const exercisesContainerStyle = "space-y-4"
+
+  // Update the style constants
+  const aiSuggestionStyle = "flex items-start p-4 space-x-3 rounded-xl bg-blue-500/10 dark:bg-blue-400/10 border border-blue-200/20 dark:border-blue-300/20"
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl"> 
-      {/* Header */}
-      <div className="flex items-center mb-6">
-        <Button variant="ghost" size="icon" onClick={() => router.back()} className="mr-2">
-          <LucideArrowLeft className="h-5 w-5" />
-        </Button>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {isEditing ? "Edit Workout" : duplicateWorkoutId ? "Duplicate Workout" : "Log New Workout"}
-        </h1>
+    <>
+      {/* Page Header */}
+      <div className={pageHeaderStyle}>
+        <div className="container max-w-2xl mx-auto px-4 h-14 flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="shrink-0">
+            <LucideArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1 flex items-center justify-between">
+            <h1 className="text-xl font-semibold">
+              {isEditing ? "Edit Workout" : duplicateWorkoutId ? "Duplicate Workout" : "Log New Workout"}
+            </h1>
+            <Button
+              type="button"
+              onClick={handleSaveWorkout}
+              disabled={isSubmitting}
+              size="sm"
+              className="rounded-full"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (isEditing ? "Update" : "Save")}
+            </Button>
+          </div>
+        </div>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="mb-4 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
-          <p className="font-medium">Error:</p>
-          <p>{error}</p>
-        </div>
-      )}
+      {/* Main Content */}
+      <main className={pageContentStyle}>
+        {/* Error Display */}
+        {error && (
+          <div className="rounded-xl border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
+            <p className="font-medium">Error</p>
+            <p>{error}</p>
+          </div>
+        )}
 
-      <div className="space-y-6">
-        {/* Workout Metadata Section */}
-        <div className="space-y-4 p-4"> 
-            {/* Activity Type Toggles */}
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-              <div>
-                 <Label className="text-xs font-medium text-muted-foreground/80 mb-2 block">Activity Type</Label>
-                 <ToggleGroup 
-                    type="single"
-                    variant="outline"
-                    value={workoutType}
-                    onValueChange={(value) => {
-                       if (value) setWorkoutType(value as WorkoutTypeOption);
-                    }}
-                    className="flex flex-wrap justify-start gap-2"
-                 >
-                    {mainWorkoutTypes.map((type) => (
-                      <ToggleGroupItem 
-                        key={type.value} 
-                        value={type.value} 
-                        aria-label={type.label}
-                        className="h-12 w-12 flex flex-col items-center justify-center gap-1 p-1 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground"
-                      >
-                        <type.icon className="h-5 w-5" />
-                        <span className="text-[10px]">{type.label}</span>
-                      </ToggleGroupItem>
-                    ))}
-                 </ToggleGroup>
-              </div>
-
-              {/* Date Picker */}
-               <div>
-                 <Label htmlFor="workout-date" className="text-xs font-medium text-muted-foreground/80">Date</Label>
-                 <Popover modal={false}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        id="workout-date"
-                        variant="ghost" // Changed to ghost for cleaner look
-                        className={cn(
-                          "w-full justify-start text-left font-normal", 
-                          "p-0", // Remove padding
-                          !date && "text-muted-foreground",
-                           date && "text-foreground" 
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? (isToday(date) ? 'Today' : format(date, "PPP")) : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 bg-card">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={(newDate) => {
-                            if (newDate) {
-                                setDate(newDate);
-                                updateTenseBasedOnDate(newDate);
-                            }
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-           </div>
-           
-           {/* Workout Name Input */}
-           <div>
-             <Input
-                id="workout-name"
-                placeholder={workoutName || getDefaultWorkoutName(workoutType, date)}
-                value={workoutName}
-                onChange={(e) => setWorkoutName(e.target.value)}
-                className="placeholder:text-muted-foreground/80 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-base font-medium"
-             />
-           </div>
-        </div>
-
-        {/* Horizontal Separator */} 
-        <hr className="my-6 border-border/50" /> 
-
-        {/* AI Quick Log Section (Kept GlowEffect) */} 
-        {!isEditing && (
-            <div className="relative"> 
-              <motion.div
-                className='pointer-events-none absolute inset-0'
-                animate={{ opacity: 1 }}
-              >
-                <GlowEffect
-                  colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']} 
-                  mode='colorShift'
-                  blur='strong'
-                  scale={1}
-                  duration={4}
+        {/* Activity Type & Date Section */}
+        <div className={sectionStyle}>
+          <div className={sectionHeaderStyle}>
+            <h2 className={sectionTitleStyle}>Activity Type</h2>
+            <Popover modal={false}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="rounded-full">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {date ? (isToday(date) ? 'Today' : format(date, "MMM d, yyyy")) : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={(newDate) => {
+                    if (newDate) {
+                      setDate(newDate);
+                      updateTenseBasedOnDate(newDate);
+                    }
+                  }}
+                  initialFocus
                 />
-              </motion.div>
-              <div className="relative z-10 space-y-4 rounded-xl shadow-sm p-6 bg-card"> 
-                <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
-                <div>
-                  <Textarea 
-                    id="ai-quick-log"
-                    placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
-                    className="mt-1 min-h-[80px] placeholder:text-muted-foreground/80"
-                    value={aiLogInput} 
-                    onChange={(e) => setAiLogInput(e.target.value)} 
-                    disabled={isProcessingAi}
-                  />
-                </div>
-                <Button 
-                  type="button" 
-                  onClick={() => handleAiProcess(aiLogInput)} 
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className={activityTypeStyle}>
+            {mainWorkoutTypes.map((type) => {
+              const isSelected = workoutType === type.value;
+              return (
+                <Button
+                  key={type.value}
+                  variant="ghost"
+                  className={cn(
+                    activityButtonStyle,
+                    isSelected && "bg-primary/10 text-primary"
+                  )}
+                  onClick={() => setWorkoutType(type.value)}
+                >
+                  <type.icon className={activityIconStyle} />
+                  <span className={activityLabelStyle}>{type.label}</span>
+                </Button>
+              );
+            })}
+          </div>
+
+          <Input
+            placeholder={getDefaultWorkoutName(workoutType, date)}
+            value={workoutName}
+            onChange={(e) => setWorkoutName(e.target.value)}
+            className="text-xl font-semibold bg-transparent border-0 px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+        </div>
+
+        {/* Quick Log Section - Preserved with glow effect */}
+        {!isEditing && (
+          <div className="relative">
+            <motion.div className="pointer-events-none absolute inset-0">
+              <GlowEffect
+                colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']}
+                mode="colorShift"
+                blur="strong"
+                scale={1}
+                duration={4}
+              />
+            </motion.div>
+            <div className={quickLogStyle}>
+              <div className="p-6 space-y-4">
+                <h2 className="text-lg font-semibold">Quick Log with AI</h2>
+                <Textarea
+                  placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
+                  className="min-h-[80px] bg-background/50 resize-none"
+                  value={aiLogInput}
+                  onChange={(e) => setAiLogInput(e.target.value)}
+                  disabled={isProcessingAi}
+                />
+                <Button
+                  type="button"
+                  onClick={() => handleAiProcess(aiLogInput)}
                   disabled={isProcessingAi || !aiLogInput.trim()}
                   variant="outline"
+                  className="w-full"
                 >
                   {isProcessingAi ? (
                     <>
@@ -1416,54 +1422,22 @@ export default function NewWorkoutPage() {
                       Processing...
                     </>
                   ) : (
-                    "Process with AI"
+                    <>
+                      <Lightbulb className="mr-2 h-4 w-4" />
+                      Process with AI
+                    </>
                   )}
                 </Button>
               </div>
             </div>
-        )}
-        
-        {/* Separator if AI log was shown */} 
-        {!isEditing && <hr className="my-6 border-border/50" /> } 
-
-        {/* Conditional Fields for Non-Strength Workouts */} 
-        {!isStrengthWorkout && workoutType && (
-          <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
-             <h2 className="text-lg font-medium mb-4">{workoutTypeDisplayNames[workoutType]} Details</h2>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Input 
-                    id="duration"
-                    type="number" 
-                    placeholder="Duration (minutes)"
-                    value={duration} 
-                    onChange={(e) => setDuration(e.target.value)}
-                    min="0" 
-                  />
-                </div>
-                {(workoutType === 'running' || workoutType === 'cycling' || workoutType === 'walking' || workoutType === 'swimming') && (
-                  <div>
-                    <Input 
-                      id="distance"
-                      type="number" 
-                      placeholder="Distance (km/miles)"
-                      value={distance} 
-                      onChange={(e) => setDistance(e.target.value)}
-                      min="0"
-                      step="0.1" 
-                    />
-                  </div>
-                )}
-             </div>
-             {/* Horizontal Separator */} 
-             <hr className="my-6 border-border/50" /> 
           </div>
         )}
 
-        {/* Exercises Section (Strength Workouts) */} 
-        {isStrengthWorkout && (
-          <div className="space-y-6"> 
-            <h2 className="text-xl font-semibold tracking-tight mb-4">Exercises</h2>
+        {/* Exercises Section */}
+        <div className={sectionStyle}>
+          <h2 className={sectionTitleStyle}>Exercises</h2>
+          <div className={exercisesContainerStyle}>
+            {/* Existing exercises mapping with updated styling */}
             {exercises.map((exercise, index) => {
               const canonicalExercise = exercise.name ? dbExercisesMap.get(exercise.name) : null;
               const isCardioExercise = canonicalExercise?.category === 'cardio';
@@ -1503,7 +1477,7 @@ export default function NewWorkoutPage() {
                         <DialogTrigger asChild>
                           <Button
                             variant="ghost"
-                            className="w-full justify-between px-0 font-normal text-xl hover:bg-transparent"
+                            className="w-full justify-between px-0 font-normal text-xl hover:bg-transparent hover:text-foreground/90 hover:opacity-90 transition-colors"
                           >
                             <span className="font-semibold">{exercise.name || "Select exercise..."}</span>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1625,10 +1599,10 @@ export default function NewWorkoutPage() {
                           animate={{ opacity: 1, height: "auto" }}
                           exit={{ opacity: 0, height: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="flex items-start p-4 space-x-3 rounded-xl bg-blue-50/50 border border-blue-100"
+                          className={aiSuggestionStyle}
                         >
-                          <Lightbulb className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-600" />
-                          <span className="text-sm text-blue-900">
+                          <Lightbulb className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500 dark:text-blue-400" />
+                          <span className="text-sm text-blue-700 dark:text-blue-300">
                             <span className="font-semibold">AI Suggestion:</span> {exercise.aiRecommendation}
                           </span>
                         </motion.div>
@@ -1648,10 +1622,12 @@ export default function NewWorkoutPage() {
                               transition={{ duration: 0.2 }}
                               className={setRowStyle}
                             >
+                              {/* Set Number */}
                               <span className="text-sm font-medium text-muted-foreground w-6 text-center">
                                 {setIndex + 1}
                               </span>
 
+                              {/* Weight Input */}
                               <div className={inputGroupStyle}>
                                 <Label className={inputLabelStyle}>WEIGHT (KG)</Label>
                                 <div className={numberControlStyle}>
@@ -1687,6 +1663,7 @@ export default function NewWorkoutPage() {
                                 </div>
                               </div>
 
+                              {/* Reps Input */}
                               <div className={inputGroupStyle}>
                                 <Label className={inputLabelStyle}>REPS</Label>
                                 <div className={numberControlStyle}>
@@ -1722,11 +1699,12 @@ export default function NewWorkoutPage() {
                                 </div>
                               </div>
 
+                              {/* Remove Set Button */}
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => removeSet(exercise.id, set.id)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
                               >
                                 <LucideX className="h-4 w-4" />
                                 <span className="sr-only">Remove Set {setIndex + 1}</span>
@@ -1734,7 +1712,8 @@ export default function NewWorkoutPage() {
                             </motion.div>
                           ))}
                         </AnimatePresence>
-
+                        
+                        {/* Add Set Button */}
                         <div className="flex justify-center pt-4">
                           <Button
                             variant="outline"
@@ -1805,36 +1784,17 @@ export default function NewWorkoutPage() {
                 Add Exercise
               </Button>
             </motion.div>
-             {/* Horizontal Separator */} 
-             <hr className="my-6 border-border/50" /> 
           </div>
-        )}
-
-        {/* Workout Summary */} 
-        {workoutSummary && (
-          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground"> 
-            <p>{getSummaryText()}</p>
-          </div>
-        )}
-
-        {/* Save Button */}
-        <div className="pt-6 flex justify-end"> 
-          <Button 
-             type="button" 
-             onClick={handleSaveWorkout} 
-             disabled={isSubmitting}
-             size="lg"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (isEditing ? "Update Workout" : "Save Workout")}
-          </Button>
         </div>
-      </div>
-    </div>
+
+        {/* Workout Summary - if exists */}
+        {workoutSummary && (
+          <div className="rounded-xl border bg-muted/50 p-4">
+            <p className="text-sm text-muted-foreground">{getSummaryText()}</p>
+          </div>
+        )}
+      </main>
+    </>
   )
 }
 
