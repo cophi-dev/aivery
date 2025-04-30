@@ -155,8 +155,6 @@ export async function getExercisePerformanceStatsAction(
       { $match: { 'workoutDetails.userId': userId } }, // Re-verify user ID after lookup
       { $sort: { 'workoutDetails.date': -1 } }, // Sort by workout date descending
       { $limit: 1 }, // Get only the most recent workout entry for this exercise
-      // --- REMOVE Set Lookup - Sets are embedded in WorkoutExercise --- 
-      // { $lookup: { from: 'sets', localField: 'sets', foreignField: '_id', as: 'setDetails', pipeline: [{ $sort: { order: 1 } }] } },
       { 
         $project: { 
           _id: 0, 
@@ -2402,13 +2400,13 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
   try {
     const user = await getCurrentUser();
     if (!user || !user.id) {
-      console.warn("User not authenticated in getRecentPerformedExercisesAction");
+      console.warn("[PerfEx Action] User not authenticated.");
       return []; 
     }
     const userId = user.id;
     const limit = 20; // Number of recent workouts to check
 
-    console.log(`[PerfEx] Fetching last ${limit} workouts for user ${userId} to find performed exercises...`);
+    console.log(`[PerfEx Action] Fetching last ${limit} workouts for user ${userId}...`);
 
     // 1. Fetch IDs of recent workouts
     const recentWorkoutDocs = await WorkoutModel
@@ -2419,17 +2417,16 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
       .lean();
 
     if (!recentWorkoutDocs || recentWorkoutDocs.length === 0) {
-      console.log("[PerfEx] No recent workouts found for user.");
+      console.log("[PerfEx Action] No recent workouts found for user.");
       return [];
     }
 
     const recentWorkoutIds = recentWorkoutDocs.map(doc => doc._id);
-    console.log(`[PerfEx] Found ${recentWorkoutIds.length} recent workout IDs. Fetching associated WorkoutExercises...`);
+    console.log(`[PerfEx Action] Found ${recentWorkoutIds.length} recent workout IDs:`, recentWorkoutIds.map(id => id.toString()));
 
     // 2. Fetch WorkoutExercises associated with these workouts and populate their exerciseId
     const workoutExercises = await WorkoutExerciseModel
         .find({ workoutId: { $in: recentWorkoutIds } })
-        // .sort({ createdAt: -1 }) // Optional: Sort exercises if needed, though uniqueness is handled later
         .populate<{ exerciseId: IExercise & { _id: Types.ObjectId }}>({ // Populate the exercise details
             path: 'exerciseId',
             model: ExerciseModel
@@ -2437,44 +2434,39 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
         .lean();
 
     if (!workoutExercises || workoutExercises.length === 0) {
-        console.log("[PerfEx] No workout exercises found for the recent workouts.");
+        console.log("[PerfEx Action] No workout exercises found for the recent workouts.");
         return [];
     }
-    console.log(`[PerfEx] Found ${workoutExercises.length} workout exercise entries.`);
+    console.log(`[PerfEx Action] Found ${workoutExercises.length} workout exercise entries. First few:`, JSON.stringify(workoutExercises.slice(0, 3), null, 2)); // Log first few raw entries
 
     const uniqueExercisesMap = new Map<string, any>();
 
     // 3. Iterate through the fetched WorkoutExercises
     for (const workoutExRaw of workoutExercises) {
-        // Cast via unknown to the expected lean+populated type
         const workoutEx = workoutExRaw as unknown as PopulatedWorkoutExerciseLean;
-
-        // Log details of the WorkoutExercise and its populated ExerciseId
-        // console.log(`[PerfEx DEBUG] Processing workoutEx: ${workoutEx._id}, Exercise ID Raw: ${workoutEx.exerciseId?._id}`);
-        // console.log(`[PerfEx DEBUG] workoutEx.exerciseId type: ${typeof workoutEx.exerciseId}, Is object: ${workoutEx.exerciseId !== null && typeof workoutEx.exerciseId === 'object'}`);
-
-        const exerciseData = workoutEx.exerciseId; // No need to cast exerciseId separately now
+        const exerciseData = workoutEx.exerciseId; 
         const hasValidExerciseData = exerciseData && typeof exerciseData === 'object' && exerciseData._id;
 
         if (hasValidExerciseData) {
             const exerciseIdString = exerciseData._id.toString();
             if (!uniqueExercisesMap.has(exerciseIdString)) {
-                // console.log(`[PerfEx DEBUG] Adding unique exercise: ${exerciseData.name} (${exerciseIdString})`);
-                // Serialize the exercise data (which is workoutEx.exerciseId)
+                // Log the exercise being added
+                console.log(`[PerfEx Action] Adding unique exercise: ${exerciseData.name} (ID: ${exerciseIdString})`);
                 uniqueExercisesMap.set(exerciseIdString, deepSerialize(exerciseData)); 
             }
         } else {
-            // console.log(`[PerfEx DEBUG] Skipping workoutEx ${workoutEx._id} due to invalid/missing exerciseData.`);
+            // Log skipped entries for debugging
+            console.log(`[PerfEx Action] Skipping workoutEx ${workoutEx._id} due to invalid/missing exerciseData. Raw exerciseId:`, workoutEx.exerciseId);
         }
     }
 
     const uniqueExercisesArray = Array.from(uniqueExercisesMap.values());
-    console.log(`[PerfEx] Found ${uniqueExercisesArray.length} unique performed exercises in total.`);
+    console.log(`[PerfEx Action] Returning ${uniqueExercisesArray.length} unique performed exercises.`);
 
     return uniqueExercisesArray;
 
   } catch (error) {
-    console.error("Error fetching recent performed exercises:", error);
+    console.error("[PerfEx Action] Error fetching recent performed exercises:", error);
     return []; // Return empty array on error
   }
 }

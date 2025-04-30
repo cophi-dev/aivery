@@ -95,12 +95,10 @@ export async function middleware(request: NextRequest) {
       console.log(`[MIDDLEWARE] Unauthenticated access attempt to API route '${pathname}'. Returning 401.`);
       return new NextResponse('Unauthorized', { status: 401 });
     }
-    // For non-API protected routes, redirect to login
+    // For non-API protected routes, redirect to landing page
     const url = request.nextUrl.clone();
-    const originalPath = pathname; // Keep original path for callback
-    url.pathname = '/login';
-    url.searchParams.set('callbackUrl', originalPath);
-    console.log(`[MIDDLEWARE] Unauthenticated user on protected path '${pathname}'. Redirecting to login.`);
+    url.pathname = '/';
+    console.log(`[MIDDLEWARE] Unauthenticated user on protected path '${pathname}'. Redirecting to landing page.`);
     return NextResponse.redirect(url);
   }
 
