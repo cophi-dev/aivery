@@ -2422,7 +2422,7 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
     }
 
     const recentWorkoutIds = recentWorkoutDocs.map(doc => doc._id);
-    console.log(`[PerfEx Action] Found ${recentWorkoutIds.length} recent workout IDs:`, recentWorkoutIds.map(id => id.toString()));
+    console.log(`[PerfEx Action] Found ${recentWorkoutIds.length} recent workout IDs:`, recentWorkoutIds.map(id => id?.toString() || ''));
 
     // 2. Fetch WorkoutExercises associated with these workouts and populate their exerciseId
     const workoutExercises = await WorkoutExerciseModel
