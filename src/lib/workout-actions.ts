@@ -27,6 +27,20 @@ import SetModel from "@/lib/db/models/set";
 import dbConnect from '@/lib/db/mongodb'; // Ensure dbConnect is imported
 import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR';
 
+// --- START NEW Performance Data Types (mirroring frontend) ---
+// These might eventually live in a shared types file
+type PerformanceSet = {
+  weight?: number;
+  reps?: number;
+  date: Date; // Date is mandatory here
+};
+
+export type ExercisePerformanceStats = { // Export the type
+  lastWorkout?: PerformanceSet;
+  personalRecord?: PerformanceSet; // Represents highest weight lifted for any reps
+};
+// --- END NEW Performance Data Types ---
+
 // Define an interface for the input set structure expected by createWorkout
 export interface InputSetData {
     weight?: number;
@@ -104,6 +118,163 @@ function deepSerialize(obj: any, seen = new WeakSet()): any {
   }
   return result;
 }
+
+// --- START NEW Server Action ---
+// Fetch the last performance and PR for a specific exercise
+export async function getExercisePerformanceStatsAction(
+  exerciseId: string
+): Promise<ExercisePerformanceStats | null> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    console.warn("[getExercisePerformanceStatsAction] User not authenticated.");
+    return null;
+  }
+  const userId = new Types.ObjectId(session.user.id); // userId defined here
+
+  if (!Types.ObjectId.isValid(exerciseId)) {
+    console.warn("[getExercisePerformanceStatsAction] Invalid exercise ID format:", exerciseId);
+    return null;
+  }
+  const canonicalExerciseId = new Types.ObjectId(exerciseId); // canonicalExerciseId defined here
+
+  console.log(`[getExercisePerformanceStatsAction] Fetching stats for user ${userId} and exercise ${canonicalExerciseId}`);
+
+  try {
+    await dbConnect(); // Ensure database connection
+
+    // ---> Step 1: Find Last Workout Performance <---
+    console.log(`[getExercisePerformanceStatsAction] Finding last workout performance...`);
+    let lastWorkoutData: PerformanceSet | undefined = undefined;
+    
+    // Aggregation to find the most recent workout exercise entry with valid sets
+    // Explicitly type the pipeline as any[] to simplify TS checking
+    const lastWorkoutPipeline: any[] = [
+      { $match: { userId: userId, exerciseId: canonicalExerciseId } },
+      { $lookup: { from: 'workouts', localField: 'workoutId', foreignField: '_id', as: 'workoutDetails' } },
+      { $unwind: '$workoutDetails' },
+      { $match: { 'workoutDetails.userId': userId } }, // Re-verify user ID after lookup
+      { $sort: { 'workoutDetails.date': -1 } }, // Sort by workout date descending
+      { $limit: 1 }, // Get only the most recent workout entry for this exercise
+      // --- REMOVE Set Lookup - Sets are embedded in WorkoutExercise --- 
+      // { $lookup: { from: 'sets', localField: 'sets', foreignField: '_id', as: 'setDetails', pipeline: [{ $sort: { order: 1 } }] } },
+      { 
+        $project: { 
+          _id: 0, 
+          workoutDate: '$workoutDetails.date', 
+          sets: '$sets' // Project the embedded sets array directly
+        } 
+      } 
+    ];
+
+    // Now userId and canonicalExerciseId are correctly in scope
+    const lastWorkoutResult = await WorkoutExerciseModel.aggregate(lastWorkoutPipeline);
+
+    // ---> DETAILED LOGGING for Last Workout <---
+    console.log(`[getExercisePerformanceStatsAction] Raw lastWorkoutResult from aggregation:`, JSON.stringify(lastWorkoutResult, null, 2));
+
+    if (lastWorkoutResult && lastWorkoutResult.length > 0) {
+      const lastWorkoutExercise = lastWorkoutResult[0]; // This now contains the embedded sets
+      console.log(`[getExercisePerformanceStatsAction] Processing lastWorkoutExercise:`, JSON.stringify(lastWorkoutExercise, null, 2));
+      
+      // Find the first valid set directly from the embedded 'sets' array
+      const firstValidSetLastWorkout = lastWorkoutExercise.sets?.find((s: any) => s.weight !== undefined && s.reps !== undefined && s.reps > 0);
+      
+      if (!firstValidSetLastWorkout) {
+         console.log(`[getExercisePerformanceStatsAction] Could not find a 'valid' set (weight/reps > 0) in the embedded sets.`);
+      }
+
+      if (firstValidSetLastWorkout) {
+        lastWorkoutData = {
+          weight: firstValidSetLastWorkout.weight,
+          reps: firstValidSetLastWorkout.reps,
+          date: lastWorkoutExercise.workoutDate, 
+        };
+        console.log(`[getExercisePerformanceStatsAction] Found last workout data:`, lastWorkoutData);
+      } else {
+        // This log might be redundant now, covered by the check above
+        // console.log(`[getExercisePerformanceStatsAction] Last workout entry found, but no valid sets.`);
+      }
+    } else {
+      console.log(`[getExercisePerformanceStatsAction] No last workout entry found for exercise.`);
+    }
+
+    // ---> Step 2: Find Personal Record from ExercisePRs collection <---
+    console.log(`[getExercisePerformanceStatsAction] Finding PR from ExercisePRs collection...`);
+    let personalRecordData: PerformanceSet | undefined = undefined;
+    let prReps: number | undefined = undefined; // Variable to store reps for the PR set
+
+    const exercisePR = await ExercisePRModel.findOne({
+        userId: userId,
+        exerciseId: canonicalExerciseId,
+        unit: 'kg' 
+      })
+      .sort({ value: -1 }) 
+      .lean<IExercisePR>();
+
+    if (exercisePR) {
+      console.log(`[getExercisePerformanceStatsAction] Found base PR record:`, exercisePR);
+      // ---> Step 2a: If PR has workoutId, find the reps from the original workout <---
+      if (exercisePR.workoutId && Types.ObjectId.isValid(exercisePR.workoutId)) {
+        console.log(`[getExercisePerformanceStatsAction] PR has workoutId ${exercisePR.workoutId}. Fetching original workout exercise...`);
+        const prWorkoutExercise = await WorkoutExerciseModel.findOne({
+          userId: userId,
+          exerciseId: canonicalExerciseId,
+          workoutId: exercisePR.workoutId // Find the specific entry from the PR workout
+        }).lean() as IWorkoutExercise | null; // Cast lean result to include sets
+
+        if (prWorkoutExercise && prWorkoutExercise.sets && prWorkoutExercise.sets.length > 0) {
+          console.log(`[getExercisePerformanceStatsAction] Found original workout exercise. Searching sets for weight ${exercisePR.value}...`);
+          let maxRepsAtPRWeight = 0;
+          prWorkoutExercise.sets.forEach((set: any) => {
+            // Check if the set's weight matches the PR weight
+            if (set.weight === exercisePR.value && typeof set.reps === 'number') {
+              console.log(`[getExercisePerformanceStatsAction] Found matching set with weight ${set.weight} and reps ${set.reps}`);
+              if (set.reps > maxRepsAtPRWeight) {
+                maxRepsAtPRWeight = set.reps;
+              }
+            }
+          });
+
+          if (maxRepsAtPRWeight > 0) {
+            prReps = maxRepsAtPRWeight;
+            console.log(`[getExercisePerformanceStatsAction] Determined max reps at PR weight (${exercisePR.value}kg) to be: ${prReps}`);
+          } else {
+             console.log(`[getExercisePerformanceStatsAction] Could not find any sets matching the PR weight ${exercisePR.value} in the original workout exercise.`);
+          }
+        } else {
+          console.log(`[getExercisePerformanceStatsAction] Could not find the original workout exercise document for workoutId ${exercisePR.workoutId}.`);
+        }
+      } else {
+         console.log(`[getExercisePerformanceStatsAction] PR record does not have a valid workoutId.`);
+      }
+      // ---> End Step 2a <---
+
+      personalRecordData = {
+        weight: exercisePR.value, 
+        reps: prReps, // Assign the found reps (or undefined if not found)
+        date: exercisePR.date, 
+      };
+      console.log(`[getExercisePerformanceStatsAction] Found PR data (with reps attempt):`, personalRecordData);
+    } else {
+      console.log(`[getExercisePerformanceStatsAction] No 'kg' PR found in ExercisePRs collection.`);
+    }
+    
+    // ---> Step 3: Combine Results <---
+    const result: ExercisePerformanceStats = {};
+    if (lastWorkoutData) result.lastWorkout = lastWorkoutData;
+    if (personalRecordData) result.personalRecord = personalRecordData;
+
+    // canonicalExerciseId is in scope
+    console.log(`[getExercisePerformanceStatsAction] Final combined result for ${canonicalExerciseId}:`, JSON.stringify(result));
+    
+    return deepSerialize(result); 
+
+  } catch (error) {
+    console.error("[getExercisePerformanceStatsAction] Error fetching performance stats:", error);
+    return null; // Indicate failure
+  }
+}
+// --- END NEW Server Action ---
 
 // Fetch all workouts for the current user (Refactored)
 // Returns serialized data suitable for client components
@@ -204,7 +375,9 @@ export async function fetchWorkouts(): Promise<any[]> {
     return combinedWorkouts;
   } catch (error) {
     console.error("Error fetching workouts:", error);
-    return [];
+    // Consider re-throwing or returning a specific error structure
+    // throw new Error("Failed to fetch workouts"); 
+    return []; // Return empty array on error
   }
 }
 

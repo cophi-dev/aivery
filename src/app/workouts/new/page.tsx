@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { format, isToday, isPast, isFuture, parseISO } from "date-fns"
+import { format, isToday, isPast, isFuture, parseISO, differenceInDays } from "date-fns"
 import { useSession } from "next-auth/react"
-import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2, Dumbbell, Home, Footprints, Bike, PersonStanding, Waves, LucideMinus } from "lucide-react"
+import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2, Dumbbell, Home, Footprints, Bike, PersonStanding, Waves, LucideMinus, Lightbulb } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from 'react-hot-toast'
 import { motion } from 'motion/react'
@@ -21,8 +21,10 @@ import {
   createWorkout as createWorkoutAction, 
   updateWorkoutAction,
   getRecentPerformedExercisesAction,
+  getExercisePerformanceStatsAction, // <-- Import new action
   type WorkoutUpdatePayload,
-  type InputSetData
+  type InputSetData,
+  type ExercisePerformanceStats // <-- Import new type
 } from "@/lib/workout-actions"
 import { fetchExercises, searchAllExercisesAction, fetchAllExercisesAction } from "@/lib/exercise-actions"
 import type { ExerciseData, WorkoutData, WorkoutExerciseData, Set } from "@/types/db"
@@ -52,21 +54,26 @@ type SetState = {
   notes?: string;
 }
 
-// Represents a single exercise in the form state, containing multiple sets OR duration/distance
+// Type for individual exercise state in the form
 type ExerciseState = {
   id: number | string; // Temporary ID for form state (e.g., `ex-temp-${Date.now()}`)
   exerciseId?: string; // ID of the canonical Exercise (if known/selected)
   name: string; // Name of the canonical Exercise
   notes?: string; // Notes specific to this exercise in this workout
+  aiRecommendation?: string; // NEW: AI-generated recommendation
   // Fields for Strength/Set-based exercises
   sets: SetState[]; 
   // Fields for Cardio/Duration-based exercises added within a workout
   duration?: string; // Duration in minutes for this specific exercise instance
   distance?: string; // Distance in km/miles for this specific exercise instance
 }
-// --- END NEW State Types ---
 
-// --- NEW Type for AI Response Data (Mirroring API route's type) ---
+// --- START NEW Performance Data Types ---
+// Local type definitions are removed as they are now imported from workout-actions
+// Type for frontend state (using string dates after potential serialization)
+// Note: This mirrors the structure but uses string for date to align with potential fetch results
+
+// --- Type for AI Response Data (Mirroring API route's type) ---
 // TODO: Keep this in sync with the API route's ParsedWorkoutData type
 type ParsedWorkoutData = {
   workoutType?: string;
@@ -239,6 +246,10 @@ export default function NewWorkoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [aiLogInput, setAiLogInput] = useState<string>("") // State for AI input
   const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false) // State for AI processing status
+
+  // --- NEW State for Performance Data ---
+  const [exercisePerformanceData, setExercisePerformanceData] = useState<Record<string | number, ExercisePerformanceStats>>({});
+  // --- END NEW State ---
 
   // --- NEW Search State ---
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState("");
@@ -664,31 +675,72 @@ export default function NewWorkoutPage() {
   };
 
   // Renamed and updated: Handles changes to Exercise properties
-  const updateExerciseField = (exerciseId: number | string, field: 'name' | 'notes' | 'duration' | 'distance', value: string) => { // Added duration/distance
+  const updateExerciseField = (
+    exerciseId: number | string, 
+    field: 'name' | 'notes' | 'duration' | 'distance' | 'aiRecommendation', // Added aiRecommendation
+    value: string
+  ) => {
     setError(null);
     setExercises(exercises.map((exercise) => {
       if (exercise.id === exerciseId) {
-        let updatedState = { ...exercise, [field]: value };
+        // --- Core update --- 
+        let updatedState = { 
+          ...exercise, 
+          [field]: value 
+        };
 
-        // If name is changing, update canonical ID link
+        // --- Logic for name changes --- 
         if (field === 'name') {
             const matchedDbExercise = dbExercisesMap.get(value);
             updatedState.exerciseId = matchedDbExercise?._id;
-            // If the newly matched exercise is cardio, clear sets
+            // If the newly matched exercise is cardio, clear sets and potentially duration/distance if name changes
             if (matchedDbExercise?.category === 'cardio') {
                updatedState.sets = []; // Clear sets for cardio
-               // Optionally pre-fill duration/distance if needed, or leave for user
-            } else if (updatedState.sets.length === 0) {
+               // Clear cardio-specific fields if switching *to* cardio via name change
+               updatedState.duration = ""; 
+               updatedState.distance = ""; 
+            } else if (updatedState.sets.length === 0 && !matchedDbExercise?.category) { // Only add set if not cardio
                // If switching TO non-cardio and sets are empty, add a default set
                updatedState.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }];
+               // Clear workout-level cardio fields if switching *away* from cardio via name change
+               updatedState.duration = undefined; 
+               updatedState.distance = undefined;
             }
+            
+             // --- NEW: Fetch performance data when name/exerciseId changes --- 
+            if (updatedState.exerciseId) {
+                fetchAndSetPerformanceData(exercise.id, updatedState.exerciseId);
+            } else {
+                // Clear performance data if name becomes unmatched
+                setExercisePerformanceData(prev => {
+                    const { [exercise.id]: _, ...rest } = prev;
+                    return rest;
+                });
+                // Also clear the recommendation explicitly
+                updatedState.aiRecommendation = ''; // Use empty string or undefined
+            }
+            // --- END NEW --- 
         }
+        
+        // --- Logic for duration/distance changes (specific to cardio exercises) ---
+        if ((field === 'duration' || field === 'distance') && updatedState.exerciseId) {
+          const matchedDbExercise = dbExercises.find(dbEx => dbEx._id === updatedState.exerciseId);
+          if (matchedDbExercise?.category !== 'cardio') {
+            // Prevent setting duration/distance on non-cardio exercises if an ID is linked
+             console.warn(`Attempted to set ${field} on non-cardio exercise: ${updatedState.name}`);
+             // Revert the specific field change instead of returning the original exercise object
+             // This prevents the type error from map potentially returning undefined
+             updatedState = { ...exercise }; // Reset to original state for this iteration
+             // No need to explicitly delete the field as it wasn't added to this reset state
+          }
+        }
+
         return updatedState;
       } 
       return exercise;
     }));
   };
-  
+
   // Remains the same logically, just operates on ExerciseState[]
   const removeExercise = (id: number | string) => {
     setError(null);
@@ -820,6 +872,10 @@ export default function NewWorkoutPage() {
   // --- Modified: Handle Exercise Selection --- 
   // This function is called when an exercise is selected from the Combobox
   const handleExerciseSelection = (exerciseStateId: number | string, selectedDbExercise: ExerciseData) => {
+    // Check if the name is actually changing to avoid redundant fetches
+    const currentExercise = exercises.find(ex => ex.id === exerciseStateId);
+    const isNameChanging = currentExercise?.name !== selectedDbExercise.name;
+
     if (!selectedDbExercise) return;
 
     setExercises(currentExercises =>
@@ -856,8 +912,110 @@ export default function NewWorkoutPage() {
     setTimeout(() => {
       setIsExerciseDialogOpen(false); // Use the correct state setter for the dialog
     }, 0); // 0ms delay pushes execution to next event loop tick
+
+    // --- NEW: Fetch performance data if name changed ---
+    if (isNameChanging && selectedDbExercise._id) { 
+      fetchAndSetPerformanceData(exerciseStateId, selectedDbExercise._id);
+    }
+    // --- END NEW ---
   };
   // --- END Modified: Handle Exercise Selection ---
+
+  // --- NEW: Fetch Performance Data --- 
+  const fetchAndSetPerformanceData = async (exerciseStateId: number | string, dbExerciseId: string) => {
+    if (!session?.user?.id || !dbExerciseId) { // Added check for dbExerciseId
+        // Clear data if no exercise ID is provided (e.g., user cleared the input)
+        setExercisePerformanceData(prev => {
+            const { [exerciseStateId]: _, ...rest } = prev;
+            return rest;
+        });
+        updateExerciseField(exerciseStateId, 'aiRecommendation', ''); 
+        return; // Exit early
+    }
+    
+    console.log(`Fetching performance data for exercise ID: ${dbExerciseId} (state ID: ${exerciseStateId})`);
+    try {
+      // Corrected action call: Pass only exerciseId
+      const stats = await getExercisePerformanceStatsAction(dbExerciseId); 
+
+      // Corrected result handling: Check if stats is not null
+      if (stats) {
+        // No need to access stats.data, stats itself is the data
+        setExercisePerformanceData(prev => ({ ...prev, [exerciseStateId]: stats }));
+
+        // --- Generate AI Recommendation (logic remains the same) --- 
+        let recommendation = "";
+        const lastPerf = stats.lastWorkout;
+        const pr = stats.personalRecord;
+
+        if (lastPerf && pr) {
+            const lastDate = parseISO(lastPerf.date as unknown as string); // Ensure date is string before parsing
+            const daysSinceLast = differenceInDays(new Date(), lastDate);
+            const lastWeight = typeof lastPerf.weight === 'number' ? lastPerf.weight : 0; // Use number type
+            const lastReps = typeof lastPerf.reps === 'number' ? lastPerf.reps : 0; // Use number type
+            const prWeight = typeof pr.weight === 'number' ? pr.weight : 0; // Use number type
+            const prReps = typeof pr.reps === 'number' ? pr.reps : 0; // Use number type
+
+            if (daysSinceLast <= 14) {
+                 if (lastWeight >= prWeight && lastReps >= prReps) {
+                     const suggestedWeight = lastWeight + 2.5;
+                     recommendation = `PR last time! Let's try ${suggestedWeight}kg x ${lastReps} reps.`;
+                 } else if (lastWeight >= prWeight * 0.9) {
+                     const suggestedWeight = lastWeight > 0 ? lastWeight : prWeight;
+                     recommendation = `Close to PR last time (${lastWeight}kg). Aim for ${suggestedWeight}kg x ${lastReps} reps or try beating the PR ${prWeight}kg!`;
+                 } else {
+                     recommendation = `Last: ${lastWeight}kg x ${lastReps} reps (${format(lastDate, 'dd MMM')}). Let's build back up towards your PR of ${prWeight}kg!`;
+                 }
+            } else if (daysSinceLast <= 30) {
+                recommendation = `It's been ${daysSinceLast} days. Start around ${lastWeight}kg x ${lastReps} reps & see how it feels.`;
+            } else {
+                 recommendation = `Over a month since you did this (${format(lastDate, 'dd MMM')})! Maybe start light, around ${Math.max(0, lastWeight * 0.8).toFixed(1)}kg, and focus on form.`;
+            }
+        } else if (pr) {
+             const prWeight = typeof pr.weight === 'number' ? pr.weight : 0;
+             const prReps = typeof pr.reps === 'number' ? pr.reps : 0;
+            recommendation = `No recent data, but your PR is ${prWeight}kg x ${prReps} reps. Go for it!`;
+        } else if (lastPerf) {
+             const lastDate = parseISO(lastPerf.date as unknown as string);
+             const daysSinceLast = differenceInDays(new Date(), lastDate);
+             const lastWeight = typeof lastPerf.weight === 'number' ? lastPerf.weight : 0;
+             const lastReps = typeof lastPerf.reps === 'number' ? lastPerf.reps : 0;
+             if (daysSinceLast <= 14) {
+                 const suggestedWeight = lastWeight + 2.5;
+                 recommendation = `Solid work last time (${lastWeight}kg x ${lastReps} reps). Maybe try ${suggestedWeight}kg?`;
+             } else {
+                 recommendation = `It's been ${daysSinceLast} days since ${lastWeight}kg x ${lastReps} reps. Ease back in!`;
+             }
+        }
+        
+        if (recommendation) {
+            updateExerciseField(exerciseStateId, 'aiRecommendation', recommendation);
+        } else {
+             // Explicitly clear recommendation if logic doesn't produce one
+            updateExerciseField(exerciseStateId, 'aiRecommendation', ''); 
+        }
+        // --- END Recommendation Logic --- 
+        
+      } else {
+        // Handle case where action returned null (no stats found or error occurred)
+        console.warn(`No performance stats returned for exercise ${dbExerciseId}.`);
+        setExercisePerformanceData(prev => {
+          const { [exerciseStateId]: _, ...rest } = prev;
+          return rest;
+        });
+        updateExerciseField(exerciseStateId, 'aiRecommendation', ''); 
+      }
+    } catch (error) {
+      console.error("Error calling getExercisePerformanceStatsAction:", error);
+      toast.error("Failed to fetch performance stats.")
+      setExercisePerformanceData(prev => {
+          const { [exerciseStateId]: _, ...rest } = prev;
+          return rest;
+      });
+      updateExerciseField(exerciseStateId, 'aiRecommendation', ''); 
+    }
+  }
+  // --- END NEW: Fetch Performance Data ---
 
   const getDefaultWorkoutName = (type: WorkoutTypeOption | undefined, workoutDate: Date) => {
     if (!type) return `Workout - ${format(workoutDate, 'PP')}`;
@@ -1118,6 +1276,7 @@ export default function NewWorkoutPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl"> 
+      {/* Header */}
       <div className="flex items-center mb-6">
         <Button variant="ghost" size="icon" onClick={() => router.back()} className="mr-2">
           <LucideArrowLeft className="h-5 w-5" />
@@ -1136,14 +1295,12 @@ export default function NewWorkoutPage() {
       )}
 
       <div className="space-y-6">
-        {/* Workout Metadata Section - Apply subtle styling */}
-        <div className="space-y-4 p-4"> {/* Increased vertical spacing slightly */}
-            
-           {/* Replace Select with ToggleGroup */}
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start"> {/* Increased gap */}
+        {/* Workout Metadata Section */}
+        <div className="space-y-4 p-4"> 
+            {/* Activity Type Toggles */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               <div>
                  <Label className="text-xs font-medium text-muted-foreground/80 mb-2 block">Activity Type</Label>
-                 {/* Toggle Group for main types */}
                  <ToggleGroup 
                     type="single"
                     variant="outline"
@@ -1151,7 +1308,7 @@ export default function NewWorkoutPage() {
                     onValueChange={(value) => {
                        if (value) setWorkoutType(value as WorkoutTypeOption);
                     }}
-                    className="flex flex-wrap justify-start gap-2" // Allow wrapping
+                    className="flex flex-wrap justify-start gap-2"
                  >
                     {mainWorkoutTypes.map((type) => (
                       <ToggleGroupItem 
@@ -1164,31 +1321,29 @@ export default function NewWorkoutPage() {
                         <span className="text-[10px]">{type.label}</span>
                       </ToggleGroupItem>
                     ))}
-                    {/* TODO: Add an "Other" button here if needed */}
                  </ToggleGroup>
               </div>
 
               {/* Date Picker */}
                <div>
-                 {/* Make label smaller and lighter */}
                  <Label htmlFor="workout-date" className="text-xs font-medium text-muted-foreground/80">Date</Label>
                  <Popover modal={false}>
                     <PopoverTrigger asChild>
                       <Button
                         id="workout-date"
+                        variant="ghost" // Changed to ghost for cleaner look
                         className={cn(
                           "w-full justify-start text-left font-normal", 
-                          "bg-transparent hover:bg-transparent", 
-                          "p-0", // Remove padding to rely on parent spacing
+                          "p-0", // Remove padding
                           !date && "text-muted-foreground",
-                           date && "text-foreground" // Ensure text color is visible
+                           date && "text-foreground" 
                         )}
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {date ? (isToday(date) ? 'Today' : format(date, "PPP")) : <span>Pick a date</span>}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 bg-white dark:bg-slate-900">
+                    <PopoverContent className="w-auto p-0 bg-card">
                       <Calendar
                         mode="single"
                         selected={date}
@@ -1207,7 +1362,6 @@ export default function NewWorkoutPage() {
            
            {/* Workout Name Input */}
            <div>
-             {/* Remove border from input, use placeholder as label concept */}
              <Input
                 id="workout-name"
                 placeholder={workoutName || getDefaultWorkoutName(workoutType, date)}
@@ -1218,26 +1372,24 @@ export default function NewWorkoutPage() {
            </div>
         </div>
 
-        {/* --> Conditionally render AI Quick Log Section <-- */}
+        {/* Horizontal Separator */} 
+        <hr className="my-6 border-border/50" /> 
+
+        {/* AI Quick Log Section (Kept GlowEffect) */} 
         {!isEditing && (
-            // Outer container: Only relative positioning
-            <div className="relative">
-              
-              {/* Glow Effect Layer */}
+            <div className="relative"> 
               <motion.div
-                className='pointer-events-none absolute inset-0' // Fills the outer container
+                className='pointer-events-none absolute inset-0'
                 animate={{ opacity: 1 }}
               >
                 <GlowEffect
                   colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']} 
                   mode='colorShift'
-                  blur='strong' // Adjust blur if needed
-                  scale={1}       // Revert scale to 1
+                  blur='strong'
+                  scale={1}
                   duration={4}
                 />
               </motion.div>
-
-              {/* Inner Content Block - gets card styling and masks glow center */}
               <div className="relative z-10 space-y-4 rounded-xl shadow-sm p-6 bg-card"> 
                 <h2 className="text-lg font-medium mb-4">Quick Log with AI</h2>
                 <div>
@@ -1268,9 +1420,11 @@ export default function NewWorkoutPage() {
               </div>
             </div>
         )}
-        {/* --> End Conditional Render <-- */}
+        
+        {/* Separator if AI log was shown */} 
+        {!isEditing && <hr className="my-6 border-border/50" /> } 
 
-        {/* Conditional Fields for Non-Strength Workouts */}
+        {/* Conditional Fields for Non-Strength Workouts */} 
         {!isStrengthWorkout && workoutType && (
           <div className="space-y-4 rounded-xl shadow-sm p-6 bg-card">
              <h2 className="text-lg font-medium mb-4">{workoutTypeDisplayNames[workoutType]} Details</h2>
@@ -1299,58 +1453,62 @@ export default function NewWorkoutPage() {
                   </div>
                 )}
              </div>
+             {/* Horizontal Separator */} 
+             <hr className="my-6 border-border/50" /> 
           </div>
         )}
 
-        {/* Exercises Section (Modified - Conditionally Rendered) */}
+        {/* Exercises Section (Strength Workouts) */} 
         {isStrengthWorkout && (
-          <div className="space-y-6">
+          <div className="space-y-6"> 
             <h2 className="text-xl font-semibold tracking-tight mb-4">Exercises</h2>
             {exercises.map((exercise, index) => {
-              // Determine if the current exercise is cardio
               const canonicalExercise = exercise.name ? dbExercisesMap.get(exercise.name) : null;
               const isCardioExercise = canonicalExercise?.category === 'cardio';
+              const isLastExercise = index === exercises.length - 1;
 
               return (
-                // Card Styling: Remove border, increase rounding, maintain shadow and padding
-                <div key={exercise.id} className="rounded-xl shadow-sm p-6 space-y-5 relative bg-card"> 
-                  {/* Exercise Header: Increased spacing mb-4 */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex-1 space-y-2 mr-4"> {/* Increased mr-4 */}
-                      {/* Changed Label style */}
+                // Removed individual bg-card. Added padding and border-bottom (except last) 
+                <div 
+                  key={exercise.id} 
+                  className={cn(
+                    "space-y-5 relative p-4", // Consistent padding
+                    !isLastExercise && "border-b border-border/40" // Border for separation
+                  )} 
+                >
+                  {/* Exercise Header */}
+                  <div className="flex justify-between items-start mb-3"> 
+                    <div className="flex-1 space-y-2 mr-4">
                       <Label htmlFor={`exercise-name-${exercise.id}`} className="text-xs font-medium text-muted-foreground">
                         EXERCISE #{index + 1}
                       </Label>
-                      {/* --- DIALOG TRIGGER --- */}
                       <Dialog open={isExerciseDialogOpen} onOpenChange={setIsExerciseDialogOpen}>
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
-                            // Slightly larger, consistent height
-                            className="w-full h-10 justify-between font-normal text-base" 
+                            className="w-full h-10 justify-between font-normal text-base"
                           >
-                            <> 
-                              {exercise.name || "Select exercise..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </>
+                            <>{exercise.name || "Select exercise..."}</>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="sm:max-w-[600px]"> {/* Adjust max width as needed */}
-                          <DialogHeader>
+                        <DialogContent className="sm:max-w-[600px]"> 
+                          {/* ... Dialog Content remains the same ... */} 
+                           <DialogHeader>
                             <DialogTitle>Select Exercise</DialogTitle>
                             <DialogDescription>
                               Choose an exercise from the list or search.
                             </DialogDescription>
                           </DialogHeader>
-                          {/* --- TABS --- */}
+                          {/* --- TABS --- */} 
                           <Tabs defaultValue="performed" className="w-full">
-                            <TabsList className="grid w-full grid-cols-4"> {/* Adjust grid-cols based on # of tabs */}
+                            <TabsList className="grid w-full grid-cols-4"> {/* Adjust grid-cols based on # of tabs */} 
                               <TabsTrigger value="performed">Performed</TabsTrigger>
                               <TabsTrigger value="chest">Chest</TabsTrigger>
                               <TabsTrigger value="back">Back</TabsTrigger>
                               <TabsTrigger value="legs">Legs</TabsTrigger>
                             </TabsList>
-                            {/* --- TAB CONTENT --- */}
+                            {/* --- TAB CONTENT --- */} 
                             <TabsContent value="performed">
                               <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
                                 {performedExercises.length === 0 ? (
@@ -1372,14 +1530,13 @@ export default function NewWorkoutPage() {
                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
                                 {dbExercises
                                   .filter(ex => 
-                                    // Corrected: Use muscleGroups (plural) and add type annotation
                                     Array.isArray(ex.muscleGroups) && 
                                     ex.muscleGroups.some((m: string) => m.toLowerCase() === 'chest')
                                   )
                                   .map((dbEx) => (
                                     <button 
                                       key={dbEx._id} 
-                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)} // Use existing handler
+                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
                                       className="block w-full text-left p-2 rounded-md hover:bg-accent"
                                     >
                                         {dbEx.name}
@@ -1391,7 +1548,6 @@ export default function NewWorkoutPage() {
                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
                                 {dbExercises
                                   .filter(ex => 
-                                    // Corrected: Use muscleGroups (plural) and add type annotation
                                     Array.isArray(ex.muscleGroups) && 
                                     ex.muscleGroups.some((m: string) => m.toLowerCase() === 'back')
                                   )
@@ -1410,7 +1566,6 @@ export default function NewWorkoutPage() {
                               <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
                                 {dbExercises
                                   .filter(ex => 
-                                    // Corrected: Use muscleGroups (plural) and add type annotation
                                     Array.isArray(ex.muscleGroups) && 
                                     ex.muscleGroups.some((m: string) => [
                                         'legs', 
@@ -1435,216 +1590,210 @@ export default function NewWorkoutPage() {
                         </DialogContent>
                       </Dialog>
                     </div>
-                    {/* Remove Exercise Button: Use ghost variant, slightly larger */}
                     <Button 
                         variant="ghost" 
                         size="icon" 
                         onClick={() => removeExercise(exercise.id)}
-                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity" // Show on hover/focus within row
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
                     >
                       <LucideX className="h-4 w-4" />
                       <span className="sr-only">Remove Exercise</span>
                     </Button>
                   </div>
 
-                  {/* Sets Section: Only show if not cardio and exercise name is selected */}
-                  {exercise.name && !isCardioExercise && (
-                    // Remove padding-top from here
-                    <div> 
-                      {/* Sets List - Remove border-t, adjust spacing if needed */}
-                      <div className="space-y-4 pt-2"> {/* Increased spacing slightly, adjust pt */} 
-                        {exercise.sets.map((set, setIndex) => (
-                          // Main row for a set - Remove border-b, adjust padding/gap
-                          <div key={set.id} className="flex items-center gap-x-3 group pb-2"> {/* Reduced pb slightly */} 
-                            {/* Set Number */}
-                            <span className="text-sm font-medium text-muted-foreground w-6 text-center tabular-nums">{setIndex + 1}</span> 
-                            
-                            {/* Weight Section with Steppers */}
-                            <div className="flex-1 flex flex-col items-center space-y-1">
-                               <Label className="text-xs font-medium text-muted-foreground/80 mb-1">WEIGHT (KG)</Label>
-                               <div className="flex items-center justify-center gap-x-2 w-full">
-                                   <Button 
-                                       variant="outline" 
-                                       size="icon" 
-                                       className="h-8 w-8 shrink-0 rounded-full" // Circular steppers
-                                       onClick={() => {
-                                           const currentWeight = parseFloat(set.weight || '0') || 0;
-                                           // Define step (e.g., 1kg, 2.5kg) - Let's use 1 for now
-                                           const step = 1; 
-                                           const newValue = Math.max(0, currentWeight - step); // Prevent negative weight
-                                           updateSetField(exercise.id, set.id, 'weight', newValue.toString());
-                                       }}
-                                   >
-                                       <LucideMinus className="h-4 w-4" />
-                                   </Button>
-                                   <Input
-                                     type="number" // Keep type for keyboard input fallback
-                                     placeholder="0" 
-                                     value={set.weight}
-                                     onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                                     // Minimal input: focus on text, subtle background
-                                     className="h-9 w-16 text-center text-base font-medium tabular-nums border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded" 
-                                     min="0"
-                                   />
-                                   <Button 
-                                       variant="outline" 
-                                       size="icon" 
-                                       className="h-8 w-8 shrink-0 rounded-full"
-                                       onClick={() => {
-                                          const currentWeight = parseFloat(set.weight || '0') || 0;
-                                          const step = 1; // Define step
-                                          const newValue = currentWeight + step;
-                                          updateSetField(exercise.id, set.id, 'weight', newValue.toString());
-                                       }}
-                                   >
-                                       <LucidePlus className="h-4 w-4" />
-                                   </Button>
-                               </div>
-                            </div>
-
-                            {/* Reps Section with Steppers */}
-                             <div className="flex-1 flex flex-col items-center space-y-1">
-                               <Label className="text-xs font-medium text-muted-foreground/80 mb-1">REPS</Label>
-                               <div className="flex items-center justify-center gap-x-2 w-full">
-                                   <Button 
-                                       variant="outline" 
-                                       size="icon" 
-                                       className="h-8 w-8 shrink-0 rounded-full"
-                                       onClick={() => {
-                                           const currentReps = parseInt(set.reps || '0') || 0;
-                                           const newValue = Math.max(0, currentReps - 1); // Prevent negative reps
-                                           updateSetField(exercise.id, set.id, 'reps', newValue.toString());
-                                       }}
-                                        disabled={(parseInt(set.reps || '0') || 0) <= 0} // Disable if reps are 0
-                                   >
-                                       <LucideMinus className="h-4 w-4" />
-                                   </Button>
-                                    <Input
-                                      type="number"
-                                      placeholder="0"
-                                      value={set.reps}
-                                      onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                                      className="h-9 w-16 text-center text-base font-medium tabular-nums border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded"
-                                      min="0"
-                                    />
-                                   <Button 
-                                       variant="outline" 
-                                       size="icon" 
-                                       className="h-8 w-8 shrink-0 rounded-full"
-                                       onClick={() => {
-                                           const currentReps = parseInt(set.reps || '0') || 0;
-                                           const newValue = currentReps + 1;
-                                           updateSetField(exercise.id, set.id, 'reps', newValue.toString());
-                                       }}
-                                   >
-                                       <LucidePlus className="h-4 w-4" />
-                                   </Button>
-                                </div>
-                            </div>
-
-                            {/* Remove Set Button: Slightly larger, positioned at the end */}
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => removeSet(exercise.id, set.id)} 
-                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 self-center ml-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex-shrink-0" 
-                            >
-                              <LucideX className="h-4 w-4" />
-                              <span className="sr-only">Remove Set {setIndex + 1}</span>
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Add Set Button: Minimalist icon button centered - Remove dashed border? */}
-                      <div className="flex justify-center pt-4"> 
-                        <Button 
-                           variant="ghost" 
-                           size="icon" 
-                           onClick={() => addSet(exercise.id)} 
-                           // Simpler style: Subtle background on hover, no explicit border
-                           className="rounded-full h-9 w-9 text-muted-foreground hover:bg-muted/50 hover:text-accent-foreground" 
-                        >
-                          <LucidePlus className="h-4 w-4" />
-                          <span className="sr-only">Add Set</span>
-                        </Button>
-                      </div>
+                  {/* Performance Stats Display (Moved Up & Restyled) */}
+                  {exercisePerformanceData[exercise.id] && (
+                    <div className="text-xs text-muted-foreground space-y-0.5 mb-4"> 
+                      {exercisePerformanceData[exercise.id]?.lastWorkout ? (
+                        <p>
+                          Last: {exercisePerformanceData[exercise.id]?.lastWorkout?.weight ?? '-'}kg x {exercisePerformanceData[exercise.id]?.lastWorkout?.reps ?? '-'} reps 
+                          {/* Force conversion: Date -> ISO String -> Date -> Format */}
+                          {(exercisePerformanceData[exercise.id]?.lastWorkout?.date instanceof Date && !isNaN(exercisePerformanceData[exercise.id]!.lastWorkout!.date.getTime())) ? 
+                            ` (${format(parseISO(exercisePerformanceData[exercise.id]!.lastWorkout!.date.toISOString()), 'dd MMM')})` : ''} 
+                        </p>
+                      ) : (
+                        <p>Last: -</p>
+                      )}
+                      {exercisePerformanceData[exercise.id]?.personalRecord ? (
+                        <p>
+                          PR: {exercisePerformanceData[exercise.id]?.personalRecord?.weight ?? '-'}kg x {exercisePerformanceData[exercise.id]?.personalRecord?.reps ?? '-'} reps 
+                          {/* Force conversion: Date -> ISO String -> Date -> Format */}
+                          {(exercisePerformanceData[exercise.id]?.personalRecord?.date instanceof Date && !isNaN(exercisePerformanceData[exercise.id]!.personalRecord!.date.getTime())) ? 
+                            ` (${format(parseISO(exercisePerformanceData[exercise.id]!.personalRecord!.date.toISOString()), 'dd MMM')})` : ''}
+                        </p>
+                      ) : (
+                        <p>PR: -</p>
+                      )}
                     </div>
                   )}
-                  
-                  {/* Cardio Input Section: Show if cardio and name selected */}
-                   {exercise.name && isCardioExercise && (
-                     <div className="space-y-3 pt-2">
-                        <div className="grid grid-cols-2 gap-x-3 items-center">
-                             <div>
-                                 <Label htmlFor={`ex-duration-${exercise.id}`} className="text-xs font-medium text-muted-foreground mb-1 block">DURATION (MIN)</Label>
-                                 <Input
-                                    id={`ex-duration-${exercise.id}`}
-                                    type="number"
-                                    placeholder="e.g., 30"
-                                    value={exercise.duration ?? ""}
-                                    onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
-                                    className="h-9"
-                                    min="0"
-                                 />
-                             </div>
-                             <div>
-                                <Label htmlFor={`ex-distance-${exercise.id}`} className="text-xs font-medium text-muted-foreground mb-1 block">DISTANCE (KM)</Label>
-                                <Input
-                                    id={`ex-distance-${exercise.id}`}
-                                    type="number"
-                                    placeholder="e.g., 5"
-                                    value={exercise.distance ?? ""}
-                                    onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
-                                    className="h-9"
-                                    min="0"
-                                    step="0.1"
-                                />
+
+                  {/* AI Recommendation Display (Moved Below Stats) */}
+                  {exercise.aiRecommendation && (
+                      <motion.div 
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="flex items-start p-3 mb-4 space-x-2 text-sm rounded-md bg-blue-50 border border-blue-200 text-blue-800"
+                      >
+                          <Lightbulb className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-600" />
+                          <span>
+                              <span className="font-semibold">AI Suggestion:</span> {exercise.aiRecommendation}
+                          </span>
+                      </motion.div>
+                  )}
+
+                  {/* Input Section (Sets or Cardio) */}
+                  <div className="space-y-4"> 
+                    {/* Sets Section */}
+                    {exercise.name && !isCardioExercise && (
+                      <div> 
+                        <div className="space-y-4 pt-2">
+                          {exercise.sets.map((set, setIndex) => (
+                            <div key={set.id} className="flex items-center gap-x-3 group pb-2">
+                              <span className="text-sm font-medium text-muted-foreground w-6 text-center tabular-nums">{setIndex + 1}</span> 
+                              {/* Weight Section */}
+                              <div className="flex-1 flex flex-col items-center space-y-1">
+                                 <Label className="text-xs font-medium text-muted-foreground/80 mb-1">WEIGHT (KG)</Label>
+                                 <div className="flex items-center justify-center gap-x-2 w-full">
+                                     <Button 
+                                         variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-full"
+                                         onClick={() => {
+                                             const currentWeight = parseFloat(set.weight || '0') || 0;
+                                             const step = 1;
+                                             const newValue = Math.max(0, currentWeight - step);
+                                             updateSetField(exercise.id, set.id, 'weight', newValue.toString());
+                                         }} >
+                                         <LucideMinus className="h-4 w-4" />
+                                     </Button>
+                                     <Input
+                                       type="number" placeholder="0" value={set.weight}
+                                       onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                                       className="h-9 w-16 text-center text-base font-medium tabular-nums border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded"
+                                       min="0" />
+                                     <Button 
+                                         variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-full"
+                                         onClick={() => {
+                                             const currentWeight = parseFloat(set.weight || '0') || 0;
+                                             const step = 1;
+                                             const newValue = currentWeight + step;
+                                             updateSetField(exercise.id, set.id, 'weight', newValue.toString());
+                                         }} >
+                                         <LucidePlus className="h-4 w-4" />
+                                     </Button>
+                                 </div>
+                              </div>
+                              {/* Reps Section */}
+                               <div className="flex-1 flex flex-col items-center space-y-1">
+                                 <Label className="text-xs font-medium text-muted-foreground/80 mb-1">REPS</Label>
+                                 <div className="flex items-center justify-center gap-x-2 w-full">
+                                     <Button 
+                                         variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-full"
+                                         onClick={() => {
+                                             const currentReps = parseInt(set.reps || '0') || 0;
+                                             const newValue = Math.max(0, currentReps - 1);
+                                             updateSetField(exercise.id, set.id, 'reps', newValue.toString());
+                                         }}
+                                         disabled={(parseInt(set.reps || '0') || 0) <= 0} >
+                                         <LucideMinus className="h-4 w-4" />
+                                     </Button>
+                                      <Input
+                                        type="number" placeholder="0" value={set.reps}
+                                        onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                                        className="h-9 w-16 text-center text-base font-medium tabular-nums border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded"
+                                        min="0" />
+                                     <Button 
+                                         variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-full"
+                                         onClick={() => {
+                                             const currentReps = parseInt(set.reps || '0') || 0;
+                                             const newValue = currentReps + 1;
+                                             updateSetField(exercise.id, set.id, 'reps', newValue.toString());
+                                         }} >
+                                         <LucidePlus className="h-4 w-4" />
+                                     </Button>
+                                  </div>
+                              </div>
+                              {/* Remove Set Button */}
+                              <Button 
+                                variant="ghost" size="icon" onClick={() => removeSet(exercise.id, set.id)} 
+                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 self-center ml-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex-shrink-0" >
+                                <LucideX className="h-4 w-4" />
+                                <span className="sr-only">Remove Set {setIndex + 1}</span>
+                              </Button>
                             </div>
+                          ))}
                         </div>
-                     </div>
-                   )}
+                        {/* Add Set Button */}
+                        <div className="flex justify-center pt-4">
+                          <Button 
+                             variant="ghost" size="icon" onClick={() => addSet(exercise.id)} 
+                             className="rounded-full h-9 w-9 text-muted-foreground hover:bg-muted/50 hover:text-accent-foreground" >
+                            <LucidePlus className="h-4 w-4" />
+                            <span className="sr-only">Add Set</span>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Cardio Input Section */}
+                     {exercise.name && isCardioExercise && (
+                       <div className="space-y-3 pt-2">
+                          <div className="grid grid-cols-2 gap-x-3 items-center">
+                               <div>
+                                   <Label htmlFor={`ex-duration-${exercise.id}`} className="text-xs font-medium text-muted-foreground mb-1 block">DURATION (MIN)</Label>
+                                   <Input
+                                      id={`ex-duration-${exercise.id}`} type="number" placeholder="e.g., 30"
+                                      value={exercise.duration ?? ""} onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
+                                      className="h-9" min="0" />
+                               </div>
+                               <div>
+                                  <Label htmlFor={`ex-distance-${exercise.id}`} className="text-xs font-medium text-muted-foreground mb-1 block">DISTANCE (KM)</Label>
+                                  <Input
+                                      id={`ex-distance-${exercise.id}`} type="number" placeholder="e.g., 5"
+                                      value={exercise.distance ?? ""} onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
+                                      className="h-9" min="0" step="0.1" />
+                              </div>
+                          </div>
+                       </div>
+                     )}
 
+                    {/* Exercise Notes */}
+                    <div className="pt-2">
+                      <Label htmlFor={`exercise-notes-${exercise.id}`} className="text-xs font-medium text-muted-foreground">Notes (Optional)</Label>
+                      <Textarea
+                        id={`exercise-notes-${exercise.id}`} placeholder="e.g., Focused on form, felt strong..."
+                        value={exercise.notes || ""} onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                        className="mt-1 min-h-[60px] text-sm border-0 bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded-md px-3 py-2" />
+                    </div>
+                  </div> 
 
-                  {/* Exercise Notes: Added label, slightly more space */}
-                  <div className="pt-2"> 
-                    <Label htmlFor={`exercise-notes-${exercise.id}`} className="text-xs font-medium text-muted-foreground">Notes (Optional)</Label>
-                    {/* Minimal Textarea Style */}
-                    <Textarea
-                      id={`exercise-notes-${exercise.id}`}
-                      placeholder="e.g., Focused on form, felt strong..."
-                      value={exercise.notes || ""}
-                      onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                      // Remove border, add subtle bg, focus ring
-                      className="mt-1 min-h-[60px] text-sm border-0 bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring ring-offset-background rounded-md px-3 py-2" 
-                    />
-                  </div>
-                </div>
+                </div> 
               );
-            })}
+            })} 
 
-            {/* Add Exercise Button: Secondary variant, full width */}
-            <Button variant="secondary" onClick={addExercise} className="w-full">
+            {/* Add Exercise Button */}
+            <Button variant="secondary" onClick={addExercise} className="w-full"> 
               <LucidePlus className="h-4 w-4 mr-2" />
               Add Another Exercise
             </Button>
+             {/* Horizontal Separator */} 
+             <hr className="my-6 border-border/50" /> 
           </div>
         )}
 
-        {/* Workout Summary */}
+        {/* Workout Summary */} 
         {workoutSummary && (
-          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground"> {/* Changed styling */}
+          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground"> 
             <p>{getSummaryText()}</p>
           </div>
         )}
 
         {/* Save Button */}
-        <div className="pt-6 flex justify-end"> {/* Added padding top */}
+        <div className="pt-6 flex justify-end"> 
           <Button 
              type="button" 
              onClick={handleSaveWorkout} 
              disabled={isSubmitting}
-             size="lg" // Larger save button
+             size="lg"
           >
             {isSubmitting ? (
               <>
