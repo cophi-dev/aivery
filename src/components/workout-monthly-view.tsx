@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide-react';
-import type { WorkoutData } from '@/types/db';
+import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
 import { MetricCard } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 
 // Import recharts components
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend } from 'recharts';
 
 const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 
@@ -283,9 +283,15 @@ export default function WorkoutMonthlyView() {
                     <CardContent>
                         <ResponsiveContainer width="100%" height={250} minHeight={200}> 
                             {/* Apply same margin as weekly view */}
-                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={{ top: 5, right: 5, left: 20, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="week" fontSize={12} tickLine={false} axisLine={false} />
+                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.2} />
+                                <XAxis 
+                                    dataKey="week" 
+                                    fontSize={12} 
+                                    tickLine={false} 
+                                    axisLine={false}
+                                    tick={{ fontWeight: 600 }} // Make week labels bold
+                                />
                                 {/* Left Y Axis (Volume - kg) */}
                                 <YAxis 
                                     yAxisId="left"
@@ -294,70 +300,116 @@ export default function WorkoutMonthlyView() {
                                     tickLine={false} 
                                     axisLine={false} 
                                     allowDecimals={false} 
-                                    unit="kg"
-                                    width={60} // Match weekly view
+                                    unit=" kg"
+                                    width={60}
+                                    label={{ 
+                                        value: 'Volume (kg)', 
+                                        angle: -90, 
+                                        position: 'insideLeft',
+                                        offset: -5, // Adjusted offset
+                                        style: { 
+                                            fontSize: '12px', 
+                                            fill: '#58a3ff', 
+                                            fontWeight: 500,
+                                            textAnchor: 'middle' // Center label
+                                        }
+                                    }}
                                 />
                                 {/* Right Y Axis (Distance - km) */}
                                 <YAxis 
-                                    yAxisId="right" 
+                                    yAxisId="right"
                                     orientation="right" 
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false} 
                                     allowDecimals={true} 
-                                    tickFormatter={(value) => value.toFixed(1)} 
-                                    unit="km" 
-                                    width={40} // Match weekly view
-                                    domain={[0, 'auto']} // Match weekly view
+                                    tickFormatter={(value) => value.toFixed(1)} // Format decimals
+                                    unit=" km"
+                                    width={60}
+                                    label={{ 
+                                        value: 'Distance (km)', 
+                                        angle: 90, 
+                                        position: 'insideRight',
+                                        offset: -5, // Adjusted offset
+                                        style: { 
+                                            fontSize: '12px', 
+                                            fill: '#fa9f7b', 
+                                            fontWeight: 500,
+                                            textAnchor: 'middle' // Center label
+                                        }
+                                    }}
                                 />
-                                {/* Hidden Y Axis for Duration Scaling */}
-                                <YAxis yAxisId="durationAxis" hide={true} />
+                                {/* Hidden axis for duration bars */}
+                                <YAxis 
+                                    yAxisId="durationAxis" 
+                                    orientation="right" 
+                                    hide={true} 
+                                    domain={[0, 'auto']} 
+                                />
+                                <Legend 
+                                    verticalAlign="top" 
+                                    height={36}
+                                    iconType="circle"
+                                    wrapperStyle={{
+                                        paddingBottom: '10px',
+                                        borderBottom: '1px solid var(--border)',
+                                        marginBottom: '10px'
+                                    }}
+                                    payload={[
+                                        { value: 'Strength', type: 'circle', color: '#58a3ff' },
+                                        { value: 'Cardio', type: 'circle', color: '#fa9f7b' }
+                                    ]}
+                                />
+                                <Tooltip 
+                                    content={CustomTooltip} 
+                                    cursor={{ 
+                                        fill: 'var(--muted)', 
+                                        opacity: 0.1 // Subtle hover effect
+                                    }} 
+                                />
                                 
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))' }} />
-                                
-                                {/* Strength Duration Bar - Stacked, tied to hidden duration axis */}
+                                {/* Strength Duration Bar */}
                                 <Bar 
                                     dataKey="strengthDuration" 
                                     yAxisId="durationAxis" 
                                     fill="#58a3ff" // Brand blue
+                                    fillOpacity={0.3} // Make semi-transparent
                                     stackId="a" 
                                     radius={[4, 4, 0, 0]} 
                                     barSize={30}
-                                >
-                                    {/* No LabelList */}
-                                </Bar>
-                                
-                                {/* Cardio Duration Bar - Stacked, tied to hidden duration axis */}
+                                />
+                                {/* Cardio Duration Bar */}
                                 <Bar 
                                     dataKey="cardioDuration" 
                                     yAxisId="durationAxis" 
                                     fill="#fa9f7b" // Brand orange
+                                    fillOpacity={0.3} // Make semi-transparent
                                     stackId="a" 
                                     radius={[4, 4, 0, 0]} 
                                     barSize={30}
-                                >
-                                     {/* No LabelList */}
-                                </Bar>
+                                />
                                 
                                 {/* Strength Volume Line (Left Axis) */}
                                 <Line 
                                     type="monotone" 
                                     dataKey="strengthVolume" 
                                     stroke="#58a3ff" // Brand blue
-                                    strokeWidth={2} 
+                                    strokeWidth={2.5} // Increased thickness
                                     yAxisId="left" 
-                                    dot={false} 
-                                    name="Volume" 
+                                    dot={{ fill: '#58a3ff', r: 4 }} // Add dots
+                                    activeDot={{ r: 6, strokeWidth: 0 }} // Hover effect
+                                    // name="Volume" // Removed as legend is custom
                                 />
                                 {/* Cardio Distance Line (Right Axis) */}
                                 <Line 
                                     type="monotone" 
                                     dataKey="cardioDistance" 
                                     stroke="#fa9f7b" // Brand orange
-                                    strokeWidth={2} 
+                                    strokeWidth={2.5} // Increased thickness
                                     yAxisId="right" 
-                                    dot={false} 
-                                    name="Distance" 
+                                    dot={{ fill: '#fa9f7b', r: 4 }} // Add dots
+                                    activeDot={{ r: 6, strokeWidth: 0 }} // Hover effect
+                                    // name="Distance" // Removed as legend is custom
                                 />
                             </ComposedChart>
                         </ResponsiveContainer>
