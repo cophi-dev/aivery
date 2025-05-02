@@ -35,7 +35,7 @@ import { LoadingIndicator } from "@/components/ui/loading-indicator"
 import Image from "next/image"
 import { subMonths, subWeeks } from "date-fns"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { MetricCard } from "@/components/ui/metric-card"
+import MetricContent from "@/components/ui/metric-card"
 
 // Define helper functions (can be outside or inside component scope in client components)
 const formatDuration = (seconds: number | undefined | null): string => {
@@ -593,16 +593,16 @@ export default function ExerciseDetailPageClient({
                 <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   {isStrengthExercise && (
                     <>
-                      <MetricCard title="Avg Weight" value={progressionDisplayData.avgLastWeight?.toFixed(1) + ' kg'} change={progressionDisplayData.weightChange} />
-                      <MetricCard title="Avg Reps" value={progressionDisplayData.avgLastReps?.toFixed(1) ?? '--'} change={progressionDisplayData.repsChange} />
-                      <MetricCard title="Avg Volume" value={(progressionDisplayData.avgLastVolume?.toFixed(0) ?? '--') + (progressionDisplayData.avgLastVolume != null ? ' kg' : '')} change={progressionDisplayData.volumeChange} />
+                      <MetricContent title="Avg Weight" value={progressionDisplayData.avgLastWeight?.toFixed(1) + ' kg'} change={progressionDisplayData.weightChange} />
+                      <MetricContent title="Avg Reps" value={progressionDisplayData.avgLastReps?.toFixed(1) ?? '--'} change={progressionDisplayData.repsChange} />
+                      <MetricContent title="Avg Volume" value={(progressionDisplayData.avgLastVolume?.toFixed(0) ?? '--') + (progressionDisplayData.avgLastVolume != null ? ' kg' : '')} change={progressionDisplayData.volumeChange} />
                     </>
                   )}
                    {isCardioExercise && (
                      <>
-                       <MetricCard title="Avg Distance" value={formatDistance(progressionDisplayData.avgLastDist)} change={progressionDisplayData.distChange} />
-                       <MetricCard title="Avg Duration" value={formatDuration(progressionDisplayData.avgLastDur)} change={progressionDisplayData.durChange} />
-                       <MetricCard title="Avg Pace" value={formatPace(progressionDisplayData.avgLastPace)} change={progressionDisplayData.paceChange} />
+                       <MetricContent title="Avg Distance" value={formatDistance(progressionDisplayData.avgLastDist)} change={progressionDisplayData.distChange} />
+                       <MetricContent title="Avg Duration" value={formatDuration(progressionDisplayData.avgLastDur)} change={progressionDisplayData.durChange} />
+                       <MetricContent title="Avg Pace" value={formatPace(progressionDisplayData.avgLastPace)} change={progressionDisplayData.paceChange} />
                      </>
                   )}
                 </CardContent>
