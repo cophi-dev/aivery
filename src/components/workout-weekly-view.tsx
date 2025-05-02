@@ -8,13 +8,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
+// NEW: Import Switch and Label for the toggle
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 // Import recharts components
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend } from 'recharts';
-
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, ReferenceLine, Label as RechartsLabel } from 'recharts'; // Renamed Label import
 // Import helpers from utils and the new MetricCard location
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
-import { MetricCard } from '@/components/ui/metric-card';
+// Import the content component, and Card 
+import { MetricContent } from '@/components/ui/metric-card'; // Adjusted import name
+// Remove MetricCard import, Add DoubleMetricCard import
+// import { MetricCard } from '@/components/ui/metric-card'; 
 // Import getWorkoutTypeStyle for the list
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 // Import AiveryInsights component
@@ -26,23 +31,23 @@ const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 const CARDIO_TYPES = ['running', 'run', 'cycling', 'bike', 'ride', 'swimming', 'swim'];
 const STRENGTH_TYPES = ['strength', 'workout'];
 
-// Updated Chart data type
+// Updated Chart data type (Volume in Tons)
 interface DailyChartData {
     day: string; // e.g., 'Mon'
     cardioDuration: number; // minutes
     strengthDuration: number; // minutes
     cardioDistance: number; // km
-    strengthVolume: number; // kg
+    strengthVolume: number; // tons <--- CHANGED
     cumulativeCardioDistance: number; // km
-    cumulativeStrengthVolume: number; // kg
+    cumulativeStrengthVolume: number; // tons <--- CHANGED
 }
 
-// Updated type for aggregated weekly stats
+// Updated type for aggregated weekly stats (Volume in Tons)
 interface WeeklyWorkoutMetrics {
     totalWorkouts: number;
     totalDuration: number;
     totalDistance: number;
-    totalVolume: number;
+    totalVolume: number; // tons <--- CHANGED
     workoutsByDay: { [day: string]: WorkoutData[] };
     dailyChartData: DailyChartData[];
     allWorkoutsInWeek: WorkoutData[];
@@ -57,7 +62,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
             cardioDuration: number;
             strengthDuration: number;
             cardioDistance: number; // km
-            strengthVolume: number; // kg
+            strengthVolume: number; // tons <--- CHANGED
         } 
     } = {};
     const workoutsByDay: { [day: string]: WorkoutData[] } = {};
@@ -71,7 +76,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
             cardioDuration: 0,
             strengthDuration: 0,
             cardioDistance: 0,
-            strengthVolume: 0,
+            strengthVolume: 0, // Initialize as tons
         };
     });
     daysInWeek.forEach(day => {
@@ -82,7 +87,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     let totalWorkouts = weeklyWorkouts.length;
     let totalDuration = 0;
     let totalDistanceKm = 0;
-    let totalVolume = 0;
+    let totalVolumeTons = 0; // <-- CHANGED to Tons
 
     // Loop 1: Calculate daily totals and overall totals
     for (const w of weeklyWorkouts) {
@@ -93,12 +98,13 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
         } else if (typeof w.distance === 'number') {
             workoutDistanceMeters = w.distance < 100 ? w.distance * 1000 : w.distance;
         }
-        const volume = w.calculatedVolume || 0;
+        const volumeKg = w.calculatedVolume || 0; // Volume from DB is in KG
+        const volumeTons = volumeKg / 1000; // Convert to Tons
         const typeLower = w.type?.toLowerCase() || 'other';
 
         // Update overall totals
         totalDuration += duration;
-        totalVolume += volume;
+        totalVolumeTons += volumeTons; // Accumulate in Tons
         const distanceKmForDay = workoutDistanceMeters / 1000;
         totalDistanceKm += distanceKmForDay;
 
@@ -111,7 +117,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
             workoutsByDay[dayKey].push(w);
         }
 
-        // Update daily totals map
+        // Update daily totals map (using Tons)
         if (dailyTotalsMap[dayName]) {
             const durationMinutes = Math.round(duration / 60);
             if (CARDIO_TYPES.includes(typeLower)) {
@@ -119,21 +125,21 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
                 dailyTotalsMap[dayName].cardioDistance += distanceKmForDay;
             } else if (STRENGTH_TYPES.includes(typeLower)) {
                 dailyTotalsMap[dayName].strengthDuration += durationMinutes;
-                dailyTotalsMap[dayName].strengthVolume += volume;
+                dailyTotalsMap[dayName].strengthVolume += volumeTons; // Add Tons
             }
         }
     }
 
-    // --- Step 2: Build final chart data array and calculate cumulative --- 
+    // --- Step 2: Build final chart data array and calculate cumulative (using Tons) --- 
     const dailyChartData: DailyChartData[] = [];
     let runningCumulativeDistance = 0;
-    let runningCumulativeVolume = 0;
+    let runningCumulativeVolumeTons = 0; // <-- CHANGED to Tons
 
     for (const dayName of dayNamesInOrder) {
         const dailyTotals = dailyTotalsMap[dayName] || { cardioDuration: 0, strengthDuration: 0, cardioDistance: 0, strengthVolume: 0 };
         
         runningCumulativeDistance += dailyTotals.cardioDistance;
-        runningCumulativeVolume += dailyTotals.strengthVolume;
+        runningCumulativeVolumeTons += dailyTotals.strengthVolume; // Accumulate Tons
 
         dailyChartData.push({
             day: dayName,
@@ -141,31 +147,22 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
             cardioDuration: dailyTotals.cardioDuration,
             strengthDuration: dailyTotals.strengthDuration,
             cardioDistance: Math.round(dailyTotals.cardioDistance * 100) / 100, // Round daily distance
-            strengthVolume: Math.round(dailyTotals.strengthVolume), // Round daily volume
+            strengthVolume: Math.round(dailyTotals.strengthVolume * 100) / 100, // Round daily tons <-- CHANGED
             // Cumulative values
             cumulativeCardioDistance: Math.round(runningCumulativeDistance * 100) / 100,
-            cumulativeStrengthVolume: Math.round(runningCumulativeVolume),
-            // Include duration labels (placeholder, needs logic if required)
-            // cardioDurationLabel: dailyTotals.cardioDuration, 
-            // strengthDurationLabel: dailyTotals.strengthDuration,
+            cumulativeStrengthVolume: Math.round(runningCumulativeVolumeTons * 100) / 100, // Cumulative tons <-- CHANGED
         });
     }
-
-    // Log the final chart data for verification
-    // console.log(`[DEBUG Refactored ${format(weekStart, 'MMM d')}] Final dailyChartData:`, JSON.parse(JSON.stringify(dailyChartData)));
 
     const result: WeeklyWorkoutMetrics = { 
         totalWorkouts, 
         totalDuration, 
-        totalDistance: totalDistanceKm, // Use the correctly summed distance
-        totalVolume, 
+        totalDistance: totalDistanceKm, 
+        totalVolume: totalVolumeTons, // Return total Tons <-- CHANGED
         workoutsByDay, 
         dailyChartData,
         allWorkoutsInWeek: weeklyWorkouts 
     };
-
-    // Log the distance *from the result object*
-    // console.log(`[DEBUG Refactored ${format(weekStart, 'MMM d')}] Final totalDistance in RETURN OBJECT: ${result.totalDistance}`);
 
     return result;
 }
@@ -179,10 +176,55 @@ export default function WorkoutWeeklyView() {
     const [weeklyMetrics, setWeeklyMetrics] = useState<WeeklyWorkoutMetrics | null>(null);
     const [previousWeekMetrics, setPreviousWeekMetrics] = useState<WeeklyWorkoutMetrics | null>(null);
     const [isMetricsLoading, setIsMetricsLoading] = useState(false);
+    const [showGoals, setShowGoals] = useState(true);
+    const [showLastWeek, setShowLastWeek] = useState(false); // <-- NEW State for last week visibility
+    // NEW State for combined chart data
+    const [chartDisplayData, setChartDisplayData] = useState<any[]>([]); 
 
     const selectedWeekEnd = useMemo(() => endOfWeek(selectedWeekStart, { weekStartsOn: 1 }), [selectedWeekStart]);
     const previousWeekStart = useMemo(() => subWeeks(selectedWeekStart, 1), [selectedWeekStart]);
     const previousWeekEnd = useMemo(() => endOfWeek(previousWeekStart, { weekStartsOn: 1 }), [previousWeekStart]);
+
+    // Pre-calculate max values from data for domain logic
+    const { maxVolume, maxDistance } = useMemo(() => {
+        if (!weeklyMetrics?.dailyChartData?.length) {
+            return { maxVolume: 0, maxDistance: 0 };
+        }
+        let currentMaxVolume = 0;
+        let currentMaxDistance = 0;
+        for (const dayData of weeklyMetrics.dailyChartData) {
+            if (dayData.cumulativeStrengthVolume > currentMaxVolume) {
+                currentMaxVolume = dayData.cumulativeStrengthVolume;
+            }
+            if (dayData.cumulativeCardioDistance > currentMaxDistance) {
+                currentMaxDistance = dayData.cumulativeCardioDistance;
+            }
+        }
+        return { maxVolume: currentMaxVolume, maxDistance: currentMaxDistance };
+    }, [weeklyMetrics?.dailyChartData]);
+
+    // Calculate dynamic domains based on showGoals state and pre-calculated max values
+    const leftYAxisDomain = useMemo(() => {
+        const goal = 10; // 10 tons
+        const buffer = 2; // Buffer in tons
+        const calculatedMax = maxVolume || 0;
+        if (showGoals) {
+            return [0, Math.max(calculatedMax, goal) + buffer];
+        }
+        // Always return [number, number] when goals hidden
+        return [0, calculatedMax + buffer]; 
+    }, [showGoals, maxVolume]);
+
+    const rightYAxisDomain = useMemo(() => {
+        const goal = 10; // 10 km
+        const buffer = 2; // Buffer in km
+        const calculatedMax = maxDistance || 0;
+        if (showGoals) {
+            return [0, Math.max(calculatedMax, goal) + buffer];
+        }
+        // Always return [number, number] when goals hidden
+        return [0, calculatedMax + buffer]; 
+    }, [showGoals, maxDistance]);
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -233,22 +275,11 @@ export default function WorkoutWeeklyView() {
                         return !isBefore(workoutDate, prevWeekStart) && !isAfter(workoutDate, prevWeekEnd);
                     });
                     
-                    // <<< Log input data for current week AGAIN - Check for duplicates >>>
-                    // console.log("[DEBUG useEffect Pre-Call] Workouts for Current Week:", JSON.parse(JSON.stringify(currentWorkoutsInWeek.map(w => ({id: w._id, date: w.date, type: w.type})))));
-                    // console.log("[DEBUG useEffect Pre-Call] Workouts for Previous Week:", JSON.parse(JSON.stringify(previousWorkoutsInWeek.map(w => ({id: w._id, date: w.date, type: w.type})))));
-
                     // Pass pre-filtered arrays to getMetricsForWeek SEQUENTIALLY
                     const prevMetrics = await getMetricsForWeek(prevWeekStart, prevWeekEnd, previousWorkoutsInWeek);
                     const currentMetrics = await getMetricsForWeek(selectedWeekStart, currentWeekEnd, currentWorkoutsInWeek);
                     
-                    // <<< Log the returned metrics object BEFORE setting state (ensure deep copy for logging) >>>
-                    // console.log("[DEBUG useEffect] currentMetrics object received from getMetricsForWeek:", JSON.parse(JSON.stringify(currentMetrics)));
-                    // console.log("[DEBUG useEffect] prevMetrics object received from getMetricsForWeek:", JSON.parse(JSON.stringify(prevMetrics))); // Log prevMetrics too
-
                     if (isMounted) {
-                        // <<< Log right before setting state >>>
-                        // console.log("[DEBUG useEffect] Data JUST BEFORE setState:", JSON.parse(JSON.stringify(currentMetrics)));
-
                         const currentMetricsClone = { ...currentMetrics };
                         const prevMetricsClone = { ...prevMetrics };
                         setWeeklyMetrics(currentMetricsClone);
@@ -275,6 +306,36 @@ export default function WorkoutWeeklyView() {
         }
     }, [selectedWeekStart, isLoading]); // Removed allWorkouts dependency
 
+    // NEW useEffect to combine data for chart rendering
+    useEffect(() => {
+        if (!weeklyMetrics) {
+            setChartDisplayData([]); // Clear if no current data
+            return;
+        }
+
+        // Create a map of previous week data by day name for quick lookup
+        const prevDataMap = new Map<string, DailyChartData>();
+        if (previousWeekMetrics?.dailyChartData) {
+            previousWeekMetrics.dailyChartData.forEach(dayData => {
+                prevDataMap.set(dayData.day, dayData);
+            });
+        }
+
+        // Map current week data and merge previous week data
+        const combinedData = weeklyMetrics.dailyChartData.map(currentDayData => {
+            const prevDayData = prevDataMap.get(currentDayData.day);
+            return {
+                ...currentDayData, // Include all current day data
+                // Add previous week values, defaulting to 0 or null if not found
+                prevCumulativeStrengthVolume: prevDayData?.cumulativeStrengthVolume ?? null, 
+                prevCumulativeCardioDistance: prevDayData?.cumulativeCardioDistance ?? null, 
+            };
+        });
+
+        setChartDisplayData(combinedData);
+
+    }, [weeklyMetrics, previousWeekMetrics]); // Re-run when metric data changes
+
     const shiftWeek = (weeks: number) => {
         setSelectedWeekStart(prev => addWeeks(prev, weeks));
     };
@@ -291,29 +352,17 @@ export default function WorkoutWeeklyView() {
         return <div className="text-red-500 p-4">Error: {error}</div>;
     }
 
-    // ---> RE-ADD LOG <--- 
-    // console.log("[DEBUG] weeklyMetrics state just before render return:", weeklyMetrics);
-    if (weeklyMetrics) {
-      // console.log("[DEBUG] dailyChartData in state just before render return:", weeklyMetrics.dailyChartData);
-    }
-
-    // <<< Log data specifically for Thursday being passed to the chart >>>
-    // if (weeklyMetrics?.dailyChartData) {
-    //     const thuData = weeklyMetrics.dailyChartData.find(d => d.day === 'Thu');
-    //     console.log("[DEBUG Chart Data] Thursday data passed to chart:", thuData);
-    // }
-
     const weekDisplay = `${format(selectedWeekStart, 'MMM d')} - ${format(selectedWeekEnd, 'MMM d, yyyy')}`;
 
-    // Updated Custom Tooltip for Chart to show cumulative values
+    // Updated Custom Tooltip for Chart (Volume in Tons)
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             // Access the original data point for cumulative values
             const dataPoint = payload[0].payload; 
-            const cumulativeVolume = dataPoint.cumulativeStrengthVolume;
+            const cumulativeVolume = dataPoint.cumulativeStrengthVolume; // Already in Tons
             const cumulativeDistance = dataPoint.cumulativeCardioDistance;
             // Access daily values for optional display
-            const dailyVolume = dataPoint.strengthVolume;
+            const dailyVolume = dataPoint.strengthVolume; // Already in Tons
             const dailyDistance = dataPoint.cardioDistance;
 
             // Find line data for colors
@@ -323,13 +372,14 @@ export default function WorkoutWeeklyView() {
             return (
                 <div className="bg-background border border-border shadow-lg rounded-md p-3 text-sm">
                     <p className="font-semibold mb-2">{label}</p>
-                    {/* Display Cumulative values */}                    
-                    {cumulativeVolume > 0 && <p style={{ color: strengthLineData?.stroke }}>{`Total Vol: ${cumulativeVolume.toLocaleString()} kg`}</p>}
-                    {cumulativeDistance > 0 && <p style={{ color: cardioLineData?.stroke }}>{`Total Dist: ${cumulativeDistance.toFixed(1)} km`}</p>}
-                    {/* Optionally display daily contribution */} 
+                    {/* Display Cumulative values (Tons) - Simplified Label */}
+                    {cumulativeVolume > 0 && <p style={{ color: strengthLineData?.stroke }}>{`Strength: ${cumulativeVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t`}</p>} 
+                    {/* Simplified Label */}
+                    {cumulativeDistance > 0 && <p style={{ color: cardioLineData?.stroke }}>{`Cardio: ${cumulativeDistance.toFixed(1)} km`}</p>}
+                    {/* Optionally display daily contribution (Tons) */}
                     {(dailyVolume > 0 || dailyDistance > 0) && <hr className="my-1 border-border/50"/>}
-                    {dailyVolume > 0 && <p className="text-xs text-muted-foreground" style={{ color: strengthLineData?.stroke }}>{`(Daily Vol: ${dailyVolume.toLocaleString()} kg)`}</p>}
-                    {dailyDistance > 0 && <p className="text-xs text-muted-foreground" style={{ color: cardioLineData?.stroke }}>{`(Daily Dist: ${dailyDistance.toFixed(1)} km)`}</p>}
+                    {dailyVolume > 0 && <p className="text-xs text-muted-foreground" style={{ color: strengthLineData?.stroke }}>{`(Daily Strength: ${dailyVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t)`}</p>}
+                    {dailyDistance > 0 && <p className="text-xs text-muted-foreground" style={{ color: cardioLineData?.stroke }}>{`(Daily Cardio: ${dailyDistance.toFixed(1)} km)`}</p>}
                 </div>
             );
         }
@@ -348,56 +398,77 @@ export default function WorkoutWeeklyView() {
                 </Button>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base font-semibold">Weekly Totals</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {!weeklyMetrics ? ( 
-                        <p className="text-muted-foreground">No data available for this week.</p>
-                    ) : (
-                        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-                            <MetricCard 
-                                title="Workouts" 
-                                value={weeklyMetrics.totalWorkouts.toString()} 
-                                change={calculatePercentageChange(weeklyMetrics.totalWorkouts, previousWeekMetrics?.totalWorkouts)} 
+            {/* Weekly Totals Section - Changed from Card to Heading + Grid */}
+            <div className="mb-4">
+                <h3 className="text-base font-semibold mb-3">Weekly Totals</h3>
+                {!weeklyMetrics ? ( 
+                    <p className="text-muted-foreground text-sm">No data available for this week.</p>
+                ) : (
+                    // Reverted to 4-column grid, wrapping MetricContent in Card
+                    <div className="grid gap-3 grid-cols-2 sm:grid-cols-4"> 
+                        <Card className="p-3 min-h-[90px]"> {/* Apply Card style here */} 
+                             <MetricContent 
+                                title="Workouts"
+                                value={weeklyMetrics.totalWorkouts.toString()}
+                                change={calculatePercentageChange(weeklyMetrics.totalWorkouts, previousWeekMetrics?.totalWorkouts)}
                             />
-                            <MetricCard 
-                                title="Total Duration" 
-                                value={formatDuration(weeklyMetrics.totalDuration)} 
+                        </Card>
+                         <Card className="p-3 min-h-[90px]">
+                            <MetricContent
+                                title="Total Duration"
+                                value={formatDuration(weeklyMetrics.totalDuration)}
                                 change={calculatePercentageChange(weeklyMetrics.totalDuration, previousWeekMetrics?.totalDuration)}
                             />
-
-                            <MetricCard
+                        </Card>
+                        <Card className="p-3 min-h-[90px]">
+                            <MetricContent
                                 title="Total Distance"
-                                value={weeklyMetrics 
-                                        ? (weeklyMetrics.totalDistance > 0 && weeklyMetrics.totalDistance < 0.1 
-                                            ? `${weeklyMetrics.totalDistance.toFixed(2)} km` 
-                                            : formatDistance(weeklyMetrics.totalDistance))
-                                        : "-- km"}
-                                change={weeklyMetrics && weeklyMetrics.totalDistance > 0 ? calculatePercentageChange(weeklyMetrics.totalDistance, previousWeekMetrics?.totalDistance) : null}
-                            />
-
-                            <MetricCard 
-                                title="Total Volume" 
-                                value={`${weeklyMetrics.totalVolume.toLocaleString()} kg`} 
-                                change={weeklyMetrics.totalVolume > 0 ? calculatePercentageChange(weeklyMetrics.totalVolume, previousWeekMetrics?.totalVolume) : null} 
-                            />
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+                                value={formatDistance(weeklyMetrics.totalDistance)}
+                                change={calculatePercentageChange(weeklyMetrics.totalDistance, previousWeekMetrics?.totalDistance)}
+                             />
+                        </Card>
+                        <Card className="p-3 min-h-[90px]">
+                             <MetricContent
+                                title="Total Volume"
+                                value={`${weeklyMetrics.totalVolume.toLocaleString(undefined, {maximumFractionDigits: 1})} t`} 
+                                change={calculatePercentageChange(weeklyMetrics.totalVolume, previousWeekMetrics?.totalVolume)}
+                             />
+                        </Card>
+                    </div>
+                )}
+            </div>
             
-            {/* Updated Weekly Chart - Composed */}
+            {/* Weekly Chart Card */}
              {weeklyMetrics && weeklyMetrics.totalWorkouts > 0 && ( 
                  <Card>
-                    <CardHeader>
-                        <CardTitle className="text-base font-semibold">Weekly Cumulative Activity</CardTitle>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-x-4"> {/* Added space-x-4 */} 
+                        <CardTitle className="text-base font-semibold whitespace-nowrap">Weekly Activity</CardTitle> {/* Shortened title */} 
+                        {/* Combined Toggles */} 
+                        <div className="flex items-center space-x-4 ml-auto"> {/* Use ml-auto to push right */} 
+                             {/* Show Last Week Toggle */}
+                            <div className="flex items-center space-x-2">
+                                <Switch
+                                    id="show-last-week-switch"
+                                    checked={showLastWeek}
+                                    onCheckedChange={setShowLastWeek}
+                                />
+                                <Label htmlFor="show-last-week-switch" className="text-xs font-medium whitespace-nowrap">Last Week</Label>
+                            </div>
+                             {/* Show Goals Toggle */}
+                            <div className="flex items-center space-x-2">
+                                <Switch
+                                    id="show-goals-switch"
+                                    checked={showGoals}
+                                    onCheckedChange={setShowGoals}
+                                />
+                                <Label htmlFor="show-goals-switch" className="text-xs font-medium">Goals</Label>
+                            </div>
+                        </div>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="pt-4">
                         <ResponsiveContainer width="100%" height={250} minHeight={200}>
-                            <ComposedChart data={weeklyMetrics.dailyChartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}> 
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.2} />
+                            <ComposedChart data={chartDisplayData} margin={{ top: 5, right: 20, left: 15, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.1} />
                                 <XAxis 
                                     dataKey="day" 
                                     fontSize={12} 
@@ -405,18 +476,19 @@ export default function WorkoutWeeklyView() {
                                     axisLine={false}
                                     tick={{ fontWeight: 600 }}
                                 />
-                                {/* Left Y Axis (Cumulative Volume - kg) */}
+                                {/* Left Y Axis (Cumulative Volume - Tons) */}
                                 <YAxis 
                                     yAxisId="left"
                                     orientation="left" 
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false} 
-                                    allowDecimals={false} 
-                                    unit=" kg" 
+                                    allowDecimals={true} // Allow decimals for tons
+                                    tickFormatter={(value) => value.toFixed(1)} // Format tons
+                                    unit=" t" // Unit is Tons
                                     width={60}
                                     label={{ 
-                                        value: 'Cum. Volume (kg)', 
+                                        value: 'Strength (t)', // Simplified Label
                                         angle: -90, 
                                         position: 'insideLeft',
                                         offset: -5,
@@ -427,6 +499,7 @@ export default function WorkoutWeeklyView() {
                                             textAnchor: 'middle'
                                         }
                                     }}
+                                    domain={leftYAxisDomain} // Use dynamic domain
                                 />
                                 {/* Right Y Axis (Cumulative Distance - km) */}
                                 <YAxis 
@@ -440,7 +513,7 @@ export default function WorkoutWeeklyView() {
                                     unit=" km" 
                                     width={60}
                                     label={{ 
-                                        value: 'Cum. Distance (km)', 
+                                        value: 'Cardio (km)', // Simplified Label
                                         angle: 90, 
                                         position: 'insideRight',
                                         offset: -5,
@@ -451,19 +524,20 @@ export default function WorkoutWeeklyView() {
                                             textAnchor: 'middle'
                                         }
                                     }}
+                                    domain={rightYAxisDomain} // Use dynamic domain
                                 />
                                 <Legend 
                                     verticalAlign="top" 
                                     height={36}
                                     iconType="circle"
                                     wrapperStyle={{
-                                        paddingBottom: '10px',
-                                        borderBottom: '1px solid var(--border)',
+                                        paddingBottom: '15px',
                                         marginBottom: '10px'
                                     }}
                                     payload={[
-                                        { value: 'Cum. Strength Vol.', type: 'circle', color: '#58a3ff' },
-                                        { value: 'Cum. Cardio Dist.', type: 'circle', color: '#fa9f7b' }
+                                        // Simplified legend text 
+                                        { value: 'Strength', type: 'circle', color: '#58a3ff' }, 
+                                        { value: 'Cardio', type: 'circle', color: '#fa9f7b' }
                                     ]}
                                 />
                                 <Tooltip 
@@ -473,37 +547,95 @@ export default function WorkoutWeeklyView() {
                                         opacity: 0.1 
                                     }} 
                                 />
-                                {/* Cumulative Strength Volume Line */}
+
+                                {/* Conditional Goal Reference Lines */}
+                                {showGoals && (
+                                    <>
+                                        <ReferenceLine 
+                                            yAxisId="left" 
+                                            y={10} // Goal is 10 Tons
+                                            stroke="hsl(var(--primary) / 0.5)" 
+                                            strokeDasharray="3 3" 
+                                            strokeWidth={1.5}
+                                        >
+                                            {/* Updated label for Tons */}
+                                            <RechartsLabel value="Goal" position="insideTopRight" fill="hsl(var(--primary) / 0.8)" fontSize={10} dy={-5} dx={-5} />
+                                        </ReferenceLine>
+                                        <ReferenceLine 
+                                            yAxisId="right" 
+                                            y={10} // Goal is 10 km
+                                            stroke="hsl(var(--primary) / 0.5)" 
+                                            strokeDasharray="3 3" 
+                                            strokeWidth={1.5}
+                                        >
+                                             {/* Adjusted dx significantly to move label left */}
+                                             <RechartsLabel value="Goal" position="insideTopLeft" fill="hsl(var(--primary) / 0.8)" fontSize={10} dy={-5} dx={15} />
+                                        </ReferenceLine>
+                                    </>
+                                )}
+
+                                {/* Current Week Lines (remain the same) */}
                                 <Line 
-                                    type="monotone" 
+                                    yAxisId="left"
+                                    type="monotone"
                                     dataKey="cumulativeStrengthVolume" 
-                                    name="Cum. Strength Vol."
-                                    stroke="#58a3ff" 
-                                    strokeWidth={2.5}
-                                    yAxisId="left" 
-                                    dot={{ fill: '#58a3ff', r: 4 }}
-                                    activeDot={{ r: 6, strokeWidth: 0 }}
+                                    name="Strength" 
+                                    stroke="#0ea5e9" // Ensure this is the intended blue color variable
+                                    strokeWidth={3}
+                                    dot={{ r: 5, fill: '#0ea5e9' }}
+                                    activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2 }}
                                 />
-                                {/* Cumulative Cardio Distance Line */}
                                 <Line 
-                                    type="monotone" 
-                                    dataKey="cumulativeCardioDistance" 
-                                    name="Cum. Cardio Dist."
-                                    stroke="#fa9f7b" 
-                                    strokeWidth={2.5}
-                                    yAxisId="right" 
-                                    dot={{ fill: '#fa9f7b', r: 4 }}
-                                    activeDot={{ r: 6, strokeWidth: 0 }}
+                                    yAxisId="right"
+                                    type="monotone"
+                                    dataKey="cumulativeCardioDistance"
+                                    name="Cardio"
+                                    stroke="#f97316" // Ensure this is the intended orange color variable
+                                    strokeWidth={3}
+                                    dot={{ r: 5, fill: '#f97316' }}
+                                    activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2 }}
                                 />
+
+                                {/* Previous Week Lines (Conditional) */}
+                                {showLastWeek && (
+                                    <>
+                                        <Line 
+                                            yAxisId="left"
+                                            type="monotone"
+                                            dataKey="prevCumulativeStrengthVolume" 
+                                            stroke="#0ea5e9" // Use same base color
+                                            strokeWidth={2}
+                                            strokeOpacity={0.4} // Dimmed opacity
+                                            strokeDasharray="3 3" // Dashed line
+                                            dot={false} // No dots
+                                            activeDot={false} // No active dot
+                                            connectNulls={true} // Connect across null data points
+                                            name="_prevStrength" // Hidden from default tooltip/legend
+                                        />
+                                        <Line 
+                                            yAxisId="right"
+                                            type="monotone"
+                                            dataKey="prevCumulativeCardioDistance"
+                                            stroke="#f97316" // Use same base color
+                                            strokeWidth={2}
+                                            strokeOpacity={0.4} // Dimmed opacity
+                                            strokeDasharray="3 3" // Dashed line
+                                            dot={false} // No dots
+                                            activeDot={false} // No active dot
+                                            connectNulls={true} // Connect across null data points
+                                            name="_prevCardio" // Hidden from default tooltip/legend
+                                        />
+                                    </>
+                                )}
                             </ComposedChart>
                         </ResponsiveContainer>
                     </CardContent>
                  </Card>
              )}
 
-             {/* Weekly Workout List */} 
+             {/* Weekly Workout List Card (Volume display adjusted) */} 
               {weeklyMetrics && weeklyMetrics.allWorkoutsInWeek.length > 0 && ( 
-                 <Card>
+                 <Card className="border-border/50">
                      <CardHeader>
                          <CardTitle className="text-base font-semibold">Workouts This Week</CardTitle>
                      </CardHeader>
@@ -511,12 +643,14 @@ export default function WorkoutWeeklyView() {
                          <ul className="space-y-2">
                              {weeklyMetrics.allWorkoutsInWeek.map(workout => { 
                                  const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
+                                 const volumeKg = workout.calculatedVolume || 0;
+                                 const volumeTons = volumeKg / 1000; // Convert for display
                                  return (
                                      <li key={workout._id} 
                                         onClick={() => handleWorkoutClick(workout._id)}
                                         className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30 cursor-pointer"
                                      >
-                                        {/* Badge (Column 1, Row 1 & 2) */}
+                                        {/* Badge - Adjusted margins */}
                                         <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses}`}>
                                             {icon}
                                             <span className="ml-1.5 text-xs">{workout.type}</span>
@@ -531,14 +665,15 @@ export default function WorkoutWeeklyView() {
                                         {/* Metrics (Column 2, Row 2) */}
                                         <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
                                             <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
-                                            {/* Conditionally format distance based on likely unit (KM for old data < 100, METERS for new data >= 100) */}
+                                            {/* Conditionally format distance */}
                                             {workout.distance != null && workout.distance > 0 && 
                                               <span className="flex items-center">
                                                 <Route className="h-3 w-3 mr-1" /> 
                                                 {formatDistance(workout.distance < 100 ? workout.distance : workout.distance / 1000)}
                                               </span>
                                             }
-                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {workout.calculatedVolume.toLocaleString()} kg</span>}
+                                            {/* Display Volume in Tons */}
+                                            {volumeTons > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {volumeTons.toLocaleString(undefined, {maximumFractionDigits: 2})} t</span>}
                                         </div>
                                      </li>
                                  );
@@ -547,15 +682,15 @@ export default function WorkoutWeeklyView() {
                      </CardContent>
                  </Card>
               )}
+              {/* No Workouts Message */}
               {weeklyMetrics && weeklyMetrics.totalWorkouts === 0 && ( 
-                  <p className="text-muted-foreground text-center py-4">No workouts recorded for this week.</p>
+                  <p className="text-muted-foreground text-center py-8 text-sm">No workouts recorded for this week.</p>
               )}
 
-            {/* --- NEW SECTION --- */}
+            {/* Aivery Insights Section */}
             <section className="mb-8">
                 <AiveryInsights dateRange={{ start: selectedWeekStart, end: selectedWeekEnd }} />
             </section>
-            {/* --- END NEW SECTION --- */}
 
         </div>
     );

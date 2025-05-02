@@ -1,8 +1,15 @@
 import React from 'react';
-import { Card } from "@/components/ui/card";
+// Remove Card import
+// import { Card } from "@/components/ui/card";
 // Import icons for trend display
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'; 
 import { cn } from "@/lib/utils"; // Import cn for conditional classes
+
+interface MetricData {
+  title: string;
+  value: string;
+  change?: number | null;
+}
 
 interface MetricCardProps { 
   title: string; 
@@ -11,7 +18,8 @@ interface MetricCardProps {
   change?: number | null; // Optional percentage change value
 }
 
-export const MetricCard = ({ title, value, icon, change }: MetricCardProps) => {
+// Renamed component slightly as it's no longer a self-contained card
+export const MetricContent = ({ title, value, icon, change }: MetricCardProps) => {
 
   const renderChange = () => {
     if (change === undefined || change === null) {
@@ -44,19 +52,27 @@ export const MetricCard = ({ title, value, icon, change }: MetricCardProps) => {
     );
   };
 
+  // Return just the inner content structure, wrapped in a div for flex layout
   return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between mb-1"> {/* Added mb-1 */}
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
-        {icon} {/* Display icon if provided */}
+    <div className="flex flex-col justify-between h-full"> {/* Use h-full for flex */}
+      <div> 
+        <div className="flex items-center justify-between mb-1">
+          {/* Simplified title: removed uppercase, lighter color */}
+          <p className="text-xs font-medium text-muted-foreground/80 tracking-wide">{title}</p>
+          {icon} {/* Display icon if provided */}
+        </div>
       </div>
-      {/* Display value and change side-by-side */}
-      <div className="flex items-baseline justify-between">
-          <p className="text-2xl font-bold">{value}</p>
-          {renderChange()} {/* Render the change indicator */}
+
+      <div> 
+        <div className="flex items-baseline justify-between">
+            {/* Adjusted value size potentially */}
+            <p className="text-xl font-bold">{value}</p>
+            {renderChange()} {/* Render the change indicator */}
+        </div>
       </div>
-    </Card>
+    </div>
   );
 };
 
-export default MetricCard; // Add default export if needed elsewhere, or remove if only named used 
+// Keep export name consistent if used elsewhere, or adjust import name
+export default MetricContent; 
