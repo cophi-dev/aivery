@@ -6,7 +6,7 @@ import { format, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, eachDayOf
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 // NEW: Import Switch and Label for the toggle
 import { Switch } from "@/components/ui/switch";
@@ -180,6 +180,8 @@ export default function WorkoutWeeklyView() {
     const [showLastWeek, setShowLastWeek] = useState(false); // <-- NEW State for last week visibility
     // NEW State for combined chart data
     const [chartDisplayData, setChartDisplayData] = useState<any[]>([]); 
+    // State to track screen size for responsiveness
+    const [isSmallScreen, setIsSmallScreen] = useState(false);
 
     const selectedWeekEnd = useMemo(() => endOfWeek(selectedWeekStart, { weekStartsOn: 1 }), [selectedWeekStart]);
     const previousWeekStart = useMemo(() => subWeeks(selectedWeekStart, 1), [selectedWeekStart]);
@@ -225,6 +227,16 @@ export default function WorkoutWeeklyView() {
         // Always return [number, number] when goals hidden
         return [0, calculatedMax + buffer]; 
     }, [showGoals, maxDistance]);
+
+    // Effect to check screen size
+    useEffect(() => {
+        const checkScreenSize = () => {
+            setIsSmallScreen(window.innerWidth < 640); // Tailwind's sm breakpoint
+        };
+        checkScreenSize(); // Initial check
+        window.addEventListener('resize', checkScreenSize);
+        return () => window.removeEventListener('resize', checkScreenSize); // Cleanup
+    }, []);
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -344,6 +356,30 @@ export default function WorkoutWeeklyView() {
         router.push(`/workouts/${workoutId}`);
     }, [router]);
 
+    // Define margins based on screen size
+    const chartMargins = useMemo(() => {
+        return isSmallScreen 
+            ? { top: 5, right: 5, left: 5, bottom: 0 } // Smaller margins for mobile
+            : { top: 5, right: 15, left: 25, bottom: 0 }; // Original-like margins for larger screens
+    }, [isSmallScreen]);
+
+    // Define conditional label configs
+    const leftAxisLabelConfig = useMemo(() => !isSmallScreen ? { 
+        value: 'Strength (t)', 
+        angle: -90, 
+        position: 'insideLeft',
+        offset: -15, // Adjusted offset for potentially larger margin
+        style: { fontSize: '12px', fill: '#58a3ff', fontWeight: 500, textAnchor: 'middle' }
+    } : undefined, [isSmallScreen]);
+
+    const rightAxisLabelConfig = useMemo(() => !isSmallScreen ? { 
+        value: 'Cardio (km)',
+        angle: 90, 
+        position: 'insideRight',
+        offset: -15, // Adjusted offset for potentially larger margin
+        style: { fontSize: '12px', fill: '#fa9f7b', fontWeight: 500, textAnchor: 'middle' }
+    } : undefined, [isSmallScreen]);
+
     if (isLoading || isMetricsLoading) { // Check both loading states
         return <div className="flex justify-center items-center p-8"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /> <span className="ml-2">Loading workouts...</span></div>;
     }
@@ -365,21 +401,34 @@ export default function WorkoutWeeklyView() {
             const dailyVolume = dataPoint.strengthVolume; // Already in Tons
             const dailyDistance = dataPoint.cardioDistance;
 
-            // Find line data for colors
-            const strengthLineData = payload.find((p: any) => p.dataKey === 'cumulativeStrengthVolume');
-            const cardioLineData = payload.find((p: any) => p.dataKey === 'cumulativeCardioDistance');
+            // Find line data for colors (or use predefined colors)
+            const strengthColor = 'hsl(var(--primary))'; // Use primary color for strength
+            // Use CSS var, provide fallback orange
+            const cardioColor = 'var(--chart-orange, #fb923c)'; 
 
             return (
-                <div className="bg-background border border-border shadow-lg rounded-md p-3 text-sm">
-                    <p className="font-semibold mb-2">{label}</p>
-                    {/* Display Cumulative values (Tons) - Simplified Label */}
-                    {cumulativeVolume > 0 && <p style={{ color: strengthLineData?.stroke }}>{`Strength: ${cumulativeVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t`}</p>} 
-                    {/* Simplified Label */}
-                    {cumulativeDistance > 0 && <p style={{ color: cardioLineData?.stroke }}>{`Cardio: ${cumulativeDistance.toFixed(1)} km`}</p>}
-                    {/* Optionally display daily contribution (Tons) */}
-                    {(dailyVolume > 0 || dailyDistance > 0) && <hr className="my-1 border-border/50"/>}
-                    {dailyVolume > 0 && <p className="text-xs text-muted-foreground" style={{ color: strengthLineData?.stroke }}>{`(Daily Strength: ${dailyVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t)`}</p>}
-                    {dailyDistance > 0 && <p className="text-xs text-muted-foreground" style={{ color: cardioLineData?.stroke }}>{`(Daily Cardio: ${dailyDistance.toFixed(1)} km)`}</p>}
+                // Use popover styles for theme consistency
+                <div className="bg-popover text-popover-foreground border border-border/50 shadow-lg rounded-lg p-3.5 text-sm space-y-1">
+                    <p className="font-semibold mb-1 text-center">{label}</p>
+                    {cumulativeVolume > 0 && (
+                        <div className="flex items-center">
+                             {/* Use Dumbbell icon */}
+                            <Dumbbell className="h-3.5 w-3.5 mr-1.5" style={{ color: strengthColor }}/> 
+                            <p style={{ color: strengthColor }}>
+                                {`${cumulativeVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t`}
+                                {dailyVolume > 0 && <span className="text-xs opacity-70 ml-1">{`(+${dailyVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t)`}</span>}
+                            </p>
+                        </div>
+                    )}
+                    {cumulativeDistance > 0 && (
+                         <div className="flex items-center">
+                            <Flame className="h-3.5 w-3.5 mr-1.5" style={{ color: cardioColor }}/>
+                            <p style={{ color: cardioColor }}>
+                                {`${cumulativeDistance.toFixed(1)} km`}
+                                {dailyDistance > 0 && <span className="text-xs opacity-70 ml-1">{`(+${dailyDistance.toFixed(1)} km)`}</span>}
+                            </p>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -438,13 +487,18 @@ export default function WorkoutWeeklyView() {
                 )}
             </div>
             
+            {/* MOVED: Aivery Insights Section (Now Above Chart) */}
+            <section className="mb-6"> {/* Added margin-bottom */} 
+                <AiveryInsights dateRange={{ start: selectedWeekStart, end: selectedWeekEnd }} />
+            </section>
+            
             {/* Weekly Chart Card */}
              {weeklyMetrics && weeklyMetrics.totalWorkouts > 0 && ( 
                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-x-4"> {/* Added space-x-4 */} 
-                        <CardTitle className="text-base font-semibold whitespace-nowrap">Weekly Activity</CardTitle> {/* Shortened title */} 
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-x-4"> 
+                        <CardTitle className="text-sm sm:text-base font-semibold whitespace-nowrap">Weekly Activity</CardTitle> 
                         {/* Combined Toggles */} 
-                        <div className="flex items-center space-x-4 ml-auto"> {/* Use ml-auto to push right */} 
+                        <div className="flex items-center space-x-2 sm:space-x-4 ml-auto"> {/* Adjusted spacing for toggles on mobile */} 
                              {/* Show Last Week Toggle */}
                             <div className="flex items-center space-x-2">
                                 <Switch
@@ -466,84 +520,69 @@ export default function WorkoutWeeklyView() {
                         </div>
                     </CardHeader>
                     <CardContent className="pt-4">
-                        <ResponsiveContainer width="100%" height={250} minHeight={200}>
-                            <ComposedChart data={chartDisplayData} margin={{ top: 5, right: 20, left: 15, bottom: 0 }}>
+                        <ResponsiveContainer width="100%" height={250} minHeight={200} className="h-[200px] sm:h-[250px]">
+                            {/* Use dynamic margins */}
+                            <ComposedChart data={chartDisplayData} margin={chartMargins} > 
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.1} />
                                 <XAxis 
                                     dataKey="day" 
-                                    fontSize={12} 
+                                    fontSize={10}
                                     tickLine={false} 
                                     axisLine={false}
-                                    tick={{ fontWeight: 600 }}
+                                    tick={{ fontWeight: 500, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} // Muted color, lighter weight
                                 />
                                 {/* Left Y Axis (Cumulative Volume - Tons) */}
                                 <YAxis 
                                     yAxisId="left"
                                     orientation="left" 
-                                    fontSize={12} 
+                                    fontSize={10}
                                     tickLine={false} 
                                     axisLine={false} 
-                                    allowDecimals={true} // Allow decimals for tons
-                                    tickFormatter={(value) => value.toFixed(1)} // Format tons
-                                    unit=" t" // Unit is Tons
-                                    width={60}
-                                    label={{ 
-                                        value: 'Strength (t)', // Simplified Label
-                                        angle: -90, 
-                                        position: 'insideLeft',
-                                        offset: -5,
-                                        style: { 
-                                            fontSize: '12px', 
-                                            fill: '#58a3ff', 
-                                            fontWeight: 500,
-                                            textAnchor: 'middle'
-                                        }
-                                    }}
-                                    domain={leftYAxisDomain} // Use dynamic domain
+                                    allowDecimals={true}
+                                    tickFormatter={(value) => `${value.toFixed(1)} t`}
+                                    width={isSmallScreen ? 40 : 60} 
+                                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} // Muted color
+                                    label={leftAxisLabelConfig} 
+                                    domain={leftYAxisDomain} 
                                 />
                                 {/* Right Y Axis (Cumulative Distance - km) */}
                                 <YAxis 
                                     yAxisId="right"
                                     orientation="right" 
-                                    fontSize={12} 
+                                    fontSize={10}
                                     tickLine={false} 
                                     axisLine={false} 
                                     allowDecimals={true}
-                                    tickFormatter={(value) => value.toFixed(1)} 
-                                    unit=" km" 
-                                    width={60}
-                                    label={{ 
-                                        value: 'Cardio (km)', // Simplified Label
-                                        angle: 90, 
-                                        position: 'insideRight',
-                                        offset: -5,
-                                        style: { 
-                                            fontSize: '12px', 
-                                            fill: '#fa9f7b', 
-                                            fontWeight: 500,
-                                            textAnchor: 'middle'
-                                        }
-                                    }}
-                                    domain={rightYAxisDomain} // Use dynamic domain
+                                    tickFormatter={(value) => `${value.toFixed(1)} km`}
+                                    width={isSmallScreen ? 40 : 60} 
+                                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} // Muted color
+                                    label={rightAxisLabelConfig} 
+                                    domain={rightYAxisDomain} 
                                 />
                                 <Legend 
                                     verticalAlign="top" 
                                     height={36}
                                     iconType="circle"
-                                    wrapperStyle={{
-                                        paddingBottom: '15px',
-                                        marginBottom: '10px'
+                                    wrapperStyle={{ // Adjusted spacing
+                                        paddingBottom: '10px', 
+                                        marginBottom: '5px' 
                                     }}
+                                    // Use formatter for responsive text size
+                                    formatter={(value, entry) => (
+                                        <span className="text-xs sm:text-sm text-muted-foreground ml-1" style={{ color: entry?.color }}>
+                                            {value}
+                                        </span>
+                                    )}
+                                    // Payload might not be needed if formatter is used, but keep for color info
                                     payload={[
-                                        // Simplified legend text 
-                                        { value: 'Strength', type: 'circle', color: '#58a3ff' }, 
-                                        { value: 'Cardio', type: 'circle', color: '#fa9f7b' }
+                                        { value: 'Strength', type: 'circle', color: 'hsl(var(--primary))' }, 
+                                        { value: 'Cardio', type: 'circle', color: 'var(--chart-orange, #fb923c)' } 
                                     ]}
                                 />
                                 <Tooltip 
                                     content={CustomTooltip} 
                                     cursor={{ 
-                                        fill: 'var(--muted)', 
+                                        fill: 'hsl(var(--accent))', // Use accent for cursor fill
                                         opacity: 0.1 
                                     }} 
                                 />
@@ -558,8 +597,8 @@ export default function WorkoutWeeklyView() {
                                             strokeDasharray="3 3" 
                                             strokeWidth={1.5}
                                         >
-                                            {/* Updated label for Tons */}
-                                            <RechartsLabel value="Goal" position="insideTopRight" fill="hsl(var(--primary) / 0.8)" fontSize={10} dy={-5} dx={-5} />
+                                            {/* Slightly larger goal label, adjusted positioning */}
+                                            <RechartsLabel value="Goal" position="insideTopRight" fill="hsl(var(--primary) / 0.8)" fontSize={10} dy={-4} dx={-4} /> 
                                         </ReferenceLine>
                                         <ReferenceLine 
                                             yAxisId="right" 
@@ -568,8 +607,8 @@ export default function WorkoutWeeklyView() {
                                             strokeDasharray="3 3" 
                                             strokeWidth={1.5}
                                         >
-                                             {/* Adjusted dx significantly to move label left */}
-                                             <RechartsLabel value="Goal" position="insideTopLeft" fill="hsl(var(--primary) / 0.8)" fontSize={10} dy={-5} dx={15} />
+                                             {/* Slightly larger goal label, adjusted positioning */}
+                                             <RechartsLabel value="Goal" position="insideTopLeft" fill="hsl(var(--primary) / 0.8)" fontSize={10} dy={-4} dx={10} /> 
                                         </ReferenceLine>
                                     </>
                                 )}
@@ -580,20 +619,20 @@ export default function WorkoutWeeklyView() {
                                     type="monotone"
                                     dataKey="cumulativeStrengthVolume" 
                                     name="Strength" 
-                                    stroke="#0ea5e9" // Ensure this is the intended blue color variable
-                                    strokeWidth={3}
-                                    dot={{ r: 5, fill: '#0ea5e9' }}
-                                    activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2 }}
+                                    stroke="hsl(var(--primary))" // Use primary color variable
+                                    strokeWidth={2.5} // Slightly thinner
+                                    dot={{ r: 4, fill: 'hsl(var(--primary))', strokeWidth: 0 }} // Smaller dot, no stroke
+                                    activeDot={{ r: 5, stroke: 'hsl(var(--background))', strokeWidth: 2, fill: 'hsl(var(--primary))' }} // Refined active dot
                                 />
                                 <Line 
                                     yAxisId="right"
                                     type="monotone"
                                     dataKey="cumulativeCardioDistance"
                                     name="Cardio"
-                                    stroke="#f97316" // Ensure this is the intended orange color variable
-                                    strokeWidth={3}
-                                    dot={{ r: 5, fill: '#f97316' }}
-                                    activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2 }}
+                                    stroke="var(--chart-orange, #fb923c)" // Use CSS var with fallback
+                                    strokeWidth={2.5} // Slightly thinner
+                                    dot={{ r: 4, fill: 'var(--chart-orange, #fb923c)', strokeWidth: 0 }} // Smaller dot, no stroke
+                                    activeDot={{ r: 5, stroke: 'hsl(var(--background))', strokeWidth: 2, fill: 'var(--chart-orange, #fb923c)' }} // Refined active dot
                                 />
 
                                 {/* Previous Week Lines (Conditional) */}
@@ -603,9 +642,9 @@ export default function WorkoutWeeklyView() {
                                             yAxisId="left"
                                             type="monotone"
                                             dataKey="prevCumulativeStrengthVolume" 
-                                            stroke="#0ea5e9" // Use same base color
-                                            strokeWidth={2}
-                                            strokeOpacity={0.4} // Dimmed opacity
+                                            stroke="hsl(var(--primary))" // Use primary color variable
+                                            strokeWidth={1.5} // Thinner for previous week
+                                            strokeOpacity={0.4} 
                                             strokeDasharray="3 3" // Dashed line
                                             dot={false} // No dots
                                             activeDot={false} // No active dot
@@ -616,9 +655,9 @@ export default function WorkoutWeeklyView() {
                                             yAxisId="right"
                                             type="monotone"
                                             dataKey="prevCumulativeCardioDistance"
-                                            stroke="#f97316" // Use same base color
-                                            strokeWidth={2}
-                                            strokeOpacity={0.4} // Dimmed opacity
+                                            stroke="var(--chart-orange, #fb923c)" // Use CSS var with fallback
+                                            strokeWidth={1.5} // Thinner for previous week
+                                            strokeOpacity={0.4} 
                                             strokeDasharray="3 3" // Dashed line
                                             dot={false} // No dots
                                             activeDot={false} // No active dot
@@ -686,11 +725,6 @@ export default function WorkoutWeeklyView() {
               {weeklyMetrics && weeklyMetrics.totalWorkouts === 0 && ( 
                   <p className="text-muted-foreground text-center py-8 text-sm">No workouts recorded for this week.</p>
               )}
-
-            {/* Aivery Insights Section */}
-            <section className="mb-8">
-                <AiveryInsights dateRange={{ start: selectedWeekStart, end: selectedWeekEnd }} />
-            </section>
 
         </div>
     );

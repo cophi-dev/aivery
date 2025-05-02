@@ -6,14 +6,16 @@ import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isBef
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
 import { MetricContent } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
+// Import AiveryInsights
+import AiveryInsights from '@/components/dashboard/AiveryInsights';
 
 // Import recharts components
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, Label as RechartsLabel } from 'recharts';
 
 const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 
@@ -27,7 +29,7 @@ interface WeeklyChartData {
     cardioDuration: number; // minutes
     strengthDuration: number; // minutes
     cardioDistance: number; // km
-    strengthVolume: number; // kg
+    strengthVolume: number; // tons
 }
 
 // Updated type for aggregated monthly stats
@@ -35,7 +37,7 @@ interface MonthlyWorkoutMetrics {
     totalWorkouts: number;
     totalDuration: number;
     totalDistance: number;
-    totalVolume: number;
+    totalVolume: number; // tons
     weeklyChartData: WeeklyChartData[];
     allWorkoutsInMonth: WorkoutData[];
 }
@@ -58,14 +60,15 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
 
     monthlyWorkouts.forEach(w => {
         const duration = w.duration || 0;
-        // Prioritize cardioDetails.distance, fallback to top-level distance. Assume meters.
-        const distance = w.cardioDetails?.distance ?? w.distance ?? 0;
-        const volume = w.calculatedVolume || 0;
+        // Prioritize cardioDetails.distance, fallback to top-level distance. Assume km.
+        const distanceKm = (w.cardioDetails?.distance ?? w.distance ?? 0);
+        const volumeKg = w.calculatedVolume || 0;
+        const volumeTons = volumeKg / 1000; // Convert kg to tons
         const typeLower = w.type?.toLowerCase() || 'other';
 
         totalDuration += duration;
-        totalDistance += distance;
-        totalVolume += volume;
+        totalDistance += distanceKm; // Accumulate distance in KM
+        totalVolume += volumeTons; // Accumulate volume in Tons
 
         const workoutDate = parseISO(w.date.toString());
         const weekOfMonth = getWeekOfMonth(workoutDate, { weekStartsOn: 1 });
@@ -76,7 +79,7 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
                 cardioDuration: 0,
                 strengthDuration: 0,
                 cardioDistance: 0,
-                strengthVolume: 0,
+                strengthVolume: 0, // Initialize as tons
             };
         }
 
@@ -84,10 +87,10 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
         const durationMinutes = Math.round(duration / 60);
         if (CARDIO_TYPES.includes(typeLower)) {
             weeklyChartDataMap[weekOfMonth].cardioDuration += durationMinutes;
-            weeklyChartDataMap[weekOfMonth].cardioDistance += distance;
+            weeklyChartDataMap[weekOfMonth].cardioDistance += distanceKm;
         } else if (STRENGTH_TYPES.includes(typeLower)) {
             weeklyChartDataMap[weekOfMonth].strengthDuration += durationMinutes;
-            weeklyChartDataMap[weekOfMonth].strengthVolume += volume;
+            weeklyChartDataMap[weekOfMonth].strengthVolume += volumeTons; // Add tons
         }
     });
 
@@ -96,8 +99,9 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
         .map(([weekNum, data]) => ({
             week: `W${weekNum}`,
             ...data,
-            // Distance is already in KM from source, just round
-            cardioDistance: Math.round(data.cardioDistance * 10) / 10, // Round km to 1 decimal
+            // Round distance and volume (tons)
+            cardioDistance: Math.round(data.cardioDistance * 10) / 10, 
+            strengthVolume: Math.round(data.strengthVolume * 100) / 100, // Round tons
         }))
         .sort((a, b) => parseInt(a.week.substring(1)) - parseInt(b.week.substring(1)));
 
@@ -121,6 +125,41 @@ export default function WorkoutMonthlyView() {
     const [monthlyMetrics, setMonthlyMetrics] = useState<MonthlyWorkoutMetrics | null>(null);
     const [previousMonthMetrics, setPreviousMonthMetrics] = useState<MonthlyWorkoutMetrics | null>(null);
     const [isMetricsLoading, setIsMetricsLoading] = useState(false);
+    const [isSmallScreen, setIsSmallScreen] = useState(false);
+
+    // Effect to check screen size
+    useEffect(() => {
+        const checkScreenSize = () => {
+            setIsSmallScreen(window.innerWidth < 640); // Tailwind's sm breakpoint
+        };
+        checkScreenSize(); // Initial check
+        window.addEventListener('resize', checkScreenSize);
+        return () => window.removeEventListener('resize', checkScreenSize); // Cleanup
+    }, []);
+
+    // Define margins based on screen size (moved before early returns)
+    const chartMargins = useMemo(() => {
+        return isSmallScreen 
+            ? { top: 5, right: 5, left: 5, bottom: 0 } 
+            : { top: 5, right: 15, left: 25, bottom: 0 }; 
+    }, [isSmallScreen]);
+
+    // Define conditional label configs (moved before early returns)
+    const leftAxisLabelConfig = useMemo(() => !isSmallScreen ? { 
+        value: 'Volume (t)', 
+        angle: -90, 
+        position: 'insideLeft',
+        offset: -15, 
+        style: { fontSize: '12px', fill: 'hsl(var(--primary))', fontWeight: 500, textAnchor: 'middle' }
+    } : undefined, [isSmallScreen]);
+
+    const rightAxisLabelConfig = useMemo(() => !isSmallScreen ? { 
+        value: 'Distance (km)',
+        angle: 90, 
+        position: 'insideRight',
+        offset: -15, 
+        style: { fontSize: '12px', fill: 'var(--chart-orange, #fb923c)', fontWeight: 500, textAnchor: 'middle' } 
+    } : undefined, [isSmallScreen]);
 
     const selectedMonthEnd = useMemo(() => endOfMonth(selectedMonthStart), [selectedMonthStart]);
     const previousMonthStart = useMemo(() => subMonths(selectedMonthStart, 1), [selectedMonthStart]);
@@ -184,6 +223,7 @@ export default function WorkoutMonthlyView() {
         router.push(`/workouts/${workoutId}`);
     }, [router]);
 
+    // Early returns are now safe as all hooks are called before them
     if (isLoading) {
         return <div className="flex justify-center items-center p-8"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /> <span className="ml-2">Loading workouts...</span></div>;
     }
@@ -194,29 +234,59 @@ export default function WorkoutMonthlyView() {
 
     const monthDisplay = format(selectedMonthStart, 'MMMM yyyy');
 
-    // Updated Custom Tooltip for Chart - Copied & adjusted from Weekly View
+    // Updated Custom Tooltip for Chart (Copied & refined from Weekly View)
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
-            // Access the original data point for durations
-            const dataPoint = payload[0].payload; 
-            const strengthDuration = dataPoint.strengthDuration; // Use actual duration
-            const cardioDuration = dataPoint.cardioDuration; // Use actual duration
+            const dataPoint = payload[0]?.payload; 
+            if (!dataPoint) return null; // Check if datapoint exists
 
-            // Find line data (volume and distance)
-            const strengthVolumeData = payload.find((p: any) => p.dataKey === 'strengthVolume');
-            const cardioDistanceData = payload.find((p: any) => p.dataKey === 'cardioDistance');
+            const strengthVolume = dataPoint.strengthVolume; // Now in Tons
+            const cardioDistance = dataPoint.cardioDistance;
+            const strengthDuration = dataPoint.strengthDuration;
+            const cardioDuration = dataPoint.cardioDuration;
 
-            // Find bar data for colors (optional, could use fixed colors too)
-            const strengthBarData = payload.find((p: any) => p.dataKey === 'strengthDuration');
-            const cardioBarData = payload.find((p: any) => p.dataKey === 'cardioDuration');
+            const strengthColor = 'hsl(var(--primary))'; 
+            const cardioColor = 'var(--chart-orange, #fb923c)';
 
             return (
-                <div className="bg-background border border-border shadow-lg rounded-md p-3 text-sm">
-                    <p className="font-semibold mb-2">{label}</p> {/* Will show W1, W2 etc. */}
-                    {strengthVolumeData && strengthVolumeData.value > 0 && <p style={{ color: strengthVolumeData.stroke }}>{`Volume: ${strengthVolumeData.value.toLocaleString()} kg`}</p>}
-                    {cardioDistanceData && cardioDistanceData.value > 0 && <p style={{ color: cardioDistanceData.stroke }}>{`Distance: ${cardioDistanceData.value.toFixed(1)} km`}</p>}
-                    {strengthDuration > 0 && <p style={{ color: strengthBarData?.fill ?? '#58a3ff' }}>{`Strength: ${strengthDuration} min`}</p>}
-                    {cardioDuration > 0 && <p style={{ color: cardioBarData?.fill ?? '#fa9f7b' }}>{`Cardio: ${cardioDuration} min`}</p>}
+                <div className="bg-popover text-popover-foreground border border-border/50 shadow-lg rounded-lg p-3.5 text-sm space-y-1">
+                    <p className="font-semibold mb-1 text-center">{label}</p> {/* Week Label */} 
+                    {/* Strength Volume (Tons) */}
+                    {strengthVolume > 0 && (
+                        <div className="flex items-center">
+                            <Dumbbell className="h-3.5 w-3.5 mr-1.5" style={{ color: strengthColor }}/> 
+                            <p style={{ color: strengthColor }}>
+                                {`${strengthVolume.toLocaleString(undefined, {maximumFractionDigits: 2})} t`}
+                            </p>
+                        </div>
+                    )}
+                    {/* Cardio Distance (KM) */}
+                    {cardioDistance > 0 && (
+                         <div className="flex items-center">
+                            <Flame className="h-3.5 w-3.5 mr-1.5" style={{ color: cardioColor }}/>
+                            <p style={{ color: cardioColor }}>
+                                {`${cardioDistance.toFixed(1)} km`}
+                            </p>
+                        </div>
+                    )}
+                    {/* Optional: Separator if both metrics and durations exist */}
+                    {(strengthVolume > 0 || cardioDistance > 0) && (strengthDuration > 0 || cardioDuration > 0) && (
+                        <hr className="my-1 border-border/30" />
+                    )}
+                    {/* Strength Duration (Min) */}
+                    {strengthDuration > 0 && (
+                         <div className="flex items-center text-xs opacity-80">
+                             <Clock className="h-3 w-3 mr-1.5" style={{ color: strengthColor }}/> 
+                             <p style={{ color: strengthColor }}>{`${strengthDuration} min`}</p>
+                         </div>
+                    )}
+                    {/* Cardio Duration (Min) */}
+                    {cardioDuration > 0 && (
+                         <div className="flex items-center text-xs opacity-80">
+                             <Clock className="h-3 w-3 mr-1.5" style={{ color: cardioColor }}/> 
+                             <p style={{ color: cardioColor }}>{`${cardioDuration} min`}</p>
+                         </div>
+                    )}
                 </div>
             );
         }
@@ -263,7 +333,7 @@ export default function WorkoutMonthlyView() {
                             />
                             <MetricContent 
                                 title="Total Volume" 
-                                value={`${monthlyMetrics.totalVolume.toLocaleString()} kg`} 
+                                value={`${monthlyMetrics.totalVolume.toLocaleString(undefined, {maximumFractionDigits: 1})} t`} 
                                 change={monthlyMetrics.totalVolume > 0 ? calculatePercentageChange(monthlyMetrics.totalVolume, previousMonthMetrics?.totalVolume) : null}
                             />
                         </div>
@@ -272,74 +342,66 @@ export default function WorkoutMonthlyView() {
                     )}
                 </CardContent>
             </Card>
+
+            {/* NEW: Aivery Insights Section (Moved Above Chart) */}
+            <section className="mb-6"> {/* Added margin-bottom */}
+                <AiveryInsights dateRange={{ start: selectedMonthStart, end: selectedMonthEnd }} />
+            </section>
             
             {/* Updated Monthly Chart - Composed */}
              {monthlyMetrics && monthlyMetrics.totalWorkouts > 0 && (
                  <Card>
                     <CardHeader>
                          {/* Updated Title */}
-                        <CardTitle className="text-base font-semibold">Weekly Activity Breakdown</CardTitle>
+                        <CardTitle className="text-sm sm:text-base font-semibold">Weekly Activity Breakdown</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <ResponsiveContainer width="100%" height={250} minHeight={200}> 
-                            {/* Apply same margin as weekly view */}
-                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.2} />
+                    <CardContent className="pt-4">
+                        <ResponsiveContainer width="100%" height={250} minHeight={200} className="h-[200px] sm:h-[250px]">
+                            {/* Use dynamic margins */}
+                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={chartMargins}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.1} />
                                 <XAxis 
                                     dataKey="week" 
-                                    fontSize={12} 
+                                    fontSize={10} 
                                     tickLine={false} 
                                     axisLine={false}
-                                    tick={{ fontWeight: 600 }} // Make week labels bold
+                                    tick={{ fontWeight: 500, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} // Muted color, lighter weight
                                 />
-                                {/* Left Y Axis (Volume - kg) */}
+                                {/* Left Y Axis (Volume - Tons) */}
                                 <YAxis 
                                     yAxisId="left"
                                     orientation="left" 
-                                    fontSize={12} 
+                                    fontSize={10} 
                                     tickLine={false} 
                                     axisLine={false} 
-                                    allowDecimals={false} 
-                                    unit=" kg"
-                                    width={60}
-                                    label={{ 
-                                        value: 'Volume (kg)', 
-                                        angle: -90, 
-                                        position: 'insideLeft',
-                                        offset: -5, // Adjusted offset
-                                        style: { 
-                                            fontSize: '12px', 
-                                            fill: '#58a3ff', 
-                                            fontWeight: 500,
-                                            textAnchor: 'middle' // Center label
-                                        }
-                                    }}
+                                    allowDecimals={true} // Allow decimals for tons
+                                    // Format tons 
+                                    tickFormatter={(value) => `${value.toFixed(1)} t`}
+                                    // unit=" t" // REMOVED
+                                    width={isSmallScreen ? 40 : 60} // Responsive width
+                                    label={leftAxisLabelConfig} // Conditional label
+                                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} // Muted ticks
+                                    // Add domain if needed, e.g., based on max volume
+                                    // domain={[0, 'auto']} 
                                 />
                                 {/* Right Y Axis (Distance - km) */}
                                 <YAxis 
                                     yAxisId="right"
                                     orientation="right" 
-                                    fontSize={12} 
+                                    fontSize={10} 
                                     tickLine={false} 
                                     axisLine={false} 
                                     allowDecimals={true} 
-                                    tickFormatter={(value) => value.toFixed(1)} // Format decimals
-                                    unit=" km"
-                                    width={60}
-                                    label={{ 
-                                        value: 'Distance (km)', 
-                                        angle: 90, 
-                                        position: 'insideRight',
-                                        offset: -5, // Adjusted offset
-                                        style: { 
-                                            fontSize: '12px', 
-                                            fill: '#fa9f7b', 
-                                            fontWeight: 500,
-                                            textAnchor: 'middle' // Center label
-                                        }
-                                    }}
+                                    // Format km
+                                    tickFormatter={(value) => `${value.toFixed(1)} km`}
+                                    // unit=" km" // REMOVED
+                                    width={isSmallScreen ? 40 : 60} // Responsive width
+                                    label={rightAxisLabelConfig} // Conditional label
+                                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} // Muted ticks
+                                    // Add domain if needed
+                                    // domain={[0, 'auto']}
                                 />
-                                {/* Hidden axis for duration bars */}
+                                {/* Hidden axis for duration bars (keep?) */}
                                 <YAxis 
                                     yAxisId="durationAxis" 
                                     orientation="right" 
@@ -351,20 +413,26 @@ export default function WorkoutMonthlyView() {
                                     height={36}
                                     iconType="circle"
                                     wrapperStyle={{
-                                        paddingBottom: '10px',
+                                        paddingBottom: '5px',
                                         borderBottom: '1px solid var(--border)',
-                                        marginBottom: '10px'
+                                        marginBottom: '5px' 
                                     }}
+                                    // Use formatter for responsive text size
+                                    formatter={(value, entry) => (
+                                        <span className="text-xs sm:text-sm text-muted-foreground ml-1" style={{ color: entry?.color }}>
+                                            {value}
+                                        </span>
+                                    )}
                                     payload={[
-                                        { value: 'Strength', type: 'circle', color: '#58a3ff' },
-                                        { value: 'Cardio', type: 'circle', color: '#fa9f7b' }
+                                        { value: 'Strength', type: 'circle', color: 'hsl(var(--primary))' },
+                                        { value: 'Cardio', type: 'circle', color: 'var(--chart-orange, #fb923c)' } // Use CSS Var
                                     ]}
                                 />
                                 <Tooltip 
                                     content={CustomTooltip} 
                                     cursor={{ 
-                                        fill: 'var(--muted)', 
-                                        opacity: 0.1 // Subtle hover effect
+                                        fill: 'hsl(var(--accent))', // Use accent color
+                                        opacity: 0.1 
                                     }} 
                                 />
                                 
@@ -372,8 +440,8 @@ export default function WorkoutMonthlyView() {
                                 <Bar 
                                     dataKey="strengthDuration" 
                                     yAxisId="durationAxis" 
-                                    fill="#58a3ff" // Brand blue
-                                    fillOpacity={0.3} // Make semi-transparent
+                                    fill="hsl(var(--primary))" // Use CSS Var
+                                    fillOpacity={0.2} // Slightly lower opacity for bars
                                     stackId="a" 
                                     radius={[4, 4, 0, 0]} 
                                     barSize={30}
@@ -382,8 +450,8 @@ export default function WorkoutMonthlyView() {
                                 <Bar 
                                     dataKey="cardioDuration" 
                                     yAxisId="durationAxis" 
-                                    fill="#fa9f7b" // Brand orange
-                                    fillOpacity={0.3} // Make semi-transparent
+                                    fill="var(--chart-orange, #fb923c)" // Use CSS Var
+                                    fillOpacity={0.2} // Slightly lower opacity for bars
                                     stackId="a" 
                                     radius={[4, 4, 0, 0]} 
                                     barSize={30}
@@ -393,23 +461,21 @@ export default function WorkoutMonthlyView() {
                                 <Line 
                                     type="monotone" 
                                     dataKey="strengthVolume" 
-                                    stroke="#58a3ff" // Brand blue
-                                    strokeWidth={2.5} // Increased thickness
+                                    stroke="hsl(var(--primary))" // Use CSS Var
+                                    strokeWidth={2.5} 
                                     yAxisId="left" 
-                                    dot={{ fill: '#58a3ff', r: 4 }} // Add dots
-                                    activeDot={{ r: 6, strokeWidth: 0 }} // Hover effect
-                                    // name="Volume" // Removed as legend is custom
+                                    dot={{ r: 4, fill: 'hsl(var(--primary))', strokeWidth: 0 }} // Style like weekly
+                                    activeDot={{ r: 5, stroke: 'hsl(var(--background))', strokeWidth: 2, fill: 'hsl(var(--primary))' }} // Style like weekly
                                 />
                                 {/* Cardio Distance Line (Right Axis) */}
                                 <Line 
                                     type="monotone" 
                                     dataKey="cardioDistance" 
-                                    stroke="#fa9f7b" // Brand orange
-                                    strokeWidth={2.5} // Increased thickness
+                                    stroke="var(--chart-orange, #fb923c)" // Use CSS Var
+                                    strokeWidth={2.5} 
                                     yAxisId="right" 
-                                    dot={{ fill: '#fa9f7b', r: 4 }} // Add dots
-                                    activeDot={{ r: 6, strokeWidth: 0 }} // Hover effect
-                                    // name="Distance" // Removed as legend is custom
+                                    dot={{ r: 4, fill: 'var(--chart-orange, #fb923c)', strokeWidth: 0 }} // Style like weekly
+                                    activeDot={{ r: 5, stroke: 'hsl(var(--background))', strokeWidth: 2, fill: 'var(--chart-orange, #fb923c)' }} // Style like weekly
                                 />
                             </ComposedChart>
                         </ResponsiveContainer>
@@ -447,8 +513,8 @@ export default function WorkoutMonthlyView() {
                                         {/* Metrics (Column 2, Row 2) */}
                                         <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
                                             <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
-                                            {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance / 1000)}</span>}
-                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {workout.calculatedVolume.toLocaleString()} kg</span>}
+                                            {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance)}</span>} {/* Assume distance is already km */}
+                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {(workout.calculatedVolume / 1000).toLocaleString(undefined, {maximumFractionDigits: 2})} t</span>}
                                         </div>
                                      </li>
                                  );

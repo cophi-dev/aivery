@@ -6,7 +6,7 @@ import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 // Consider importing User model if needed for personalization
 // import UserModel from '@/lib/db/models/user';
 import { ObjectId } from 'mongodb';
-import { startOfDay, endOfDay, parseISO, subWeeks, differenceInDays, isFuture, isToday, format as formatDate } from 'date-fns';
+import { startOfDay, endOfDay, parseISO, subWeeks, subMonths, differenceInDays, isFuture, isToday, format as formatDate } from 'date-fns';
 import ActivityInsightModel, { IActivityInsight } from '@/lib/db/models/activityInsight'; // Import the new model
 
 // Define the expected response structure (mirroring AiveryInsights component)
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const startDateStr = searchParams.get('start');
         const endDateStr = searchParams.get('end');
-        const periodType = 'weekly'; // Hardcode for now, could be a param later
+        // const periodType = 'weekly'; // REMOVE Hardcoding
 
         if (!startDateStr || !endDateStr) {
             return NextResponse.json({ error: "Missing required query parameters: start, end" }, { status: 400 });
@@ -108,14 +108,31 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: "Invalid date format. Please use ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)." }, { status: 400 });
         }
 
-        // Calculate previous period dates (assuming weekly for now, like the component)
-        // const daysInPeriod = differenceInDays(endDate, startDate) + 1;
-        const prevStartDate = subWeeks(startDate, 1);
-        const prevEndDate = subWeeks(endDate, 1);
+        // --- Determine Period Type and Previous Period Dates ---
+        const daysInPeriod = differenceInDays(endDate, startDate) + 1;
+        let periodType: 'weekly' | 'monthly' | 'custom' = 'custom'; // Default to custom
+        let prevStartDate: Date;
+        let prevEndDate: Date;
 
-        // --- NEW: Check if the current period is ongoing ---
+        if (daysInPeriod >= 6 && daysInPeriod <= 8) { // Allow 6-8 days for weekly
+            periodType = 'weekly';
+            prevStartDate = subWeeks(startDate, 1);
+            prevEndDate = subWeeks(endDate, 1);
+        } else if (daysInPeriod >= 28 && daysInPeriod <= 31) { // Allow 28-31 days for monthly
+            periodType = 'monthly';
+            prevStartDate = subMonths(startDate, 1);
+            prevEndDate = endOfDay(subMonths(endDate, 1)); // Ensure previous month end is end of day
+        } else {
+            // For custom ranges, maybe compare to the immediately preceding period of the same length?
+            // Or disable comparison? For now, let's fetch previous week as a default fallback.
+             console.warn(`[/api/ai/overview-insights] Custom date range detected (${daysInPeriod} days). Falling back to previous week comparison.`);
+            prevStartDate = subWeeks(startDate, 1);
+            prevEndDate = subWeeks(endDate, 1);
+        }
+        // --- End Period Determination ---
+
+        // --- Check if the current period is ongoing --- (No change needed)
         const isOngoingPeriod = isToday(endDate) || isFuture(endDate);
-        // --- END NEW ---
 
         await dbConnect();
 
@@ -127,10 +144,10 @@ export async function GET(req: NextRequest) {
         }).sort({ date: -1 }).select('date').lean<{ date: Date } | null>();
         const actualLatestWorkoutTimestamp = latestWorkoutInPeriod ? latestWorkoutInPeriod.date : null;
 
-        // 2. Check for a cached insight for this user/periodType/startDate
+        // 2. Check for a cached insight using the *determined* periodType
         const cachedInsight = await ActivityInsightModel.findOne({
             userId: new ObjectId(userId),
-            periodType: periodType,
+            periodType: periodType, // Use determined periodType
             periodStartDate: startDate
         }).lean<IActivityInsight>();
 
@@ -153,20 +170,19 @@ export async function GET(req: NextRequest) {
         // --- End Caching Logic ---
 
         // --- Generate Insight (if cache missed or invalidated) ---
-        console.log(`[/api/ai/overview-insights] Generating new insight for ${userId} / ${periodType} / ${startDateStr}`);
+        console.log(`[/api/ai/overview-insights] Generating new ${periodType} insight for ${userId} / ${startDateStr}`);
 
-        // Fetch data for current and previous periods
-        // The summary objects will now NOT contain the full workout list
+        // Fetch data for current and *correct* previous periods
         const [currentPeriodSummary, previousPeriodSummary] = await Promise.all([
             getWorkoutSummaryForPeriod(userId, startDate, endDate),
-            getWorkoutSummaryForPeriod(userId, prevStartDate, prevEndDate)
+            getWorkoutSummaryForPeriod(userId, prevStartDate, prevEndDate) // Uses correctly calculated prev dates
         ]);
 
-        // --- Build the NEW System Prompt ---
+        // --- Build the Dynamically Adapted System Prompt ---
         const formattedStartDate = formatDate(startDate, 'MMM d');
-        const formattedEndDate = formatDate(endDate, 'MMM d');
+        const formattedEndDate = formatDate(endDate, 'MMM d, yyyy'); // Add year for clarity
         const formattedPrevStartDate = formatDate(prevStartDate, 'MMM d');
-        const formattedPrevEndDate = formatDate(prevEndDate, 'MMM d');
+        const formattedPrevEndDate = formatDate(prevEndDate, 'MMM d, yyyy');
 
         const currentPeriodJSON = JSON.stringify(currentPeriodSummary, null, 2);
         const previousPeriodJSON = JSON.stringify(previousPeriodSummary, null, 2);
@@ -174,17 +190,17 @@ export async function GET(req: NextRequest) {
         let systemPrompt = `\
 You are Aivery, a motivating and insightful AI fitness coach integrated into a fitness tracking app.
 
-The user, ${userName}, is viewing their activity overview to understand their progress and receive guidance.
+The user, ${userName}, is viewing their ${periodType} activity overview (${formattedStartDate} - ${formattedEndDate}) to understand their progress and receive guidance.
 
-`;
+The previous ${periodType} period was: ${formattedPrevStartDate} - ${formattedPrevEndDate}.\n`;
 
         if (isOngoingPeriod) {
-            systemPrompt += `The current period being viewed is ONGOING: ${formattedStartDate} - ${formattedEndDate}. The previous period was: ${formattedPrevStartDate} - ${formattedPrevEndDate}.\n\n`;
+            systemPrompt += `\nThe current period is ONGOING.\n\n`;
         } else {
-            systemPrompt += `The period being viewed is COMPLETE: ${formattedStartDate} - ${formattedEndDate}. The previous period was: ${formattedPrevStartDate} - ${formattedPrevEndDate}.\n\n`;
+            systemPrompt += `\nThe period being viewed is COMPLETE.\n\n`;
         }
 
-        systemPrompt += `Your goal is to analyze the user's performance, compare it to the previous period, and provide SPECIFIC, actionable, and personalized insights to help them improve or maintain their fitness routine.
+        systemPrompt += `Your goal is to analyze the user's performance for the specified period, compare it to the previous period, and provide SPECIFIC, actionable, and personalized insights.
 
 Data for the Current Period (${formattedStartDate} - ${formattedEndDate}):
 ${currentPeriodJSON}
@@ -193,39 +209,41 @@ Data for the Previous Period (${formattedPrevStartDate} - ${formattedPrevEndDate
 ${previousPeriodJSON}
 
 INSTRUCTIONS:
-Analyze Trends with Precision:
-Compare key metrics between the current and previous periods: workout count, total duration (convert seconds to MM:SS format), total distance (convert meters to km, round to 1 decimal), and total volume (convert kg to tons, round to 1 decimal).
-Calculate percentage changes for each metric where meaningful (e.g., "Distance dropped by 1.2 km (-15%)").
-Reference specific workout types (e.g., running, strength) from the types field and workouts array.
-If the period is ONGOING, contextualize comparisons (e.g., "So far, your distance is 5.0 km, down 43% from last week's total of 8.8 km").
-Identify Milestones/Highlights:
-Analyze the workouts array in the current period to identify notable achievements, such as:
-Longest single-workout distance (e.g., "Longest run of 5.0 km on May 1").
-Highest single-workout volume (e.g., "Highest strength volume of 1.2 t on Apr 30").
-Fastest pace for a specific distance, if calculable (e.g., pace = durationSeconds / distanceMeters, converted to min/km).
-Only include milestones that are significant and directly tied to the data.
-Generate Insights (Context-Driven):
-If the period is COMPLETE: Summarize overall performance, compare directly to the previous period, and highlight what worked well or needs improvement.
-If the period is ONGOING: Focus on trends so far, compare to the previous period's total, and provide forward-looking suggestions for the remaining days (e.g., "Add a 3–5 km run this weekend to surpass last week's 8.8 km").
-Formulate:
-highlight (string): A concise, engaging sentence summarizing the most significant observation. Tailor to the period's status (e.g., ONGOING: "You're off to a strong start with 3 workouts—let's add a run to beat last week's distance!").
-positiveTrends (string[]): 1–3 bullet points on positive changes or consistent performance. Include specific numbers and workout types (e.g., "Your strength volume rose to 3.1 t, up 41% from last week's 2.2 t").
-negativeTrends (string[]): 0–2 bullet points on areas to improve. Phrase constructively with actionable advice (e.g., ONGOING: "Distance is at 5.0 km, down 43% from 8.8 km—plan a 4–6 km run this weekend").
-milestones (string[]): 0–2 bullet points listing notable achievements from step 2 (e.g., "Achieved your longest run of 5.0 km on May 1").
-Consider User Context:
-Use the latestWorkoutDate to comment on recency (e.g., "Your latest workout on May 1 shows you're staying active").
-If specific workout data is available in the workouts array, reference it for personalization (e.g., "Your Night Run on May 1 added 5.0 km—great effort!").
-Balance encouragement with realistic suggestions based on the user's current activity level.
-Output Format:
-Respond ONLY with a valid JSON object containing the keys highlight (string), positiveTrends (array of strings), negativeTrends (array of strings), and milestones (array of strings).
-Do not include markdown formatting or extra text outside the JSON structure.
-Tone and Style:
-Be friendly, encouraging, and motivational (e.g., "Great work staying balanced!").
-Avoid generic statements—always tie insights to specific data.
-Keep each bullet point concise (1 sentence) and actionable.
-Use a supportive tone for negative trends (e.g., "Let's boost your distance with a longer run this weekend!").
 `;
-        // --- End NEW System Prompt ---
+
+        // --- Add Period-Specific Instructions --- 
+        if (periodType === 'monthly') {
+            systemPrompt += `Monthly Analysis Focus:
+1. Compare overall monthly totals (workouts, duration, distance, volume in tons) to the previous month. Calculate percentage changes.
+2. Analyze trends ACROSS THE WEEKS within the *current* month using the 'workouts' array (e.g., identify peak activity weeks, consistency patterns, weeks with higher/lower volume or distance).
+3. Highlight significant monthly achievements (e.g., highest weekly volume/distance achieved this month, beating last month's total).
+4. Provide a summary focused on monthly consistency and progress. Offer forward-looking advice for the *next* month.
+`;
+        } else { // Weekly or Custom (using weekly logic as fallback)
+            systemPrompt += `Weekly Analysis Focus:
+1. Compare key metrics (workouts, duration, distance, volume in tons) to the previous week. Calculate percentage changes.
+2. Identify notable achievements within the current week (e.g., longest run, highest volume session) using the 'workouts' array.
+3. If the week is ONGOING, compare progress so far to the previous week's *total* and suggest how to finish strong.
+4. If the week is COMPLETE, summarize performance and suggest focus areas for the *next* week.
+`;
+        }
+        // --- End Period-Specific Instructions ---
+
+        systemPrompt += `
+General Instructions (Apply to All Periods):
+Analyze Trends with Precision: Convert duration to MM:SS, distance to km (1 decimal), volume to tons (1-2 decimals). Reference specific workout types.
+Identify Milestones/Highlights: Look for longest distance, highest volume, fastest pace (if possible) within the *current* period's workouts array.
+Generate Insights (Context-Driven): Adapt tone and advice based on whether the period is ongoing or complete.
+Formulate Output (JSON Structure):
+- highlight (string): Concise, engaging summary sentence (most significant observation).
+- positiveTrends (string[]): 1-3 bullet points on improvements or consistency (use specific numbers).
+- negativeTrends (string[]): 0-2 bullet points on areas to watch, phrased constructively with advice.
+- milestones (string[]): 0-2 bullet points listing specific achievements.
+Consider User Context: Comment on recency using latestWorkoutDate. Reference specific workouts if data is rich. Balance motivation with realistic advice.
+Output Format: Respond ONLY with a valid JSON object matching the structure above. No extra text or markdown.
+Tone: Friendly, encouraging, data-driven, actionable, concise.
+`;
+        // --- End Prompt Build ---
 
         // console.log("System Prompt for Grok:", systemPrompt); // DEBUG
 
@@ -249,13 +267,13 @@ Use a supportive tone for negative trends (e.g., "Let's boost your distance with
                 'Authorization': `Bearer ${grokApiKey}`
             },
             body: JSON.stringify({
-                model: 'grok-3-mini-latest', // Or grok-1? Check docs for best model for structured JSON
+                model: 'grok-3-mini-latest',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: "Generate the overview insights based on the data provided in the system prompt, adhering strictly to the requested JSON format." }
                 ],
-                max_tokens: 2048, // Increased from 1024
-                temperature: 0.5, // Adjust for desired creativity vs consistency
+                max_tokens: 2048,
+                temperature: 0.5,
                 stream: false,
                 // response_format: { type: "json_object" }, // UNCOMMENT if Grok supports JSON mode
             })
@@ -291,23 +309,23 @@ Use a supportive tone for negative trends (e.g., "Let's boost your distance with
             const parsedInsights: InsightResponse = JSON.parse(insightJsonString);
             // TODO: Add schema validation (e.g., using Zod) if needed
 
-            // --- Store the newly generated insight --- 
+            // --- Store the newly generated insight using determined periodType ---
             await ActivityInsightModel.findOneAndUpdate(
                 {
                     userId: new ObjectId(userId),
-                    periodType: periodType,
+                    periodType: periodType, // Use determined periodType
                     periodStartDate: startDate
                 },
                 {
                     $set: {
                         insightData: parsedInsights,
-                        lastWorkoutTimestamp: actualLatestWorkoutTimestamp, // Store the timestamp of the latest workout used
-                        generatedAt: new Date(), // Update generation time
+                        lastWorkoutTimestamp: actualLatestWorkoutTimestamp, 
+                        generatedAt: new Date(), 
                     }
                 },
-                { upsert: true, new: true } // Create if not found, update if found
+                { upsert: true, new: true } 
             );
-            console.log(`[/api/ai/overview-insights] Stored new insight for ${userId} / ${periodType} / ${startDateStr}`);
+            console.log(`[/api/ai/overview-insights] Stored new ${periodType} insight for ${userId} / ${startDateStr}`);
             // --- End Store Insight --- 
 
             return NextResponse.json(parsedInsights);
