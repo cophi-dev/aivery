@@ -33,6 +33,8 @@ interface DailyChartData {
     strengthDuration: number; // minutes
     cardioDistance: number; // km
     strengthVolume: number; // kg
+    cumulativeCardioDistance: number; // km
+    cumulativeStrengthVolume: number; // kg
 }
 
 // Updated type for aggregated weekly stats
@@ -46,121 +48,116 @@ interface WeeklyWorkoutMetrics {
     allWorkoutsInWeek: WorkoutData[];
 }
 
-// Updated function to get metrics for a given week
+// Updated function to get metrics for a given week (Refactored Logic)
 async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts: WorkoutData[]): Promise<WeeklyWorkoutMetrics> {
-    // console.log(`Calculating metrics for week: ${formatDateKey(weekStart)} to ${formatDateKey(weekEnd)}`);
-    let totalWorkouts = weeklyWorkouts.length;
-    let totalDuration = 0;
-    let totalDistanceKm = 0; // Renamed to clarify unit, initialize to 0
-    let totalVolume = 0;
+    
+    // --- Step 1: Aggregate DAILY totals --- 
+    const dailyTotalsMap: { 
+        [dayName: string]: { 
+            cardioDuration: number;
+            strengthDuration: number;
+            cardioDistance: number; // km
+            strengthVolume: number; // kg
+        } 
+    } = {};
     const workoutsByDay: { [day: string]: WorkoutData[] } = {};
-    // Initialize map to hold daily aggregates
-    const dailyChartDataMap: { [day: string]: Omit<DailyChartData, 'day'> } = {};
 
-    // Initialize days of the week
     const daysInWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
-    daysInWeek.forEach(day => {
-        const dayKey = formatDateKey(day);
-        const dayName = format(day, 'eee');
-        workoutsByDay[dayKey] = [];
-        // Initialize daily aggregates
-        dailyChartDataMap[dayName] = {
+    const dayNamesInOrder = daysInWeek.map(day => format(day, 'eee'));
+
+    // Initialize daily totals and workoutsByDay
+    dayNamesInOrder.forEach(dayName => {
+        dailyTotalsMap[dayName] = {
             cardioDuration: 0,
             strengthDuration: 0,
             cardioDistance: 0,
             strengthVolume: 0,
         };
     });
-
-    // NEW: Initialize total durations map
-    const dailyDurationMap: { [day: string]: { cardio: number, strength: number } } = {};
     daysInWeek.forEach(day => {
-        dailyDurationMap[format(day, 'eee')] = { cardio: 0, strength: 0 };
+        workoutsByDay[formatDateKey(day)] = [];
     });
-    // END NEW
 
-    weeklyWorkouts.forEach(w => {
+    // Initialize overall totals
+    let totalWorkouts = weeklyWorkouts.length;
+    let totalDuration = 0;
+    let totalDistanceKm = 0;
+    let totalVolume = 0;
+
+    // Loop 1: Calculate daily totals and overall totals
+    for (const w of weeklyWorkouts) {
         const duration = w.duration || 0;
-        // Improved distance calculation - check all possible sources
         let workoutDistanceMeters = 0;
-        
-        // Check cardioDetails first (most reliable source)
         if (w.cardioDetails?.distance) {
-            workoutDistanceMeters = w.cardioDetails.distance * 1000; // Convert km to meters
-        }
-        // Then check direct distance property
-        else if (typeof w.distance === 'number') {
-            // If distance is small (< 100), assume it's in km and convert to meters
+            workoutDistanceMeters = w.cardioDetails.distance * 1000;
+        } else if (typeof w.distance === 'number') {
             workoutDistanceMeters = w.distance < 100 ? w.distance * 1000 : w.distance;
         }
-        
         const volume = w.calculatedVolume || 0;
         const typeLower = w.type?.toLowerCase() || 'other';
 
-        // Add duration and volume
+        // Update overall totals
         totalDuration += duration;
         totalVolume += volume;
-        
-        // Add distance in KM for all workout types
-        if (workoutDistanceMeters > 0) {
-            const distanceKm = workoutDistanceMeters / 1000;
-            totalDistanceKm += distanceKm;
+        const distanceKmForDay = workoutDistanceMeters / 1000;
+        totalDistanceKm += distanceKmForDay;
 
-            // Update daily chart data
-            const workoutDate = startOfDay(parseISO(w.date.toString()));
-            const dayName = format(workoutDate, 'eee');
-            if (dailyChartDataMap[dayName]) {
-                if (CARDIO_TYPES.includes(typeLower)) {
-                    dailyChartDataMap[dayName].cardioDistance = distanceKm;
-                }
-            }
-        }
-        
         const workoutDate = startOfDay(parseISO(w.date.toString()));
         const dayKey = formatDateKey(workoutDate);
         const dayName = format(workoutDate, 'eee');
-        
+
+        // Add to workoutsByDay
         if (workoutsByDay[dayKey]) {
             workoutsByDay[dayKey].push(w);
         }
 
-        // Aggregate metrics based on type for the chart map
-        if (dailyChartDataMap[dayName]) {
+        // Update daily totals map
+        if (dailyTotalsMap[dayName]) {
             const durationMinutes = Math.round(duration / 60);
             if (CARDIO_TYPES.includes(typeLower)) {
-                dailyChartDataMap[dayName].cardioDuration += durationMinutes;
-                dailyChartDataMap[dayName].cardioDistance += (workoutDistanceMeters / 1000); 
-                dailyDurationMap[dayName].cardio += durationMinutes; // Add to duration map
+                dailyTotalsMap[dayName].cardioDuration += durationMinutes;
+                dailyTotalsMap[dayName].cardioDistance += distanceKmForDay;
             } else if (STRENGTH_TYPES.includes(typeLower)) {
-                dailyChartDataMap[dayName].strengthDuration += durationMinutes;
-                dailyChartDataMap[dayName].strengthVolume += volume; // Accumulate volume
-                dailyDurationMap[dayName].strength += durationMinutes; // Add to duration map
-            } else {
-                // Handle 'other' types if needed - maybe add to a general duration?
+                dailyTotalsMap[dayName].strengthDuration += durationMinutes;
+                dailyTotalsMap[dayName].strengthVolume += volume;
             }
         }
-    });
+    }
 
-    // Convert map to array for recharts
-    const dailyChartData = Object.entries(dailyChartDataMap).map(([day, data]) => ({
-        day,
-        ...data,
-        // Add combined durations from the new map for labeling
-        cardioDurationLabel: dailyDurationMap[day].cardio,
-        strengthDurationLabel: dailyDurationMap[day].strength,
-        // Round the already-KM distance to 2 decimal places
-        cardioDistance: Math.round(data.cardioDistance * 100) / 100, 
-    }));
+    // --- Step 2: Build final chart data array and calculate cumulative --- 
+    const dailyChartData: DailyChartData[] = [];
+    let runningCumulativeDistance = 0;
+    let runningCumulativeVolume = 0;
 
-    // Log the daily chart data before returning
-    console.log(`[DEBUG] dailyChartData before return:`, dailyChartData);
+    for (const dayName of dayNamesInOrder) {
+        const dailyTotals = dailyTotalsMap[dayName] || { cardioDuration: 0, strengthDuration: 0, cardioDistance: 0, strengthVolume: 0 };
+        
+        runningCumulativeDistance += dailyTotals.cardioDistance;
+        runningCumulativeVolume += dailyTotals.strengthVolume;
 
-    // Create the result object *before* logging
+        dailyChartData.push({
+            day: dayName,
+            // Daily values from map
+            cardioDuration: dailyTotals.cardioDuration,
+            strengthDuration: dailyTotals.strengthDuration,
+            cardioDistance: Math.round(dailyTotals.cardioDistance * 100) / 100, // Round daily distance
+            strengthVolume: Math.round(dailyTotals.strengthVolume), // Round daily volume
+            // Cumulative values
+            cumulativeCardioDistance: Math.round(runningCumulativeDistance * 100) / 100,
+            cumulativeStrengthVolume: Math.round(runningCumulativeVolume),
+            // Include duration labels (placeholder, needs logic if required)
+            // cardioDurationLabel: dailyTotals.cardioDuration, 
+            // strengthDurationLabel: dailyTotals.strengthDuration,
+        });
+    }
+
+    // Log the final chart data for verification
+    // console.log(`[DEBUG Refactored ${format(weekStart, 'MMM d')}] Final dailyChartData:`, JSON.parse(JSON.stringify(dailyChartData)));
+
     const result: WeeklyWorkoutMetrics = { 
         totalWorkouts, 
         totalDuration, 
-        // Use the correctly summed distance in KM from the loop
-        totalDistance: totalDistanceKm, 
+        totalDistance: totalDistanceKm, // Use the correctly summed distance
         totalVolume, 
         workoutsByDay, 
         dailyChartData,
@@ -168,9 +165,9 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     };
 
     // Log the distance *from the result object*
-    console.log(`[DEBUG] Final totalDistance in RETURN OBJECT: ${result.totalDistance}`);
+    // console.log(`[DEBUG Refactored ${format(weekStart, 'MMM d')}] Final totalDistance in RETURN OBJECT: ${result.totalDistance}`);
 
-    return result; // Return the pre-constructed object
+    return result;
 }
 
 export default function WorkoutWeeklyView() {
@@ -236,17 +233,26 @@ export default function WorkoutWeeklyView() {
                         return !isBefore(workoutDate, prevWeekStart) && !isAfter(workoutDate, prevWeekEnd);
                     });
                     
-                    // Pass pre-filtered arrays to getMetricsForWeek
-                    const [currentMetrics, prevMetrics] = await Promise.all([
-                        getMetricsForWeek(selectedWeekStart, currentWeekEnd, currentWorkoutsInWeek),
-                        getMetricsForWeek(prevWeekStart, prevWeekEnd, previousWorkoutsInWeek) 
-                    ]);
+                    // <<< Log input data for current week AGAIN - Check for duplicates >>>
+                    // console.log("[DEBUG useEffect Pre-Call] Workouts for Current Week:", JSON.parse(JSON.stringify(currentWorkoutsInWeek.map(w => ({id: w._id, date: w.date, type: w.type})))));
+                    // console.log("[DEBUG useEffect Pre-Call] Workouts for Previous Week:", JSON.parse(JSON.stringify(previousWorkoutsInWeek.map(w => ({id: w._id, date: w.date, type: w.type})))));
+
+                    // Pass pre-filtered arrays to getMetricsForWeek SEQUENTIALLY
+                    const prevMetrics = await getMetricsForWeek(prevWeekStart, prevWeekEnd, previousWorkoutsInWeek);
+                    const currentMetrics = await getMetricsForWeek(selectedWeekStart, currentWeekEnd, currentWorkoutsInWeek);
+                    
+                    // <<< Log the returned metrics object BEFORE setting state (ensure deep copy for logging) >>>
+                    // console.log("[DEBUG useEffect] currentMetrics object received from getMetricsForWeek:", JSON.parse(JSON.stringify(currentMetrics)));
+                    // console.log("[DEBUG useEffect] prevMetrics object received from getMetricsForWeek:", JSON.parse(JSON.stringify(prevMetrics))); // Log prevMetrics too
 
                     if (isMounted) {
+                        // <<< Log right before setting state >>>
+                        // console.log("[DEBUG useEffect] Data JUST BEFORE setState:", JSON.parse(JSON.stringify(currentMetrics)));
+
                         const currentMetricsClone = { ...currentMetrics };
                         const prevMetricsClone = { ...prevMetrics };
                         setWeeklyMetrics(currentMetricsClone);
-                        setPreviousWeekMetrics(prevMetricsClone);
+                        setPreviousWeekMetrics(prevMetricsClone); // Use the sequentially fetched prevMetrics
                     }
                 } catch (err) {
                     if (isMounted) {
@@ -267,7 +273,7 @@ export default function WorkoutWeeklyView() {
                 isMounted = false; 
             }; 
         }
-    }, [selectedWeekStart, allWorkouts, isLoading]); // Keep simplified dependencies
+    }, [selectedWeekStart, isLoading]); // Removed allWorkouts dependency
 
     const shiftWeek = (weeks: number) => {
         setSelectedWeekStart(prev => addWeeks(prev, weeks));
@@ -286,36 +292,44 @@ export default function WorkoutWeeklyView() {
     }
 
     // ---> RE-ADD LOG <--- 
-    console.log("[DEBUG] weeklyMetrics state just before render return:", weeklyMetrics);
+    // console.log("[DEBUG] weeklyMetrics state just before render return:", weeklyMetrics);
     if (weeklyMetrics) {
-      console.log("[DEBUG] dailyChartData in state just before render return:", weeklyMetrics.dailyChartData);
+      // console.log("[DEBUG] dailyChartData in state just before render return:", weeklyMetrics.dailyChartData);
     }
+
+    // <<< Log data specifically for Thursday being passed to the chart >>>
+    // if (weeklyMetrics?.dailyChartData) {
+    //     const thuData = weeklyMetrics.dailyChartData.find(d => d.day === 'Thu');
+    //     console.log("[DEBUG Chart Data] Thursday data passed to chart:", thuData);
+    // }
 
     const weekDisplay = `${format(selectedWeekStart, 'MMM d')} - ${format(selectedWeekEnd, 'MMM d, yyyy')}`;
 
-    // Updated Custom Tooltip for Chart
+    // Updated Custom Tooltip for Chart to show cumulative values
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
-            // Access the original data point for durations
+            // Access the original data point for cumulative values
             const dataPoint = payload[0].payload; 
-            const strengthDuration = dataPoint.strengthDuration; // Use actual duration
-            const cardioDuration = dataPoint.cardioDuration; // Use actual duration
+            const cumulativeVolume = dataPoint.cumulativeStrengthVolume;
+            const cumulativeDistance = dataPoint.cumulativeCardioDistance;
+            // Access daily values for optional display
+            const dailyVolume = dataPoint.strengthVolume;
+            const dailyDistance = dataPoint.cardioDistance;
 
-            // Find line data (volume and distance)
-            const strengthVolumeData = payload.find((p: any) => p.dataKey === 'strengthVolume');
-            const cardioDistanceData = payload.find((p: any) => p.dataKey === 'cardioDistance');
-
-            // Find bar data for colors (optional, could use fixed colors too)
-            const strengthBarData = payload.find((p: any) => p.dataKey === 'strengthDuration');
-            const cardioBarData = payload.find((p: any) => p.dataKey === 'cardioDuration');
+            // Find line data for colors
+            const strengthLineData = payload.find((p: any) => p.dataKey === 'cumulativeStrengthVolume');
+            const cardioLineData = payload.find((p: any) => p.dataKey === 'cumulativeCardioDistance');
 
             return (
                 <div className="bg-background border border-border shadow-lg rounded-md p-3 text-sm">
                     <p className="font-semibold mb-2">{label}</p>
-                    {strengthVolumeData && strengthVolumeData.value > 0 && <p style={{ color: strengthVolumeData.stroke }}>{`Volume: ${strengthVolumeData.value.toLocaleString()} kg`}</p>}
-                    {cardioDistanceData && cardioDistanceData.value > 0 && <p style={{ color: cardioDistanceData.stroke }}>{`Distance: ${cardioDistanceData.value.toFixed(1)} km`}</p>}
-                    {strengthDuration > 0 && <p style={{ color: strengthBarData?.fill ?? 'var(--color-strength)' }}>{`Strength: ${strengthDuration} min`}</p>}
-                    {cardioDuration > 0 && <p style={{ color: cardioBarData?.fill ?? 'var(--color-cardio)' }}>{`Cardio: ${cardioDuration} min`}</p>}
+                    {/* Display Cumulative values */}                    
+                    {cumulativeVolume > 0 && <p style={{ color: strengthLineData?.stroke }}>{`Total Vol: ${cumulativeVolume.toLocaleString()} kg`}</p>}
+                    {cumulativeDistance > 0 && <p style={{ color: cardioLineData?.stroke }}>{`Total Dist: ${cumulativeDistance.toFixed(1)} km`}</p>}
+                    {/* Optionally display daily contribution */} 
+                    {(dailyVolume > 0 || dailyDistance > 0) && <hr className="my-1 border-border/50"/>}
+                    {dailyVolume > 0 && <p className="text-xs text-muted-foreground" style={{ color: strengthLineData?.stroke }}>{`(Daily Vol: ${dailyVolume.toLocaleString()} kg)`}</p>}
+                    {dailyDistance > 0 && <p className="text-xs text-muted-foreground" style={{ color: cardioLineData?.stroke }}>{`(Daily Dist: ${dailyDistance.toFixed(1)} km)`}</p>}
                 </div>
             );
         }
@@ -378,7 +392,7 @@ export default function WorkoutWeeklyView() {
              {weeklyMetrics && weeklyMetrics.totalWorkouts > 0 && ( 
                  <Card>
                     <CardHeader>
-                        <CardTitle className="text-base font-semibold">Daily Activity Breakdown</CardTitle>
+                        <CardTitle className="text-base font-semibold">Weekly Cumulative Activity</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <ResponsiveContainer width="100%" height={250} minHeight={200}>
@@ -391,7 +405,7 @@ export default function WorkoutWeeklyView() {
                                     axisLine={false}
                                     tick={{ fontWeight: 600 }}
                                 />
-                                {/* Left Y Axis (Volume - kg) */}
+                                {/* Left Y Axis (Cumulative Volume - kg) */}
                                 <YAxis 
                                     yAxisId="left"
                                     orientation="left" 
@@ -402,7 +416,7 @@ export default function WorkoutWeeklyView() {
                                     unit=" kg" 
                                     width={60}
                                     label={{ 
-                                        value: 'Volume (kg)', 
+                                        value: 'Cum. Volume (kg)', 
                                         angle: -90, 
                                         position: 'insideLeft',
                                         offset: -5,
@@ -414,7 +428,7 @@ export default function WorkoutWeeklyView() {
                                         }
                                     }}
                                 />
-                                {/* Right Y Axis (Distance - km) */}
+                                {/* Right Y Axis (Cumulative Distance - km) */}
                                 <YAxis 
                                     yAxisId="right"
                                     orientation="right" 
@@ -426,7 +440,7 @@ export default function WorkoutWeeklyView() {
                                     unit=" km" 
                                     width={60}
                                     label={{ 
-                                        value: 'Distance (km)', 
+                                        value: 'Cum. Distance (km)', 
                                         angle: 90, 
                                         position: 'insideRight',
                                         offset: -5,
@@ -438,13 +452,6 @@ export default function WorkoutWeeklyView() {
                                         }
                                     }}
                                 />
-                                {/* Hidden axis for duration bars */}
-                                <YAxis 
-                                    yAxisId="durationAxis" 
-                                    orientation="right" 
-                                    hide={true} 
-                                    domain={[0, 'auto']} 
-                                />
                                 <Legend 
                                     verticalAlign="top" 
                                     height={36}
@@ -455,8 +462,8 @@ export default function WorkoutWeeklyView() {
                                         marginBottom: '10px'
                                     }}
                                     payload={[
-                                        { value: 'Strength', type: 'circle', color: '#58a3ff' },
-                                        { value: 'Cardio', type: 'circle', color: '#fa9f7b' }
+                                        { value: 'Cum. Strength Vol.', type: 'circle', color: '#58a3ff' },
+                                        { value: 'Cum. Cardio Dist.', type: 'circle', color: '#fa9f7b' }
                                     ]}
                                 />
                                 <Tooltip 
@@ -466,40 +473,22 @@ export default function WorkoutWeeklyView() {
                                         opacity: 0.1 
                                     }} 
                                 />
-                                {/* Strength Duration Bar */}
-                                <Bar 
-                                    dataKey="strengthDuration" 
-                                    yAxisId="durationAxis" 
-                                    fill="#58a3ff" 
-                                    fillOpacity={0.3}
-                                    stackId="a" 
-                                    radius={[4, 4, 0, 0]} 
-                                    barSize={30}
-                                />
-                                {/* Cardio Duration Bar */}
-                                <Bar 
-                                    dataKey="cardioDuration" 
-                                    yAxisId="durationAxis" 
-                                    fill="#fa9f7b"
-                                    fillOpacity={0.3} 
-                                    stackId="a" 
-                                    radius={[4, 4, 0, 0]} 
-                                    barSize={30}
-                                />
-                                {/* Strength Volume Line */}
+                                {/* Cumulative Strength Volume Line */}
                                 <Line 
                                     type="monotone" 
-                                    dataKey="strengthVolume" 
+                                    dataKey="cumulativeStrengthVolume" 
+                                    name="Cum. Strength Vol."
                                     stroke="#58a3ff" 
                                     strokeWidth={2.5}
                                     yAxisId="left" 
                                     dot={{ fill: '#58a3ff', r: 4 }}
                                     activeDot={{ r: 6, strokeWidth: 0 }}
                                 />
-                                {/* Cardio Distance Line */}
+                                {/* Cumulative Cardio Distance Line */}
                                 <Line 
                                     type="monotone" 
-                                    dataKey="cardioDistance" 
+                                    dataKey="cumulativeCardioDistance" 
+                                    name="Cum. Cardio Dist."
                                     stroke="#fa9f7b" 
                                     strokeWidth={2.5}
                                     yAxisId="right" 
