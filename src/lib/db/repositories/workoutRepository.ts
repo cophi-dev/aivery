@@ -5,6 +5,7 @@ import dbConnect from '../mongodb'
 import WorkoutModel, { IWorkout } from '../models/workout'
 import WorkoutExerciseModel from '../models/workoutExercise'
 import mongoose, { Document, FlattenMaps } from 'mongoose'
+import ExerciseModel from "../models/exercise"
 
 type LeanDocument<T> = {
   [P in keyof T]: T[P] extends Document ? LeanDocument<T[P]> : T[P]
@@ -960,8 +961,17 @@ export async function getExercisePR(
   try {
     await dbConnect();
 
-    const lowerExerciseName = exerciseName.toLowerCase();
-    const isRepBased = lowerExerciseName.includes('pull-up') || lowerExerciseName.includes('chin-up') || lowerExerciseName.includes('push-up') || lowerExerciseName.includes('dip'); // Add more rep-based exercises here
+    // --- Fetch Exercise Details ---
+    const exercise = await ExerciseModel.findOne({ name: exerciseName }).lean<{ trackMaxReps?: boolean } | null>();
+    if (!exercise) {
+      console.warn(`[getExercisePR] Exercise named '${exerciseName}' not found.`);
+      // Decide how to handle: return null or assume weight-based? Let's assume weight-based for now.
+      // If you want to strictly return null, uncomment the next line:
+      // return null;
+    }
+    const isRepBased = exercise?.trackMaxReps ?? false; // Use trackMaxReps, default to false if exercise not found or field missing
+    console.log(`[getExercisePR] Exercise: '${exerciseName}', isRepBased (from trackMaxReps): ${isRepBased}`);
+    // --- End Fetch Exercise Details ---
 
     let pipeline: any[] = [
       { $match: { userId: new ObjectId(userId), 'workoutExercises.name': exerciseName } },

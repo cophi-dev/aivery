@@ -13,6 +13,8 @@ import { MetricContent } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 // Import AiveryInsights
 import AiveryInsights from '@/components/dashboard/AiveryInsights';
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 // Import recharts components
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, Label as RechartsLabel } from 'recharts';
@@ -126,6 +128,8 @@ export default function WorkoutMonthlyView() {
     const [previousMonthMetrics, setPreviousMonthMetrics] = useState<MonthlyWorkoutMetrics | null>(null);
     const [isMetricsLoading, setIsMetricsLoading] = useState(false);
     const [isSmallScreen, setIsSmallScreen] = useState(false);
+    const [showLastMonth, setShowLastMonth] = useState(false);
+    const [chartDisplayData, setChartDisplayData] = useState<any[]>([]);
 
     // Effect to check screen size
     useEffect(() => {
@@ -213,6 +217,39 @@ export default function WorkoutMonthlyView() {
         }
         // Add previous month dates to dependency array
     }, [selectedMonthStart, selectedMonthEnd, previousMonthStart, previousMonthEnd, allWorkouts, isLoading]);
+
+    // NEW useEffect to combine data for chart rendering (similar to weekly)
+    useEffect(() => {
+        if (!monthlyMetrics) {
+            setChartDisplayData([]); // Clear if no current data
+            return;
+        }
+
+        // Create a map of previous month data by week name for quick lookup
+        const prevDataMap = new Map<string, WeeklyChartData>();
+        if (previousMonthMetrics?.weeklyChartData) {
+            previousMonthMetrics.weeklyChartData.forEach(weekData => {
+                prevDataMap.set(weekData.week, weekData);
+            });
+        }
+
+        // Map current month data and merge previous month data
+        const combinedData = monthlyMetrics.weeklyChartData.map(currentWeekData => {
+            const prevWeekData = prevDataMap.get(currentWeekData.week);
+            return {
+                ...currentWeekData, // Include all current week data
+                // Add previous month values, defaulting to null if not found
+                prevStrengthVolume: prevWeekData?.strengthVolume ?? null, 
+                prevCardioDistance: prevWeekData?.cardioDistance ?? null, 
+                // Add prev durations if needed, though not directly plotted as lines
+                // prevStrengthDuration: prevWeekData?.strengthDuration ?? null,
+                // prevCardioDuration: prevWeekData?.cardioDuration ?? null,
+            };
+        });
+
+        setChartDisplayData(combinedData);
+
+    }, [monthlyMetrics, previousMonthMetrics]); // Re-run when metric data changes
 
     const shiftMonth = (months: number) => {
         setSelectedMonthStart(prev => addMonths(prev, months));
@@ -351,14 +388,23 @@ export default function WorkoutMonthlyView() {
             {/* Updated Monthly Chart - Composed */}
              {monthlyMetrics && monthlyMetrics.totalWorkouts > 0 && (
                  <Card>
-                    <CardHeader>
-                         {/* Updated Title */}
-                        <CardTitle className="text-sm sm:text-base font-semibold">Weekly Activity Breakdown</CardTitle>
+                    {/* Add Last Month Toggle to Header */}
+                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-x-2 sm:space-x-4"> 
+                        <CardTitle className="text-sm sm:text-base font-semibold whitespace-nowrap">Weekly Activity Breakdown</CardTitle>
+                         {/* Last Month Toggle */} 
+                        <div className="flex items-center space-x-2 ml-auto">
+                            <Switch
+                                id="show-last-month-switch"
+                                checked={showLastMonth}
+                                onCheckedChange={setShowLastMonth}
+                            />
+                            <Label htmlFor="show-last-month-switch" className="text-xs font-medium whitespace-nowrap">Last Month</Label>
+                        </div>
                     </CardHeader>
                     <CardContent className="pt-4">
                         <ResponsiveContainer width="100%" height={250} minHeight={200} className="h-[200px] sm:h-[250px]">
-                            {/* Use dynamic margins */}
-                            <ComposedChart data={monthlyMetrics.weeklyChartData} margin={chartMargins}>
+                            {/* Use combined chartDisplayData */}
+                            <ComposedChart data={chartDisplayData} margin={chartMargins}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.1} />
                                 <XAxis 
                                     dataKey="week" 
@@ -477,6 +523,38 @@ export default function WorkoutMonthlyView() {
                                     dot={{ r: 4, fill: 'var(--chart-orange, #fb923c)', strokeWidth: 0 }} // Style like weekly
                                     activeDot={{ r: 5, stroke: 'hsl(var(--background))', strokeWidth: 2, fill: 'var(--chart-orange, #fb923c)' }} // Style like weekly
                                 />
+
+                                {/* Previous Month Lines (Conditional) */}
+                                {showLastMonth && (
+                                    <>
+                                        <Line 
+                                            yAxisId="left"
+                                            type="monotone"
+                                            dataKey="prevStrengthVolume" // Data key for previous volume
+                                            stroke="hsl(var(--primary))" 
+                                            strokeWidth={1.5} 
+                                            strokeOpacity={0.4} 
+                                            strokeDasharray="3 3" 
+                                            dot={false} 
+                                            activeDot={false} 
+                                            connectNulls={true} 
+                                            name="_prevStrength" 
+                                        />
+                                        <Line 
+                                            yAxisId="right"
+                                            type="monotone"
+                                            dataKey="prevCardioDistance" // Data key for previous distance
+                                            stroke="var(--chart-orange, #fb923c)" 
+                                            strokeWidth={1.5} 
+                                            strokeOpacity={0.4} 
+                                            strokeDasharray="3 3" 
+                                            dot={false} 
+                                            activeDot={false} 
+                                            connectNulls={true} 
+                                            name="_prevCardio" 
+                                        />
+                                    </>
+                                )}
                             </ComposedChart>
                         </ResponsiveContainer>
                     </CardContent>

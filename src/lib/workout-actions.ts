@@ -2259,7 +2259,8 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
         }
         // ... rest of the PR staging logic remains the same ...
         // --- Check and Stage Max Weight PR --- 
-        if (currentMaxWeight > 0) {
+        // Only stage weight PR if trackMaxReps is false
+        if (!exerciseTrackMaxReps && currentMaxWeight > 0) { 
           const prKey = `${exerciseIdObj.toString()}_kg`; 
           const existingPR = potentialPRs[prKey];
 
@@ -2296,24 +2297,70 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
       } // End loop through exercises
     } // End loop through workouts
 
-    // Batch update/insert PRs from the staged potentialPRs
-    const bulkOps = Object.values(potentialPRs).map(prData => ({
-      updateOne: {
-        filter: {
-          userId: prData.userId,
-          exerciseId: prData.exerciseId,
-          unit: prData.unit // Compound key includes unit
-        },
-        update: { $set: prData }, // Set the entire staged PR data
-        upsert: true
+    // --- Prepare Bulk Operations ---
+    const bulkOps: any[] = []; // Initialize as any[] for flexibility
+    const processedDeleteKeys = new Set<string>(); // Keep track of deletes we've added
+
+    for (const prData of Object.values(potentialPRs)) {
+      // 1. Add the Upsert operation for the correct PR
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            userId: prData.userId,
+            exerciseId: prData.exerciseId,
+            unit: prData.unit // Filter by the correct unit ('kg' or 'reps')
+          },
+          update: { $set: prData },
+          upsert: true
+        }
+      });
+
+      // 2. Determine the unit to delete (the opposite of the correct one)
+      const unitToDelete = prData.unit === 'kg' ? 'reps' : 'kg';
+      const deleteKey = `${prData.exerciseId?.toString()}_${unitToDelete}`; // Unique key for this delete op
+
+      // 3. Add the Delete operation *only if we haven't already added it*
+      //    This prevents adding duplicate delete operations if both kg and reps were potential PRs
+      //    for the same exercise in the same run (which shouldn't happen with current logic, but safety first)
+      if (!processedDeleteKeys.has(deleteKey)) {
+        bulkOps.push({
+          deleteOne: {
+            filter: {
+              userId: prData.userId,
+              exerciseId: prData.exerciseId,
+              unit: unitToDelete // Filter by the unit we want to remove
+            }
+          }
+        });
+        processedDeleteKeys.add(deleteKey); // Mark this delete operation as added
+        console.log(`[updateExercisePRs] Staging delete for exercise ${prData.exerciseName} (${prData.exerciseId}), unit: ${unitToDelete}`);
       }
-    }));
+    }
+    // --- End Prepare Bulk Operations ---
+
+
+    // Batch update/insert/delete PRs from the staged potentialPRs
+    // const bulkOps = Object.values(potentialPRs).map(prData => ({ // <-- REMOVE OLD MAPPING
+    //   updateOne: { // <-- REMOVE OLD MAPPING
+    //     filter: { // <-- REMOVE OLD MAPPING
+    //       userId: prData.userId, // <-- REMOVE OLD MAPPING
+    //       exerciseId: prData.exerciseId, // <-- REMOVE OLD MAPPING
+    //       unit: prData.unit // Compound key includes unit // <-- REMOVE OLD MAPPING
+    //     }, // <-- REMOVE OLD MAPPING
+    //     update: { $set: prData }, // Set the entire staged PR data // <-- REMOVE OLD MAPPING
+    //     upsert: true // <-- REMOVE OLD MAPPING
+    //   } // <-- REMOVE OLD MAPPING
+    // })); // <-- REMOVE OLD MAPPING
 
     if (bulkOps.length > 0) {
-      console.log(`[updateExercisePRs] Performing ${bulkOps.length} bulk PR operations for user ${userId}...`);
+      console.log(`[updateExercisePRs] Performing ${bulkOps.length} bulk PR operations (upserts/deletes) for user ${userId}...`);
       const result = await ExercisePRModel.bulkWrite(bulkOps);
       console.log(`[updateExercisePRs] Bulk write result:`, JSON.stringify(result));
-      console.log(`[updateExercisePRs] Successfully updated/inserted ${result.upsertedCount + result.modifiedCount} exercise PRs for user ${userId}.`);
+      // Log counts for upserts, modifications, and deletions
+      const upsertedCount = result.upsertedCount || 0;
+      const modifiedCount = result.modifiedCount || 0;
+      const deletedCount = result.deletedCount || 0;
+      console.log(`[updateExercisePRs] PR Counts - Upserted: ${upsertedCount}, Modified: ${modifiedCount}, Deleted: ${deletedCount}`);
     } else {
       console.log(`[updateExercisePRs] No new potential PRs identified for user ${userId}.`);
     }
