@@ -16,8 +16,8 @@ import {
   SelectTrigger, 
   SelectValue
 } from "@/components/ui/select"
-import { LucideArrowLeft, LucideSave, LucideTrash, LucideEdit, LucideTrendingUp, LucidePlus, PlusCircle, LucideImage, LucideLoader } from "lucide-react"
-import { fetchExercise, updateExerciseAction, deleteExerciseAction, getExerciseHistory, generateAndSaveExerciseImage } from "@/lib/exercise-actions"
+import { LucideArrowLeft, LucideSave, LucideTrash, LucideEdit, LucideTrendingUp, LucidePlus, PlusCircle, LucideLoader } from "lucide-react"
+import { fetchExercise, updateExerciseAction, deleteExerciseAction, getExerciseHistory } from "@/lib/exercise-actions"
 import { Badge } from "@/components/ui/badge"
 import { X } from "lucide-react"
 import { 
@@ -36,6 +36,7 @@ import Image from "next/image"
 import { subMonths, subWeeks } from "date-fns"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import MetricContent from "@/components/ui/metric-card"
+import { estimateBodyweightForExercise } from "@/lib/utils"
 
 // Define helper functions (can be outside or inside component scope in client components)
 const formatDuration = (seconds: number | undefined | null): string => {
@@ -97,8 +98,10 @@ export default function ExerciseDetailPageClient({
   const [history, setHistory] = useState<WorkoutExerciseData[]>(initialHistory)
   const [chartData, setChartData] = useState<any[]>([])
   const [personalBest, setPersonalBest] = useState<{ weight: number, reps: number } | null>(null)
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
-  const [generationError, setGenerationError] = useState<string | null>(null)
+  const [totalReps, setTotalReps] = useState<number>(0)
+  const [totalVolume, setTotalVolume] = useState<number>(0)
+  const [maxWeightPR, setMaxWeightPR] = useState<{ weight: number, reps: number } | null>(null)
+  const [maxRepsPR, setMaxRepsPR] = useState<{ weight: number, reps: number } | null>(null)
   const [cardioStats, setCardioStats] = useState<{
     bestDistance: number | null;
     bestDuration: number | null;
@@ -127,27 +130,87 @@ export default function ExerciseDetailPageClient({
   // Process history data (runs on initial load and when history state changes)
   const processHistoryData = useMemo(() => (historyData: WorkoutExerciseData[]) => {
     if (!historyData.length) {
-      setChartData([]) 
+      setChartData([])
       setPersonalBest(null)
       setCardioStats(null)
+      setTotalReps(0)
+      setTotalVolume(0)
+      setMaxWeightPR(null)
+      setMaxRepsPR(null)
       return
     }
     // Sort history by date (newest first)
     historyData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    
-    let bestWeight = 0, bestReps = 0, bestTotal = 0
+
+    let currentBestWeight = 0, currentBestReps = 0, currentBestTotal = 0
+    let currentMaxWeightPR = { weight: 0, reps: 0 };
+    let currentMaxRepsPR = { weight: 0, reps: 0 };
+    let runningTotalReps = 0;
+    let runningTotalVolume = 0;
+    const isTrackMaxReps = exercise?.tags?.includes('trackMaxReps');
+
     let bestDistance = 0, bestDuration = 0, fastestPace = Infinity
     let totalDistance = 0, totalDuration = 0, validPaceCount = 0, totalPace = 0
     const workoutCount = historyData.length
-    
+
     const chartPoints = historyData.map(workout => {
-      let maxWeight = 0, maxReps = 0, maxTotal = 0
+      let maxWeightInWorkout = 0, maxRepsInWorkout = 0, maxTotalInWorkout = 0
       workout.sets?.forEach(set => {
         const weight = Number(set.weight) || 0
         const reps = Number(set.reps) || 0
-        const total = weight * reps
-        if (total > maxTotal) { maxWeight = weight; maxReps = reps; maxTotal = total }
-        if (total > bestTotal) { bestWeight = weight; bestReps = reps; bestTotal = total }
+        let effectiveWeight = weight;
+        
+        // For bodyweight exercises, use estimated weight
+        if (isTrackMaxReps && weight === 0) {
+          effectiveWeight = estimateBodyweightForExercise(exercise?.name || '');
+        }
+        
+        const total = effectiveWeight * reps;
+
+        runningTotalReps += reps;
+        runningTotalVolume += total;
+
+        // PR Calculation
+        if (effectiveWeight >= currentMaxWeightPR.weight) { // Check for max weight PR (can be equal weight but more reps)
+           if (effectiveWeight > currentMaxWeightPR.weight || reps > currentMaxWeightPR.reps) {
+              currentMaxWeightPR = { weight: effectiveWeight, reps };
+           }
+        }
+        if (reps >= currentMaxRepsPR.reps) { // Check for max reps PR (can be equal reps but more weight for weighted exercises)
+           if (reps > currentMaxRepsPR.reps || effectiveWeight > currentMaxRepsPR.weight) {
+             currentMaxRepsPR = { weight: effectiveWeight, reps };
+           }
+        }
+
+        // For chart data, track what we want to display
+        if (isTrackMaxReps) {
+          if (reps > maxRepsInWorkout) {
+            maxRepsInWorkout = reps;
+            maxWeightInWorkout = effectiveWeight;
+            maxTotalInWorkout = total;
+          }
+        } else {
+          if (total > maxTotalInWorkout) {
+            maxWeightInWorkout = effectiveWeight;
+            maxRepsInWorkout = reps;
+            maxTotalInWorkout = total;
+          }
+        }
+
+        // Legacy 'Personal Best' calculation - update based on what we're tracking
+        if (isTrackMaxReps) {
+          if (reps > currentBestReps || (reps === currentBestReps && effectiveWeight > currentBestWeight)) {
+            currentBestWeight = effectiveWeight;
+            currentBestReps = reps;
+            currentBestTotal = total;
+          }
+        } else {
+          if (total > currentBestTotal) {
+            currentBestWeight = effectiveWeight;
+            currentBestReps = reps;
+            currentBestTotal = total;
+          }
+        }
       })
 
       const workoutDistance = workout.distance ? Number(workout.distance) : 0;
@@ -157,20 +220,29 @@ export default function ExerciseDetailPageClient({
       if (workoutDistance > bestDistance) bestDistance = workoutDistance;
       if (workoutDuration > bestDuration) bestDuration = workoutDuration;
       if (workoutPace !== null && workoutPace > 0 && workoutPace < fastestPace) fastestPace = workoutPace;
-      
+
       totalDistance += workoutDistance;
       totalDuration += workoutDuration;
       if (workoutPace !== null && workoutPace > 0) { totalPace += workoutPace; validPaceCount++; }
-      
+
       return {
         date: new Date(workout.createdAt).toISOString().split('T')[0],
-        weight: maxWeight, reps: maxReps, total: maxTotal,
-        distance: workoutDistance, duration: workoutDuration, pace: workoutPace
+        weight: maxWeightInWorkout,
+        reps: maxRepsInWorkout,
+        total: isTrackMaxReps ? maxRepsInWorkout : maxTotalInWorkout, // Use reps as the primary metric for bodyweight exercises
+        distance: workoutDistance,
+        duration: workoutDuration,
+        pace: workoutPace
       }
     })
-    
+
     setChartData(chartPoints.slice().reverse()) // Reverse copy for chart
-    if (bestTotal > 0) setPersonalBest({ weight: bestWeight, reps: bestReps }); else setPersonalBest(null);
+    if (currentBestTotal > 0) setPersonalBest({ weight: currentBestWeight, reps: currentBestReps }); else setPersonalBest(null); // Keep legacy PB state
+    // Set new stats state
+    setTotalReps(runningTotalReps);
+    setTotalVolume(runningTotalVolume);
+    setMaxWeightPR(currentMaxWeightPR.weight > 0 ? currentMaxWeightPR : null);
+    setMaxRepsPR(currentMaxRepsPR.reps > 0 ? currentMaxRepsPR : null);
 
     setCardioStats({
       bestDistance: bestDistance > 0 ? bestDistance : null,
@@ -206,6 +278,7 @@ export default function ExerciseDetailPageClient({
   const progressionDisplayData = useMemo(() => {
     const now = new Date();
     let filteredHistory = history;
+    const isTrackMaxReps = exercise?.tags?.includes('trackMaxReps');
 
     if (selectedDateRange === "3months") {
       const threeMonthsAgo = subMonths(now, 3);
@@ -215,52 +288,135 @@ export default function ExerciseDetailPageClient({
       filteredHistory = history.filter(item => new Date(item.createdAt) >= fourWeeksAgo);
     }
 
-    if (!filteredHistory.length) return { /* default empty state */ }; // Return default structure if no data
+    if (!filteredHistory.length) return {
+      chartPoints: [],
+      firstNCount: 0,
+      lastNCount: 0,
+      isTrackMaxReps: false,
+      avgFirstWeight: null,
+      avgLastWeight: null,
+      weightChange: null,
+      avgFirstReps: null,
+      avgLastReps: null,
+      repsChange: null,
+      avgFirstVolume: null,
+      avgLastVolume: null,
+      volumeChange: null,
+      avgFirstDist: null,
+      avgLastDist: null,
+      distChange: null,
+      avgFirstDur: null,
+      avgLastDur: null,
+      durChange: null,
+      avgFirstPace: null,
+      avgLastPace: null,
+      paceChange: null
+    }; // Return default structure if no data
 
     filteredHistory.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    const chartPoints = filteredHistory.map(workout => {
-       let maxWeight = 0, maxReps = 0, maxTotal = 0
-       workout.sets?.forEach(set => {
-         const weight = Number(set.weight) || 0; const reps = Number(set.reps) || 0; const total = weight * reps;
-         if (total > maxTotal) { maxWeight = weight; maxReps = reps; maxTotal = total }
-       });
-       const workoutDistance = workout.distance ? Number(workout.distance) : 0;
-       const workoutDuration = workout.duration ? Number(workout.duration) : 0;
-       const workoutPace = workout.pace ? Number(workout.pace) : null;
-       return { date: new Date(workout.createdAt).toISOString().split('T')[0], weight: maxWeight, reps: maxReps, total: maxTotal, distance: workoutDistance, duration: workoutDuration, pace: workoutPace }
+    const chartPoints = filteredHistory.map((workout: WorkoutExerciseData) => {
+      let maxWeight = 0, maxReps = 0, maxTotal = 0;
+      workout.sets?.forEach((set: { weight?: number, reps?: number }) => {
+        const weight = Number(set.weight) || 0;
+        const reps = Number(set.reps) || 0;
+        let effectiveWeight = weight;
+        
+        // For bodyweight exercises, use estimated weight
+        if (isTrackMaxReps && weight === 0) {
+          effectiveWeight = estimateBodyweightForExercise(exercise?.name || '');
+        }
+        
+        const total = effectiveWeight * reps;
+        
+        if (isTrackMaxReps) {
+          if (reps > maxReps) {
+            maxReps = reps;
+            maxWeight = effectiveWeight;
+            maxTotal = total;
+          }
+        } else {
+          if (total > maxTotal) {
+            maxWeight = effectiveWeight;
+            maxReps = reps;
+            maxTotal = total;
+          }
+        }
+      });
+
+      return {
+        date: new Date(workout.createdAt).toISOString().split('T')[0],
+        weight: maxWeight,
+        reps: maxReps,
+        total: maxTotal,
+        distance: workout.distance,
+        duration: workout.duration,
+        pace: workout.pace
+      };
     });
 
-    const firstNCount = Math.min(5, filteredHistory.length);
-    const lastNCount = Math.min(5, filteredHistory.length);
-    const firstNData = chartPoints.slice(0, firstNCount);
-    const lastNData = chartPoints.slice(Math.max(0, chartPoints.length - lastNCount));
+    // For progression comparison, we'll compare first N vs last N workouts
+    const compareN = Math.min(3, Math.floor(chartPoints.length / 3)); // Compare up to 3 workouts, or 1/3 of total workouts
+    const firstN = chartPoints.slice(0, compareN);
+    const lastN = chartPoints.slice(-compareN);
 
-    // Calculate averages (simplified)
     const calcAvg = (data: any[], key: string) => data.length > 0 ? data.reduce((sum, d) => sum + (d[key] || 0), 0) / data.length : null;
     const calcPaceAvg = (data: any[]) => {
-      const valid = data.filter(d => d.pace && d.pace > 0);
-      return valid.length > 0 ? valid.reduce((sum, d) => sum + d.pace!, 0) / valid.length : null;
+      const validPaces = data.filter(d => d.pace && d.pace > 0);
+      return validPaces.length > 0 ? validPaces.reduce((sum, d) => sum + (d.pace || 0), 0) / validPaces.length : null;
     };
 
-    const avgFirstDist = calcAvg(firstNData, 'distance'); const avgLastDist = calcAvg(lastNData, 'distance');
-    const avgFirstPace = calcPaceAvg(firstNData); const avgLastPace = calcPaceAvg(lastNData);
-    const avgFirstDur = calcAvg(firstNData, 'duration'); const avgLastDur = calcAvg(lastNData, 'duration');
-    const avgFirstWeight = calcAvg(firstNData, 'weight'); const avgLastWeight = calcAvg(lastNData, 'weight');
-    const avgFirstReps = calcAvg(firstNData, 'reps'); const avgLastReps = calcAvg(lastNData, 'reps');
-    const avgFirstVolume = calcAvg(firstNData, 'total'); const avgLastVolume = calcAvg(lastNData, 'total');
+    // Calculate averages for first and last N workouts
+    const avgFirstWeight = calcAvg(firstN, 'weight');
+    const avgFirstReps = calcAvg(firstN, 'reps');
+    const avgFirstTotal = calcAvg(firstN, 'total');
+    const avgLastWeight = calcAvg(lastN, 'weight');
+    const avgLastReps = calcAvg(lastN, 'reps');
+    const avgLastTotal = calcAvg(lastN, 'total');
+
+    // Calculate cardio averages
+    const avgFirstDist = calcAvg(firstN, 'distance');
+    const avgLastDist = calcAvg(lastN, 'distance');
+    const avgFirstDur = calcAvg(firstN, 'duration');
+    const avgLastDur = calcAvg(lastN, 'duration');
+    const avgFirstPace = calcPaceAvg(firstN);
+    const avgLastPace = calcPaceAvg(lastN);
+
+    // Calculate percentage changes
+    const calcChange = (first: number | null, last: number | null) => {
+      if (first === null || last === null || first === 0) return null;
+      return ((last - first) / first) * 100;
+    };
 
     return {
-      chartPoints, firstNCount, lastNCount,
-      avgFirstDist, avgLastDist, distChange: avgLastDist !== null && avgFirstDist !== null ? avgLastDist - avgFirstDist : null,
-      avgFirstPace, avgLastPace, paceChange: avgLastPace !== null && avgFirstPace !== null ? avgLastPace - avgFirstPace : null,
-      avgFirstDur, avgLastDur, durChange: avgLastDur !== null && avgFirstDur !== null ? avgLastDur - avgFirstDur : null,
-      avgFirstWeight, avgLastWeight, weightChange: avgLastWeight !== null && avgFirstWeight !== null ? avgLastWeight - avgFirstWeight : null,
-      avgFirstReps, avgLastReps, repsChange: avgLastReps !== null && avgFirstReps !== null ? avgLastReps - avgFirstReps : null,
-      avgFirstVolume, avgLastVolume, volumeChange: avgLastVolume !== null && avgFirstVolume !== null ? avgLastVolume - avgFirstVolume : null,
+      chartPoints,
+      firstNCount: compareN,
+      lastNCount: compareN,
+      isTrackMaxReps,
+      // Weight stats (for all exercises)
+      avgFirstWeight,
+      avgLastWeight,
+      weightChange: calcChange(avgFirstWeight, avgLastWeight),
+      // Reps stats (for all exercises)
+      avgFirstReps,
+      avgLastReps,
+      repsChange: calcChange(avgFirstReps, avgLastReps),
+      // Volume stats (for all exercises)
+      avgFirstVolume: avgFirstTotal,
+      avgLastVolume: avgLastTotal,
+      volumeChange: calcChange(avgFirstTotal, avgLastTotal),
+      // Cardio stats
+      avgFirstDist,
+      avgLastDist,
+      distChange: calcChange(avgFirstDist, avgLastDist),
+      avgFirstDur,
+      avgLastDur,
+      durChange: calcChange(avgFirstDur, avgLastDur),
+      avgFirstPace,
+      avgLastPace,
+      paceChange: calcChange(avgFirstPace, avgLastPace)
     };
-
-  }, [history, selectedDateRange]);
+  }, [history, selectedDateRange, exercise?.tags]);
   
   // Handler functions (keep all existing handlers)
   const addMuscleGroup = () => {
@@ -311,21 +467,6 @@ export default function ExerciseDetailPageClient({
     return new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  const handleGenerateImage = async () => {
-    setIsGeneratingImage(true); setGenerationError(null);
-    if (!exercise) { setGenerationError("Exercise data not loaded."); setIsGeneratingImage(false); return; }
-    const instructionsText = exercise.instructions?.join('. ') || exercise.description || '';
-    const prompt = `Minimalistic infographic, clear focus on correct technique for the ${exercise.name} exercise. ${instructionsText}`;
-    console.log("Generating image with prompt:", prompt);
-    try {
-      const result = await generateAndSaveExerciseImage(exercise._id, prompt);
-      if (result.success && result.imageUrl) {
-        setExercise(prev => prev ? { ...prev, images: [...(prev.images || []), result.imageUrl!] } : null);
-      } else { setGenerationError(result.error || "Failed to generate image."); }
-    } catch (err: any) { setGenerationError(err.message || "An unexpected error occurred."); }
-     finally { setIsGeneratingImage(false); }
-  };
-  
   // Loading and error states
   if (isLoading) return <LoadingIndicator />;
   if (error) return <div className="container mx-auto px-4 py-8 text-center text-red-500">Error: {error}</div>;
@@ -404,11 +545,6 @@ export default function ExerciseDetailPageClient({
                 ) : (
                   <div className="text-center py-10 bg-muted rounded-lg mb-4">
                     <p className="text-muted-foreground mb-3">No image available.</p>
-                     <Button onClick={handleGenerateImage} disabled={isGeneratingImage} size="sm">
-                        {isGeneratingImage ? <LucideLoader className="mr-2 h-4 w-4 animate-spin" /> : <LucideImage className="mr-2 h-4 w-4" />}
-                         Generate Image (AI)
-                     </Button>
-                     {generationError && <p className="text-red-500 text-xs mt-2">{generationError}</p>}
                   </div>
                 )}
                  <p className="text-muted-foreground mb-4">{exercise.description || "No description provided."}</p>
@@ -460,12 +596,31 @@ export default function ExerciseDetailPageClient({
                  <CardTitle>Quick Stats</CardTitle>
                </CardHeader>
                <CardContent className="space-y-3 text-sm">
-                  {isStrengthExercise && personalBest && (
-                    <div>
-                      <p className="font-semibold">Personal Best (Volume)</p>
-                      <p>{personalBest.weight} kg x {personalBest.reps} reps</p>
-                      {/* TODO: Add date of PR */}
-                    </div>
+                  {isStrengthExercise && (
+                    <>
+                      <div>
+                        <p className="font-semibold">Total Volume</p>
+                        <p>{totalVolume.toLocaleString()} kg</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Total Reps</p>
+                        <p>{totalReps.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Max Reps (Single Set)</p>
+                        <p>{maxRepsPR ? `${maxRepsPR.reps} reps` : 'No PR yet'}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Average Reps/Set</p>
+                        <p>{history.length > 0 ? `${(totalReps / history.reduce((sum, workout) => sum + (workout.sets?.length || 0), 0)).toFixed(1)} reps` : '--'}</p>
+                      </div>
+                      {!exercise?.tags?.includes('trackMaxReps') && (
+                        <div>
+                          <p className="font-semibold">Max Weight PR</p>
+                          <p>{maxWeightPR ? `${maxWeightPR.weight} kg (${maxWeightPR.reps} reps)` : 'No PR yet'}</p>
+                        </div>
+                      )}
+                    </>
                   )}
                   {isCardioExercise && cardioStats && (
                     <div className="grid grid-cols-2 gap-3">
@@ -566,21 +721,47 @@ export default function ExerciseDetailPageClient({
                    <LineChart data={progressionDisplayData.chartPoints} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
                       <XAxis dataKey="date" fontSize={10} tickLine={false} axisLine={false} />
-                      {/* Adjust Y-axis based on exercise type */}
-                      {isStrengthExercise && <YAxis dataKey="total" name="Volume (kg*reps)" fontSize={10} strokeWidth={0} />}
-                      {isCardioExercise && <YAxis yAxisId="left" dataKey="distance" name="Distance (m)" fontSize={10} strokeWidth={0} />}
-                      {isCardioExercise && <YAxis yAxisId="right" dataKey="pace" name="Pace (s/km)" orientation="right" fontSize={10} strokeWidth={0} tickFormatter={formatPace} />}
+                      {/* Show max reps per day */}
+                      <YAxis dataKey="reps" name="Max Reps" fontSize={10} strokeWidth={0} />
                       
                       <Tooltip contentStyle={{fontSize: '12px', padding: '4px 8px'}} />
-                      {/* Adjust Line based on exercise type */}
-                      {isStrengthExercise && <Line type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Volume (kg*reps)" />}
-                      {isCardioExercise && <Line yAxisId="left" type="monotone" dataKey="distance" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} name="Distance (m)" />}
-                      {isCardioExercise && <Line yAxisId="right" type="monotone" dataKey="pace" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} name="Pace (s/km)" />}
+                      {/* Show max reps line */}
+                      <Line type="monotone" dataKey="reps" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Max Reps" />
                    </LineChart>
                  </ResponsiveContainer>
                ) : (
                  <p className="text-muted-foreground text-center py-10">Not enough data points for this date range to show progression graph.</p>
                )}
+             </CardContent>
+           </Card>
+           {/* NEW All-Time Stats Card */}
+           <Card>
+             <CardHeader>
+               <CardTitle>All-Time Statistics</CardTitle>
+               <CardDescription>Key metrics across all recorded workouts for this exercise.</CardDescription>
+             </CardHeader>
+             <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <MetricContent title="Total Reps" value={totalReps.toLocaleString()} />
+                {/* Only show Total Volume if not trackMaxReps */}
+                {!exercise?.tags?.includes('trackMaxReps') ? (
+                   <MetricContent title="Total Volume" value={`${totalVolume.toLocaleString()} kg`} />
+                ) : (
+                   <MetricContent title="Max Reps PR" value={maxRepsPR ? `${maxRepsPR.reps} reps` : '--'} />
+                )}
+
+                {/* Conditional PR Display - Show only the relevant PR */}
+                {exercise?.tags?.includes('trackMaxReps') ? (
+                   <MetricContent
+                      title="Average Reps/Set"
+                      value={`${progressionDisplayData.avgFirstReps?.toFixed(1) ?? '--'} → ${progressionDisplayData.avgLastReps?.toFixed(1) ?? '--'} reps`}
+                      change={progressionDisplayData.repsChange}
+                    />
+                ) : (
+                    <MetricContent
+                      title="Max Weight PR"
+                      value={maxWeightPR ? `${maxWeightPR.weight} kg (${maxWeightPR.reps} reps)` : '--'}
+                    />
+                )}
              </CardContent>
            </Card>
            {/* Display Progression Summary Stats */}
@@ -591,20 +772,19 @@ export default function ExerciseDetailPageClient({
                   <CardDescription>Comparing average of first {progressionDisplayData.firstNCount} sessions vs last {progressionDisplayData.lastNCount} sessions in selected range.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  {isStrengthExercise && (
-                    <>
-                      <MetricContent title="Avg Weight" value={progressionDisplayData.avgLastWeight?.toFixed(1) + ' kg'} change={progressionDisplayData.weightChange} />
-                      <MetricContent title="Avg Reps" value={progressionDisplayData.avgLastReps?.toFixed(1) ?? '--'} change={progressionDisplayData.repsChange} />
-                      <MetricContent title="Avg Volume" value={(progressionDisplayData.avgLastVolume?.toFixed(0) ?? '--') + (progressionDisplayData.avgLastVolume != null ? ' kg' : '')} change={progressionDisplayData.volumeChange} />
-                    </>
-                  )}
-                   {isCardioExercise && (
-                     <>
-                       <MetricContent title="Avg Distance" value={formatDistance(progressionDisplayData.avgLastDist)} change={progressionDisplayData.distChange} />
-                       <MetricContent title="Avg Duration" value={formatDuration(progressionDisplayData.avgLastDur)} change={progressionDisplayData.durChange} />
-                       <MetricContent title="Avg Pace" value={formatPace(progressionDisplayData.avgLastPace)} change={progressionDisplayData.paceChange} />
-                     </>
-                  )}
+                  <MetricContent 
+                    title="First Sessions Avg"
+                    value={`${progressionDisplayData.avgFirstReps?.toFixed(1) ?? '--'} reps/set`}
+                  />
+                  <MetricContent 
+                    title="Recent Sessions Avg"
+                    value={`${progressionDisplayData.avgLastReps?.toFixed(1) ?? '--'} reps/set`}
+                  />
+                  <MetricContent 
+                    title="Progress" 
+                    value={progressionDisplayData.repsChange ? `${progressionDisplayData.repsChange > 0 ? '+' : ''}${progressionDisplayData.repsChange.toFixed(1)}%` : '--'} 
+                    change={progressionDisplayData.repsChange} 
+                  />
                 </CardContent>
               </Card>
            )}
