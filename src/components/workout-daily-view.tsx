@@ -12,7 +12,7 @@ import type { WorkoutData } from '@/types/db'; // Assuming WorkoutData type exis
 
 // Import helpers from utils and the new MetricCard location
 import { formatDuration, formatDistance } from '@/lib/utils';
-import { MetricCard } from '@/components/ui/metric-card';
+import { MetricContent } from '@/components/ui/metric-card';
 // Import getWorkoutTypeStyle from its new location (no extension)
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 
@@ -211,10 +211,10 @@ export default function WorkoutDailyView() {
                         <div className="space-y-4"> {/* Changed grid to space-y */}
                              {/* Aggregate Metrics Row */}
                              <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-                                 <MetricCard title="Workouts" value={dailyMetrics.workoutCount.toString()} />
-                                 <MetricCard title="Total Duration" value={formatDuration(dailyMetrics.totalDuration)} />
-                                 {dailyMetrics.totalDistance > 0 && <MetricCard title="Total Distance" value={formatDistance(dailyMetrics.totalDistance / 1000)} />}
-                                 {dailyMetrics.totalVolume > 0 && <MetricCard title="Total Volume" value={`${dailyMetrics.totalVolume.toLocaleString()} kg`} />}
+                                 <MetricContent title="Workouts" value={dailyMetrics.workoutCount.toString()} />
+                                 <MetricContent title="Total Duration" value={formatDuration(dailyMetrics.totalDuration)} />
+                                 {dailyMetrics.totalDistance > 0 && <MetricContent title="Total Distance" value={formatDistance(dailyMetrics.totalDistance / 1000)} />}
+                                 {dailyMetrics.totalVolume > 0 && <MetricContent title="Total Volume" value={`${dailyMetrics.totalVolume.toLocaleString()} kg`} />}
                              </div>
 
                              {/* List of Workouts for the Day */}

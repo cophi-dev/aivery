@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
-import { MetricCard } from '@/components/ui/metric-card';
+import { MetricContent } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 
 // Import recharts components
@@ -246,22 +246,22 @@ export default function WorkoutMonthlyView() {
                         <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
                     ) : monthlyMetrics ? (
                         <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-                            <MetricCard 
+                            <MetricContent 
                                 title="Workouts" 
                                 value={monthlyMetrics.totalWorkouts.toString()} 
                                 change={calculatePercentageChange(monthlyMetrics.totalWorkouts, previousMonthMetrics?.totalWorkouts)}
                             />
-                            <MetricCard 
+                            <MetricContent 
                                 title="Total Duration" 
                                 value={formatDuration(monthlyMetrics.totalDuration)} 
                                 change={calculatePercentageChange(monthlyMetrics.totalDuration, previousMonthMetrics?.totalDuration)}
                             />
-                            <MetricCard 
+                            <MetricContent 
                                 title="Total Distance" 
                                 value={formatDistance(monthlyMetrics.totalDistance)} 
                                 change={monthlyMetrics.totalDistance > 0 ? calculatePercentageChange(monthlyMetrics.totalDistance, previousMonthMetrics?.totalDistance) : null}
                             />
-                            <MetricCard 
+                            <MetricContent 
                                 title="Total Volume" 
                                 value={`${monthlyMetrics.totalVolume.toLocaleString()} kg`} 
                                 change={monthlyMetrics.totalVolume > 0 ? calculatePercentageChange(monthlyMetrics.totalVolume, previousMonthMetrics?.totalVolume) : null}

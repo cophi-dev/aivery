@@ -23,7 +23,8 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
         userId: new ObjectId(userId),
         date: { $gte: startDate, $lte: endDate }
     })
-    .sort({ date: -1 }) // Sort by date descending to easily find the latest
+    .sort({ date: -1 }) 
+    // Removed .select() to get all fields needed for workout details
     .lean<IWorkout[]>();
 
     let totalWorkouts = workouts.length;
@@ -33,18 +34,35 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
     let workoutTypes = new Set<string>();
     const latestWorkoutDate: Date | null = workouts.length > 0 ? workouts[0].date : null;
 
+    // NEW: Create array for workout summaries
+    const workoutSummaries: { type: string, date: Date, durationSeconds?: number, distanceMeters?: number, volumeKg?: number }[] = [];
+
     workouts.forEach(w => {
-        totalDuration += w.duration || 0;
-        totalVolume += w.calculatedVolume || 0;
+        const durationSec = w.duration || 0;
+        const volumeKg = w.calculatedVolume || 0;
+        let distanceMeters = 0;
+
+        totalDuration += durationSec;
+        totalVolume += volumeKg;
         workoutTypes.add(w.type);
 
         // Aggregate distance (prefer cardioDetails, fallback to distance)
         if (w.cardioDetails?.distance) {
-            totalDistance += (w.cardioDetails.distance * 1000); // km to meters
+            distanceMeters = w.cardioDetails.distance * 1000; // km to meters
         } else if (typeof w.distance === 'number') {
              // If distance is small (< 100), assume it's in km and convert to meters
-            totalDistance += (w.distance < 100 ? w.distance * 1000 : w.distance);
+            distanceMeters = (w.distance < 100 ? w.distance * 1000 : w.distance);
         }
+        totalDistance += distanceMeters;
+
+        // Add individual workout summary for the prompt
+        workoutSummaries.push({
+            type: w.type,
+            date: w.date,
+            durationSeconds: durationSec,
+            distanceMeters: distanceMeters > 0 ? distanceMeters : undefined, // Only include if > 0
+            volumeKg: volumeKg > 0 ? volumeKg: undefined // Only include if > 0
+        });
     });
 
     return {
@@ -53,10 +71,9 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
         totalDistanceMeters: totalDistance,
         totalVolumeKg: totalVolume,
         types: Array.from(workoutTypes),
-        // Return the date of the latest workout in this period, or null
         latestWorkoutDate: latestWorkoutDate,
-        // DO NOT include raw workouts by default to keep prompt small
-        // workouts: workouts 
+        // Include the summarized workouts array
+        workouts: workoutSummaries 
     };
 }
 
@@ -145,39 +162,70 @@ export async function GET(req: NextRequest) {
             getWorkoutSummaryForPeriod(userId, prevStartDate, prevEndDate)
         ]);
 
-        // Build the system prompt dynamically based on whether the period is ongoing
+        // --- Build the NEW System Prompt ---
+        const formattedStartDate = formatDate(startDate, 'MMM d');
+        const formattedEndDate = formatDate(endDate, 'MMM d');
+        const formattedPrevStartDate = formatDate(prevStartDate, 'MMM d');
+        const formattedPrevEndDate = formatDate(prevEndDate, 'MMM d');
+
+        const currentPeriodJSON = JSON.stringify(currentPeriodSummary, null, 2);
+        const previousPeriodJSON = JSON.stringify(previousPeriodSummary, null, 2);
+
         let systemPrompt = `\
 You are Aivery, a motivating and insightful AI fitness coach integrated into a fitness tracking app.
-The user, ${userName}, is viewing their activity overview.
+
+The user, ${userName}, is viewing their activity overview to understand their progress and receive guidance.
 
 `;
 
         if (isOngoingPeriod) {
-            systemPrompt += `The current period being viewed is ONGOING: ${formatDate(startDate, 'MMM d')} - ${formatDate(endDate, 'MMM d')}. The previous period was: ${formatDate(prevStartDate, 'MMM d')} - ${formatDate(prevEndDate, 'MMM d')}.\n\n`;
+            systemPrompt += `The current period being viewed is ONGOING: ${formattedStartDate} - ${formattedEndDate}. The previous period was: ${formattedPrevStartDate} - ${formattedPrevEndDate}.\n\n`;
         } else {
-            systemPrompt += `The period being viewed is COMPLETE: ${formatDate(startDate, 'MMM d')} - ${formatDate(endDate, 'MMM d')}. The previous period was: ${formatDate(prevStartDate, 'MMM d')} - ${formatDate(prevEndDate, 'MMM d')}.\n\n`;
+            systemPrompt += `The period being viewed is COMPLETE: ${formattedStartDate} - ${formattedEndDate}. The previous period was: ${formattedPrevStartDate} - ${formattedPrevEndDate}.\n\n`;
         }
 
-        systemPrompt += `Your goal is to analyze their performance, compare it to the previous period, and provide SPECIFIC, actionable insights.\n\nData for the Current Period (${formatDate(startDate, 'MMM d')} - ${formatDate(endDate, 'MMM d')}):
-${JSON.stringify(currentPeriodSummary, null, 2)}
+        systemPrompt += `Your goal is to analyze the user's performance, compare it to the previous period, and provide SPECIFIC, actionable, and personalized insights to help them improve or maintain their fitness routine.
 
-Data for the Previous Period (${formatDate(prevStartDate, 'MMM d')} - ${formatDate(prevEndDate, 'MMM d')}):
-${JSON.stringify(previousPeriodSummary, null, 2)}
+Data for the Current Period (${formattedStartDate} - ${formattedEndDate}):
+${currentPeriodJSON}
+
+Data for the Previous Period (${formattedPrevStartDate} - ${formattedPrevEndDate}):
+${previousPeriodJSON}
 
 INSTRUCTIONS:
-1.  **Analyze Trends SPECIFICALLY:** Compare key metrics (workout count, total duration [seconds], total distance [meters], total volume [kg]) between the current and previous periods. Calculate percentage changes where meaningful. Mention specific workout types (e.g., running, strength) if data is available. Be precise (e.g., \"Running distance increased by 1.5km (20%)\").
-2.  **Identify Milestones/Highlights:** Look for potential personal records or significant achievements within the current period's workouts (e.g., longest run distance, highest single-workout volume, fastest pace for a specific distance). Mention the specific achievement.
-3.  **Generate Insights (Context Matters!):**
-    *   **If the period is COMPLETE:** Focus on summarizing the past performance, comparing directly to the previous period.
-    *   **If the period is ONGOING:** Focus on trends observed *so far*, compare to the previous period's *total*, and offer forward-looking encouragement or suggestions for the *rest* of the period. Frame comparisons appropriately (e.g., \"You're currently on track to exceed last week's distance\").
-    *   Formulate:
-        *   highlight (string): A single, engaging sentence summarizing the most important observation. Make it specific and context-aware (past vs. ongoing).
-        *   positiveTrends (string[]): 1-3 bullet points highlighting positive changes or consistent good performance, with specific numbers or types.
-        *   negativeTrends (string[]): 0-2 bullet points highlighting areas for attention. Phrase constructively and specifically. For ongoing periods, suggest adjustments for the remaining days.
-        *   milestones (string[]): 0-2 bullet points listing notable achievements identified.
-4.  **Output Format:** Respond ONLY with a valid JSON object containing the keys 'highlight' (string), 'positiveTrends' (array of strings), 'negativeTrends' (array of strings), and 'milestones' (array of strings). Do not include markdown formatting.
-5.  **Tone:** Be friendly, encouraging, specific, and insightful. Avoid generic statements. Keep insights concise.
-        `;
+Analyze Trends with Precision:
+Compare key metrics between the current and previous periods: workout count, total duration (convert seconds to MM:SS format), total distance (convert meters to km, round to 1 decimal), and total volume (convert kg to tons, round to 1 decimal).
+Calculate percentage changes for each metric where meaningful (e.g., "Distance dropped by 1.2 km (-15%)").
+Reference specific workout types (e.g., running, strength) from the types field and workouts array.
+If the period is ONGOING, contextualize comparisons (e.g., "So far, your distance is 5.0 km, down 43% from last week's total of 8.8 km").
+Identify Milestones/Highlights:
+Analyze the workouts array in the current period to identify notable achievements, such as:
+Longest single-workout distance (e.g., "Longest run of 5.0 km on May 1").
+Highest single-workout volume (e.g., "Highest strength volume of 1.2 t on Apr 30").
+Fastest pace for a specific distance, if calculable (e.g., pace = durationSeconds / distanceMeters, converted to min/km).
+Only include milestones that are significant and directly tied to the data.
+Generate Insights (Context-Driven):
+If the period is COMPLETE: Summarize overall performance, compare directly to the previous period, and highlight what worked well or needs improvement.
+If the period is ONGOING: Focus on trends so far, compare to the previous period's total, and provide forward-looking suggestions for the remaining days (e.g., "Add a 3–5 km run this weekend to surpass last week's 8.8 km").
+Formulate:
+highlight (string): A concise, engaging sentence summarizing the most significant observation. Tailor to the period's status (e.g., ONGOING: "You're off to a strong start with 3 workouts—let's add a run to beat last week's distance!").
+positiveTrends (string[]): 1–3 bullet points on positive changes or consistent performance. Include specific numbers and workout types (e.g., "Your strength volume rose to 3.1 t, up 41% from last week's 2.2 t").
+negativeTrends (string[]): 0–2 bullet points on areas to improve. Phrase constructively with actionable advice (e.g., ONGOING: "Distance is at 5.0 km, down 43% from 8.8 km—plan a 4–6 km run this weekend").
+milestones (string[]): 0–2 bullet points listing notable achievements from step 2 (e.g., "Achieved your longest run of 5.0 km on May 1").
+Consider User Context:
+Use the latestWorkoutDate to comment on recency (e.g., "Your latest workout on May 1 shows you're staying active").
+If specific workout data is available in the workouts array, reference it for personalization (e.g., "Your Night Run on May 1 added 5.0 km—great effort!").
+Balance encouragement with realistic suggestions based on the user's current activity level.
+Output Format:
+Respond ONLY with a valid JSON object containing the keys highlight (string), positiveTrends (array of strings), negativeTrends (array of strings), and milestones (array of strings).
+Do not include markdown formatting or extra text outside the JSON structure.
+Tone and Style:
+Be friendly, encouraging, and motivational (e.g., "Great work staying balanced!").
+Avoid generic statements—always tie insights to specific data.
+Keep each bullet point concise (1 sentence) and actionable.
+Use a supportive tone for negative trends (e.g., "Let's boost your distance with a longer run this weekend!").
+`;
+        // --- End NEW System Prompt ---
 
         // console.log("System Prompt for Grok:", systemPrompt); // DEBUG
 
