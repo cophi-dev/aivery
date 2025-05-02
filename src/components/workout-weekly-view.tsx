@@ -17,6 +17,8 @@ import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib
 import { MetricCard } from '@/components/ui/metric-card';
 // Import getWorkoutTypeStyle for the list
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
+// Import AiveryInsights component
+import AiveryInsights from '@/components/dashboard/AiveryInsights';
 
 const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 
@@ -559,6 +561,12 @@ export default function WorkoutWeeklyView() {
               {weeklyMetrics && weeklyMetrics.totalWorkouts === 0 && ( 
                   <p className="text-muted-foreground text-center py-4">No workouts recorded for this week.</p>
               )}
+
+            {/* --- NEW SECTION --- */}
+            <section className="mb-8">
+                <AiveryInsights dateRange={{ start: selectedWeekStart, end: selectedWeekEnd }} />
+            </section>
+            {/* --- END NEW SECTION --- */}
 
         </div>
     );
