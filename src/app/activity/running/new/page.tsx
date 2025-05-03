@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { LucideArrowLeft, LucideSave } from "lucide-react"
-import { createCardioWorkout } from "@/lib/workout-actions"
+import { createWorkout } from "@/lib/workout-actions"
 import { StravaImport } from "@/components/strava-import"
 
 export default function NewRunningActivityPage() {
@@ -94,7 +94,7 @@ export default function NewRunningActivityPage() {
       }
 
       console.log("Saving workout:", JSON.stringify(workoutData));
-      const newWorkout = await createCardioWorkout(workoutData)
+      const newWorkout = await createWorkout(workoutData)
       if (newWorkout?._id) {
         router.push(`/workouts/${newWorkout._id}`)
       } else {

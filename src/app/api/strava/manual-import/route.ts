@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { createCardioWorkout } from "@/lib/workout-actions";
+import { createWorkout } from "@/lib/workout-actions";
 import { revalidatePath } from "next/cache";
 import { transformStravaActivity } from "@/lib/services/stravaService";
 import { getDatabase } from '@/lib/db/mongodb';

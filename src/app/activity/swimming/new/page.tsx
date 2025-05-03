@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { LucideArrowLeft, LucidePlus, LucideTrash, LucideSave } from "lucide-react"
-import { createCardioWorkout } from "@/lib/workout-actions"
+import { createWorkout } from "@/lib/workout-actions"
 
 export default function NewSwimmingActivityPage() {
   const router = useRouter()
@@ -129,8 +129,13 @@ export default function NewSwimmingActivityPage() {
         notes,
       }
 
-      const newWorkoutId = await createCardioWorkout(workoutData)
-      router.push(`/workouts/${newWorkoutId}`)
+      const newWorkout = await createWorkout(workoutData)
+      if (newWorkout?._id) {
+        router.push(`/workouts/${newWorkout._id}`)
+      } else {
+        console.error("Failed to get workout ID after creation.")
+        alert("Workout saved, but failed to redirect. Please go to your workout history.")
+      }
     } catch (error) {
       console.error("Failed to create swimming activity:", error)
     } finally {

@@ -1810,4 +1810,119 @@ async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Pr
     throw error; 
   }
 }
+
+export async function deleteWorkout(id: string): Promise<boolean> {
+  const user = await getCurrentUser();
+  if (!user?.id) {
+    console.error("[deleteWorkout] User not authenticated.");
+    return false;
+  }
+
+  try {
+    const result = await deleteWorkoutDb(id);
+    revalidatePath('/workouts');
+    revalidatePath('/planner');
+    return result;
+  } catch (error) {
+    console.error("[deleteWorkout] Error deleting workout:", error);
+    return false;
+  }
+}
+
+export async function markWorkoutComplete(id: string, data: { duration?: number } = {}): Promise<{ success: boolean; workout?: any; error?: string }> {
+  const user = await getCurrentUser();
+  if (!user?.id) {
+    console.error("[markWorkoutComplete] User not authenticated.");
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const workout = await updateWorkoutDb(id, {
+      completed: true,
+      completedAt: new Date(),
+      ...(data.duration ? { duration: data.duration } : {}),
+    });
+
+    if (!workout) {
+      return { success: false, error: 'Workout not found' };
+    }
+
+    revalidatePath('/workouts');
+    revalidatePath('/planner');
+    return { success: true, workout };
+  } catch (error) {
+    console.error("[markWorkoutComplete] Error marking workout complete:", error);
+    return { success: false, error: 'Failed to complete workout' };
+  }
+}
+
+export async function createWorkoutFromExisting(workoutData: Partial<WorkoutData>): Promise<string> {
+  const user = await getCurrentUser();
+  if (!user?.id) {
+    console.error("[createWorkoutFromExisting] User not authenticated.");
+    throw new Error('Not authenticated');
+  }
+
+  try {
+    // Create a new workout based on the existing one
+    const { _id, createdAt, updatedAt, completedAt, completed, ...restWorkoutData } = workoutData;
+    const newWorkout = await createWorkout({
+      ...restWorkoutData,
+      date: new Date(), // Always use current date
+    });
+
+    if (!newWorkout?._id) {
+      throw new Error('Failed to create new workout');
+    }
+
+    revalidatePath('/workouts');
+    revalidatePath('/planner');
+    return newWorkout._id.toString();
+  } catch (error) {
+    console.error("[createWorkoutFromExisting] Error creating workout:", error);
+    throw error;
+  }
+}
+
+export async function updateWorkoutAction(id: string, workoutData: Partial<WorkoutData>): Promise<WorkoutData | null> {
+  const user = await getCurrentUser();
+  if (!user?.id) {
+    console.error("[updateWorkoutAction] User not authenticated.");
+    throw new Error('Not authenticated');
+  }
+
+  try {
+    const updatedWorkout = await updateWorkoutDb(id, workoutData);
+    if (!updatedWorkout) {
+      throw new Error('Failed to update workout');
+    }
+
+    revalidatePath('/workouts');
+    revalidatePath('/planner');
+    return updatedWorkout;
+  } catch (error) {
+    console.error("[updateWorkoutAction] Error updating workout:", error);
+    throw error;
+  }
+}
+
+export async function fetchWorkoutForAI(id: string): Promise<WorkoutData | null> {
+  const user = await getCurrentUser();
+  if (!user?.id) {
+    console.error("[fetchWorkoutForAI] User not authenticated.");
+    throw new Error('Not authenticated');
+  }
+
+  try {
+    const workout = await fetchWorkout(id);
+    if (!workout) {
+      throw new Error('Workout not found');
+    }
+
+    return workout;
+  } catch (error) {
+    console.error("[fetchWorkoutForAI] Error fetching workout:", error);
+    throw error;
+  }
+}
     

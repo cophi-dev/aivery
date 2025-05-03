@@ -20,6 +20,8 @@ export interface WorkoutData {
   calories?: number;
   notes?: string;
   intensity?: string;
+  completed?: boolean;
+  completedAt?: Date | string;
   workoutExercises?: WorkoutExerciseData[];
   cardioDetails?: {
     distance?: number;
