@@ -1648,6 +1648,33 @@ export type DashboardPREntry = { // <-- Added export
   workoutId: string | null;
 };
 
+// Add the WorkoutUpdatePayload type
+export type WorkoutUpdatePayload = {
+  name?: string;
+  date?: Date | string;
+  type?: string;
+  duration?: number;
+  distance?: number;
+  notes?: string;
+  intensity?: string;
+  completed?: boolean;
+  completedAt?: Date | string;
+  cardioDetails?: {
+    distance?: number;
+    duration?: number;
+    pace?: number;
+  };
+  exercises?: Array<{
+    id?: string;
+    name: string;
+    notes?: string;
+    sets?: InputSetData[];
+    duration?: number;
+    distance?: number;
+    exerciseId?: string;
+  }>;
+};
+
 /**
  * Fetches a *random sample* of exercise PRs for the dashboard.
  */
