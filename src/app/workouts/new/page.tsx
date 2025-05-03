@@ -1442,6 +1442,40 @@ export default function NewWorkoutPage() {
           />
         </div>
 
+        {/* NEW: Overall Distance/Duration for Cardio Types */}
+        {workoutType && cardioExerciseNames[workoutType] && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            transition={{ duration: 0.3 }}
+            className="grid grid-cols-2 gap-4 pt-4"
+          >
+            <div className={inputGroupStyle}> {/* Reusing style from sets */}
+              <Label className={inputLabelStyle}>OVERALL DURATION (MIN)</Label>
+              <Input
+                type="number"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                className="text-center text-lg font-medium"
+                placeholder="e.g., 30"
+                min="0"
+              />
+            </div>
+            <div className={inputGroupStyle}> {/* Reusing style from sets */}
+              <Label className={inputLabelStyle}>OVERALL DISTANCE (KM)</Label>
+              <Input
+                type="number"
+                value={distance}
+                onChange={(e) => setDistance(e.target.value)}
+                className="text-center text-lg font-medium"
+                placeholder="e.g., 5.2"
+                min="0"
+                step="0.1"
+              />
+            </div>
+          </motion.div>
+        )}
+
         {/* Quick Log Section - Preserved with glow effect */}
         {!isEditing && (
           <div className="relative">
@@ -1488,363 +1522,370 @@ export default function NewWorkoutPage() {
           </div>
         )}
 
-        {/* Exercises Section */}
-        <div className={sectionStyle}>
-          <h2 className={sectionTitleStyle}>Exercises</h2>
-          <div className={exercisesContainerStyle}>
-            {/* Existing exercises mapping with updated styling */}
-            {exercises.map((exercise, index) => {
-              const canonicalExercise = exercise.name ? dbExercisesMap.get(exercise.name) : null;
-              const isCardioExercise = canonicalExercise?.category === 'cardio';
-              const isLastExercise = index === exercises.length - 1;
-              const performanceStats = exercisePerformanceData[exercise.id];
+        {/* Exercises Section - Conditionally Render based on Workout Type */}
+        {!cardioExerciseNames[workoutType as WorkoutTypeOption] && (
+          <motion.div
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            transition={{ delay: 0.1 }} // Slight delay after type selection
+            className={sectionStyle}
+          >
+            <h2 className={sectionTitleStyle}>Exercises</h2>
+            <div className={exercisesContainerStyle}>
+              {/* Existing exercises mapping with updated styling */} 
+              {exercises.map((exercise, index) => {
+                const canonicalExercise = exercise.name ? dbExercisesMap.get(exercise.name) : null;
+                const isCardioExercise = canonicalExercise?.category === 'cardio';
+                const isLastExercise = index === exercises.length - 1;
+                const performanceStats = exercisePerformanceData[exercise.id];
 
-              return (
-                <motion.div
-                  key={exercise.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
-                  className={exerciseCardStyle}
-                >
-                  <div className={exerciseHeaderStyle}>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-sm font-medium text-muted-foreground">EXERCISE #{index + 1}</span>
-                        {performanceStats && (
-                          <div className={exerciseStatsStyle}>
-                            {performanceStats.lastWorkout && (
-                              <Badge variant="secondary" className={exerciseStatBadgeStyle}>
-                                Last: {performanceStats.lastWorkout.weight}kg × {performanceStats.lastWorkout.reps}
-                              </Badge>
-                            )}
-                            {performanceStats.personalRecord && (
-                              <Badge variant="secondary" className={exerciseStatBadgeStyle}>
-                                PR: {performanceStats.personalRecord.weight}kg × {performanceStats.personalRecord.reps}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
+                return (
+                  <motion.div
+                    key={exercise.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3 }}
+                    className={exerciseCardStyle}
+                  >
+                    <div className={exerciseHeaderStyle}>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-medium text-muted-foreground">EXERCISE #{index + 1}</span>
+                          {performanceStats && (
+                            <div className={exerciseStatsStyle}>
+                              {performanceStats.lastWorkout && (
+                                <Badge variant="secondary" className={exerciseStatBadgeStyle}>
+                                  Last: {performanceStats.lastWorkout.weight}kg × {performanceStats.lastWorkout.reps}
+                                </Badge>
+                              )}
+                              {performanceStats.personalRecord && (
+                                <Badge variant="secondary" className={exerciseStatBadgeStyle}>
+                                  PR: {performanceStats.personalRecord.weight}kg × {performanceStats.personalRecord.reps}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <Dialog open={isExerciseDialogOpen} onOpenChange={setIsExerciseDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-between px-0 font-normal text-xl hover:bg-transparent hover:text-foreground/90 hover:opacity-90 transition-colors"
+                            >
+                              <span className="font-semibold">{exercise.name || "Select exercise..."}</span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-[600px]">
+                            <DialogHeader>
+                              <DialogTitle>Select Exercise</DialogTitle>
+                              <DialogDescription>
+                                Choose an exercise from the list or search.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <Tabs defaultValue="performed" className="w-full">
+                              <TabsList className="grid w-full grid-cols-4">
+                                <TabsTrigger value="performed">Performed</TabsTrigger>
+                                <TabsTrigger value="chest">Chest</TabsTrigger>
+                                <TabsTrigger value="back">Back</TabsTrigger>
+                                <TabsTrigger value="legs">Legs</TabsTrigger>
+                              </TabsList>
+                              <TabsContent value="performed">
+                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                  {performedExercises.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground p-2">No recently performed exercises found.</p>
+                                  ) : (
+                                    performedExercises.map((dbEx) => (
+                                      <button
+                                        key={dbEx._id}
+                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                      >
+                                        {dbEx.name}
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </TabsContent>
+                              <TabsContent value="chest">
+                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                  {dbExercises
+                                    .filter(ex =>
+                                      Array.isArray(ex.muscleGroups) &&
+                                      ex.muscleGroups.some((m: string) => m.toLowerCase() === 'chest')
+                                    )
+                                    .map((dbEx) => (
+                                      <button
+                                        key={dbEx._id}
+                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                      >
+                                        {dbEx.name}
+                                      </button>
+                                    ))}
+                                </div>
+                              </TabsContent>
+                              <TabsContent value="back">
+                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                  {dbExercises
+                                    .filter(ex =>
+                                      Array.isArray(ex.muscleGroups) &&
+                                      ex.muscleGroups.some((m: string) => m.toLowerCase() === 'back')
+                                    )
+                                    .map((dbEx) => (
+                                      <button
+                                        key={dbEx._id}
+                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                      >
+                                        {dbEx.name}
+                                      </button>
+                                    ))}
+                                </div>
+                              </TabsContent>
+                              <TabsContent value="legs">
+                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                                  {dbExercises
+                                    .filter(ex =>
+                                      Array.isArray(ex.muscleGroups) &&
+                                      ex.muscleGroups.some((m: string) => [
+                                        'legs',
+                                        'quadriceps',
+                                        'hamstrings',
+                                        'glutes',
+                                        'calves'
+                                      ].includes(m.toLowerCase()))
+                                    )
+                                    .map((dbEx) => (
+                                      <button
+                                        key={dbEx._id}
+                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
+                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                      >
+                                        {dbEx.name}
+                                      </button>
+                                    ))}
+                                </div>
+                              </TabsContent>
+                            </Tabs>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                       
-                      <Dialog open={isExerciseDialogOpen} onOpenChange={setIsExerciseDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-between px-0 font-normal text-xl hover:bg-transparent hover:text-foreground/90 hover:opacity-90 transition-colors"
-                          >
-                            <span className="font-semibold">{exercise.name || "Select exercise..."}</span>
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-[600px]">
-                          <DialogHeader>
-                            <DialogTitle>Select Exercise</DialogTitle>
-                            <DialogDescription>
-                              Choose an exercise from the list or search.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <Tabs defaultValue="performed" className="w-full">
-                            <TabsList className="grid w-full grid-cols-4">
-                              <TabsTrigger value="performed">Performed</TabsTrigger>
-                              <TabsTrigger value="chest">Chest</TabsTrigger>
-                              <TabsTrigger value="back">Back</TabsTrigger>
-                              <TabsTrigger value="legs">Legs</TabsTrigger>
-                            </TabsList>
-                            <TabsContent value="performed">
-                              <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
-                                {performedExercises.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground p-2">No recently performed exercises found.</p>
-                                ) : (
-                                  performedExercises.map((dbEx) => (
-                                    <button
-                                      key={dbEx._id}
-                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
-                                    >
-                                      {dbEx.name}
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                            </TabsContent>
-                            <TabsContent value="chest">
-                              <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
-                                {dbExercises
-                                  .filter(ex =>
-                                    Array.isArray(ex.muscleGroups) &&
-                                    ex.muscleGroups.some((m: string) => m.toLowerCase() === 'chest')
-                                  )
-                                  .map((dbEx) => (
-                                    <button
-                                      key={dbEx._id}
-                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
-                                    >
-                                      {dbEx.name}
-                                    </button>
-                                  ))}
-                              </div>
-                            </TabsContent>
-                            <TabsContent value="back">
-                              <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
-                                {dbExercises
-                                  .filter(ex =>
-                                    Array.isArray(ex.muscleGroups) &&
-                                    ex.muscleGroups.some((m: string) => m.toLowerCase() === 'back')
-                                  )
-                                  .map((dbEx) => (
-                                    <button
-                                      key={dbEx._id}
-                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
-                                    >
-                                      {dbEx.name}
-                                    </button>
-                                  ))}
-                              </div>
-                            </TabsContent>
-                            <TabsContent value="legs">
-                              <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
-                                {dbExercises
-                                  .filter(ex =>
-                                    Array.isArray(ex.muscleGroups) &&
-                                    ex.muscleGroups.some((m: string) => [
-                                      'legs',
-                                      'quadriceps',
-                                      'hamstrings',
-                                      'glutes',
-                                      'calves'
-                                    ].includes(m.toLowerCase()))
-                                  )
-                                  .map((dbEx) => (
-                                    <button
-                                      key={dbEx._id}
-                                      onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                      className="block w-full text-left p-2 rounded-md hover:bg-accent"
-                                    >
-                                      {dbEx.name}
-                                    </button>
-                                  ))}
-                              </div>
-                            </TabsContent>
-                          </Tabs>
-                        </DialogContent>
-                      </Dialog>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeExercise(exercise.id)}
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
+                      >
+                        <LucideX className="h-4 w-4" />
+                        <span className="sr-only">Remove Exercise</span>
+                      </Button>
                     </div>
-                    
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeExercise(exercise.id)}
-                      className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
-                    >
-                      <LucideX className="h-4 w-4" />
-                      <span className="sr-only">Remove Exercise</span>
-                    </Button>
-                  </div>
 
-                  <div className={exerciseBodyStyle}>
-                    {/* AI Recommendation */}
-                    <AnimatePresence>
-                      {exercise.aiRecommendation && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className={aiSuggestionStyle}
-                        >
-                          <Lightbulb className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500 dark:text-blue-400" />
-                          <span className="text-sm text-blue-700 dark:text-blue-300">
-                            <span className="font-semibold">AI Suggestion:</span> {exercise.aiRecommendation}
-                          </span>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <div className={exerciseBodyStyle}>
+                      {/* AI Recommendation */}
+                      <AnimatePresence>
+                        {exercise.aiRecommendation && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className={aiSuggestionStyle}
+                          >
+                            <Lightbulb className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500 dark:text-blue-400" />
+                            <span className="text-sm text-blue-700 dark:text-blue-300">
+                              <span className="font-semibold">AI Suggestion:</span> {exercise.aiRecommendation}
+                            </span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
-                    {/* Sets or Cardio Input */}
-                    {exercise.name && !isCardioExercise && (
-                      <div className="space-y-4">
-                        <AnimatePresence>
-                          {exercise.sets.map((set, setIndex) => (
-                            <motion.div
-                              key={set.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 20 }}
-                              transition={{ duration: 0.2 }}
-                              className={setRowStyle}
-                            >
-                              {/* Set Number */}
-                              <span className="text-sm font-medium text-muted-foreground w-6 text-center">
-                                {setIndex + 1}
-                              </span>
-
-                              {/* Weight Input */}
-                              <div className={inputGroupStyle}>
-                                <Label className={inputLabelStyle}>WEIGHT (KG)</Label>
-                                <div className={numberControlStyle}>
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-full"
-                                    onClick={() => {
-                                      const currentWeight = parseFloat(set.weight || '0') || 0;
-                                      updateSetField(exercise.id, set.id, 'weight', Math.max(0, currentWeight - 1).toString());
-                                    }}
-                                  >
-                                    <LucideMinus className="h-4 w-4" />
-                                  </Button>
-                                  <Input
-                                    type="number"
-                                    value={set.weight}
-                                    onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                                    className="h-9 w-16 text-center text-base font-medium tabular-nums"
-                                    min="0"
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-full"
-                                    onClick={() => {
-                                      const currentWeight = parseFloat(set.weight || '0') || 0;
-                                      updateSetField(exercise.id, set.id, 'weight', (currentWeight + 1).toString());
-                                    }}
-                                  >
-                                    <LucidePlus className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
-
-                              {/* Reps Input */}
-                              <div className={inputGroupStyle}>
-                                <Label className={inputLabelStyle}>REPS</Label>
-                                <div className={numberControlStyle}>
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-full"
-                                    onClick={() => {
-                                      const currentReps = parseInt(set.reps || '0') || 0;
-                                      updateSetField(exercise.id, set.id, 'reps', Math.max(0, currentReps - 1).toString());
-                                    }}
-                                  >
-                                    <LucideMinus className="h-4 w-4" />
-                                  </Button>
-                                  <Input
-                                    type="number"
-                                    value={set.reps}
-                                    onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                                    className="h-9 w-16 text-center text-base font-medium tabular-nums"
-                                    min="0"
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-full"
-                                    onClick={() => {
-                                      const currentReps = parseInt(set.reps || '0') || 0;
-                                      updateSetField(exercise.id, set.id, 'reps', (currentReps + 1).toString());
-                                    }}
-                                  >
-                                    <LucidePlus className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
-
-                              {/* Remove Set Button */}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeSet(exercise.id, set.id)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
+                      {/* Sets or Cardio Input */}
+                      {exercise.name && !isCardioExercise && (
+                        <div className="space-y-4">
+                          <AnimatePresence>
+                            {exercise.sets.map((set, setIndex) => (
+                              <motion.div
+                                key={set.id}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: 20 }}
+                                transition={{ duration: 0.2 }}
+                                className={setRowStyle}
                               >
-                                <LucideX className="h-4 w-4" />
-                                <span className="sr-only">Remove Set {setIndex + 1}</span>
-                              </Button>
-                            </motion.div>
-                          ))}
-                        </AnimatePresence>
-                        
-                        {/* Add Set Button */}
-                        <div className="flex justify-center pt-4">
-                          <Button
-                            variant="outline"
-                            onClick={() => addSet(exercise.id)}
-                            className="rounded-full"
-                          >
-                            <LucidePlus className="h-4 w-4 mr-2" />
-                            Add Set
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                                {/* Set Number */}
+                                <span className="text-sm font-medium text-muted-foreground w-6 text-center">
+                                  {setIndex + 1}
+                                </span>
 
-                    {/* Cardio Exercise Inputs */}
-                    {exercise.name && isCardioExercise && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className={inputGroupStyle}>
-                          <Label className={inputLabelStyle}>DURATION (MIN)</Label>
-                          <Input
-                            type="number"
-                            value={exercise.duration ?? ""}
-                            onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
-                            className="text-center"
-                            min="0"
-                          />
-                        </div>
-                        <div className={inputGroupStyle}>
-                          <Label className={inputLabelStyle}>DISTANCE (KM)</Label>
-                          <Input
-                            type="number"
-                            value={exercise.distance ?? ""}
-                            onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
-                            className="text-center"
-                            min="0"
-                            step="0.1"
-                          />
-                        </div>
-                      </div>
-                    )}
+                                {/* Weight Input */}
+                                <div className={inputGroupStyle}>
+                                  <Label className={inputLabelStyle}>WEIGHT (KG)</Label>
+                                  <div className={numberControlStyle}>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-full"
+                                      onClick={() => {
+                                        const currentWeight = parseFloat(set.weight || '0') || 0;
+                                        updateSetField(exercise.id, set.id, 'weight', Math.max(0, currentWeight - 1).toString());
+                                      }}
+                                    >
+                                      <LucideMinus className="h-4 w-4" />
+                                    </Button>
+                                    <Input
+                                      type="number"
+                                      value={set.weight}
+                                      onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
+                                      className="h-9 w-16 text-center text-base font-medium tabular-nums"
+                                      min="0"
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-full"
+                                      onClick={() => {
+                                        const currentWeight = parseFloat(set.weight || '0') || 0;
+                                        updateSetField(exercise.id, set.id, 'weight', (currentWeight + 1).toString());
+                                      }}
+                                    >
+                                      <LucidePlus className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
 
-                    {/* Exercise Notes */}
-                    <div className="pt-4">
-                      <Label className="text-xs font-medium text-muted-foreground">Notes (Optional)</Label>
-                      <Textarea
-                        value={exercise.notes || ""}
-                        onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
-                        placeholder="e.g., Focused on form, felt strong..."
-                        className="mt-2 min-h-[60px] resize-none bg-muted/50"
-                      />
+                                {/* Reps Input */}
+                                <div className={inputGroupStyle}>
+                                  <Label className={inputLabelStyle}>REPS</Label>
+                                  <div className={numberControlStyle}>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-full"
+                                      onClick={() => {
+                                        const currentReps = parseInt(set.reps || '0') || 0;
+                                        updateSetField(exercise.id, set.id, 'reps', Math.max(0, currentReps - 1).toString());
+                                      }}
+                                    >
+                                      <LucideMinus className="h-4 w-4" />
+                                    </Button>
+                                    <Input
+                                      type="number"
+                                      value={set.reps}
+                                      onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
+                                      className="h-9 w-16 text-center text-base font-medium tabular-nums"
+                                      min="0"
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-full"
+                                      onClick={() => {
+                                        const currentReps = parseInt(set.reps || '0') || 0;
+                                        updateSetField(exercise.id, set.id, 'reps', (currentReps + 1).toString());
+                                      }}
+                                    >
+                                      <LucidePlus className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {/* Remove Set Button */}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeSet(exercise.id, set.id)}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
+                                >
+                                  <LucideX className="h-4 w-4" />
+                                  <span className="sr-only">Remove Set {setIndex + 1}</span>
+                                </Button>
+                              </motion.div>
+                            ))}
+                          </AnimatePresence>
+                          
+                          {/* Add Set Button */}
+                          <div className="flex justify-center pt-4">
+                            <Button
+                              variant="outline"
+                              onClick={() => addSet(exercise.id)}
+                              className="rounded-full"
+                            >
+                              <LucidePlus className="h-4 w-4 mr-2" />
+                              Add Set
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Cardio Exercise Inputs */}
+                      {exercise.name && isCardioExercise && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className={inputGroupStyle}>
+                            <Label className={inputLabelStyle}>DURATION (MIN)</Label>
+                            <Input
+                              type="number"
+                              value={exercise.duration ?? ""}
+                              onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
+                              className="text-center"
+                              min="0"
+                            />
+                          </div>
+                          <div className={inputGroupStyle}>
+                            <Label className={inputLabelStyle}>DISTANCE (KM)</Label>
+                            <Input
+                              type="number"
+                              value={exercise.distance ?? ""}
+                              onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
+                              className="text-center"
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Exercise Notes */}
+                      <div className="pt-4">
+                        <Label className="text-xs font-medium text-muted-foreground">Notes (Optional)</Label>
+                        <Textarea
+                          value={exercise.notes || ""}
+                          onChange={(e) => updateExerciseField(exercise.id, 'notes', e.target.value)}
+                          placeholder="e.g., Focused on form, felt strong..."
+                          className="mt-2 min-h-[60px] resize-none bg-muted/50"
+                        />
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              );
-            })} 
+                  </motion.div>
+                );
+              })} 
 
-            {/* Add Exercise Button - Conditionally Disable */}
-            {/* Only show Add Exercise button if NOT a designated cardio type */}
-            {!cardioExerciseNames[workoutType as WorkoutTypeOption] && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
-              >
-                <Button
-                  variant="outline"
-                  onClick={addExercise}
-                  className="w-full rounded-xl h-14"
-                  // disabled={!!cardioExerciseNames[workoutType as WorkoutTypeOption]} // Alternative: disable instead of hide
+              {/* Add Exercise Button - Conditionally Disable */}
+              {/* Only show Add Exercise button if NOT a designated cardio type */}
+              {!cardioExerciseNames[workoutType as WorkoutTypeOption] && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
                 >
-                  <LucidePlus className="h-5 w-5 mr-2" />
-                  Add Exercise
-                </Button>
-              </motion.div>
-            )}
-          </div>
-        </div>
+                  <Button
+                    variant="outline"
+                    onClick={addExercise}
+                    className="w-full rounded-xl h-14"
+                    // disabled={!!cardioExerciseNames[workoutType as WorkoutTypeOption]} // Alternative: disable instead of hide
+                  >
+                    <LucidePlus className="h-5 w-5 mr-2" />
+                    Add Exercise
+                  </Button>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* Workout Summary - if exists */}
         {workoutSummary && (
