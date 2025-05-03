@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mime from 'mime';
 import { processFitFile, processGpxFile, processTcxFile, ProcessedActivityData } from '@/lib/services/stravaArchiveService';
 import { transformStravaActivity } from '@/lib/services/stravaService';
-import { createCardioWorkout, updateUserWorkoutSummaries } from '@/lib/workout-actions';
+import { createWorkout, updateUserWorkoutSummaries } from '@/lib/workout-actions';
 import { promisify } from 'util';
 import { gunzip as gunzipCb } from 'zlib';
 
@@ -203,8 +203,8 @@ export async function POST(request: NextRequest) {
             // Save workout
             console.log(`Saving workout to DB for user ${userId}, file: ${fileNameForProcessing}`);
             const workoutInput = { userId: userId, ...transformedData };
-            // Use createCardioWorkout as it handles finding/creating Exercise etc.
-            const createdWorkout = await createCardioWorkout(workoutInput); 
+            // Use createWorkout as it handles finding/creating Exercise etc.
+            const createdWorkout = await createWorkout(workoutInput); 
             if (!createdWorkout) {
                 throw new Error('Workout creation function returned undefined or null.');
             }

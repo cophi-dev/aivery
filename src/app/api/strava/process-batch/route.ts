@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
-import { createCardioWorkout } from "@/lib/workout-actions"
+import { createWorkout } from "@/lib/workout-actions"
 import { transformStravaActivity } from "@/lib/services/stravaService"
 import { revalidatePath } from "next/cache"
 import { gunzip } from 'zlib'
@@ -1047,13 +1047,11 @@ export async function POST(request: NextRequest) {
                 distance: workoutToSave.distance || 0
               });
               
-              await createCardioWorkout({
+              await createWorkout({
                 ...workoutToSave,
                 name: workoutName,
                 duration: durationInMinutes,
-                distance: distanceInKm,
-                equipment: workoutToSave.equipment || [], // Ensure equipment is an array
-                muscleGroups: workoutToSave.muscleGroups || [] // Keep muscle groups as array
+                distance: distanceInKm
               });
               
               console.log(`Successfully imported workout after creating base exercise`)

@@ -23,6 +23,15 @@ export interface WorkoutData {
   completed?: boolean;
   completedAt?: Date | string;
   workoutExercises?: WorkoutExerciseData[];
+  previousWorkouts?: Array<{
+    date: Date | string;
+    duration: number;
+    distance?: number;
+    calculatedVolume?: number;
+    cardioDetails?: {
+      pace?: number;
+    };
+  }>;
   cardioDetails?: {
     distance?: number;
     duration?: number;
