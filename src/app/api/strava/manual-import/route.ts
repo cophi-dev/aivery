@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
     // Save workout to database with error handling
     try {
       // First try creating the workout directly
-      await createCardioWorkout(workoutToSave);
+      await createWorkout(workoutToSave);
       console.log(`Successfully imported workout from ${fileName}`);
     } catch (error) {
       // Check if the error is about missing exercise data
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
         await createBaseExerciseForType(workoutToSave.type);
         
         // Try again
-        await createCardioWorkout(workoutToSave);
+        await createWorkout(workoutToSave);
         console.log(`Successfully imported workout after creating exercise type`);
       } else {
         // Rethrow other errors
