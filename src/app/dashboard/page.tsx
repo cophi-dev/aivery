@@ -256,7 +256,20 @@ export default function DashboardPage() {
                         {/* PersonalRecordsCard is now last */}
                         <PersonalRecordsCard 
                             exercisePRs={metrics.exercisePRs || []} 
-                            overallPRs={metrics.overallPRs || {}} // Keep passing overall PRs
+                            overallPRs={{
+                                longestRun: metrics.overallPRs?.longestRun ? {
+                                    ...metrics.overallPRs.longestRun,
+                                    workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
+                                } : undefined,
+                                fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
+                                    ...metrics.overallPRs.fastest5kPace,
+                                    workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
+                                } : undefined,
+                                maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
+                                    ...metrics.overallPRs.maxStrengthVolume,
+                                    workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
+                                } : undefined
+                            }}
                         />
                     </>
                     // --- End Regular Metrics Cards ---
