@@ -50,7 +50,13 @@ export function MainHeader() {
       label: "Talk to Aivery",
       icon: <MessageSquare className="h-5 w-5 md:h-4 md:w-4" />,
       active: isPath("/chat")
-    }
+    },
+    {
+      href: "/challenges",
+      label: "Challenges",
+      icon: <BarChart2 className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/challenges")
+    },
   ]
 
   // --- Event Logic Helper ---

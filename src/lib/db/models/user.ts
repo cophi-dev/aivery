@@ -1,4 +1,4 @@
-import mongoose, { Schema, type Document } from "mongoose"
+import mongoose, { Schema, type Document, Types } from "mongoose"
 
 export interface IUser extends Document {
   name: string
@@ -43,9 +43,9 @@ export interface IUser extends Document {
     lastWorkoutDate?: Date;
   };
   personalRecords?: {
-    longestRun?: { value: number; date: Date }; // km
-    fastest5kPace?: { value: number; date: Date }; // seconds per meter
-    maxStrengthVolume?: { value: number; date: Date }; // kg
+    longestRun?: { value: number; date: Date; workoutId?: Types.ObjectId }; // km
+    fastest5kPace?: { value: number; date: Date; workoutId?: Types.ObjectId }; // seconds per meter
+    maxStrengthVolume?: { value: number; date: Date; workoutId?: Types.ObjectId }; // kg
   };
 
   // New Rate Limiting Fields

@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -8,88 +9,161 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String?
-  email         String    @unique
-  password      String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  workouts      Workout[]
-  preferences   UserPreferences?
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  name        String?
+  email       String           @unique
+  password    String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  workouts    Workout[]
+  preferences UserPreferences?
+  challenges  Challenge[]
 
   @@map("users")
 }
 
 model Workout {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  date          DateTime
-  type          String
-  duration      Int
-  intensity     String
-  distance      Float?
-  calories      Int?
-  notes         String?
-  cardioDetails Json?
-  strengthDetails Json?
-  flexibilityDetails Json?
-  importedFrom  String?
-  importId      String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  userId        String    @db.ObjectId
-  user          User      @relation(fields: [userId], references: [id])
-  exercises     WorkoutExercise[]
-  // Add calculatedVolume to schema if it's meant to be persisted
-  // calculatedVolume Float? // Uncomment and adjust type if needed
+  id                  String            @id @default(auto()) @map("_id") @db.ObjectId
+  name                String
+  date                DateTime
+  type                String
+  duration            Int
+  intensity           String
+  distance            Float?
+  calories            Int?
+  notes               String?
+  cardioDetails       Json?
+  strengthDetails     Json?
+  flexibilityDetails  Json?
+  importedFrom        String?
+  importId            String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  userId              String            @db.ObjectId
+  user                User              @relation(fields: [userId], references: [id])
+  exercises           WorkoutExercise[]
+  completedChallenges Challenge[]       @relation(name: "relatedWorkout")
 
-  @@index([userId, date]) // Index for fetching workouts by user and date range
-  @@index([userId, type]) // Index for fetching workouts by user and type (e.g., for PRs)
+  @@index([userId, date])
+  @@index([userId, type])
   @@map("workouts")
 }
 
 model UserPreferences {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId            String   @unique @db.ObjectId
-  user              User     @relation(fields: [userId], references: [id])
-  preferredWeightUnit String @default("kg")
-  preferredHeightUnit String @default("cm")
-  preferredDistanceUnit String @default("km")
-  restTimerEnabled  Boolean  @default(true)
-  defaultRestTime   Int      @default(60)
-  workoutReminders  Boolean  @default(true)
-  weeklyWorkoutGoal Int      @default(3)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String   @unique @db.ObjectId
+  user                  User     @relation(fields: [userId], references: [id])
+  preferredWeightUnit   String   @default("kg")
+  preferredHeightUnit   String   @default("cm")
+  preferredDistanceUnit String   @default("km")
+  restTimerEnabled      Boolean  @default(true)
+  defaultRestTime       Int      @default(60)
+  workoutReminders      Boolean  @default(true)
+  weeklyWorkoutGoal     Int      @default(3)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@map("preferences")
 }
 
 model Exercise {
-  id              String     @id @default(auto()) @map("_id") @db.ObjectId
-  name            String     @unique
-  description     String?
-  muscleGroups    String[]
-  category        String     @default("strength") // strength, cardio, flexibility
-  equipment       String[]
-  instructions    String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id               String            @id @default(auto()) @map("_id") @db.ObjectId
+  name             String            @unique
+  description      String?
+  muscleGroups     String[]
+  category         String            @default("strength")
+  equipment        String[]
+  instructions     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   workoutExercises WorkoutExercise[]
+  challenges       Challenge[]
 
   @@map("exercises")
 }
 
 model WorkoutExercise {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  workoutId   String   @db.ObjectId
-  workout     Workout  @relation(fields: [workoutId], references: [id])
-  exerciseId  String   @db.ObjectId
-  exercise    Exercise @relation(fields: [exerciseId], references: [id])
-  order       Int?     // Optional field to maintain order of exercises within a workout
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  workoutId  String   @db.ObjectId
+  workout    Workout  @relation(fields: [workoutId], references: [id])
+  exerciseId String   @db.ObjectId
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+  order      Int? // Optional field to maintain order of exercises within a workout
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@map("workoutexercises")
-} 
+}
+
+// --- Challenge Enums ---
+enum ChallengeStatus {
+  NotStarted
+  InProgress
+  Completed
+  Failed
+}
+
+enum ChallengeType {
+  StrengthPR
+  RepMaxPR
+  BodyweightReps
+  DistanceTime
+  DistancePace
+  LongestSession
+  MonthlyDistance
+  MonthlyVolume
+  WorkoutFrequency
+  ExerciseVariety
+  ConsistencyStreak
+}
+
+enum ChallengeMetric {
+  Weight
+  Reps
+  Distance
+  Time
+  Pace
+  Duration
+  Volume
+  Sessions
+  Exercises
+  Days
+}
+
+// --- Challenge Model ---
+model Challenge {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type   ChallengeType
+  status ChallengeStatus @default(NotStarted)
+  metric ChallengeMetric
+  unit   String? // e.g., "kg", "reps", "km", "seconds", "sessions"
+
+  title        String
+  description  String
+  goalValue    Float
+  startValue   Float? // Value at the start of the period
+  currentValue Float  @default(0)
+
+  month Int // Month (1-12)
+  year  Int // Year
+
+  // Optional: Link to specific exercise
+  exerciseId String?   @db.ObjectId
+  exercise   Exercise? @relation(fields: [exerciseId], references: [id])
+
+  // Optional: Link to completing workout
+  completedAt      DateTime?
+  relatedWorkoutId String?   @db.ObjectId
+  relatedWorkout   Workout?  @relation("relatedWorkout", fields: [relatedWorkoutId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, year, month])
+  @@index([userId, status])
+  @@map("challenges")
+}

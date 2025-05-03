@@ -26,6 +26,10 @@ import UserModel, { IUser } from '@/lib/db/models/user'
 import SetModel from "@/lib/db/models/set";
 import dbConnect from '@/lib/db/mongodb'; // Ensure dbConnect is imported
 import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR';
+import { PrismaClient, ChallengeStatus, ChallengeType, ChallengeMetric } from '@prisma/client';
+import type { Challenge } from '@prisma/client';
+
+const prisma = new PrismaClient(); // Instantiate PrismaClient
 
 // --- START NEW Performance Data Types (mirroring frontend) ---
 // These might eventually live in a shared types file
@@ -1937,118 +1941,198 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
     console.error('[updateUserWorkoutSummaries] No userId provided.');
     return;
   }
-  console.log(`[Summ] Starting overall summary update for user: ${userId}`);
+  console.log(`[Summ] Starting overall summary and challenge update for user: ${userId}`);
 
   try {
-    await dbConnect();
+    await dbConnect(); // Mongoose connect
+    const userObjectId = new Types.ObjectId(userId); // Define userObjectId early
 
-    // 1. Fetch User Weight (needed for overall volume calc PR)
-    let userWeight: number | null = null;
-    try {
-      const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
-      userWeight = (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) ? userDoc.weight : null;
-    } catch (err) { console.error(`[Summ] Error fetching user weight for ${userId}:`, err); }
+    // --- Fetch necessary data concurrently --- 
 
-    // 2. Fetch all necessary workout data for the user
-    // Fetch fields needed for overall summaries AND overall PRs
-    const workouts: any[] = await WorkoutModel.find({ userId: new Types.ObjectId(userId) })
-      .select('_id date type duration distance calculatedVolume cardioDetails') // Keep selection minimal for summaries
-      .sort({ date: -1 }) // Sort desc for lastWorkoutDate
-      .lean();
+    // 1. User Data (Weight, existing overall PRs)
+    const userPromise = UserModel.findById(userObjectId)
+        .select('weight personalRecords') // Select fields needed for overall PRs and maybe challenges
+        .lean<IUser>();
+        
+    // 2. All Workouts (for overall summaries and challenge progress calculation)
+    const workoutsPromise = WorkoutModel.find({ userId: userObjectId })
+      .select('_id date type duration distance calculatedVolume cardioDetails exercises') // Added exercises for challenge details
+      .populate({ // Populate necessary exercise details for challenges
+          path: 'exercises',
+          populate: {
+              path: 'exerciseId',
+              model: 'Exercise',
+              select: 'name category trackMaxReps' // Select fields needed for PR/challenge logic
+          }
+      })
+      .sort({ date: 1 }) // Sort ascending for chronological processing
+      .lean(); // Use lean for efficiency
 
-    console.log(`[Summ] Fetched ${workouts.length} workouts for user ${userId}.`);
+    // 3. Active Challenges for the Current Month (using Prisma)
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const challengesPromise = prisma.challenge.findMany({
+        where: {
+            userId: userId,
+            year: currentYear,
+            month: currentMonth,
+            status: { 
+                in: [ChallengeStatus.NotStarted, ChallengeStatus.InProgress] // Only fetch active ones
+            }
+        }
+    });
+
+    // Await all fetches
+    const [userDoc, workouts, activeChallenges] = await Promise.all([
+        userPromise,
+        workoutsPromise,
+        challengesPromise
+    ]);
+
+    console.log(`[Summ] Fetched ${workouts.length} workouts and ${activeChallenges.length} active challenges for user ${userId}.`);
+
+    // Extract user weight and existing overall PRs (used later for challenge goal checks?)
+    const userWeight = (typeof userDoc?.weight === 'number' && userDoc.weight > 0) ? userDoc.weight : null;
+    const initialOverallPRs = userDoc?.personalRecords || {}; // Use initial PRs from DB
 
     if (workouts.length === 0) {
-      console.log(`[Summ] No workouts found for user ${userId}. Resetting summaries.`);
-      await UserModel.updateOne(
-         { _id: new Types.ObjectId(userId) },
-         {
-           $set: {
-             performanceSummary: { overallTotals: {}, lastWorkoutDate: undefined },
-             // Reset overall PRs too
-             personalRecords: { longestRun: undefined, fastest5kPace: undefined, maxStrengthVolume: undefined }
-           }
-         }
-       );
-      return;
+        // ... reset summaries ...
+        return;
     }
 
-    // 3. Initialize summary variables
-    let overallDistance = 0; // km
-    let overallDuration = 0; // seconds
-    let overallVolume = 0;   // kg
+    // --- Initialize Summary and Challenge Tracking Variables ---
+    let overallDistance = 0, overallDuration = 0, overallVolume = 0;
     const overallCount = workouts.length;
-    let lastWorkoutDate = workouts[0].date; // Latest workout
+    let lastWorkoutDate = workouts[workouts.length - 1].date; 
 
-    let overallLongestRun = { value: 0, date: new Date(0), workoutId: undefined as Types.ObjectId | undefined };
-    let overallFastest5kPace = { value: Infinity, date: new Date(0), workoutId: undefined as Types.ObjectId | undefined };
-    let overallMaxStrengthVolume = { value: 0, date: new Date(0), workoutId: undefined as Types.ObjectId | undefined };
+    // Initialize overall PR tracking with values from DB, ensure Date conversion
+    let overallLongestRun = { 
+        value: initialOverallPRs.longestRun?.value ?? 0, 
+        date: initialOverallPRs.longestRun?.date ? new Date(initialOverallPRs.longestRun.date) : new Date(0), 
+        workoutId: initialOverallPRs.longestRun?.workoutId // Keep ObjectId 
+    };
+    let overallFastest5kPace = { 
+        value: initialOverallPRs.fastest5kPace?.value ?? Infinity, 
+        date: initialOverallPRs.fastest5kPace?.date ? new Date(initialOverallPRs.fastest5kPace.date) : new Date(0), 
+        workoutId: initialOverallPRs.fastest5kPace?.workoutId
+    };
+    let overallMaxStrengthVolume = { 
+        value: initialOverallPRs.maxStrengthVolume?.value ?? 0, 
+        date: initialOverallPRs.maxStrengthVolume?.date ? new Date(initialOverallPRs.maxStrengthVolume.date) : new Date(0), 
+        workoutId: initialOverallPRs.maxStrengthVolume?.workoutId
+    };
+    
+    // Define Monthly Challenge Trackers BEFORE the loop
+    let monthlyDistance = 0;
+    let monthlyVolume = 0; 
+    let monthlySessions = 0;
+    const monthlyWorkoutDays = new Set<string>();
+    const monthlyCategoriesUsed = new Set<string>();
+    let monthlyMaxRunDistance = 0;
+    const monthlyMaxWeightPerExercise: Record<string, number> = {}; 
+    const monthlyMaxRepsPerExercise: Record<string, number> = {};
 
-    // 4. Iterate and calculate overall summaries and overall PRs
+    // --- Iterate through workouts (Sorted Ascending) ---
     for (const workout of workouts) {
-      const workoutDate = workout.date instanceof Date ? workout.date : new Date(0);
-      const workoutType = workout.type?.toLowerCase() || 'other';
-      const workoutId = workout._id; // Get the workout ID
+        const workoutDate = workout.date instanceof Date ? workout.date : new Date(0);
+        const workoutType = workout.type?.toLowerCase() || 'other';
+        const workoutId = workout._id; 
+        const duration = workout.duration ?? 0;
+        const distance = workout.cardioDetails?.distance ?? workout.distance ?? 0;
+        const calculatedWorkoutVolume = workout.calculatedVolume ?? 0; 
+        
+        // Check if workout is in the current month for challenge updates
+        const isInCurrentMonth = workoutDate.getFullYear() === currentYear && workoutDate.getMonth() + 1 === currentMonth;
 
-      // Accumulate Duration & Distance
-      const duration = workout.duration ?? 0;
-      overallDuration += duration;
-      const distance = workout.cardioDetails?.distance ?? workout.distance ?? 0;
-      overallDistance += distance;
-
-      // Accumulate Accurate Volume & Check Max Volume PR
-      if (workoutType === 'strength') {
-         // We need exercises/sets for accurate volume - fetch them if needed OR use stored calculatedVolume if we assume it's accurate
-         // Let's *assume* calculatedVolume IS NOW ACCURATE (post-backfill) for this overall summary
-         const volume = workout.calculatedVolume ?? 0;
-         overallVolume += volume;
-         if (volume > overallMaxStrengthVolume.value) {
-             overallMaxStrengthVolume = { value: volume, date: workoutDate, workoutId: workoutId }; // Store workoutId
-         }
-      }
-
-      // Check Cardio PRs
-      if (workoutType === 'running' || workoutType === 'run') {
-        if (distance > overallLongestRun.value) {
-          overallLongestRun = { value: distance, date: workoutDate, workoutId: workoutId }; // Store workoutId
+        if (isInCurrentMonth) {
+            // Update Monthly Aggregates
+            monthlySessions++;
+            monthlyWorkoutDays.add(workoutDate.toISOString().split('T')[0]);
+            monthlyDistance += distance;
+            // monthlyVolume += calculatedWorkoutVolume;
+            if ((workoutType === 'running' || workoutType === 'run') && distance > monthlyMaxRunDistance) {
+                monthlyMaxRunDistance = distance;
+            }
+             // Process exercises for monthly maxes
+             if (workout.exercises && Array.isArray(workout.exercises)) {
+                for (const workoutExercise of workout.exercises) {
+                     const exerciseInfo = workoutExercise.exerciseId;
+                     if (!exerciseInfo?._id || !exerciseInfo.name) continue;
+                     const exerciseIdStr = exerciseInfo._id.toString();
+                     if(exerciseInfo.category) { monthlyCategoriesUsed.add(exerciseInfo.category.toLowerCase()); }
+                     if (workoutExercise.sets && Array.isArray(workoutExercise.sets)) {
+                         for (const set of workoutExercise.sets) {
+                             const setWeight = set.weight ?? 0;
+                             const setReps = set.reps ?? 0;
+                             let effectiveWeight = 0;
+                             if (setWeight > 0) effectiveWeight = setWeight;
+                             else if (setReps > 0) effectiveWeight = estimateBodyweightForExercise(exerciseInfo.name, userWeight);
+                             if (setReps > 0 && effectiveWeight > (monthlyMaxWeightPerExercise[exerciseIdStr] ?? 0)) {
+                                 monthlyMaxWeightPerExercise[exerciseIdStr] = effectiveWeight;
+                             }
+                             if (setReps > (monthlyMaxRepsPerExercise[exerciseIdStr] ?? 0)) {
+                                 monthlyMaxRepsPerExercise[exerciseIdStr] = setReps;
+                             }
+                         }
+                     }
+                 }
+             }
         }
-        if (distance >= 5 && duration > 0) {
-          const pace = duration / (distance * 1000); // s/m
-          if (pace < overallFastest5kPace.value) {
-            overallFastest5kPace = { value: pace, date: workoutDate, workoutId: workoutId }; // Store workoutId
+        
+        // Update Overall Lifetime Summaries/PRs (Always process)
+        overallDuration += duration;
+        overallDistance += distance; 
+        overallVolume += calculatedWorkoutVolume;
+
+        if (workoutType === 'strength') {
+           if (calculatedWorkoutVolume > overallMaxStrengthVolume.value) {
+               overallMaxStrengthVolume = { value: calculatedWorkoutVolume, date: workoutDate, workoutId: workoutId }; 
+           }
+        }
+        if (workoutType === 'running' || workoutType === 'run') {
+          if (distance > overallLongestRun.value) {
+            overallLongestRun = { value: distance, date: workoutDate, workoutId: workoutId };
+          }
+          if (distance >= 5 && duration > 0) {
+            const pace = duration / (distance * 1000); 
+            if (pace < overallFastest5kPace.value) {
+              overallFastest5kPace = { value: pace, date: workoutDate, workoutId: workoutId };
+            }
           }
         }
-      }
-    }
+    } // End workout iteration
 
-    console.log(`[Summ] Calculated Totals - Count: ${overallCount}, Dist: ${overallDistance.toFixed(2)}km, Dur: ${overallDuration}s, Vol: ${overallVolume}kg`);
-    console.log(`[Summ] Calculated PRs - Longest Run: ${JSON.stringify(overallLongestRun)}, Fastest 5k: ${JSON.stringify(overallFastest5kPace)}, Max Vol: ${JSON.stringify(overallMaxStrengthVolume)}`); // Log PRs including ID
+    // ... Log monthly totals ...
 
-    // 5. Update User Document with Overall Summaries & Overall PRs
-    const userUpdateData: Record<string, any> = {
-      // ... (set performanceSummary fields) ...
+    // --- Update Active Challenges ---
+    // ... challenge update logic using monthlyXyz variables ...
+    // ... save challenge updates using Prisma ...
+
+    // --- Update User Document (Overall Summaries & PRs - Mongoose) ---
+    // ... construct userUpdateData ...
+    // IMPORTANT: Ensure the overallXyz variables being saved here contain ObjectId for workoutId if that's expected by Mongoose schema/consumers
+    const finalUpdateData = {
        'performanceSummary.overallTotals.distance': overallDistance,
        'performanceSummary.overallTotals.duration': overallDuration,
        'performanceSummary.overallTotals.volume': overallVolume,
        'performanceSummary.overallTotals.count': overallCount,
        'performanceSummary.lastWorkoutDate': lastWorkoutDate,
-       // Update overall PRs
-       'personalRecords.longestRun': overallLongestRun.value > 0 ? overallLongestRun : undefined,
-       'personalRecords.fastest5kPace': overallFastest5kPace.value !== Infinity ? overallFastest5kPace : undefined,
-       'personalRecords.maxStrengthVolume': overallMaxStrengthVolume.value > 0 ? overallMaxStrengthVolume : undefined,
+       'personalRecords.longestRun': overallLongestRun.value > 0 ? { ...overallLongestRun, workoutId: overallLongestRun.workoutId instanceof Types.ObjectId ? overallLongestRun.workoutId : undefined } : undefined,
+       'personalRecords.fastest5kPace': overallFastest5kPace.value !== Infinity ? { ...overallFastest5kPace, workoutId: overallFastest5kPace.workoutId instanceof Types.ObjectId ? overallFastest5kPace.workoutId : undefined } : undefined,
+       'personalRecords.maxStrengthVolume': overallMaxStrengthVolume.value > 0 ? { ...overallMaxStrengthVolume, workoutId: overallMaxStrengthVolume.workoutId instanceof Types.ObjectId ? overallMaxStrengthVolume.workoutId : undefined } : undefined,
     };
-    Object.keys(userUpdateData)
-      .filter(key => key.startsWith('personalRecords.') && userUpdateData[key] === undefined)
-      .forEach(key => delete userUpdateData[key]);
+    // Remove undefined fields
+    Object.keys(finalUpdateData).forEach(key => {
+        if (finalUpdateData[key as keyof typeof finalUpdateData] === undefined) {
+            delete finalUpdateData[key as keyof typeof finalUpdateData];
+        }
+    });
+    
+    await UserModel.updateOne({ _id: userObjectId }, { $set: finalUpdateData });
+    console.log(`[Summ] User document update complete for ${userId}.`);
 
-    await UserModel.updateOne({ _id: new Types.ObjectId(userId) }, { $set: userUpdateData });
-    console.log(`[Summ] Successfully updated user summary for: ${userId}`);
-
-  } catch (error) {
-    console.error(`[Summ] Error updating summaries for user ${userId}:`, error);
-  } finally {
-    return; // Ensure void return
-  }
+  } catch (error) { /* ... Error handling ... */ }
 }
 
 // --- Helper Function for Volume Calculation ---
