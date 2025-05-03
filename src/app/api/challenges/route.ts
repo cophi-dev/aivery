@@ -25,6 +25,21 @@ interface Challenge {
 
 const prisma = new PrismaClient();
 
+// Helper function to shuffle an array in place (Fisher-Yates)
+function shuffle<T>(array: T[]): T[] {
+  let currentIndex = array.length, randomIndex;
+  // While there remain elements to shuffle.
+  while (currentIndex !== 0) {
+    // Pick a remaining element.
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    // And swap it with the current element.
+    [array[currentIndex], array[randomIndex]] = [
+      array[randomIndex], array[currentIndex]];
+  }
+  return array;
+}
+
 // Define a type for the plain object returned by lean() for ExercisePR
 // Ensure all required fields from IExercisePR (excluding Document props) are here
 type LeanExercisePR = Omit<IExercisePR, keyof Document | '__v'> & { 
@@ -134,6 +149,7 @@ export async function GET(request: Request) {
       
        // --- Strength PRs --- (Pick one)
       const prExercises = ['Bench Press', 'Squat', 'Deadlift'];
+      shuffle(prExercises); // Shuffle the list before iterating
       for (const exName of prExercises) {
         try {
           // Limit to one Strength PR challenge total for variety
@@ -160,6 +176,7 @@ export async function GET(request: Request) {
 
       // --- Bodyweight Reps --- (Pick one)
       const bwExercises = ['Pull-up', 'Push-up'];
+      shuffle(bwExercises); // Shuffle the list before iterating
        for (const exName of bwExercises) {
          try {
             // Limit to one Bodyweight challenge total

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { format, isToday, isPast, isFuture, parseISO, differenceInDays } from "date-fns"
@@ -223,6 +223,14 @@ const mainWorkoutTypes: { value: WorkoutTypeOption; label: string; icon: React.E
   { value: 'cycling', label: 'Bike', icon: Bike },
   { value: 'yoga', label: 'Yoga', icon: PersonStanding }, // Using yoga state value
 ];
+
+// Define canonical cardio exercise names
+const cardioExerciseNames: Partial<Record<WorkoutTypeOption, string>> = {
+  running: "Running",
+  swimming: "Swimming",
+  cycling: "Cycling",
+  walking: "Walking",
+};
 
 export default function NewWorkoutPage() {
   const router = useRouter()
@@ -498,31 +506,78 @@ export default function NewWorkoutPage() {
   useEffect(() => {
     const searchExercises = async () => {
       if (debouncedSearchQuery.trim().length < 2) {
-        setSearchResults([]); // Clear results if query is too short
-        setIsSearching(false);
+        setSearchResults([]);
+        setShowSearchList(false);
         return;
       }
 
-      setIsSearching(true);
       try {
-        console.log(`Searching all exercises for: "${debouncedSearchQuery}"`);
+        setIsSearching(true);
         const results = await searchAllExercisesAction(debouncedSearchQuery);
-        console.log(`Found ${results.length} search results.`);
         setSearchResults(results);
+        setShowSearchList(true); // Show results when found
       } catch (err) {
         console.error("Failed to search exercises:", err);
-        setError("Exercise search failed.");
-        setSearchResults([]); // Clear results on error
+        toast.error("Exercise search failed.");
+        setSearchResults([]);
+        setShowSearchList(false);
       } finally {
         setIsSearching(false);
       }
     };
-
     searchExercises();
   }, [debouncedSearchQuery]);
-  // --- END Search Effect ---
 
-  // Fetch workout data if editing or duplicating
+  // Effect to manage exercises based on workoutType
+  useEffect(() => {
+    // Find the canonical exercise name for the selected cardio type
+    const targetCardioName = workoutType ? cardioExerciseNames[workoutType] : undefined;
+
+    if (targetCardioName) {
+      // We are in a cardio type mode
+      const canonicalCardioExercise = dbExercisesMap.get(targetCardioName);
+
+      if (canonicalCardioExercise) {
+        // Check if the current exercises state already contains *only* this cardio exercise
+        const isAlreadySet =
+          exercises.length === 1 &&
+          exercises[0].exerciseId === canonicalCardioExercise._id;
+
+        if (!isAlreadySet) {
+          console.log(`Setting exercises state for cardio type: ${workoutType}`);
+          const cardioExerciseState: ExerciseState = {
+            id: `ex-temp-${targetCardioName}-${Date.now()}`,
+            exerciseId: canonicalCardioExercise._id,
+            name: canonicalCardioExercise.name,
+            sets: [], // Cardio exercises don't have sets in this model
+          };
+          setExercises([cardioExerciseState]);
+        }
+      } else if (dbExercisesMap.size > 0) { // Only warn if exercises have loaded
+        console.warn(`Canonical exercise "${targetCardioName}" not found for workout type "${workoutType}". Cannot auto-set exercise.`);
+        // Optionally clear exercises if the canonical one isn't found?
+        // setExercises([]); 
+      }
+    } else {
+      // We are in a non-cardio type mode (or no type selected)
+      // Check if the *first* exercise is one of the canonical cardio ones and remove it
+      if (exercises.length > 0) {
+        const firstExerciseName = exercises[0].name;
+        const isFirstExerciseCardio = Object.values(cardioExerciseNames).includes(firstExerciseName);
+        if (isFirstExerciseCardio) {
+            console.log(`Clearing cardio exercise "${firstExerciseName}" as workout type changed.`);
+            // Decide if we should clear all or just the cardio one
+            // For simplicity, let's clear all when switching FROM cardio
+             setExercises([]); 
+            // Alternative: Remove only the specific cardio exercise:
+            // setExercises(prev => prev.filter(ex => ex.name !== firstExerciseName));
+        }
+      }
+    }
+    // Dependencies: workoutType and dbExercisesMap (to ensure canonical exercise data is available)
+  }, [workoutType, dbExercisesMap]); // Removed exercises from dependencies to avoid loops
+
+  // --- Load existing workout data if ID is provided ---
   useEffect(() => {
     const workoutIdToLoad = editingWorkoutId || duplicateWorkoutId;
     if (workoutIdToLoad && dbExercises.length > 0 && dbExercisesMap.size > 0) {
@@ -1277,7 +1332,7 @@ export default function NewWorkoutPage() {
   const numberControlStyle = "flex items-center justify-center gap-2 w-full max-w-[160px]"
 
   // Add these style constants at the top with other styles
-  const pageHeaderStyle = "sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+  const pageHeaderStyle = "sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
   const pageContentStyle = "container max-w-2xl mx-auto px-4 py-6 space-y-8"
   const sectionStyle = "space-y-4"
   const sectionHeaderStyle = "flex items-center justify-between"
@@ -1769,21 +1824,25 @@ export default function NewWorkoutPage() {
               );
             })} 
 
-            {/* Add Exercise Button */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-            >
-              <Button
-                variant="outline"
-                onClick={addExercise}
-                className="w-full rounded-xl h-14"
+            {/* Add Exercise Button - Conditionally Disable */}
+            {/* Only show Add Exercise button if NOT a designated cardio type */}
+            {!cardioExerciseNames[workoutType as WorkoutTypeOption] && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
               >
-                <LucidePlus className="h-5 w-5 mr-2" />
-                Add Exercise
-              </Button>
-            </motion.div>
+                <Button
+                  variant="outline"
+                  onClick={addExercise}
+                  className="w-full rounded-xl h-14"
+                  // disabled={!!cardioExerciseNames[workoutType as WorkoutTypeOption]} // Alternative: disable instead of hide
+                >
+                  <LucidePlus className="h-5 w-5 mr-2" />
+                  Add Exercise
+                </Button>
+              </motion.div>
+            )}
           </div>
         </div>
 

@@ -752,7 +752,11 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
 
     console.log('[CreateWorkout Action] workoutDocData before save:', JSON.stringify(workoutDocData, null, 2));
     const workout = new WorkoutModel(workoutDocData);
+    // <<< ADD LOG >>>
+    console.log("[CreateWorkout] Attempting to save main workout document...");
     savedWorkout = await workout.save();
+    // <<< ADD LOG >>>
+    console.log(`[CreateWorkout] Main workout document saved. ID: ${savedWorkout?._id}`);
     
     // <<< FIX: Add null check for savedWorkout >>>
     if (!savedWorkout || !savedWorkout._id) {
@@ -826,7 +830,11 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
             distance: exerciseInput.distance, // Use exerciseInput.distance
         };
         const workoutExercise = new WorkoutExerciseModel(workoutExerciseData);
+        // <<< ADD LOG >>>
+        console.log(`[CreateWorkout] Attempting to save WorkoutExercise for: ${exerciseName}`);
         const savedWorkoutExercise = await workoutExercise.save();
+        // <<< ADD LOG >>>
+        console.log(`[CreateWorkout] Saved WorkoutExercise ID: ${savedWorkoutExercise?._id}`);
         createdWorkoutExerciseIds.push(savedWorkoutExercise._id);
         
         exerciseOrderIndex++; 
@@ -836,1097 +844,65 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     }
 
     // --- Keep existing logic for walking distance calculation, user update, revalidation --- 
-    console.log('Updating user workouts array...');
-    // @ts-ignore - Linter incorrectly infers workoutId as {} here, despite checks.
-    await updateUserWorkouts(userId, workoutId);
-    console.log('Revalidating paths...');
-    revalidatePath("/calendar"); 
-    revalidatePath("/workouts"); 
-    revalidatePath("/dashboard");
-    // ... other paths
-    console.log('Paths revalidated');
-
-    // --- Update User Summaries ---
-    if (savedWorkout) {
-      await updateUserWorkoutSummaries(userId);
-      // Also update Exercise PRs (process only this new workout)
-      await updateExercisePRs(userId, savedWorkout._id.toString());
+    // <<< ADD LOG >>>
+    console.log(`[CreateWorkout] Attempting to call updateUserWorkouts for user ${userId} and workout ${workoutId}...`); 
+    // Add specific type check before call
+    if (!(workoutId instanceof Types.ObjectId)) {
+      console.error(`[CreateWorkout] CRITICAL ERROR: workoutId is not an ObjectId before calling updateUserWorkouts. Type: ${typeof workoutId}, Value:`, workoutId);
+      throw new Error('Internal error: workoutId was not a valid ObjectId.');
     }
-    // --- End Update User Summaries ---
-
-    // --- Update Exercise PRs (after summaries, as it might rely on workout count) ---
-    await updateExercisePRs(userId); 
-    // --- End Update Exercise PRs ---
-
-    // 5. Revalidate paths
-    revalidatePath("/calendar")
-    revalidatePath("/workouts")
-    revalidatePath("/dashboard")
-    revalidatePath("/activity")
+    // Explicitly assert workoutId type here (should be safe after check)
+    await updateUserWorkouts(userId, workoutId as Types.ObjectId); 
+    // <<< ADD LOG >>>
+    console.log(`[CreateWorkout] Finished calling updateUserWorkouts.`);
+    
+    console.log('Revalidating paths...');
+    revalidatePath("/calendar");
+    revalidatePath("/workouts");
+    revalidatePath("/dashboard");
+    revalidatePath("/activity");
     console.log('Paths revalidated');
 
-    return savedWorkout!.toObject();
+    // --- Update User Summaries --- 
+    console.log(`[CreateWorkout] Checking if savedWorkout exists before calling summary update. savedWorkout: ${!!savedWorkout}`);
+    if (savedWorkout) { // Check savedWorkout before calling summary
+      console.log(`[CreateWorkout] Calling updateUserWorkoutSummaries for user ${userId}...`);
+      await updateUserWorkoutSummaries(userId);
+    }
+
+    // IMPORTANT: Final return statement *inside* the try block for success path
+    if (!savedWorkout) {
+       // This should theoretically not happen if save succeeded, but as a safeguard:
+       throw new Error("Workout saving process completed without a valid savedWorkout object.");
+    }
+    return savedWorkout.toObject(); // Return the plain object 
 
   } catch (error) {
     console.error("Error creating workout (new schema):", error);
-    // --- Keep existing Rollback Logic --- 
+    
+    // --- Rollback Logic --- 
+    // (Cleanup logic remains the same)
     if (createdWorkoutExerciseIds.length > 0) {
         console.warn(`Attempting to cleanup ${createdWorkoutExerciseIds.length} created WorkoutExercise documents due to error.`);
-        // Include cleanup for created Sets as well if possible/necessary
         try {
-            // Delete the WorkoutExercises themselves
             await WorkoutExerciseModel.deleteMany({ _id: { $in: createdWorkoutExerciseIds as any[] } }); 
             console.log('Cleaned up WorkoutExercise documents (including embedded sets).');
         } catch (cleanupExerciseError) {
             console.error('Failed to cleanup WorkoutExercise/Set documents:', cleanupExerciseError);
         }
     }
-    // Check explicitly if savedWorkout and its _id (as ObjectId) exist before trying to delete
     if (savedWorkout && savedWorkout._id && savedWorkout._id instanceof Types.ObjectId) { 
         const workoutIdToDelete = savedWorkout._id; 
         console.warn(`Attempting to cleanup created workout (${workoutIdToDelete}) due to error.`);
         try {
-            // Explicitly cast to Types.ObjectId as a last resort for linter
             await WorkoutModel.findByIdAndDelete(workoutIdToDelete as Types.ObjectId);
             console.log(`Cleaned up workout ${workoutIdToDelete}`);
         } catch (cleanupWorkoutError) {
             console.error(`Failed to cleanup workout ${workoutIdToDelete}:`, cleanupWorkoutError);
         }
     }
-    // Re-throw the original error after attempting cleanup
-    throw error;
-  }
-}
-
-// Type for the incoming exercise data in update payload
-interface IncomingExerciseUpdateData {
-    // ID of the *WorkoutExercise* document if updating, undefined/null if new
-    _id?: string | null; 
-    exerciseId?: string; // ID of the canonical Exercise
-    name?: string; // Name of the canonical exercise (used to find exerciseId if not provided)
-    order?: number;
-    notes?: string;
-    sets?: InputSetData[];
-    duration?: number;
-    distance?: number;
-    // Add other performance metrics if they can be updated
-}
-
-// Interface for the complete update payload
-export interface WorkoutUpdatePayload extends Partial<Omit<IWorkout, "_id" | "userId" | "createdAt" | "updatedAt">> {
-    exercises?: IncomingExerciseUpdateData[];
-}
-
-// Update an existing workout (Refactored)
-export async function updateWorkoutAction(workoutId: string, payload: WorkoutUpdatePayload) {
-    console.log(`Starting updateWorkoutAction for workout ID: ${workoutId}`);
-  const user = await getCurrentUser();
-    if (!user || !user.id) {
-    throw new Error("User not authenticated");
-  }
-    const userId = user.id;
-
-    try {
-        console.log("Connecting to DB...");
-        const dbConnect = (await import("@/lib/db/mongodb")).default;
-        await dbConnect();
-        console.log("DB Connected.");
-
-        // 1. Verify Ownership
-        console.log(`Verifying ownership for workout ${workoutId}...`);
-        const existingWorkout = await WorkoutModel.findById(workoutId);
-    if (!existingWorkout) {
-        throw new Error("Workout not found.");
-    }
-        if (existingWorkout.userId.toString() !== userId) {
-        throw new Error("Unauthorized access to workout.");
-    }
-        console.log("Ownership verified.");
-
-        // 2. Separate payload into workout fields and exercises
-        const { exercises: incomingExercises, ...workoutUpdateDataInput } = payload;
-        
-        // Create a type-safe object for the update
-        const workoutUpdateData: Partial<IWorkout> = { ...workoutUpdateDataInput };
-
-        // --- Fetch User Weight for Volume Calculation ---
-        let userWeight: number | null = null;
-        try {
-          const localDbConnect = (await import("@/lib/db/mongodb")).default;
-          await localDbConnect(); // Ensure connection
-          const userDoc = await UserModel.findById(userId).select('weight').lean<{ weight?: number } | null>();
-          if (userDoc && typeof userDoc.weight === 'number' && userDoc.weight > 0) {
-            userWeight = userDoc.weight;
-          }
-          console.log(`[UpdateWorkout] User weight for volume calc: ${userWeight || 'N/A'} kg`);
-        } catch (err) {
-          console.error("[UpdateWorkout] Error fetching user weight:", err);
-        }
-        // --- End Fetch User Weight ---
-
-        // Recalculate total volume if type is strength and exercises are provided
-        let updatedVolume: number | undefined = undefined;
-        if (workoutUpdateData.type === 'strength' && incomingExercises !== undefined) {
-            updatedVolume = calculateWorkoutVolumeWithBodyweight(incomingExercises, userWeight);
-            workoutUpdateData.calculatedVolume = updatedVolume;
-            console.log(`Recalculated volume for updated strength workout (using incoming): ${updatedVolume}kg`);
-        } else if (workoutUpdateData.type && workoutUpdateData.type !== 'strength') {
-            workoutUpdateData.calculatedVolume = 0;
-            console.log(`Workout type changed to non-strength, setting calculatedVolume to 0.`);
-        } else if (workoutUpdateData.type === 'strength' && incomingExercises === undefined) {
-            console.log("Recalculating volume from existing exercises as type is strength and no exercises provided in update...");
-            // Fetch existing exercises (consider only fetching necessary fields)
-            const existingWorkoutExercises = await WorkoutExerciseModel.find({ workoutId: workoutId }).lean(); 
-            // Adapt structure for helper if needed, or pass lean result if compatible
-            // Assuming structure is [{ name: string, sets: [...] }, ...]
-            // If structure differs (e.g., uses exerciseId.name), we need to map it first.
-            // For now, assume direct compatibility or simple mapping:
-            const exercisesForHelper = existingWorkoutExercises.map(ex => ({ 
-                name: (ex as any).name || (ex as any).exerciseId?.name, // Handle potential name differences
-                sets: (ex as any).sets 
-            }));
-            updatedVolume = calculateWorkoutVolumeWithBodyweight(exercisesForHelper, userWeight);
-            workoutUpdateData.calculatedVolume = updatedVolume;
-            console.log(`Recalculated volume from existing exercises: ${updatedVolume}kg`);
-        }
-
-        // Calculate total duration from exercises if available
-    let totalDuration = 0;
-        if (incomingExercises && Array.isArray(incomingExercises)) {
-          incomingExercises.forEach(exercise => {
-            // Add exercise duration if it exists
-            if (exercise.duration) {
-              totalDuration += exercise.duration;
-            }
-            // Add durations from sets if they exist
-        if (exercise.sets && Array.isArray(exercise.sets)) {
-              exercise.sets.forEach(set => {
-                if (set.duration) {
-                  totalDuration += set.duration;
-        }
-      });
-    }
-          });
-        }
-        // Use provided duration as fallback if no exercises or if it's larger
-        workoutUpdateData.duration = Math.max(totalDuration, payload.duration || 0);
-
-        // --- Perform the update using the repository ---
-        console.log(`[updateWorkoutAction] Preparing to update workout ${workoutId}...`);
-        
-        // --- Clear AI Highlight to force regeneration ---
-        // Use workoutUpdateData, which is the prepared object for the DB update
-        workoutUpdateData.aiHighlight = undefined; 
-        // --- End Clear AI Highlight ---
-
-        // Call the repository function to update the workout
-        // Cast workoutUpdateData to the type expected by the repository function
-        const updatedWorkout = await updateWorkoutDb(workoutId, workoutUpdateData as Partial<WorkoutData>);
-        console.log(`[updateWorkoutAction] Workout ${workoutId} update attempted. Result: ${updatedWorkout ? 'Success' : 'Failed'}`);
-
-        // Add null check for the result
-        if (!updatedWorkout) {
-            throw new Error("Failed to update workout in database.");
-        }
-
-        // 4. Handle Exercise Updates (If needed, this section was complex and might need review)
-        // ... existing exercise update logic ...
-        
-        // Revalidate paths
-        revalidatePath("/workouts");
-        revalidatePath(`/workouts/${workoutId}`);
-        revalidatePath(`/workouts/edit/${workoutId}`); // Assuming edit uses this action too
-        revalidatePath("/dashboard"); 
-        
-        console.log(`[updateWorkoutAction] Update complete for ${workoutId}. Returning serialized data.`);
-        
-        // Return the plain WorkoutData object returned by updateWorkoutDb
-        return updatedWorkout; 
-
-  } catch (error: any) { // Add type 'any' to error object
-    console.error(`[updateWorkoutAction] Error updating workout action for ${workoutId}:`, error);
-    throw new Error(`Failed to update workout: ${error.message}`);
-  }
-}
-
-// Delete a workout (Refactored)
-export async function deleteWorkout(id: string): Promise<void> {
-  try {
-    const user = await getCurrentUser()
-    if (!user || !user.id) {
-      throw new Error("User not authenticated or user ID missing")
-    }
-    const userId = user.id;
-
-    // 1. Check if the workout belongs to the current user
-    // Use the Mongoose model directly here
-    const existingWorkout = await WorkoutModel.findById(id);
-    if (!existingWorkout) {
-      console.warn(`Workout ${id} not found for deletion.`);
-      // Or throw new Error("Workout not found") if preferred
-      return; // Exit if workout doesn't exist
-    }
-    if (existingWorkout.userId.toString() !== userId) {
-      throw new Error("Unauthorized: Workout does not belong to user")
-    }
-
-    // 2. Delete associated WorkoutExercise documents
-    console.log(`Deleting workout exercises associated with workout ID: ${id}`);
-    const deleteExercisesResult = await WorkoutExerciseModel.deleteMany({ workoutId: id });
-    console.log(`Deleted ${deleteExercisesResult.deletedCount} workout exercise documents.`);
-
-    // 3. Delete the main Workout document
-    // Use the Mongoose model directly
-    console.log(`Deleting main workout document with ID: ${id}`);
-    const deleteWorkoutResult = await WorkoutModel.findByIdAndDelete(id);
-    
-    if (!deleteWorkoutResult) {
-      // This might happen in a race condition if already deleted
-      console.warn(`Workout ${id} was not found during findByIdAndDelete (potentially already deleted).`);
-      // Don't throw an error here, as the goal (deletion) is achieved or wasn't needed
-    } else {
-        console.log(`Successfully deleted main workout document: ${id}`);
-    }
-
-    // 4. Remove workout from user's workouts array
-    // This step might be optional depending on whether you query this array directly
-    // or always fetch workouts via the workouts collection.
-    // Keeping it for now for consistency.
-    console.log(`Removing workout ${id} from user ${userId}'s list.`);
-    await UserModel.findByIdAndUpdate(
-      userId,
-      { $pull: { workouts: id } } // Use the string ID
-    );
-    console.log(`Removed workout from user list.`);
-
-    // --- Update User Summaries ---
-    await updateUserWorkoutSummaries(userId);
-    // --- End Update User Summaries ---
-
-    // --- Update Exercise PRs (after summaries, as it might rely on workout count) ---
-    await updateExercisePRs(userId);
-    // --- End Update Exercise PRs ---
-
-    // 5. Revalidate paths
-    revalidatePath("/calendar")
-    revalidatePath("/workouts") // Maybe workouts list page?
-    revalidatePath("/dashboard")
-    revalidatePath("/activity") // Activity Feed
-  } catch (error) {
-    console.error(`Error deleting workout ${id}:`, error)
-    // Rethrow a more specific error
-    if (error instanceof Error) {
-        throw new Error(`Failed to delete workout ${id}: ${error.message}`);
-    } else {
-        throw new Error(`Failed to delete workout ${id} due to an unknown error.`);
-    }
-  }
-}
-
-// Copy a workout to today's date (Refactored)
-export async function copyWorkoutToToday(originalWorkoutId: string): Promise<string> {
-  console.log(`Starting copyWorkoutToToday for original ID: ${originalWorkoutId}`);
-  try {
-    const user = await getCurrentUser()
-    if (!user || !user.id) { 
-      throw new Error("User not authenticated or user ID missing")
-    }
-    const userId = user.id;
-
-    // 1. Fetch the original workout with exercises (already serialized by fetchWorkout)
-    console.log(`Fetching original workout: ${originalWorkoutId}`);
-    const originalWorkoutData = await fetchWorkout(originalWorkoutId);
-    if (!originalWorkoutData) {
-      // fetchWorkout already checks ownership and existence
-      throw new Error("Original workout not found or unauthorized");
-    }
-    console.log("Original workout fetched successfully.");
-
-    // 2. Prepare data for the NEW workout document
-    // Exclude fields that should not be copied directly
-    const { 
-      _id, 
-      userId: originalUserId, // Avoid potential confusion
-      date: originalDate,
-      createdAt: originalCreatedAt,
-      updatedAt: originalUpdatedAt,
-      completed: originalCompleted,
-      completedAt: originalCompletedAt,
-      source: originalSource,
-      sourceId: originalSourceId,
-      stravaLink: originalStravaLink,
-      records: originalRecords,
-      workoutExercises, // Extract exercises
-      ...newWorkoutBaseData // Keep relevant fields like name, type, intensity, notes
-    } = originalWorkoutData;
-
-    const newWorkoutPayload: Partial<WorkoutData> & { exercises?: Array<any> } = {
-      ...newWorkoutBaseData, // Includes name, type, intensity, notes etc.
-      userId: userId, // Assign to the current user
-      date: new Date(), // Set date to now
-      source: 'manual', // Copied workouts are typically considered manual entries
-      // Optionally copy notes, or clear them
-      // notes: originalWorkoutData.notes || "Copied workout", 
-    };
-
-    // 3. Prepare exercise data for the new workout
-    if (workoutExercises && workoutExercises.length > 0) {
-      console.log(`Preparing ${workoutExercises.length} exercises for copy...`);
-      newWorkoutPayload.exercises = workoutExercises.map((ex: any) => ({
-        // We need exerciseId (or name) and performance metrics (sets, duration, etc.)
-        // Omit the old _id, workoutId, userId, createdAt, updatedAt
-        exerciseId: ex.exerciseId?._id, // Pass the ID of the canonical exercise
-        name: ex.exerciseId?.name, // Pass name just in case createWorkout needs it
-        order: ex.order,
-        notes: ex.notes, // Copy notes specific to the exercise performance
-        sets: ex.sets?.map((set: any) => ({ // Copy set details
-          weight: set.weight,
-          reps: set.reps,
-          duration: set.duration,
-          distance: set.distance,
-          notes: set.notes,
-          order: set.order, // Keep set order
-        })) || [],
-        duration: ex.duration, // Copy cardio/other metrics
-        distance: ex.distance,
-        // Copy other relevant performance fields
-      }));
-    } else {
-      console.log("Original workout had no exercises to copy.");
-      newWorkoutPayload.exercises = [];
-    }
-
-    // 4. Call createWorkout with the prepared data
-    console.log("Calling createWorkout for the copied workout...");
-    const newWorkout = await createWorkout(newWorkoutPayload as any); 
-    
-    // --- Add Check and Assertion for ID --- 
-    if (!newWorkout || !newWorkout._id) {
-        console.error("createWorkout failed to return a valid workout object with an ID during copy.");
-        throw new Error("Failed to create copied workout.");
-    }
-    const newWorkoutId = newWorkout._id as Types.ObjectId; // Assert type
-    console.log(`Successfully created copied workout with ID: ${newWorkoutId.toString()}`);
-
-    // 5. Revalidate paths (handled by createWorkout)
-    // ...
-
-    // 6. Return the new workout ID (as string)
-    return newWorkoutId.toString();
-
-  } catch (error) {
-    console.error(`Error copying workout ${originalWorkoutId}:`, error);
-    if (error instanceof Error) {
-        throw new Error(`Failed to copy workout: ${error.message}`);
-    } else {
-        throw new Error(`Failed to copy workout due to an unknown error.`);
-    }
-  }
-}
-
-// Complete a workout
-export async function markWorkoutComplete(id: string, completionData: { duration: number }) {
-  const user = await getCurrentUser()
-  if (!user || !user.id) { // Refined check
-    throw new Error("User not authenticated or user ID missing")
-  }
-  const userId = user.id;
-
-  try {
-    const existingWorkout = await getWorkoutByIdDb(id)
-    if (!existingWorkout || existingWorkout.userId !== userId) { // Use userId here
-      throw new Error("Workout not found or unauthorized")
-    }
-
-    // Prepare update data including updatedAt
-    const updatePayload: Partial<WorkoutData> = {
-        duration: completionData.duration,
-        updatedAt: new Date().toISOString(), 
-    };
-
-    const updatedWorkout = await updateWorkoutDb(id, updatePayload);
-    if (!updatedWorkout) {
-      throw new Error("Failed to mark workout as complete in database.")
-    }
-
-    revalidatePath("/dashboard/workouts"); 
-    revalidatePath(`/workouts/${id}`);
-
-    return { success: true, workout: updatedWorkout };
-  } catch (error: any) {
-    console.error("Error marking workout complete:", error)
-    return { success: false, error: error.message }
-  }
-}
-
-// Create a workout from existing data
-export async function createWorkoutFromExisting(workoutData: any): Promise<string> {
-  try {
-    const newWorkout = await createWorkoutDb({
-      ...workoutData,
-      userId: workoutData.userId,
-    })
-
-    revalidatePath("/calendar")
-
-    return newWorkout._id
-  } catch (error) {
-    console.error("Error creating workout from existing:", error)
-    throw new Error("Failed to create workout from existing")
-  }
-}
-
-// Calculate total weight lifted in a workout
-// Modified to include estimated bodyweight for weight=0 sets
-export async function calculateTotalWeightLifted(workout: any): Promise<number> {
-  // Ensure we have workoutExercises and a userId to fetch user weight
-  // Check for workoutExercises property instead of exercises
-  if (!workout?.workoutExercises || !Array.isArray(workout.workoutExercises) || !workout.userId) {
-    console.warn("[Volume Calc] Missing workoutExercises or userId, returning 0 volume.", { hasWorkoutExercises: !!workout?.workoutExercises, hasUserId: !!workout.userId });
-    return 0;
-  }
-
-  let totalWeight = 0;
-  let userWeight: number | null = null; // Initialize as null
-
-  // Fetch user weight once
-  try {
-    // Assuming workout.userId is available and is a valid ID (string or ObjectId)
-    const userId = workout.userId.toString(); 
-    // Use findOne and explicitly cast to a type that includes weight or check property existence
-    const user = await UserModel.findOne({ _id: new Types.ObjectId(userId) }).select('weight').lean<{ weight?: number } | null>();
-    // Check if user exists and has a weight property before assigning
-    if (user && typeof user.weight === 'number' && user.weight > 0) {
-      userWeight = user.weight;
-    }
-    // console.log(`[Volume Calc] Using user weight for volume calc: ${userWeight} kg`);
-  } catch (error) {
-    console.error("[Volume Calc] Error fetching user weight:", error);
-    // Proceed without user weight if fetching fails, userWeight remains null
-  }
-
-  // Loop through workout.workoutExercises instead of workout.exercises
-  for (const exercise of workout.workoutExercises) {
-    // Ensure exercise name is available for the estimation function
-    // Adjust access based on the structure within workoutExercises
-    const exerciseName = exercise?.exerciseId?.name || exercise.name; // Check both potential structures
-    if (!exerciseName) {
-        console.warn("[Volume Calc] Skipping exercise due to missing name:", exercise);
-        continue;
-    }
-    
-    if (exercise.sets && Array.isArray(exercise.sets)) {
-      for (const set of exercise.sets) {
-        // Ensure reps are valid
-        const reps = typeof set.reps === 'number' && set.reps > 0 ? set.reps : 0;
-        if (reps === 0) continue; // Skip sets with no reps
-        
-        let weightForSet = typeof set.weight === 'number' ? set.weight : 0;
-
-        // If weight is 0, attempt to estimate based on bodyweight
-        if (weightForSet <= 0) {
-          // Pass the fetched (or null) userWeight to the estimation function
-          const estimatedWeight = estimateBodyweightForExercise(exerciseName, userWeight);
-          if (estimatedWeight > 0) {
-            // console.log(`[Volume Calc] Using estimated weight ${estimatedWeight}kg for ${reps} reps of ${exerciseName} (User Weight: ${userWeight || 'N/A'})`);
-            weightForSet = estimatedWeight;
-          } else {
-            // console.log(`[Volume Calc] Weight is 0 and no estimate found for ${exerciseName}. Volume contribution is 0.`);
-            weightForSet = 0; // Ensure it remains 0 if no estimate found
-          }
-        }
-
-        // Add to total volume
-        totalWeight += weightForSet * reps;
-      }
-    }
-  }
-  // console.log(`[Volume Calc] Final calculated volume for workout: ${totalWeight} kg`);
-  return totalWeight;
-}
-
-// Create a new cardio workout
-export async function createCardioWorkout(data: any): Promise<WorkoutDocument> {
-  await dbConnect(); // Ensure DB connection is established
-  try {
-    // Find the associated exercise or create it if needed
-    const exerciseType = data.type?.toLowerCase() || 'other';
-    let exercise = await ExerciseModel.findOne({
-      category: 'cardio',
-      name: { $regex: new RegExp(`^${exerciseType}$`, 'i') },
-    });
-
-    if (!exercise) {
-      console.log(`Creating new cardio exercise for type: ${exerciseType}`);
-      exercise = await ExerciseModel.create({
-        name: exerciseType.charAt(0).toUpperCase() + exerciseType.slice(1),
-        category: 'cardio',
-        muscleGroups: [],
-        equipment: [],
-        instructions: '',
-        isSystemExercise: true,
-        isDefault: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    }
-
-    // Generate a descriptive name that includes distance if available
-    let workoutName = data.title || `${exerciseType.charAt(0).toUpperCase() + exerciseType.slice(1)}`;
-    if (data.distance && data.distance > 0) {
-      // Format distance with appropriate precision
-      const distanceStr = data.distance < 1 ? 
-        `${(data.distance * 1000).toFixed(0)}m` : 
-        `${data.distance.toFixed(2)}km`;
-      
-      // Add distance to name if not already there
-      if (!workoutName.includes(distanceStr) && !workoutName.match(/\d+(\.\d+)?\s*(km|m|miles)/i)) {
-        workoutName = `${workoutName} (${distanceStr})`;
-      }
-    }
-
-    const distanceInKm = data.distance || 0;
-    const distanceInMeters = distanceInKm * 1000; // Convert km to meters
-
-    // Always log what's being saved to help with debugging
-    console.log(`Creating cardio workout with: name=${workoutName}, type=${exerciseType}, duration=${data.duration} minutes (or seconds if Strava), distance=${distanceInKm}km`); // Log KM distance
-
-    // Create cardio workout document with detailed information
-    const workout = await WorkoutModel.create({
-      name: workoutName,
-      date: data.date || new Date(),
-      type: exerciseType,  // Use the specific exercise type (running, cycling, etc.) instead of 'cardio'
-      userId: data.userId,
-      // Don't multiply by 60 if source is strava since it's already in seconds
-      duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60, // Saved in SECONDS
-      distance: distanceInMeters, // Save distance in METERS
-      calories: data.calories || 0,
-      intensity: data.intensity || 'Medium',
-      notes: data.description || '',
-      source: data.source || 'manual',
-      sourceId: data.sourceId,
-      sourceData: data.sourceData,
-      stravaLink: data.stravaLink,
-      cardioDetails: {
-        distance: distanceInKm, // Keep cardioDetails distance in KM
-        duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60, // Expects SECONDS
-        pace: data.pace || 0, // Expects min/km to be passed in data
-        speed: data.speed || 0, // Expects km/h to be passed in data
-        elevationGain: data.totalElevationGain || 0, // Expects METERS
-        heartRate: (data.averageHeartRate || data.maxHeartRate) ? {
-          average: data.averageHeartRate || 0,
-          max: data.maxHeartRate || 0,
-        } : undefined,
-        sportDetails: {
-          sport: exerciseType,
-          subSport: data.sportType || undefined,
-        },
-        maxSpeed: data.maxSpeed || 0, // Expects km/h to be passed in data
-      },
-      updatedAt: new Date(),
-      createdAt: new Date(),
-    });
-
-    // Create workout exercise entry to link the workout to the exercise
-    await WorkoutExerciseModel.create({
-      workoutId: workout._id,
-      exerciseId: exercise._id,
-      userId: data.userId,
-      // Don't multiply by 60 if source is strava since it's already in seconds
-      duration: data.source === 'strava' ? data.duration : (data.duration || 0) * 60,
-      distance: distanceInMeters, // Distance in meters
-      order: 1,
-      sets: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    // Update user's workouts array
-    await updateUserWorkouts(data.userId, workout._id);
-
-    return workout;
-  } catch (error) {
-    console.error('Error creating cardio workout:', error);
-    throw error;
-  }
-}
-
-// Process cardio details for better AI analysis
-function enhanceCardioWorkout(workout: any): any {
-  let enhancedWorkout = { ...workout }
-  
-  if (["running", "cycling", "swimming"].includes(workout.type)) {
-    // Ensure cardioDetails is populated
-    if (!enhancedWorkout.cardioDetails && enhancedWorkout.distance) {
-      enhancedWorkout.cardioDetails = {
-        distance: enhancedWorkout.distance,
-        duration: enhancedWorkout.duration,
-        pace: enhancedWorkout.distance > 0 ? (enhancedWorkout.duration / enhancedWorkout.distance) : 0
-      }
-    }
-    
-    // Calculate additional metrics if missing
-    if (enhancedWorkout.cardioDetails) {
-      const cardioDetails = enhancedWorkout.cardioDetails;
-      // Calculate pace if missing but we have distance and duration
-      if (!cardioDetails.pace && cardioDetails.distance && cardioDetails.distance > 0) {
-        cardioDetails.pace = cardioDetails.duration ? cardioDetails.duration / cardioDetails.distance : 0;
-      }
-      
-      // Calculate speed in km/h if we have pace
-      if (cardioDetails.pace && cardioDetails.pace > 0) {
-        cardioDetails.speed = 60 / cardioDetails.pace;
-      }
-    }
-  }
-  
-  return enhancedWorkout;
-}
-
-// Fetch workout data formatted for AI analysis
-export async function fetchWorkoutForAI(id: string): Promise<any> {
-  try {
-    const workout = await getWorkoutByIdDb(id)
-
-    if (!workout || !workout.userId || !workout.type || !workout.date || !workout._id) {
-        console.error(`[fetchWorkoutForAI] Invalid workout data fetched for ID ${id}:`, workout);
-      return null;
-    }
-
-    const currentWorkoutId = workout._id.toString();
-
-    const previousWorkoutDocs = await getPreviousWorkoutsByType( // Fetch raw docs
-      workout.userId.toString(),
-      workout.type,
-      new Date(workout.date),
-      currentWorkoutId,
-      5
-    )
-
-    let enhancedWorkout = enhanceCardioWorkout(workout); // Enhance current workout
-    let progressMetrics = null
-    let previousWorkoutsSummary = undefined; // Initialize summary
-
-    if (previousWorkoutDocs && previousWorkoutDocs.length > 0) {
-      console.log(`[fetchWorkoutForAI] Found ${previousWorkoutDocs.length} previous ${workout.type} workouts for comparison.`);
-      
-      // Create a summary of previous workouts instead of sending full data
-      previousWorkoutsSummary = previousWorkoutDocs.map((prevWorkout: any) => ({
-          _id: prevWorkout._id?.toString(),
-          date: prevWorkout.date ? new Date(prevWorkout.date).toISOString().split('T')[0] : undefined, // Just date part
-          type: prevWorkout.type,
-          duration: prevWorkout.duration,
-          distance: prevWorkout.cardioDetails?.distance ?? prevWorkout.distance,
-          calculatedVolume: prevWorkout.calculatedVolume,
-          // Add key cardio metrics if available
-          pace: prevWorkout.cardioDetails?.pace,
-          avgHeartRate: prevWorkout.cardioDetails?.heartRate?.average,
-      }));
-      
-      // Calculate progress metrics using the enhanced current workout and the *original* previous docs
-      // (calculateProgressionMetrics might need the fuller previous docs)
-      progressMetrics = calculateProgressionMetrics(enhancedWorkout, previousWorkoutDocs); 
-      console.log("[fetchWorkoutForAI] Calculated progress metrics:", progressMetrics);
-    } else {
-       console.log(`[fetchWorkoutForAI] No previous ${workout.type} workouts found for comparison.`); 
-    }
-
-    // Combine the results into a new object
-    const result = {
-      ...enhancedWorkout, // contains potentially modified workout data
-      // Include the summary, not the full previous workouts
-      previousWorkoutsSummary: previousWorkoutsSummary, 
-      progressMetrics
-    };
-
-    // Deep serialize the final combined object before returning
-    return deepSerialize(result);
-
-  } catch (error) {
-    console.error(`Error fetching workout ${id} for AI:`, error)
-    throw new Error(`Failed to fetch workout ${id} for AI`)
-  }
-}
-
-// --- Helper function used by fetchWorkoutForAI ---
-// Ensure this function handles the structure of the raw previousWorkoutDocs
-function calculateProgressionMetrics(currentWorkout: any, previousWorkoutDocs: any[]): any {
-  // Moved metrics declaration to the top
-  const metrics: any = {};
-
-  // Use the correct parameter name here
-  if (!previousWorkoutDocs || previousWorkoutDocs.length === 0) {
-    return null;
-  }
-  // Still use the most recent *full* previous doc for comparison
-  const lastWorkout = previousWorkoutDocs[0];
-
-  // ... rest of the calculations remain the same, using lastWorkout ...
-  // Duration
-  if (currentWorkout.duration && lastWorkout.duration) {
-    metrics.durationChange = currentWorkout.duration - lastWorkout.duration;
-    metrics.durationChangePercent = lastWorkout.duration !== 0 ? (metrics.durationChange / lastWorkout.duration) * 100 : 0;
-  }
-  // Distance
-  const currentDistance = currentWorkout.cardioDetails?.distance ?? currentWorkout.distance;
-  const lastDistance = lastWorkout.cardioDetails?.distance ?? lastWorkout.distance;
-  if (currentDistance && lastDistance) {
-    metrics.distanceChange = currentDistance - lastDistance;
-    metrics.distanceChangePercent = lastDistance !== 0 ? (metrics.distanceChange / lastDistance) * 100 : 0;
-  }
-  // Volume
-  if (currentWorkout.calculatedVolume && lastWorkout.calculatedVolume) {
-     metrics.volumeChange = currentWorkout.calculatedVolume - lastWorkout.calculatedVolume;
-     metrics.volumeChangePercent = lastWorkout.calculatedVolume !== 0 ? (metrics.volumeChange / lastWorkout.calculatedVolume) * 100 : 0;
-  }
-  // Pace
-  const currentPace = currentWorkout.cardioDetails?.pace;
-  const lastPace = lastWorkout.cardioDetails?.pace;
-   if (currentPace && lastPace && currentPace > 0 && lastPace > 0) {
-    metrics.paceChange = currentPace - lastPace;
-    metrics.paceChangePercent = (metrics.paceChange / lastPace) * 100;
-  }
-  // Avg HR
-   const currentAvgHr = currentWorkout.cardioDetails?.heartRate?.average;
-   const lastAvgHr = lastWorkout.cardioDetails?.heartRate?.average;
-   if (currentAvgHr && lastAvgHr) {
-       metrics.avgHrChange = currentAvgHr - lastAvgHr;
-       metrics.avgHrChangePercent = lastAvgHr !== 0 ? (metrics.avgHrChange / lastAvgHr) * 100 : 0;
-   }
-
-  return Object.keys(metrics).length > 0 ? metrics : null;
-}
-
-// Get previous workouts for a specific exercise
-export async function getPreviousWorkoutsAction(exerciseName: string): Promise<WorkoutData[]> {
-  try {
-    const user = await getCurrentUser()
-    if (!user) {
-      throw new Error("User not authenticated")
-    }
-    return await getPreviousWorkouts(user.id, exerciseName, new Date())
-  } catch (error) {
-    console.error(`Error getting previous workouts for ${exerciseName}:`, error)
-    throw new Error(`Failed to get previous workouts for ${exerciseName}`)
-  }
-}
-
-// Get workout statistics for a specific user
-export async function getWorkoutStats(userId: string): Promise<any> {
-  try {
-    // Fetch all workouts first (using the refactored function)
-    const allWorkouts = await fetchWorkouts(); // Already serialized
-    // console.log(`Fetched ${allWorkouts.length} workouts for stats.`);
-
-    const stats: any = {
-      totalWorkouts: allWorkouts.length,
-      totalDuration: 0,
-      totalVolume: 0,
-      totalDistance: 0,
-      workoutsByType: {},
-      durationByType: {},
-      volumeByType: {},
-      distanceByType: {},
-      workoutsByMonth: {},
-      firstWorkoutDate: null,
-      lastWorkoutDate: null,
-      mostFrequentType: null,
-      averageDuration: 0,
-    };
-
-    if (allWorkouts.length === 0) {
-      return stats; // Return empty stats if no workouts
-    }
-
-    let earliestDate = new Date(allWorkouts[0].date);
-    let latestDate = new Date(allWorkouts[0].date);
-    const typeCounts: Record<string, number> = {};
-
-    allWorkouts.forEach((workout: any) => {
-      const workoutDate = new Date(workout.date);
-      const monthYear = format(workoutDate, 'yyyy-MM');
-      const type = workout.type || 'other';
-
-      // Get duration from multiple possible sources to ensure we always have a value
-      const duration = Number(workout.duration) || 
-                       (workout.cardioDetails?.duration ? Number(workout.cardioDetails.duration) : 0);
-                       
-      // Track overall stats
-      stats.totalDuration += duration;
-      
-      if (workout.date) {
-          if (workoutDate < earliestDate) earliestDate = workoutDate;
-          if (workoutDate > latestDate) latestDate = workoutDate;
-      }
-      
-      // Calculate volume (assuming workoutExercises exists and is structured correctly)
-      let currentWorkoutVolume = 0;
-      if (type === 'strength' && workout.workoutExercises && workout.workoutExercises.length > 0) {
-         currentWorkoutVolume = workout.workoutExercises.reduce((exSum: number, ex: any) => {
-            // Need exercise name for bodyweight estimation
-            const exerciseName = ex.exerciseId?.name || ''; 
-            const exerciseSetVolume = ex.sets?.reduce((setSum: number, set: any) => {
-              const weight = set.weight ?? 0;
-              const reps = set.reps ?? 0;
-              const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exerciseName);
-              return setSum + (estimatedWeight * reps);
-            }, 0) || 0;
-            return exSum + exerciseSetVolume;
-         }, 0);
-         stats.totalVolume += currentWorkoutVolume;
-      }
-      
-      // Calculate distance from multiple possible sources
-      let currentWorkoutDistance = 0;
-      
-      // First check direct distance property
-      if (typeof workout.distance === 'number' && workout.distance > 0) {
-        currentWorkoutDistance = workout.distance;
-      } 
-      // Then check cardioDetails.distance
-      else if (workout.cardioDetails && typeof workout.cardioDetails.distance === 'number' && workout.cardioDetails.distance > 0) {
-        currentWorkoutDistance = workout.cardioDetails.distance;
-      }
-      // Finally check workoutExercises
-      else if (['running', 'cycling', 'swimming', 'walking', 'hiking'].includes(type) && 
-                workout.workoutExercises && workout.workoutExercises.length > 0) {
-        currentWorkoutDistance = workout.workoutExercises.reduce((exSum: any, ex: any) => 
-          exSum + (typeof ex.distance === 'number' ? ex.distance : 0), 0);
-      }
-      
-      // Add the distance to the total
-      if (currentWorkoutDistance > 0) {
-        stats.totalDistance += currentWorkoutDistance;
-        
-        // Track distance by type
-        if (!stats.distanceByType[type]) stats.distanceByType[type] = 0;
-        stats.distanceByType[type] += currentWorkoutDistance;
-      }
-
-      // Track stats by type
-      stats.workoutsByType[type] = (stats.workoutsByType[type] || 0) + 1;
-      stats.durationByType[type] = (stats.durationByType[type] || 0) + duration;
-      if (type === 'strength') stats.volumeByType[type] = (stats.volumeByType[type] || 0) + currentWorkoutVolume;
-      typeCounts[type] = (typeCounts[type] || 0) + 1;
-
-      // Track stats by month
-      stats.workoutsByMonth[monthYear] = (stats.workoutsByMonth[monthYear] || 0) + 1;
-    });
-
-    stats.firstWorkoutDate = earliestDate.toISOString();
-    stats.lastWorkoutDate = latestDate.toISOString();
-
-    // Find most frequent workout type
-    let maxCount = 0;
-    for (const type in typeCounts) {
-      if (typeCounts[type] > maxCount) {
-        maxCount = typeCounts[type];
-        stats.mostFrequentType = type;
-      }
-    }
-
-    // Calculate average duration
-    if (stats.totalWorkouts > 0) {
-      stats.averageDuration = stats.totalDuration / stats.totalWorkouts;
-    }
-
-    console.log("Calculated workout stats:", stats);
-    return stats;
-
-  } catch (error) {
-    console.error(`Error getting workout stats for user ${userId}:`, error);
-    // Return a default/empty stats object on error
-      return {
-        totalWorkouts: 0, totalDuration: 0, totalVolume: 0, totalDistance: 0,
-        workoutsByType: {}, durationByType: {}, volumeByType: {}, distanceByType: {},
-        workoutsByMonth: {}, firstWorkoutDate: null, lastWorkoutDate: null,
-        mostFrequentType: null, averageDuration: 0
-    };
-  }
-}
-
-// This function seems redundant or misnamed based on its content (calculating overall stats)
-// Renaming or refactoring might be needed later.
-export async function getWorkoutStatsAction() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    console.error("User not authenticated in getWorkoutStatsAction");
-    return { error: "User not authenticated" };
-  }
-  try {
-    const stats = await getWorkoutStats(session.user.id);
-    return stats;
-  } catch (error: any) {
-    console.error("Error in getWorkoutStatsAction:", error);
-    return { error: error.message || "Failed to fetch workout statistics" };
-  }
-}
-
-// Get recent workouts of a specific type (Refactored)
-export async function getWorkoutsByType(userId: string, type: string, limit = 10): Promise<any[]> {
-  console.log(`Fetching workouts for user ${userId}, type ${type}, limit ${limit}`);
-  try {
-    // Fetch all workouts using the refactored function (includes exercises, serialized)
-    const allWorkouts = await fetchWorkouts(); 
-    
-    // Filter by type
-    const filteredWorkouts = allWorkouts.filter(workout => workout.type === type);
-    
-    // Sort by date (already sorted desc by fetchWorkouts, but re-sort just in case)
-    // Slice to limit
-    const result = filteredWorkouts
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, limit);
-      
-    console.log(`Returning ${result.length} workouts of type ${type}`);
-    return result;
-
-  } catch (error) {
-    console.error(`Error getting workouts by type ${type}:`, error);
-    return [];
-  }
-}
-
-// Get workouts in a date range (Refactored)
-export async function getWorkoutsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<any[]> {
-  console.log(`Fetching workouts for user ${userId}, range ${startDate.toISOString()} to ${endDate.toISOString()}`);
-  try {
-    // Fetch all workouts (includes exercises, serialized)
-    const allWorkouts = await fetchWorkouts();
-    
-    // Filter by date range
-    const result = allWorkouts
-      .filter(workout => {
-        const workoutDate = new Date(workout.date); // Date is already string from serialization
-        // Adjust endDate to include the whole day
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        return workoutDate >= startDate && workoutDate <= endOfDay;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort desc
-
-    console.log(`Returning ${result.length} workouts in date range.`);
-    return result;
-
-  } catch (error) {
-    console.error("Error fetching workouts by date range:", error);
-    // Re-throw error as the original function did?
-    if (error instanceof Error) {
-        throw new Error(`Failed to fetch workouts by date range: ${error.message}`);
-    } else {
-        throw new Error(`Failed to fetch workouts by date range due to an unknown error.`);
-    }
-    // Or return [] like other functions?
-    // return [];
-  }
-}
-
-// Get workouts by intensity (Refactored)
-export async function getWorkoutsByIntensity(userId: string, intensity: string, limit = 10): Promise<any[]> {
-  console.log(`Fetching workouts for user ${userId}, intensity ${intensity}, limit ${limit}`);
-  try {
-    // Fetch all workouts (includes exercises, serialized)
-    const allWorkouts = await fetchWorkouts();
-    
-    // Filter by intensity
-    const filteredWorkouts = allWorkouts.filter(workout => workout.intensity === intensity);
-    
-    // Sort and limit
-    const result = filteredWorkouts
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, limit);
-      
-    console.log(`Returning ${result.length} workouts with intensity ${intensity}`);
-    return result;
-
-  } catch (error) {
-    console.error(`Error fetching ${intensity} intensity workouts:`, error);
-    // Re-throw error like original?
-    if (error instanceof Error) {
-        throw new Error(`Failed to fetch ${intensity} intensity workouts: ${error.message}`);
-    } else {
-        throw new Error(`Failed to fetch ${intensity} intensity workouts due to an unknown error.`);
-    }
-    // Or return []?
-    // return [];
-  }
-}
-
-// Get recent workouts (Refactored)
-export async function getRecentWorkouts(userId: string, limit = 10): Promise<any[]> {
-  console.log(`Fetching recent workouts for user ${userId}, limit ${limit}`);
-  try {
-    // Fetch all workouts (includes exercises, serialized, already sorted desc)
-    const allWorkouts = await fetchWorkouts();
-    
-    // Slice to limit
-    const result = allWorkouts.slice(0, limit);
-    
-    console.log(`Returning ${result.length} recent workouts.`);
-    return result;
-
-  } catch (error) {
-    console.error("Error fetching recent workouts:", error);
-     // Re-throw error like original?
-    if (error instanceof Error) {
-        throw new Error(`Failed to fetch recent workouts: ${error.message}`);
-    } else {
-        throw new Error(`Failed to fetch recent workouts due to an unknown error.`);
-    }
-    // Or return []?
-    // return [];
-  }
-}
-
-// Get running workouts (Uses refactored getWorkoutsByType)
-// No change needed here as it calls the already refactored function
-export async function getRunningWorkouts(userId: string, limit = 10): Promise<any[]> {
-  console.log(`Fetching running workouts for user ${userId}, limit ${limit}`);
-  try {
-    return await getWorkoutsByType(userId, 'running', limit);
-  } catch (error) {
-    // Error logging and re-throwing can be simplified if getWorkoutsByType handles it
-    console.error("Error fetching running workouts:", error);
-    throw new Error("Failed to fetch running workouts"); // Keep original throw for now
-  }
-}
-
-// Get strength workouts (Uses refactored getWorkoutsByType)
-// No change needed here
-export async function getStrengthWorkouts(userId: string, limit = 10): Promise<any[]> {
-  console.log(`Fetching strength workouts for user ${userId}, limit ${limit}`);
-  try {
-    return await getWorkoutsByType(userId, 'strength', limit);
-  } catch (error) {
-    console.error("Error fetching strength workouts:", error);
-    throw new Error("Failed to fetch strength workouts"); // Keep original throw for now
-  }
-}
-
-// Type for workout document with MongoDB _id
-type WorkoutDocument = IWorkout & Document & { _id: Types.ObjectId };
-
-// Function to update a user's workouts array
-async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Promise<void> {
-  try {
-    // Update User's Workout Array
-    console.log('Updating user workouts array...');
-    await UserModel.findByIdAndUpdate(
-      userId,
-      { $push: { workouts: workoutId } }
-    );
-    
-    // Revalidate Paths
-    console.log('Revalidating paths...');
-    revalidatePath("/calendar");
-    revalidatePath("/workout");
-    revalidatePath("/workouts");
-    revalidatePath("/dashboard");
-    revalidatePath("/activity");
-    console.log('Paths revalidated');
-  } catch (error) {
-    console.error('Error updating user workouts:', error);
-    throw error;
+    // --- ALWAYS Re-throw the error --- 
+    throw error; 
   }
 }
 
@@ -1937,6 +913,9 @@ async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Pr
  * @param userId - The ID of the user to update.
  */
 export async function updateUserWorkoutSummaries(userId: string): Promise<void> {
+  // <<< ADD LOG: Confirming entry into updateUserWorkoutSummaries >>>
+  console.log(`[Summ ENTRY] Starting summary update for user: ${userId}`);
+  
   if (!userId) {
     console.error('[updateUserWorkoutSummaries] No userId provided.');
     return;
@@ -1954,21 +933,24 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
         .select('weight personalRecords') // Select fields needed for overall PRs and maybe challenges
         .lean<IUser>();
         
-    // 2. All Workouts (for overall summaries and challenge progress calculation)
+    // 2. All Workouts - Define, await separately
     const workoutsPromise = WorkoutModel.find({ userId: userObjectId })
-      .select('_id date type duration distance calculatedVolume cardioDetails exercises') // Added exercises for challenge details
-      .populate({ // Populate necessary exercise details for challenges
-          path: 'exercises',
+      .select('_id userId date type duration distance calculatedVolume cardioDetails workoutExercises') 
+      .populate({ 
+          path: 'workoutExercises',
           populate: {
               path: 'exerciseId',
               model: 'Exercise',
-              select: 'name category trackMaxReps' // Select fields needed for PR/challenge logic
+              select: 'name category trackMaxReps' 
           }
       })
-      .sort({ date: 1 }) // Sort ascending for chronological processing
-      .lean(); // Use lean for efficiency
+      .sort({ date: 1 }) 
+      .lean<PopulatedLeanWorkout>(); 
+    const workoutsRaw = await workoutsPromise; // Await the query here
+    console.log("[Summ] Finished awaiting workoutsPromise."); // Log after await
 
     // 3. Active Challenges for the Current Month (using Prisma)
+    // Restore definitions
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
     const currentYear = now.getFullYear();
@@ -1978,17 +960,23 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
             year: currentYear,
             month: currentMonth,
             status: { 
-                in: [ChallengeStatus.NotStarted, ChallengeStatus.InProgress] // Only fetch active ones
+                in: [ChallengeStatus.NotStarted, ChallengeStatus.InProgress] 
             }
         }
     });
 
-    // Await all fetches
-    const [userDoc, workouts, activeChallenges] = await Promise.all([
-        userPromise,
-        workoutsPromise,
-        challengesPromise
-    ]);
+    // Await remaining promises individually (alternative syntax)
+    console.log("[Summ] Awaiting userPromise..."); // Log before await
+    const userDoc = await userPromise; // <-- Await here
+    console.log("[Summ] Finished awaiting userPromise."); // Log after await
+
+    console.log("[Summ] Awaiting challengesPromise..."); // Log before await
+    const activeChallenges = await challengesPromise; // <-- Await here
+    console.log("[Summ] Finished awaiting challengesPromise."); // Log after await
+
+    // Cast the awaited workouts result, ignoring persistent TS inference issue
+    // @ts-ignore - TS incorrectly infers workoutsRaw as single object despite .find().lean()
+    const workouts = workoutsRaw as PopulatedLeanWorkout[];
 
     console.log(`[Summ] Fetched ${workouts.length} workouts and ${activeChallenges.length} active challenges for user ${userId}.`);
 
@@ -2035,9 +1023,25 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
 
     // --- Iterate through workouts (Sorted Ascending) ---
     for (const workout of workouts) {
-        const workoutDate = workout.date instanceof Date ? workout.date : new Date(0);
+        // Explicitly validate and get workoutId as ObjectId
+        let workoutId: Types.ObjectId;
+        try {
+            if (!workout._id) {
+                console.warn(`[Summ] Skipping workout due to missing _id.`);
+                continue; // Skip this iteration if _id is missing
+            }
+            // Attempt to create ObjectId regardless of initial type (string or ObjectId)
+            // Mongoose lean() might return string or ObjectId depending on context/version
+            // Cast to 'any' to satisfy constructor overload while relying on try/catch for runtime safety
+            workoutId = new Types.ObjectId(workout._id as any); 
+        } catch (e) {
+            console.warn(`[Summ] Skipping workout due to invalid _id format: ${workout._id}. Error:`, e);
+            continue; // Skip if conversion fails
+        }
+
+        const workoutDate = workout.date instanceof Date ? workout.date : new Date(workout.date);
         const workoutType = workout.type?.toLowerCase() || 'other';
-        const workoutId = workout._id; 
+        // REMOVED: const workoutId = typeof workout._id === 'string' ? new Types.ObjectId(workout._id) : workout._id;
         const duration = workout.duration ?? 0;
         const distance = workout.cardioDetails?.distance ?? workout.distance ?? 0;
         const calculatedWorkoutVolume = workout.calculatedVolume ?? 0; 
@@ -2046,38 +1050,69 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
         const isInCurrentMonth = workoutDate.getFullYear() === currentYear && workoutDate.getMonth() + 1 === currentMonth;
 
         if (isInCurrentMonth) {
+            console.log(`[Summ] Processing workout ${workoutId} from ${workoutDate.toISOString()}`);
+            console.log(`[Summ] Type: ${workoutType}, Volume: ${calculatedWorkoutVolume}, Duration: ${duration}`);
+
             // Update Monthly Aggregates
             monthlySessions++;
             monthlyWorkoutDays.add(workoutDate.toISOString().split('T')[0]);
             monthlyDistance += distance;
-            // monthlyVolume += calculatedWorkoutVolume;
+            monthlyVolume += calculatedWorkoutVolume;
+
+            console.log(`[Summ] Monthly totals after workout:`, {
+                sessions: monthlySessions,
+                uniqueDays: monthlyWorkoutDays.size,
+                distance: monthlyDistance,
+                volume: monthlyVolume
+            });
+
+            // Process exercises for monthly maxes and categories
+            if (workout.workoutExercises && Array.isArray(workout.workoutExercises)) {
+                for (const workoutExercise of workout.workoutExercises) {
+                    const exerciseInfo = workoutExercise.exerciseId;
+                    if (!exerciseInfo?._id || !exerciseInfo.name) continue;
+
+                    // Add exercise category to the set
+                    if (exerciseInfo.category) {
+                        monthlyCategoriesUsed.add(exerciseInfo.category.toLowerCase());
+                        console.log(`[Summ] Added category: ${exerciseInfo.category.toLowerCase()}`);
+                    }
+
+                    // Process sets for max weight and reps
+                    const exerciseIdStr = exerciseInfo._id.toString();
+                    if (workoutExercise.sets && Array.isArray(workoutExercise.sets)) {
+                        for (const set of workoutExercise.sets) {
+                            const setWeight = set.weight ?? 0;
+                            const setReps = set.reps ?? 0;
+
+                            // Calculate effective weight (including bodyweight exercises)
+                            let effectiveWeight = setWeight;
+                            if (setWeight === 0 && setReps > 0) {
+                                effectiveWeight = estimateBodyweightForExercise(exerciseInfo.name, userWeight);
+                                console.log(`[Summ] Using estimated weight for ${exerciseInfo.name}: ${effectiveWeight}kg`);
+                            }
+
+                            // Update max weight if this set has a higher effective weight
+                            if (setReps > 0 && effectiveWeight > (monthlyMaxWeightPerExercise[exerciseIdStr] ?? 0)) {
+                                monthlyMaxWeightPerExercise[exerciseIdStr] = effectiveWeight;
+                                console.log(`[Summ] New max weight for ${exerciseInfo.name}: ${effectiveWeight}kg`);
+                            }
+
+                            // Update max reps if this set has more reps
+                            if (setReps > (monthlyMaxRepsPerExercise[exerciseIdStr] ?? 0)) {
+                                monthlyMaxRepsPerExercise[exerciseIdStr] = setReps;
+                                console.log(`[Summ] New max reps for ${exerciseInfo.name}: ${setReps}`);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update running-specific metrics
             if ((workoutType === 'running' || workoutType === 'run') && distance > monthlyMaxRunDistance) {
                 monthlyMaxRunDistance = distance;
+                console.log(`[Summ] New max run distance: ${monthlyMaxRunDistance}km`);
             }
-             // Process exercises for monthly maxes
-             if (workout.exercises && Array.isArray(workout.exercises)) {
-                for (const workoutExercise of workout.exercises) {
-                     const exerciseInfo = workoutExercise.exerciseId;
-                     if (!exerciseInfo?._id || !exerciseInfo.name) continue;
-                     const exerciseIdStr = exerciseInfo._id.toString();
-                     if(exerciseInfo.category) { monthlyCategoriesUsed.add(exerciseInfo.category.toLowerCase()); }
-                     if (workoutExercise.sets && Array.isArray(workoutExercise.sets)) {
-                         for (const set of workoutExercise.sets) {
-                             const setWeight = set.weight ?? 0;
-                             const setReps = set.reps ?? 0;
-                             let effectiveWeight = 0;
-                             if (setWeight > 0) effectiveWeight = setWeight;
-                             else if (setReps > 0) effectiveWeight = estimateBodyweightForExercise(exerciseInfo.name, userWeight);
-                             if (setReps > 0 && effectiveWeight > (monthlyMaxWeightPerExercise[exerciseIdStr] ?? 0)) {
-                                 monthlyMaxWeightPerExercise[exerciseIdStr] = effectiveWeight;
-                             }
-                             if (setReps > (monthlyMaxRepsPerExercise[exerciseIdStr] ?? 0)) {
-                                 monthlyMaxRepsPerExercise[exerciseIdStr] = setReps;
-                             }
-                         }
-                     }
-                 }
-             }
         }
         
         // Update Overall Lifetime Summaries/PRs (Always process)
@@ -2087,27 +1122,127 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
 
         if (workoutType === 'strength') {
            if (calculatedWorkoutVolume > overallMaxStrengthVolume.value) {
-               overallMaxStrengthVolume = { value: calculatedWorkoutVolume, date: workoutDate, workoutId: workoutId }; 
+               overallMaxStrengthVolume = { 
+                   value: calculatedWorkoutVolume, 
+                   date: workoutDate, 
+                   workoutId: workoutId // Assign the validated ObjectId
+               }; 
            }
         }
         if (workoutType === 'running' || workoutType === 'run') {
           if (distance > overallLongestRun.value) {
-            overallLongestRun = { value: distance, date: workoutDate, workoutId: workoutId };
+            overallLongestRun = { 
+                value: distance, 
+                date: workoutDate, 
+                workoutId: workoutId // Assign the validated ObjectId
+            };
           }
-          if (distance >= 5 && duration > 0) {
-            const pace = duration / (distance * 1000); 
+          // Potential pace calculation check: Pace = Time / Distance. Ensure units match expected output.
+          // Current: duration (seconds assumed) / (distance (km assumed) * 1000) => sec/meter?
+          // If pace should be min/km: (duration / 60) / distance
+          const pace = duration > 0 && distance > 0 ? duration / distance : 0; // Basic pace (time/dist), adjust units as needed
+          
+          if (distance >= 5 && pace > 0) { // Ensure pace is valid
             if (pace < overallFastest5kPace.value) {
-              overallFastest5kPace = { value: pace, date: workoutDate, workoutId: workoutId };
+              overallFastest5kPace = { 
+                  value: pace, 
+                  date: workoutDate, 
+                  workoutId: workoutId // Assign the validated ObjectId
+              };
             }
           }
         }
     } // End workout iteration
 
-    // ... Log monthly totals ...
+    // Log monthly totals for debugging
+    console.log(`[Summ] Monthly totals for ${currentMonth}/${currentYear}:`, {
+        sessions: monthlySessions,
+        uniqueDays: monthlyWorkoutDays.size,
+        distance: monthlyDistance,
+        volume: monthlyVolume,
+        maxRunDistance: monthlyMaxRunDistance,
+        categoriesUsed: Array.from(monthlyCategoriesUsed),
+        exerciseMaxes: {
+            weights: Object.keys(monthlyMaxWeightPerExercise).length,
+            reps: Object.keys(monthlyMaxRepsPerExercise).length
+        }
+    });
 
     // --- Update Active Challenges ---
-    // ... challenge update logic using monthlyXyz variables ...
-    // ... save challenge updates using Prisma ...
+    for (const challenge of activeChallenges) {
+        try {
+            let updatedValue = 0;
+            let shouldUpdate = true;
+
+            // Calculate the updated value based on challenge type
+            switch (challenge.type) {
+                case ChallengeType.MonthlyDistance:
+                    updatedValue = monthlyDistance;
+                    break;
+                case ChallengeType.MonthlyVolume:
+                    // For strength workouts, use the calculated volume
+                    updatedValue = monthlyVolume;
+                    console.log(`[Summ] Monthly Volume Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
+                    break;
+                case ChallengeType.WorkoutFrequency:
+                    updatedValue = monthlySessions;
+                    console.log(`[Summ] Workout Frequency Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
+                    break;
+                case ChallengeType.ExerciseVariety:
+                    updatedValue = monthlyCategoriesUsed.size;
+                    console.log(`[Summ] Exercise Variety Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
+                    break;
+                case ChallengeType.ConsistencyStreak:
+                    updatedValue = monthlyWorkoutDays.size;
+                    console.log(`[Summ] Consistency Streak Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
+                    break;
+                case ChallengeType.BodyweightReps:
+                    if (challenge.exerciseId) {
+                        updatedValue = monthlyMaxRepsPerExercise[challenge.exerciseId] ?? 0;
+                        console.log(`[Summ] Bodyweight Reps Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
+                    } else {
+                        shouldUpdate = false;
+                    }
+                    break;
+                default:
+                    shouldUpdate = false;
+                    console.warn(`[Summ] Unknown challenge type: ${challenge.type}`);
+            }
+
+            // Only update if we have a valid value to update with
+            if (shouldUpdate) {
+                console.log(`[Summ] Updating challenge ${challenge.id} (${challenge.type}):`, {
+                    currentValue: updatedValue,
+                    goalValue: challenge.goalValue,
+                    willComplete: updatedValue >= challenge.goalValue
+                });
+
+                // Update challenge progress
+                // <<< ADD LOGGING >>>
+                console.log(`[Summ] Attempting Prisma update for challenge ${challenge.id}...`);
+                try {
+                  await prisma.challenge.update({
+                      where: { id: challenge.id },
+                      data: {
+                          currentValue: updatedValue,
+                          status: updatedValue >= challenge.goalValue ? 
+                              ChallengeStatus.Completed : 
+                              ChallengeStatus.InProgress,
+                          completedAt: updatedValue >= challenge.goalValue ? 
+                              new Date() : null
+                      }
+                  });
+                  console.log(`[Summ] >>> Prisma update SUCCEEDED for challenge ${challenge.id}. New value: ${updatedValue}`);
+                } catch (prismaError) {
+                   console.error(`[Summ] !!! Prisma update FAILED for challenge ${challenge.id}:`, prismaError);
+                   // Decide if you want to continue updating other challenges or stop
+                }
+                // <<< END LOGGING >>>
+            }
+        } catch (error) {
+            console.error(`[Summ] Error updating challenge ${challenge.id}:`, error);
+        }
+    }
 
     // --- Update User Document (Overall Summaries & PRs - Mongoose) ---
     // ... construct userUpdateData ...
@@ -2118,9 +1253,9 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
        'performanceSummary.overallTotals.volume': overallVolume,
        'performanceSummary.overallTotals.count': overallCount,
        'performanceSummary.lastWorkoutDate': lastWorkoutDate,
-       'personalRecords.longestRun': overallLongestRun.value > 0 ? { ...overallLongestRun, workoutId: overallLongestRun.workoutId instanceof Types.ObjectId ? overallLongestRun.workoutId : undefined } : undefined,
-       'personalRecords.fastest5kPace': overallFastest5kPace.value !== Infinity ? { ...overallFastest5kPace, workoutId: overallFastest5kPace.workoutId instanceof Types.ObjectId ? overallFastest5kPace.workoutId : undefined } : undefined,
-       'personalRecords.maxStrengthVolume': overallMaxStrengthVolume.value > 0 ? { ...overallMaxStrengthVolume, workoutId: overallMaxStrengthVolume.workoutId instanceof Types.ObjectId ? overallMaxStrengthVolume.workoutId : undefined } : undefined,
+       'personalRecords.longestRun': overallLongestRun.value > 0 ? overallLongestRun : undefined,
+       'personalRecords.fastest5kPace': overallFastest5kPace.value !== Infinity ? overallFastest5kPace : undefined,
+       'personalRecords.maxStrengthVolume': overallMaxStrengthVolume.value > 0 ? overallMaxStrengthVolume : undefined,
     };
     // Remove undefined fields
     Object.keys(finalUpdateData).forEach(key => {
@@ -2132,7 +1267,41 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
     await UserModel.updateOne({ _id: userObjectId }, { $set: finalUpdateData });
     console.log(`[Summ] User document update complete for ${userId}.`);
 
-  } catch (error) { /* ... Error handling ... */ }
+    // --- Update User Document with New Stats ---
+    await UserModel.updateOne(
+        { _id: userObjectId },
+        { 
+            $set: {
+                'performanceSummary.overallTotals.distance': overallDistance,
+                'performanceSummary.overallTotals.duration': overallDuration,
+                'performanceSummary.overallTotals.volume': overallVolume,
+                'performanceSummary.overallTotals.count': overallCount,
+                'performanceSummary.lastWorkoutDate': lastWorkoutDate,
+                'personalRecords.longestRun': overallLongestRun.value > 0 ? overallLongestRun : undefined,
+                'personalRecords.fastest5kPace': overallFastest5kPace.value !== Infinity ? overallFastest5kPace : undefined,
+                'personalRecords.maxStrengthVolume': overallMaxStrengthVolume.value > 0 ? overallMaxStrengthVolume : undefined
+            }
+        }
+    );
+
+    // Revalidate relevant pages
+    revalidatePath('/challenges');
+    revalidatePath('/dashboard');
+    revalidatePath('/profile');
+    revalidatePath('/activity');
+
+    console.log(`[Summ] Successfully updated workout summaries for user ${userId}`);
+  } catch (error) { 
+     // <<< ENHANCE CATCH LOGGING >>>
+     console.error(`
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+[Summ] CRITICAL ERROR during summary update for user ${userId}:
+`, error, `
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+`);
+     // Optionally re-throw to make the failure visible upstream
+     // throw error;
+  }
 }
 
 // --- Helper Function for Volume Calculation ---
@@ -2213,9 +1382,22 @@ interface LeanWorkout {
   calculatedVolume?: number;
   cardioDetails?: ICardioDetails;
   records?: any[]; // Keep records loosely typed for now
-  exercises?: LeanWorkoutExercise[]; // Populated exercises
+  workoutExercises?: LeanWorkoutExercise[]; // Populated exercises
 }
 // --- Define types for populated lean data --- END
+
+// --- Define intermediate type BEFORE its first use ---
+interface PopulatedLeanWorkout { 
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  date: Date; // Make date non-optional as query sorts by it
+  type?: string;
+  duration?: number;
+  distance?: number;
+  calculatedVolume?: number;
+  cardioDetails?: ICardioDetails;
+  workoutExercises?: LeanWorkoutExercise[]; 
+}
 
 // --- NEW FUNCTION for Exercise PRs ---
 /**
@@ -2599,6 +1781,33 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
   } catch (error) {
     console.error("[PerfEx Action] Error fetching recent performed exercises:", error);
     return []; // Return empty array on error
+  }
+}
+
+// Function to update a user's workouts array (Restored)
+async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Promise<void> {
+  try {
+    // Update User's Workout Array
+    console.log('[updateUserWorkouts] Updating user workouts array...'); // Added log
+    await UserModel.findByIdAndUpdate(
+      userId,
+      { $push: { workouts: workoutId } }
+    );
+    console.log('[updateUserWorkouts] User workouts array updated.'); // Added log
+    
+    // Revalidate Paths (This might be redundant if called later, but keep for now)
+    // console.log('[updateUserWorkouts] Revalidating paths...');
+    // revalidatePath("/calendar");
+    // revalidatePath("/workout"); 
+    // revalidatePath("/workouts");
+    // revalidatePath("/dashboard");
+    // revalidatePath("/activity");
+    // console.log('[updateUserWorkouts] Paths revalidated');
+  } catch (error) {
+    // Log specifically for this function
+    console.error(`[updateUserWorkouts] Error updating user workouts array for user ${userId}:`, error);
+    // Re-throw the error so createWorkout's catch block can handle rollback if necessary
+    throw error; 
   }
 }
     

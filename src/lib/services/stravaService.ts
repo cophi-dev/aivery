@@ -7,6 +7,7 @@ import mongoose from 'mongoose'; // Import mongoose
 import WorkoutModel from '../db/models/workout'; // Import Workout model
 import ExerciseModel from '../db/models/exercise'; // Import Exercise model
 import WorkoutExerciseModel from '../db/models/workoutExercise'; // Import WorkoutExercise model
+import dbConnect from '../db/mongoose'; // Import dbConnect
 
 // Define in this file directly instead of importing from the route
 const DB_NAME = "aivery"
@@ -655,6 +656,8 @@ export async function updateStravaSyncPreferences(userId: string, activityTypes:
 
 // Function to handle single activity sync (used by webhook)
 export async function syncStravaActivity(userId: string, activityId: string) {
+  // Ensure DB connection is established before any Mongoose operations
+  await dbConnect(); 
   console.log(`Syncing Strava activity ${activityId} for user ${userId}...`);
   let accessToken = "";
   try {
