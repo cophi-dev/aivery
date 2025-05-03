@@ -39,17 +39,10 @@ function getRandomWelcomeMessage(): string {
     `Welcome! I'm your AI fitness buddy. How's your training going?`,
     `Hey there! 💪 What aspect of your fitness journey can I support you with today?`,
     `Hi! I'm your personal fitness assistant. What's on your workout agenda?`
-  ]
+  ];
   // Simple random selection
-    (name: JSX.Element) => <>Hey {name}! 👋 I'm your fitness coach. How can I help you today?</>,
-    (name: JSX.Element) => <>Hi {name}! Ready to crush some fitness goals? I'm here to help!</>,
-    (name: JSX.Element) => <>Welcome {name}! I'm your AI fitness buddy. How's your training going?</>,
-    (name: JSX.Element) => <>Hey {name}! 💪 What aspect of your fitness journey can I support you with today?</>,
-    (name: JSX.Element) => <>Hi {name}! I'm your personal fitness assistant. What's on your workout agenda?</>
-  ]
-  // Simple random selection with UserNicknameDisplay
-  const selectedMessage = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
-  return selectedMessage(<UserNicknameDisplay />);
+  const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
+  return welcomeMessages[randomIndex];
 }
 
 export function PersistentChat() {
