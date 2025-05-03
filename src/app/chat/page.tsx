@@ -16,14 +16,19 @@ import { UserAvatar } from "@/components/user-avatar"
 import { WorkoutListDisplay } from "@/components/workout-list-display"
 import { fetchWorkoutSummary } from "@/lib/workout-actions"
 import { InlineSpinner } from "@/components/ui/inline-spinner"
+import UserNicknameDisplay from "@/components/UserNicknameDisplay"
+import { type ReactNode } from 'react'
 
 // Define Message type clearly
-interface Message {
+type Message = {
   id: string;
-  role: 'user' | 'assistant'; // Use literal types
-  content: string;
-  data?: any; // Add optional data field to hold structured data like workouts
-}
+  role: 'user' | 'assistant';
+  content: ReactNode;
+  timestamp?: number;
+  isLoading?: boolean;
+  isError?: boolean;
+  isInitialMessage?: boolean;
+};
 
 // Simplified ChatMessage component
 interface ChatMessageProps {
@@ -72,11 +77,11 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
                   {message.content} 
                 </ReactMarkdown>
               {/* Conditionally render WorkoutListDisplay if workouts data exists */}
-              {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
+              {message.role === 'assistant' && message.content instanceof Object && (message.content as any).workouts && (message.content as any).workouts.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-dashed border-current/20">
-                  <WorkoutListDisplay workouts={message.data.workouts} />
+                  <WorkoutListDisplay workouts={(message.content as any).workouts} />
                 </div>
-              )}
+              ))}
             </>
          )}
        </div>
@@ -299,13 +304,13 @@ export default function ChatPage() {
 
   }, [searchParams, sendMessage, userDisplayName, session?.user?.name, isLoading]); // Added deps
 
-  function getRandomWelcomeMessage(name: string): string {
+  function getRandomWelcomeMessage(name: string): JSX.Element {
     const welcomeMessages = [
-      `Hey ${name}! 👋 I'm your fitness coach. What can I help you with today?`,
-      `Hi ${name}! Ready to crush some fitness goals today? I'm here to help!`,
-      `Welcome ${name}! I'm your AI fitness buddy. How's your training going?`,
-      `Hey there ${name}! 💪 What aspect of your fitness journey can I support you with today?`,
-      `Hi ${name}! I'm your personal fitness assistant. What's on your workout agenda?`
+      <>Hey <UserNicknameDisplay fallback={name} />! 👋 I'm your fitness coach. What can I help you with today?</>,
+      <>Hi <UserNicknameDisplay fallback={name} />! Ready to crush some fitness goals today? I'm here to help!</>,
+      <>Welcome <UserNicknameDisplay fallback={name} />! I'm your AI fitness buddy. How's your training going?</>,
+      <>Hey <UserNicknameDisplay fallback={name} />! 💪 What aspect of your fitness journey can I support you with today?</>,
+      <>Hi <UserNicknameDisplay fallback={name} />! I'm your personal fitness assistant. What's on your workout agenda?</>
     ];
     return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)];
   }

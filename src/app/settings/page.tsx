@@ -151,11 +151,81 @@ export default function SettingsPage() {
     { id: 'other', label: 'Other' }
   ]
 
-  // Simple handleImageUpload function to fix the error
-  const handleImageUpload = () => {
-    toast({
-      description: "Image upload is currently disabled",
-    });
+  // Handle image upload with cropping
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset states
+    setFileSizeError(null);
+    setSelectedImage(null);
+    setImageFile(null);
+
+    // Check file size (3MB = 3 * 1024 * 1024 bytes)
+    if (file.size > 3 * 1024 * 1024) {
+      setFileSizeError('Image must be less than 3MB');
+      return;
+    }
+
+    // Create URL for the image
+    const url = URL.createObjectURL(file);
+    setSelectedImage(url);
+    setImageFile(file);
+    setIsCropDialogOpen(true);
+  };
+
+  // Handle cropped image
+  const handleCroppedImage = async (blob: Blob) => {
+    setIsCropDialogOpen(false);
+    setIsUploadingImage(true);
+
+    try {
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64data = reader.result as string;
+
+        // Upload to server
+        const response = await fetch('/api/user/image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image: base64data,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          // Update local state and session
+          setUserData(prev => ({ ...prev, image: base64data }));
+          setImageKey(`image-${Date.now()}`); // Force avatar refresh
+          await updateSession();
+          
+          toast({
+            description: "Profile picture updated successfully",
+          });
+        } else {
+          throw new Error(data.error || 'Failed to update profile picture');
+        }
+      };
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update profile picture",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingImage(false);
+      if (selectedImage) {
+        URL.revokeObjectURL(selectedImage);
+        setSelectedImage(null);
+      }
+    }
   };
 
   // Add a dummy password update handler
@@ -1000,7 +1070,7 @@ export default function SettingsPage() {
                       onChange={handleImageUpload}
                     />
                     <p className="text-xs text-muted-foreground mt-2">
-                      JPG, PNG or GIF. 1MB max.
+                      JPG, PNG or GIF. 3MB max.
                     </p>
                     {fileSizeError && (
                       <p className="text-xs text-destructive mt-1">{fileSizeError}</p>
@@ -1053,6 +1123,27 @@ export default function SettingsPage() {
                       onChange={(e) => handleProfileChange('nickname', e.target.value)}
                     />
                   </div>
+                </div>
+                
+                {/* Add Save Button */}
+                <div className="flex items-center justify-end gap-4 mt-6">
+                  {saveError && (
+                    <p className="text-sm text-destructive">{saveError}</p>
+                  )}
+                  <Button
+                    onClick={handleSave}
+                    disabled={!hasChanges || isSaving}
+                    className="w-full sm:w-auto"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -1552,6 +1643,21 @@ export default function SettingsPage() {
         </TabsContent>
 
       </Tabs>
+
+      {/* Image Crop Dialog */}
+      <ImageCropDialog
+        isOpen={isCropDialogOpen}
+        onClose={() => {
+          setIsCropDialogOpen(false);
+          if (selectedImage) {
+            URL.revokeObjectURL(selectedImage);
+            setSelectedImage(null);
+          }
+        }}
+        onSave={handleCroppedImage}
+        imageUrl={selectedImage || ''}
+      />
+
     </div>
   )
 }

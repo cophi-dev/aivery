@@ -22,6 +22,7 @@ import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assumin
 import type { DashboardPREntry } from "@/lib/workout-actions";
 import type { IUser } from '@/lib/db/models/user';
 import { Button } from "@/components/ui/button"; // Import Button
+import UserNicknameDisplay from "@/components/UserNicknameDisplay";
 
 // Define a type for the metrics data
 interface DashboardMetrics {
@@ -145,7 +146,7 @@ export default function DashboardPage() {
     }
     
     // Session is definitely authenticated here due to `required: true`
-    const displayName = session?.user?.nickname || session?.user?.name || "User";
+    const displayName = session?.user?.name || "User";
     const userImage = session?.user?.image || null;
 
     // Log metrics state right before rendering
@@ -154,7 +155,7 @@ export default function DashboardPage() {
     return (
         <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-8 md:space-y-10 bg-background">
             <DashboardHeader 
-                displayName={displayName} 
+                displayName={<UserNicknameDisplay fallback={displayName} />} 
                 userImage={userImage} 
             />
 

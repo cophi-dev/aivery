@@ -8,6 +8,7 @@ import { MessageSquare, Send, X } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useSession } from "next-auth/react"
+import UserNicknameDisplay from "@/components/UserNicknameDisplay"
 
 type ChatMessage = {
   id: string;
@@ -40,7 +41,15 @@ function getRandomWelcomeMessage(): string {
     `Hi! I'm your personal fitness assistant. What's on your workout agenda?`
   ]
   // Simple random selection
-  return welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+    (name: JSX.Element) => <>Hey {name}! 👋 I'm your fitness coach. How can I help you today?</>,
+    (name: JSX.Element) => <>Hi {name}! Ready to crush some fitness goals? I'm here to help!</>,
+    (name: JSX.Element) => <>Welcome {name}! I'm your AI fitness buddy. How's your training going?</>,
+    (name: JSX.Element) => <>Hey {name}! 💪 What aspect of your fitness journey can I support you with today?</>,
+    (name: JSX.Element) => <>Hi {name}! I'm your personal fitness assistant. What's on your workout agenda?</>
+  ]
+  // Simple random selection with UserNicknameDisplay
+  const selectedMessage = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+  return selectedMessage(<UserNicknameDisplay />);
 }
 
 export function PersistentChat() {

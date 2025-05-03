@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserAvatar } from "@/components/user-avatar"; // Assuming this exists
-import { getQuote } from "@/lib/client-utils"; // Assuming this client-side util exists
+import { UserAvatar } from "@/components/user-avatar";
+import { getQuote } from "@/lib/client-utils";
+import UserNicknameDisplay from "@/components/UserNicknameDisplay";
+import { type ReactNode } from 'react';
 
 interface DashboardHeaderProps {
-  displayName: string;
+  displayName: ReactNode;
   userImage: string | null;
 }
 
@@ -66,12 +68,13 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
     <section className="p-4 md:p-6 bg-card rounded-xl shadow-sm w-full max-w-4xl">
       <div className="flex items-center gap-3 md:gap-4">
         <UserAvatar 
-          name={displayName} 
-          imageUrl={userImage} 
-          size="lg" // Or appropriate size
+          imageUrl={userImage}
+          size="lg"
         />
         <div className="flex-1 text-center sm:text-left">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Hey {displayName}!</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">
+            Hey {displayName}!
+          </h1>
           {/* Add a button to manually refresh quote? */} 
           <p className="text-sm text-muted-foreground mt-1 italic">{quote}</p> 
         </div>
