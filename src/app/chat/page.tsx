@@ -23,7 +23,8 @@ import { type ReactNode } from 'react'
 type Message = {
   id: string;
   role: 'user' | 'assistant';
-  content: ReactNode;
+  content: string;
+  data?: any;
   timestamp?: number;
   isLoading?: boolean;
   isError?: boolean;
@@ -45,7 +46,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
 
    return (
      <div className={cn('flex items-end gap-2', {
-        'justify-end': isUserMessage,
+        'justify-end': isUserMessage
      })}>
        {/* Avatar */}
        <div className={cn('flex-shrink-0', { 'order-2': isUserMessage, 'order-1': !isUserMessage })}>
@@ -61,7 +62,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
        {/* Bubble */}
        <div className={cn('px-3 py-1.5 rounded-xl max-w-[75%] break-words', {
          'order-1 bg-primary text-primary-foreground': isUserMessage,
-         'order-2 bg-secondary': !isUserMessage,
+         'order-2 bg-secondary': !isUserMessage
        })}>
          {showLoading ? (
             <div className="flex items-center space-x-1">
@@ -71,17 +72,15 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
             </div>
          ) : (
             <>
-              <ReactMarkdown 
-                className="prose prose-sm dark:prose-invert"
-                >
-                  {message.content} 
-                </ReactMarkdown>
+              <ReactMarkdown className="prose prose-sm dark:prose-invert">
+                {typeof message.content === 'string' ? message.content : ''}
+              </ReactMarkdown>
               {/* Conditionally render WorkoutListDisplay if workouts data exists */}
-              {message.role === 'assistant' && message.content instanceof Object && (message.content as any).workouts && (message.content as any).workouts.length > 0 && (
+              {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-dashed border-current/20">
-                  <WorkoutListDisplay workouts={(message.content as any).workouts} />
+                  <WorkoutListDisplay workouts={message.data.workouts} />
                 </div>
-              ))}
+              )}
             </>
          )}
        </div>
@@ -304,15 +303,14 @@ export default function ChatPage() {
 
   }, [searchParams, sendMessage, userDisplayName, session?.user?.name, isLoading]); // Added deps
 
-  function getRandomWelcomeMessage(name: string): JSX.Element {
+  function getRandomWelcomeMessage(name: string): string {
     const welcomeMessages = [
-      <>Hey <UserNicknameDisplay fallback={name} />! 👋 I'm your fitness coach. What can I help you with today?</>,
-      <>Hi <UserNicknameDisplay fallback={name} />! Ready to crush some fitness goals today? I'm here to help!</>,
-      <>Welcome <UserNicknameDisplay fallback={name} />! I'm your AI fitness buddy. How's your training going?</>,
-      <>Hey <UserNicknameDisplay fallback={name} />! 💪 What aspect of your fitness journey can I support you with today?</>,
-      <>Hi <UserNicknameDisplay fallback={name} />! I'm your personal fitness assistant. What's on your workout agenda?</>
+      `Hi ${name}! I'm your AI fitness coach. How can I help you today?`,
+      `Welcome back, ${name}! Ready to work on your fitness goals?`,
+      `Hey ${name}! Let's make some progress on your fitness journey today.`,
+      `Hello ${name}! I'm here to help with your training and fitness needs.`
     ];
-    return welcomeMessages[Math.floor(Date.now() % welcomeMessages.length)];
+    return welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

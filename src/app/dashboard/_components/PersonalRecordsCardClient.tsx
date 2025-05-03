@@ -1,18 +1,18 @@
 'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Zap, ChevronRight, TrendingUp, Gauge, Weight, Trophy, ChevronsRight, Edit, Search } from "lucide-react";
-import { format } from "date-fns"; // For formatting the date
-import Link from "next/link"; // Import Link for navigation
-// Import the new PR type
+import { format } from "date-fns";
+import Link from "next/link";
 import type { DashboardPREntry } from "@/lib/workout-actions";
-import type { IUser } from '@/lib/db/models/user'; // Import IUser for overall PRs type
+import type { IUser } from '@/lib/db/models/user';
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 // Base type for a single record entry (value and date are required)
 type SingleRecord = { value: number; date: Date };
 
 // New definition for RecordWithWorkoutId, ensuring it handles optional fields
-// It represents the structure of a single record *if it exists*
 type RecordWithWorkoutId = SingleRecord & { workoutId?: string };
 
 // Helper: Format pace from seconds/meter to min/km
@@ -32,13 +32,12 @@ const formatDistance = (distanceKm: number | undefined): string => {
 
 // Helper: Format volume (already in kg)
 const formatVolume = (volumeKg: number | undefined): string => {
-    if (!volumeKg) return "N/A";
-    return `${volumeKg.toFixed(0)} kg`;
+  if (!volumeKg) return "N/A";
+  return `${volumeKg.toFixed(0)} kg`;
 };
 
 interface PersonalRecordsCardProps {
   exercisePRs?: DashboardPREntry[];
-  // Update prop type to expect potential workoutId on overall records
   overallPRs?: {
     longestRun?: RecordWithWorkoutId;
     fastest5kPace?: RecordWithWorkoutId;
@@ -46,158 +45,158 @@ interface PersonalRecordsCardProps {
   };
 }
 
+const PRCard = motion(Card);
+
 export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: PersonalRecordsCardProps) {
   const { longestRun, fastest5kPace, maxStrengthVolume } = overallPRs;
   
   const hasExercisePRs = exercisePRs.length > 0;
-  const hasOverallPRs = !!(longestRun?.value || fastest5kPace?.value || maxStrengthVolume?.value); // Ensure boolean
-
-  // --- Add Log --- 
-  console.log("[PersonalRecordsCard] Rendering. hasOverallPRs:", hasOverallPRs, "hasExercisePRs:", hasExercisePRs, "overallPRs:", overallPRs, "exercisePRs:", exercisePRs);
-  // --- End Log ---
+  const hasOverallPRs = !!(longestRun?.value || fastest5kPace?.value || maxStrengthVolume?.value);
 
   return (
-    <Card className="rounded-xl shadow-sm">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg flex items-center justify-center">
-          <Zap className="mr-2 h-5 w-5 text-primary" /> Personal Records
-        </CardTitle>
-        {/* <CardDescription className="text-center">Your best recent achievements</CardDescription> */} 
-      </CardHeader>
-      <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-center">
-        {/* Overall PRs Section (if any) */} 
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <Trophy className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Personal Records</h2>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {hasOverallPRs && (
           <>
             {longestRun?.value && (
-              // Wrap in Link if workoutId exists
-              longestRun.workoutId ? (
-                <Link href={`/workouts/${longestRun.workoutId}`} className="block group hover:text-primary transition-colors text-sm border-b border-border/50 pb-2">
-                  <p className="font-medium truncate flex items-center justify-center">
-                    <TrendingUp className="mr-1.5 h-4 w-4 text-muted-foreground" /> Longest Run
-                    <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </p>
-                  <p className="text-muted-foreground">
-                    <span className="font-semibold text-foreground">{formatDistance(longestRun.value)}</span>
-                    {longestRun.date && (
-                        <span className="text-xs"> on {format(new Date(longestRun.date), 'MMM d, yyyy')}</span>
+              <PRCard
+                className="overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                whileHover={{ scale: 1.02 }}
+                transition={{ type: "spring", stiffness: 300 }}
+              >
+                <Link href={longestRun.workoutId ? `/workouts/${longestRun.workoutId}` : '#'} 
+                      className="block p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        <span className="font-medium text-blue-600 dark:text-blue-400">Longest Run</span>
+                      </div>
+                      <div className="text-2xl font-bold">{formatDistance(longestRun.value)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {format(new Date(longestRun.date), 'MMM d, yyyy')}
+                      </div>
+                    </div>
+                    {longestRun.workoutId && (
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     )}
-                  </p>
+                  </div>
                 </Link>
-              ) : (
-                // Original div if no workoutId
-                <div className="text-sm border-b border-border/50 pb-2">
-                  <p className="font-medium truncate flex items-center justify-center">
-                    <TrendingUp className="mr-1.5 h-4 w-4 text-muted-foreground" /> Longest Run
-                  </p>
-                  <p className="text-muted-foreground">
-                    <span className="font-semibold text-foreground">{formatDistance(longestRun.value)}</span>
-                    {longestRun.date && (
-                        <span className="text-xs"> on {format(new Date(longestRun.date), 'MMM d, yyyy')}</span>
-                    )}
-                  </p>
-                </div>
-              )
+              </PRCard>
             )}
+
             {fastest5kPace?.value && (
-               // Wrap in Link if workoutId exists
-               fastest5kPace.workoutId ? (
-                 <Link href={`/workouts/${fastest5kPace.workoutId}`} className="block group hover:text-primary transition-colors text-sm border-b border-border/50 pb-2">
-                  <p className="font-medium truncate flex items-center justify-center">
-                    <Gauge className="mr-1.5 h-4 w-4 text-muted-foreground" /> Fastest 5k Pace
-                    <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </p>
-                  <p className="text-muted-foreground">
-                    <span className="font-semibold text-foreground">{formatPace(fastest5kPace.value)}</span>
-                    {fastest5kPace.date && (
-                        <span className="text-xs"> on {format(new Date(fastest5kPace.date), 'MMM d, yyyy')}</span>
+              <PRCard
+                className="overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                whileHover={{ scale: 1.02 }}
+                transition={{ type: "spring", stiffness: 300 }}
+              >
+                <Link href={fastest5kPace.workoutId ? `/workouts/${fastest5kPace.workoutId}` : '#'}
+                      className="block p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Gauge className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        <span className="font-medium text-green-600 dark:text-green-400">Fastest 5K Pace</span>
+                      </div>
+                      <div className="text-2xl font-bold">{formatPace(fastest5kPace.value)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {format(new Date(fastest5kPace.date), 'MMM d, yyyy')}
+                      </div>
+                    </div>
+                    {fastest5kPace.workoutId && (
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     )}
-                  </p>
-                 </Link>
-               ) : (
-                 // Original div if no workoutId
-                 <div className="text-sm border-b border-border/50 pb-2">
-                  <p className="font-medium truncate flex items-center justify-center">
-                    <Gauge className="mr-1.5 h-4 w-4 text-muted-foreground" /> Fastest 5k Pace
-                  </p>
-                  <p className="text-muted-foreground">
-                    <span className="font-semibold text-foreground">{formatPace(fastest5kPace.value)}</span>
-                    {fastest5kPace.date && (
-                        <span className="text-xs"> on {format(new Date(fastest5kPace.date), 'MMM d, yyyy')}</span>
-                    )}
-                  </p>
-                </div>
-               )
+                  </div>
+                </Link>
+              </PRCard>
             )}
+
             {maxStrengthVolume?.value && (
-               // Wrap in Link if workoutId exists
-               maxStrengthVolume.workoutId ? (
-                 <Link href={`/workouts/${maxStrengthVolume.workoutId}`} className="block group hover:text-primary transition-colors text-sm border-b border-border/50 pb-2 sm:col-span-2">
-                    <p className="font-medium truncate flex items-center justify-center">
-                      <Weight className="mr-1.5 h-4 w-4 text-muted-foreground" /> Max Strength Volume
-                      <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </p>
-                    <p className="text-muted-foreground">
-                      <span className="font-semibold text-foreground">{formatVolume(maxStrengthVolume.value)}</span>
-                      {maxStrengthVolume.date && (
-                          <span className="text-xs"> in workout on {format(new Date(maxStrengthVolume.date), 'MMM d, yyyy')}</span>
-                      )}
-                    </p>
-                 </Link>
-               ) : (
-                 // Original div if no workoutId
-                 <div className="text-sm border-b border-border/50 pb-2 sm:col-span-2">
-                  <p className="font-medium truncate flex items-center justify-center">
-                    <Weight className="mr-1.5 h-4 w-4 text-muted-foreground" /> Max Strength Volume
-                  </p>
-                  <p className="text-muted-foreground">
-                    <span className="font-semibold text-foreground">{formatVolume(maxStrengthVolume.value)}</span>
-                    {maxStrengthVolume.date && (
-                        <span className="text-xs"> in workout on {format(new Date(maxStrengthVolume.date), 'MMM d, yyyy')}</span>
+              <PRCard
+                className="overflow-hidden hover:shadow-lg transition-shadow duration-300 md:col-span-2"
+                whileHover={{ scale: 1.02 }}
+                transition={{ type: "spring", stiffness: 300 }}
+              >
+                <Link href={maxStrengthVolume.workoutId ? `/workouts/${maxStrengthVolume.workoutId}` : '#'}
+                      className="block p-6 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Weight className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                        <span className="font-medium text-purple-600 dark:text-purple-400">Max Strength Volume</span>
+                      </div>
+                      <div className="text-2xl font-bold">{formatVolume(maxStrengthVolume.value)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {format(new Date(maxStrengthVolume.date), 'MMM d, yyyy')}
+                      </div>
+                    </div>
+                    {maxStrengthVolume.workoutId && (
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     )}
-                  </p>
-                </div>
-               )
-            )}
-            {/* Separator if both sections exist */} 
-            {hasExercisePRs && (
-              <div className="sm:col-span-2 border-t border-dashed border-border/30 my-2"></div>
+                  </div>
+                </Link>
+              </PRCard>
             )}
           </>
         )}
 
-        {/* Exercise PRs Section (if any) */} 
-        {hasExercisePRs && exercisePRs.map((pr) => {
-          const prContent = (
-            <>
-              <p className="font-medium truncate">{pr.exerciseName}</p>
-              <p className="text-muted-foreground">
-                <span className="font-semibold text-foreground">{pr.value} {pr.unit}</span>
-                {pr.date && (
-                    <span className="text-xs"> on {format(new Date(pr.date), 'MMM d, yyyy')}</span>
-                )}
-              </p>
-            </>
-          );
-
-          return (
-            <div key={pr._id} className="text-sm border-b border-border/50 pb-2 last:border-b-0 sm:last:border-b-0">
-              {pr.workoutId ? (
-                <Link href={`/workouts/${pr.workoutId}`} className="block group hover:text-primary transition-colors">
-                  {prContent}
-                  <ChevronRight className="inline-block h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </Link>
-              ) : (
-                prContent
-              )}
+        {hasExercisePRs && (
+          <div className={cn("grid gap-4", {
+            "md:col-span-2": true,
+            "mt-6": hasOverallPRs
+          })}>
+            <div className="flex items-center space-x-2">
+              <Trophy className="h-5 w-5 text-amber-500" />
+              <h3 className="font-medium">Exercise Records</h3>
             </div>
-          );
-        })}
-        
-        {/* Message if no PRs at all */} 
-        {!hasOverallPRs && !hasExercisePRs && (
-          <p className="text-sm text-muted-foreground sm:col-span-2">No personal records found yet. Keep logging!</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {exercisePRs.map((pr) => (
+                <PRCard
+                  key={pr._id}
+                  className="overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                  whileHover={{ scale: 1.02 }}
+                  transition={{ type: "spring", stiffness: 300 }}
+                >
+                  <Link href={pr.workoutId ? `/workouts/${pr.workoutId}` : '#'}
+                        className="block p-4 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1.5">
+                        <div className="font-medium text-amber-700 dark:text-amber-400">{pr.exerciseName}</div>
+                        <div className="text-xl font-bold">
+                          {pr.value} {pr.unit}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {format(new Date(pr.date), 'MMM d, yyyy')}
+                        </div>
+                      </div>
+                      {pr.workoutId && (
+                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </div>
+                  </Link>
+                </PRCard>
+              ))}
+            </div>
+          </div>
         )}
-      </CardContent>
-    </Card>
+
+        {!hasOverallPRs && !hasExercisePRs && (
+          <div className="col-span-2 text-center py-8">
+            <div className="flex flex-col items-center space-y-2">
+              <Trophy className="h-12 w-12 text-muted-foreground/50" />
+              <p className="text-muted-foreground">No personal records found yet. Keep pushing!</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

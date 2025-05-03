@@ -5,18 +5,14 @@ import {
 } from "@/lib/exercise-actions"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { 
-  Card, 
-  CardContent, 
-  CardHeader, 
-  CardTitle 
-} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { LucideArrowLeft, LucidePlus } from "lucide-react"
+import { Plus, Search, Dumbbell } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ExerciseData } from "@/types/db"
 import { redirect } from "next/navigation"
 import type { Metadata } from 'next'
+import { Input } from "@/components/ui/input"
+import { ExerciseGrid } from "@/components/exercises/exercise-grid"
 
 export const metadata: Metadata = {
   title: "Exercises | Aivery",
@@ -46,10 +42,7 @@ export default async function ExercisesPage({
   searchParams: { [key: string]: string | string[] | undefined }
 }) {
   const nameParam = searchParams.name as string | undefined
-  // We ignore tagsParam for now as filtering logic might need revisit
-  // const tagsParam = searchParams.tags as string | undefined 
   
-  // If a name is provided, try to find the matching exercise and redirect
   if (nameParam) {
     const exercise = await fetchExerciseByName(nameParam)
     if (exercise) {
@@ -57,39 +50,39 @@ export default async function ExercisesPage({
     }
   }
   
-  // Fetch ALL exercises for main list and category filtering
   const allExercises = await fetchAllExercisesAction();
-  // Fetch USED exercises for the new tab
   const usedExercises = await getUsedExercises();
   
   const exerciseNotFound = nameParam ? true : false
   
-  // Filter ALL exercises by category
   const strengthExercises = allExercises.filter((ex: ExerciseData) => ex.category === "strength")
   const cardioExercises = allExercises.filter((ex: ExerciseData) => ex.category === "cardio")
   const flexibilityExercises = allExercises.filter((ex: ExerciseData) => ex.category === "flexibility")
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="mr-4">
-              <LucideArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-          </Link>
+    <div className="container max-w-7xl mx-auto py-6 space-y-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
           <h1 className="text-3xl font-bold tracking-tight">Exercises</h1>
+          <p className="text-muted-foreground mt-1">Browse and manage your exercise library</p>
         </div>
-        
         <Link href="/exercises/new">
-          <Button>
-            <LucidePlus className="h-4 w-4 mr-2" />
+          <Button className="bg-primary hover:bg-primary/90">
+            <Plus className="h-4 w-4 mr-2" />
             Add Exercise
           </Button>
         </Link>
       </div>
-      
+
+      <div className="flex items-center space-x-4 bg-card p-4 rounded-lg border shadow-sm">
+        <Search className="h-5 w-5 text-muted-foreground" />
+        <Input 
+          type="search" 
+          placeholder="Search exercises..." 
+          className="border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 px-0"
+        />
+      </div>
+
       {exerciseNotFound && (
         <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 p-4 rounded-md mb-6">
           <p>Exercise &quot;{nameParam}&quot; not found. You can create it or browse existing exercises below.</p>
@@ -98,105 +91,75 @@ export default async function ExercisesPage({
       
       {allExercises.length === 0 ? ( 
         <div className="text-center py-12">
-          <p className="text-muted-foreground mb-4">No exercises found in the database.</p>
-          <p className="text-sm text-muted-foreground mb-6">
-            Start by adding exercises to your database.
-          </p>
-          <Link href="/exercises/new">
+          <div className="flex flex-col items-center space-y-4">
+            <Dumbbell className="h-12 w-12 text-muted-foreground/50" />
+            <div>
+              <p className="text-muted-foreground mb-2">No exercises found in the database.</p>
+              <p className="text-sm text-muted-foreground">
+                Start by adding exercises to your database.
+              </p>
+            </div>
+            <Link href="/exercises/new">
               <Button>Add Exercise</Button>
-          </Link>
-          {/* Removed Seed button as API route was deleted */}
+            </Link>
+          </div>
         </div>
       ) : (
         <Tabs defaultValue="all" className="w-full">
-          <TabsList className="mb-6 grid w-full grid-cols-5"> {/* Adjust grid columns */} 
-            <TabsTrigger value="all">All ({allExercises.length})</TabsTrigger>
-            <TabsTrigger value="performed">Performed ({usedExercises.length})</TabsTrigger> {/* New Tab */} 
-            <TabsTrigger value="strength">Strength ({strengthExercises.length})</TabsTrigger>
-            <TabsTrigger value="cardio">Cardio ({cardioExercises.length})</TabsTrigger>
-            <TabsTrigger value="flexibility">Flexibility ({flexibilityExercises.length})</TabsTrigger>
+          <TabsList className="mb-6 inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground relative">
+            <TabsTrigger 
+              value="all" 
+              className="ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-8 px-3 rounded-sm"
+            >
+              All ({allExercises.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="performed" 
+              className="ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-8 px-3 rounded-sm"
+            >
+              Performed ({usedExercises.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="strength" 
+              className="ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-8 px-3 rounded-sm"
+            >
+              Strength ({strengthExercises.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="cardio" 
+              className="ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-8 px-3 rounded-sm"
+            >
+              Cardio ({cardioExercises.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="flexibility" 
+              className="ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm h-8 px-3 rounded-sm"
+            >
+              Flexibility ({flexibilityExercises.length})
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="all">
             <ExerciseGrid exercises={allExercises} />
           </TabsContent>
           
-          {/* New Tab Content */} 
           <TabsContent value="performed">
             <ExerciseGrid exercises={usedExercises} />
           </TabsContent>
           
           <TabsContent value="strength">
-             <ExerciseGrid exercises={strengthExercises} />
+            <ExerciseGrid exercises={strengthExercises} />
           </TabsContent>
           
           <TabsContent value="cardio">
-             <ExerciseGrid exercises={cardioExercises} />
+            <ExerciseGrid exercises={cardioExercises} />
           </TabsContent>
           
           <TabsContent value="flexibility">
-             <ExerciseGrid exercises={flexibilityExercises} />
+            <ExerciseGrid exercises={flexibilityExercises} />
           </TabsContent>
         </Tabs>
       )}
     </div>
-  )
-}
-
-// Component for the grid (can stay here or be moved)
-function ExerciseGrid({ exercises }: { exercises: ExerciseData[] }) {
-    if (exercises.length === 0) {
-        return <p className="text-muted-foreground text-center py-8">No exercises found for this category/filter.</p>;
-    }
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {exercises.map(exercise => (
-            <ExerciseCard key={exercise._id as string} exercise={exercise} />
-          ))}
-        </div>
-    );
-}
-
-// Restore ExerciseCard component definition
-function ExerciseCard({ exercise }: { exercise: ExerciseData }) {
-  return (
-    <Link href={`/exercises/${exercise._id}`} className="block h-full">
-      <Card className="h-full hover:bg-accent/50 transition-colors flex flex-col">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg">{exercise.name}</CardTitle>
-          <p className="text-sm text-muted-foreground capitalize">
-            {exercise.category}
-          </p>
-        </CardHeader>
-        <CardContent className="flex-grow flex flex-col justify-between">
-           <div>
-             {/* Use muscleGroups now */}
-             <div className="flex flex-wrap gap-1 mb-2">
-               {(exercise.muscleGroups  || []).map((muscle: string)  => (
-                 <Badge key={muscle} variant="secondary" className="capitalize">
-                   {muscle}
-                 </Badge>
-               ))}
-             </div>
-             {/* Display Tags */}
-             {exercise.tags && exercise.tags.length > 0 && (
-               <div className="flex flex-wrap gap-1 mt-2 mb-2 border-t pt-2">
-                  {exercise.tags.map((tag: string) => (
-                   <Badge key={tag} variant="outline" className="capitalize border-primary/50 text-primary">
-                     {tag}
-                   </Badge>
-                  ))}
-               </div>
-             )}
-           </div>
-           {/* Ensure equipment is treated as an array */}
-           {Array.isArray(exercise.equipment) && exercise.equipment.length > 0 && (
-             <p className="text-xs mt-2 text-muted-foreground">
-               Equipment: {exercise.equipment.join(', ')}
-             </p>
-           )}
-         </CardContent>
-      </Card>
-    </Link>
   )
 } 
