@@ -261,18 +261,18 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
   // Determine overall workout type category (strength or cardio)
   const workoutCategory = workout.type === 'strength' ? 'strength' : 'cardio'; // Simplified category
 
-  // --- Main Render ---
+  // Render the standard workout details page (including the AI highlight card)
   return (
     <>
-      {/* --- Section 1: Full-Screen AI Highlight (Fun Fact) --- */}
-      {aiHighlight && !isLoadingHighlight && (
+      {/* --- Section 1: Full-Screen AI Highlight (Fun Fact) - Use workout.aiHighlight --- */}
+      {workout && workout.aiHighlight && (
         <div
           className="relative flex flex-col items-center justify-center h-[calc(100vh-3.5rem)] text-center p-6 md:p-8 text-primary-dark-bg"
           style={{ backgroundColor: 'hsl(var(--background))' }}
         >
           <div className="text-2xl md:text-4xl lg:text-5xl font-bold leading-normal text-primary-dark-bg break-words px-4 prose prose-lg dark:prose-invert max-w-prose mx-auto">
             <ReactMarkdown>
-              {aiHighlight}
+              {workout.aiHighlight}
             </ReactMarkdown>
           </div>
           <a href="#details" className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
@@ -284,198 +284,186 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
         </div>
       )}
 
-      {/* Show loading indicator ONLY if highlight is loading AND main workout isn't (to avoid double loaders) */}
-      {isLoadingHighlight && !isLoading && (
-         <div className="flex items-center justify-center min-h-screen bg-background">
-             <div className="flex flex-col items-center space-y-2 text-muted-foreground">
-                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                 <span>Loading AI Highlight...</span>
-             </div>
-         </div>
-      )}
+      {/* --- Section 2: Main Workout Details Container (ensure id="details" exists) --- */}
+      <div className="py-8 md:py-12" id="details">
+        <div className="container mx-auto px-4">
+          {/* Header */}
+          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+            <div className="flex items-center justify-between mb-8">
+              {/* Back Button */}
+              <Button variant="ghost" onClick={() => router.back()} className="text-muted-foreground hover:text-foreground">
+                <LucideArrowLeft className="h-5 w-5 mr-2" />
+                Back
+              </Button>
 
-      {/* --- Section 2: Main Workout Details Container --- */}
-      {!isLoading && workout && (
-          <div className="py-8 md:py-12">
-            <div className="container mx-auto px-4">
-
-              {/* --- Header Section --- */}
-              <div className="flex items-center justify-between mb-8">
-                {/* Back Button */}
-                <Button variant="ghost" onClick={() => router.back()} className="text-muted-foreground hover:text-foreground">
-                  <LucideArrowLeft className="h-5 w-5 mr-2" />
-                  Back
+              {/* Edit and Delete Buttons - Adjust variants */}
+              <div className="flex space-x-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/workouts/${id}/edit`}>
+                    <LucidePencil className="h-4 w-4 mr-1" /> Edit
+                  </Link>
                 </Button>
-
-                {/* Edit and Delete Buttons - Adjust variants */}
-                <div className="flex space-x-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/workouts/${id}/edit`}>
-                      <LucidePencil className="h-4 w-4 mr-1" /> Edit
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="destructive" // Standard destructive
-                    size="sm"
-                    onClick={handleDelete}
-                    disabled={isDeleting}
-                  >
-                    <LucideTrash className="h-4 w-4 mr-1" /> {isDeleting ? "Deleting..." : "Delete"}
-                  </Button>
-                </div>
+                <Button
+                  variant="destructive" // Standard destructive
+                  size="sm"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                >
+                  <LucideTrash className="h-4 w-4 mr-1" /> {isDeleting ? "Deleting..." : "Delete"}
+                </Button>
               </div>
+            </div>
 
-              {/* --- Workout Title and Date - Remove gradient, use theme colors */}
-              <div className="mb-8 text-center md:text-left">
-                 <h1 className="text-3xl md:text-4xl font-bold mb-2 text-foreground">
-                   {workout.name || "Workout Details"}
-                 </h1>
-                 <p className="text-lg text-muted-foreground flex items-center justify-center md:justify-start">
-                   <LucideCalendarDays className="h-5 w-5 mr-2 opacity-80" />
-                   {formattedDate}
-                 </p>
-              </div>
-
-              {/* --- Main Content Area (Tabs) --- */}
-              <Tabs defaultValue="overview" className="w-full">
-                {/* Remove custom styling from TabsList/Trigger, rely on defaults */}
-                <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 mb-6">
-                  <TabsTrigger value="overview">
-                      <LucideActivity className="h-4 w-4 mr-1" /> Overview
-                  </TabsTrigger>
-                  <TabsTrigger value="details">
-                      <LucideDumbbell className="h-4 w-4 mr-1" /> {workoutCategory === 'strength' ? 'Exercises' : 'Metrics'}
-                  </TabsTrigger>
-                  <TabsTrigger value="analysis">
-                     <LucideBarChart className="h-4 w-4 mr-1" /> Analysis
-                  </TabsTrigger>
-                </TabsList>
-
-                {/* --- Overview Tab - Wrap content in Card */} 
-                <TabsContent value="overview">
-                  <Card className="rounded-xl shadow-sm bg-card p-6"> {/* New wrapper card */}
-                    <div className="space-y-6"> {/* Add inner spacing */}
-                      {/* Workout Summary Section */}
-                      <div>
-                        <CardTitle className="text-xl font-semibold flex items-center mb-2">
-                            {getWorkoutIcon(workout.type)}
-                            Workout Summary
-                        </CardTitle>
-                        <CardDescription>{workout.notes || "No notes provided for this workout."}</CardDescription>
-                      </div>
-
-                      {/* Stats Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 pt-4 border-t">
-                        {/* Stat Item: Duration */}
-                        <div className="flex flex-col">
-                            <p className="text-sm text-muted-foreground mb-1">Duration</p>
-                            <p className="text-lg font-medium flex items-center"><LucideClock className="h-4 w-4 mr-1.5 text-muted-foreground" />{formattedDuration}</p>
-                        </div>
-                        {/* ... other stats (Distance, Volume, Type, HR, Location) - styled similarly ... */}
-                        {formattedDistance && (
-                          <div className="flex flex-col">
-                            <p className="text-sm text-muted-foreground mb-1">Distance</p>
-                            <p className="text-lg font-medium flex items-center"><LucideRuler className="h-4 w-4 mr-1.5 text-muted-foreground" />{formattedDistance}</p>
-                          </div>
-                        )}
-                        {workoutCategory === 'strength' && typeof workout.calculatedVolume === 'number' && (
-                          <div className="flex flex-col">
-                            <p className="text-sm text-muted-foreground mb-1">Total Volume</p>
-                            <p className="text-lg font-medium flex items-center"><LucideZap className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.calculatedVolume.toLocaleString()} kg</p>
-                          </div>
-                        )}
-                        <div className="flex flex-col">
-                            <p className="text-sm text-muted-foreground mb-1">Type</p>
-                            <p className="text-lg font-medium capitalize flex items-center"><LucideTag className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.type}</p>
-                        </div>
-                        {workout.averageHeartRate && (
-                          <div className="flex flex-col">
-                            <p className="text-sm text-muted-foreground mb-1">Avg. Heart Rate</p>
-                            <p className="text-lg font-medium flex items-center"><LucideHeartPulse className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.averageHeartRate} bpm</p>
-                          </div>
-                        )}
-                        {workout.location && (
-                          <div className="flex flex-col">
-                            <p className="text-sm text-muted-foreground mb-1">Location</p>
-                            <p className="text-lg font-medium flex items-center"><LucideMapPin className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.location}</p>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* AI Highlight Section */}
-                      <div className="pt-6 border-t">
-                          <h3 className="text-lg font-semibold mb-2 flex items-center">
-                            <LucideBrainCircuit className="h-5 w-5 mr-2 text-primary" />
-                            AI Workout Highlight
-                          </h3>
-                          {isLoadingHighlight ? (
-                            <div className="flex items-center text-sm text-muted-foreground">
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Generating highlight...
-                            </div>
-                          ) : aiHighlight ? (
-                            <p className="text-muted-foreground italic">"{aiHighlight}"</p>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">AI highlight not available.</p>
-                          )}
-                      </div>
-                    </div>
-                  </Card>
-                </TabsContent>
-
-                {/* --- Details Tab - Wrap content in Card --- */}
-                <TabsContent value="details">
-                   <Card className="rounded-xl shadow-sm bg-card p-6"> 
-                      <CardTitle className="text-xl font-semibold mb-4">{workoutCategory === 'strength' ? 'Exercises' : 'Metrics'}</CardTitle>
-                      {/* ... existing details content (exercise list or cardio metrics) ... */}
-                      {/* Example: Styling for Exercise List items */}
-                      {workoutCategory === 'strength' && workout.workoutExercises && workout.workoutExercises.length > 0 && (
-                          <div className="space-y-4">
-                              {workout.workoutExercises.map((exercise: any, index: number) => (
-                                 <div key={exercise._id || index} className="p-4 rounded-lg border border-border/60">
-                                      <p className="font-medium mb-2">{exercise.exerciseId?.name || 'Unknown Exercise'}</p>
-                                      {/* Style sets similar to log form */}
-                                      <ul className="space-y-1 text-sm text-muted-foreground list-none pl-2">
-                                          {(exercise.sets || []).map((set: any, setIndex: number) => (
-                                              <li key={set._id || setIndex} className="flex justify-between items-center">
-                                                  <span>Set {setIndex + 1}: {set.weight || 0} kg x {set.reps || 0} reps</span>
-                                                  {set.notes && <span className="text-xs italic ml-2">({set.notes})</span>}
-                                              </li>
-                                          ))}
-                                      </ul>
-                                      {exercise.notes && <p className="text-xs mt-2 italic text-muted-foreground">Notes: {exercise.notes}</p>}
-                                  </div>
-                              ))}
-                          </div>
-                      )}
-                      {/* Example: Styling for Cardio Metrics */}
-                      {workoutCategory !== 'strength' && (
-                          <div className="grid grid-cols-2 gap-4">
-                              {/* Display formatted Pace, HR etc. if available */}
-                          </div>
-                      )}
-                   </Card>
-                </TabsContent>
-
-                {/* --- Analysis Tab - Wrap content in Card --- */}
-                <TabsContent value="analysis">
-                   <Card className="rounded-xl shadow-sm bg-card p-6">
-                      <WorkoutAnalysis workout={workout} />
-                   </Card>
-                </TabsContent>
-              </Tabs>
-
-              {/* Optional: Raw Data View (Could be a separate collapsible section or dev-only) */}
-              {/* <details className="mt-8 text-secondary-dark-bg">
-                <summary className="cursor-pointer text-sm hover:text-primary-dark-bg">View Raw Data</summary>
-                <pre className="mt-2 p-4 bg-black/30 rounded text-xs overflow-x-auto">
-                  {JSON.stringify(workout, null, 2)}
-                </pre>
-              </details> */}
-
+            {/* --- Workout Title and Date - Remove gradient, use theme colors */}
+            <div className="mb-8 text-center md:text-left">
+               <h1 className="text-3xl md:text-4xl font-bold mb-2 text-foreground">
+                 {workout.name || "Workout Details"}
+               </h1>
+               <p className="text-lg text-muted-foreground flex items-center justify-center md:justify-start">
+                 <LucideCalendarDays className="h-5 w-5 mr-2 opacity-80" />
+                 {formattedDate}
+               </p>
             </div>
           </div>
-      )}
+
+          {/* Tabs for Exercises/Analysis */}
+          <Tabs defaultValue="exercises">
+            <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 mb-6">
+              <TabsTrigger value="overview">
+                  <LucideActivity className="h-4 w-4 mr-1" /> Overview
+              </TabsTrigger>
+              <TabsTrigger value="details">
+                  <LucideDumbbell className="h-4 w-4 mr-1" /> {workoutCategory === 'strength' ? 'Exercises' : 'Metrics'}
+              </TabsTrigger>
+              <TabsTrigger value="analysis">
+                 <LucideBarChart className="h-4 w-4 mr-1" /> Analysis
+              </TabsTrigger>
+            </TabsList>
+
+            {/* --- Overview Tab - Wrap content in Card */} 
+            <TabsContent value="overview">
+              <Card className="rounded-xl shadow-sm bg-card p-6"> {/* New wrapper card */}
+                <div className="space-y-6"> {/* Add inner spacing */}
+                  {/* Workout Summary Section */}
+                  <div>
+                    <CardTitle className="text-xl font-semibold flex items-center mb-2">
+                        {getWorkoutIcon(workout.type)}
+                        Workout Summary
+                    </CardTitle>
+                    <CardDescription>{workout.notes || "No notes provided for this workout."}</CardDescription>
+                  </div>
+
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6 pt-4 border-t">
+                    {/* Stat Item: Duration */}
+                    <div className="flex flex-col">
+                        <p className="text-sm text-muted-foreground mb-1">Duration</p>
+                        <p className="text-lg font-medium flex items-center"><LucideClock className="h-4 w-4 mr-1.5 text-muted-foreground" />{formattedDuration}</p>
+                    </div>
+                    {/* ... other stats (Distance, Volume, Type, HR, Location) - styled similarly ... */}
+                    {formattedDistance && (
+                      <div className="flex flex-col">
+                        <p className="text-sm text-muted-foreground mb-1">Distance</p>
+                        <p className="text-lg font-medium flex items-center"><LucideRuler className="h-4 w-4 mr-1.5 text-muted-foreground" />{formattedDistance}</p>
+                      </div>
+                    )}
+                    {workoutCategory === 'strength' && typeof workout.calculatedVolume === 'number' && (
+                      <div className="flex flex-col">
+                        <p className="text-sm text-muted-foreground mb-1">Total Volume</p>
+                        <p className="text-lg font-medium flex items-center"><LucideZap className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.calculatedVolume.toLocaleString()} kg</p>
+                      </div>
+                    )}
+                    <div className="flex flex-col">
+                        <p className="text-sm text-muted-foreground mb-1">Type</p>
+                        <p className="text-lg font-medium capitalize flex items-center"><LucideTag className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.type}</p>
+                    </div>
+                    {workout.averageHeartRate && (
+                      <div className="flex flex-col">
+                        <p className="text-sm text-muted-foreground mb-1">Avg. Heart Rate</p>
+                        <p className="text-lg font-medium flex items-center"><LucideHeartPulse className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.averageHeartRate} bpm</p>
+                      </div>
+                    )}
+                    {workout.location && (
+                      <div className="flex flex-col">
+                        <p className="text-sm text-muted-foreground mb-1">Location</p>
+                        <p className="text-lg font-medium flex items-center"><LucideMapPin className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.location}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* AI Highlight Section */}
+                  <div className="pt-6 border-t">
+                      <h3 className="text-lg font-semibold mb-2 flex items-center">
+                        <LucideBrainCircuit className="h-5 w-5 mr-2 text-primary" />
+                        AI Workout Highlight
+                      </h3>
+                      {isLoadingHighlight ? (
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating highlight...
+                        </div>
+                      ) : aiHighlight ? (
+                        <p className="text-muted-foreground italic">"{aiHighlight}"</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">AI highlight not available.</p>
+                      )}
+                  </div>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* --- Details Tab - Wrap content in Card --- */}
+            <TabsContent value="details">
+               <Card className="rounded-xl shadow-sm bg-card p-6"> 
+                  <CardTitle className="text-xl font-semibold mb-4">{workoutCategory === 'strength' ? 'Exercises' : 'Metrics'}</CardTitle>
+                  {/* ... existing details content (exercise list or cardio metrics) ... */}
+                  {/* Example: Styling for Exercise List items */}
+                  {workoutCategory === 'strength' && workout.workoutExercises && workout.workoutExercises.length > 0 && (
+                      <div className="space-y-4">
+                          {workout.workoutExercises.map((exercise: any, index: number) => (
+                             <div key={exercise._id || index} className="p-4 rounded-lg border border-border/60">
+                                  <p className="font-medium mb-2">{exercise.exerciseId?.name || 'Unknown Exercise'}</p>
+                                  {/* Style sets similar to log form */}
+                                  <ul className="space-y-1 text-sm text-muted-foreground list-none pl-2">
+                                      {(exercise.sets || []).map((set: any, setIndex: number) => (
+                                          <li key={set._id || setIndex} className="flex justify-between items-center">
+                                              <span>Set {setIndex + 1}: {set.weight || 0} kg x {set.reps || 0} reps</span>
+                                              {set.notes && <span className="text-xs italic ml-2">({set.notes})</span>}
+                                          </li>
+                                      ))}
+                                  </ul>
+                                  {exercise.notes && <p className="text-xs mt-2 italic text-muted-foreground">Notes: {exercise.notes}</p>}
+                              </div>
+                          ))}
+                      </div>
+                  )}
+                  {/* Example: Styling for Cardio Metrics */}
+                  {workoutCategory !== 'strength' && (
+                      <div className="grid grid-cols-2 gap-4">
+                          {/* Display formatted Pace, HR etc. if available */}
+                      </div>
+                  )}
+               </Card>
+            </TabsContent>
+
+            {/* --- Analysis Tab - Wrap content in Card --- */}
+            <TabsContent value="analysis">
+               <Card className="rounded-xl shadow-sm bg-card p-6">
+                  <WorkoutAnalysis workout={workout} />
+               </Card>
+            </TabsContent>
+          </Tabs>
+
+          {/* Optional: Raw Data View (Could be a separate collapsible section or dev-only) */}
+          {/* <details className="mt-8 text-secondary-dark-bg">
+            <summary className="cursor-pointer text-sm hover:text-primary-dark-bg">View Raw Data</summary>
+            <pre className="mt-2 p-4 bg-black/30 rounded text-xs overflow-x-auto">
+              {JSON.stringify(workout, null, 2)}
+            </pre>
+          </details> */}
+
+        </div>
+      </div>
     </>
   )
 }
