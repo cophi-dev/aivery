@@ -33,22 +33,27 @@ export default async function ChallengesPage() {
     error = e.message || "Failed to load challenges.";
   }
 
-  // Render the page layout and client component
   return (
-    <div className="container mx-auto px-4 py-8"> 
-        <h1 className="text-3xl font-bold tracking-tight mb-6">Monthly Challenges</h1>
-        
+    <div className="relative min-h-screen bg-gradient-to-b from-background to-background/95">
+      {/* Ambient background glow */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -inset-[100%] opacity-50 bg-gradient-radial from-primary/20 via-transparent to-transparent blur-3xl" />
+      </div>
+      
+      {/* Main content */}
+      <div className="relative container max-w-7xl mx-auto px-4 py-8 space-y-8">
         {error && (
-           <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-red-700">
-              <p className="font-semibold">Error Loading Challenges</p>
-              <p>{error}</p>
-           </div>
+          <div className="mb-4 rounded-2xl border border-red-200/30 bg-red-50/10 backdrop-blur-xl p-4 text-red-700">
+            <p className="font-semibold">Error Loading Challenges</p>
+            <p>{error}</p>
+          </div>
         )}
        
-       <ChallengeListClient 
-          initialChallenges={challenges} // Pass fetched/generated challenges
-          onRefreshChallenges={refreshChallengesAction} // Pass the refresh action
-       />
+        <ChallengeListClient 
+          initialChallenges={challenges}
+          onRefreshChallenges={refreshChallengesAction}
+        />
+      </div>
     </div>
   );
 } 

@@ -215,82 +215,115 @@ async function generateChallengeData(
           const distancesMeters = runningWorkouts.map(w => w.distance ?? 0); 
           const totalDistanceMetersLast90d = distancesMeters.reduce((sum, dist) => sum + dist, 0);
           const avgMonthlyDistanceMeters = totalDistanceMetersLast90d / 3;
-          const goalMonthlyDistanceMeters = Math.max(5000, Math.round((avgMonthlyDistanceMeters * 1.1) / 1000) * 1000); 
+          // Corrected: Define goal in KM directly
+          const goalMonthlyDistanceKm = Math.max(5, Math.round((avgMonthlyDistanceMeters * 1.1) / 1000)); 
+          
+          // Check initial completion status
+          const initialStatus = initialMonthlyDistanceKm >= goalMonthlyDistanceKm ? ChallengeStatus.Completed : ChallengeStatus.NotStarted;
+          const initialCompletedAt = initialStatus === ChallengeStatus.Completed ? new Date() : null;
+          
           addChallenge({
-              userId: userId, type: ChallengeType.MonthlyDistance, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalMonthlyDistanceMeters / 1000}km This Month`,
-              description: `Accumulate ${goalMonthlyDistanceMeters / 1000}km of running distance in ${new Date(currentYear, currentMonth - 1).toLocaleString('default', { month: 'long' })}.`,
-              goalValue: goalMonthlyDistanceMeters / 1000, 
-              startValue: initialMonthlyDistanceKm, // Use function parameter
-              currentValue: initialMonthlyDistanceKm, // Use function parameter
+              userId: userId, type: ChallengeType.MonthlyDistance, 
+              status: initialStatus, // Use calculated initial status
+              metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalMonthlyDistanceKm}km This Month`,
+              description: `Accumulate ${goalMonthlyDistanceKm}km of running distance in ${new Date(currentYear, currentMonth - 1).toLocaleString('default', { month: 'long' })}.`,
+              goalValue: goalMonthlyDistanceKm, 
+              startValue: initialMonthlyDistanceKm, 
+              currentValue: initialMonthlyDistanceKm, 
               month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
+              completedAt: initialCompletedAt, // Use calculated completion date
+              relatedWorkoutId: null,
           });
       } catch (e) { console.error("[Challenge Data Gen] Error generating Monthly Distance challenge:", e); }
       // --- Monthly Volume ---
       try {
-          // TODO: Calculate recent average monthly strength volume for a better goal?
-          const goalMonthlyVolume = 10000; // Example: Target 10,000kg volume
+          const goalMonthlyVolume = 10000; 
+
+          // Check initial completion status
+          const initialStatus = initialMonthlyVolumeKg >= goalMonthlyVolume ? ChallengeStatus.Completed : ChallengeStatus.NotStarted;
+          const initialCompletedAt = initialStatus === ChallengeStatus.Completed ? new Date() : null;
+
           addChallenge({
-              userId: userId, type: ChallengeType.MonthlyVolume, status: ChallengeStatus.NotStarted,
+              userId: userId, type: ChallengeType.MonthlyVolume, 
+              status: initialStatus, 
               metric: ChallengeMetric.Volume, unit: 'kg', title: `Lift ${goalMonthlyVolume}kg Total Volume`,
               description: `Accumulate ${goalMonthlyVolume}kg of total lifting volume this month.`,
               goalValue: goalMonthlyVolume, 
-              startValue: initialMonthlyVolumeKg, // Use function parameter
-              currentValue: initialMonthlyVolumeKg, // Use function parameter
+              startValue: initialMonthlyVolumeKg, 
+              currentValue: initialMonthlyVolumeKg, 
               month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
+              completedAt: initialCompletedAt, 
+              relatedWorkoutId: null,
           });
       } catch (e) { console.error("[Challenge Data Gen] Error generating Monthly Volume challenge:", e); }
       // --- Workout Frequency ---
       try {
-          const uniqueWorkoutDaysLast90d = new Set(recentWorkouts.map(w => w.date.toISOString().split('T')[0])).size; // Use function parameter
+          const uniqueWorkoutDaysLast90d = new Set(recentWorkouts.map(w => w.date.toISOString().split('T')[0])).size;
           const avgMonthlyFrequency = Math.max(4, Math.round(uniqueWorkoutDaysLast90d / 3)); 
           const goalFrequency = Math.min(20, avgMonthlyFrequency + 2); 
+
+          // Check initial completion status
+          const initialStatus = initialMonthlySessions >= goalFrequency ? ChallengeStatus.Completed : ChallengeStatus.NotStarted;
+          const initialCompletedAt = initialStatus === ChallengeStatus.Completed ? new Date() : null;
+
           addChallenge({
-              userId: userId, type: ChallengeType.WorkoutFrequency, status: ChallengeStatus.NotStarted,
+              userId: userId, type: ChallengeType.WorkoutFrequency, 
+              status: initialStatus, 
               metric: ChallengeMetric.Sessions, unit: 'sessions', title: `Complete ${goalFrequency} Workouts`,
               description: `Log ${goalFrequency} workout sessions this month.`,
               goalValue: goalFrequency, 
-              startValue: initialMonthlySessions, // Use function parameter
-              currentValue: initialMonthlySessions, // Use function parameter
+              startValue: initialMonthlySessions, 
+              currentValue: initialMonthlySessions, 
               month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
+              completedAt: initialCompletedAt, 
+              relatedWorkoutId: null,
           });
       } catch (e) { console.error("[Challenge Data Gen] Error generating Workout Frequency challenge:", e); }
       // --- Consistency Streak ---
       try {
-           // Goal can be dynamic, e.g., based on previous month or avg freq
            const goalConsistency = 12; 
+
+           // Check initial completion status
+           const initialStatus = initialMonthlyDays.size >= goalConsistency ? ChallengeStatus.Completed : ChallengeStatus.NotStarted;
+           const initialCompletedAt = initialStatus === ChallengeStatus.Completed ? new Date() : null;
+
            addChallenge({
-                userId: userId, type: ChallengeType.ConsistencyStreak, status: ChallengeStatus.NotStarted,
+                userId: userId, type: ChallengeType.ConsistencyStreak, 
+                status: initialStatus, 
                 metric: ChallengeMetric.Days, unit: 'days', title: `Workout on ${goalConsistency} Days`,
                 description: `Log workouts on ${goalConsistency} different days this month.`,
                 goalValue: goalConsistency, 
-                startValue: initialMonthlyDays.size, // Use function parameter
-                currentValue: initialMonthlyDays.size, // Use function parameter
+                startValue: initialMonthlyDays.size, 
+                currentValue: initialMonthlyDays.size, 
                 month: currentMonth, year: currentYear, exerciseId: null,
-                completedAt: null, relatedWorkoutId: null,
+                completedAt: initialCompletedAt, 
+                relatedWorkoutId: null,
            });
       } catch (e) { console.error("[Challenge Data Gen] Error generating Consistency challenge:", e); }
       // --- Exercise Variety ---
       try {
-          // Use 90-day history to set a reasonable goal
           const uniqueExercisesUsed90d = new Set(
-              recentWorkouts.flatMap(w => // Use function parameter
+              recentWorkouts.flatMap(w => 
                  w.exercises?.map((ex: any) => ex.exercise?.name).filter(Boolean) ?? [] 
               )
           );
-          const goalVariety = Math.min(15, Math.max(5, uniqueExercisesUsed90d.size + 2)); // Goal based on recent variety
+          const goalVariety = Math.min(15, Math.max(5, uniqueExercisesUsed90d.size + 2));
+
+          // Check initial completion status
+          const initialStatus = initialExerciseIds.size >= goalVariety ? ChallengeStatus.Completed : ChallengeStatus.NotStarted;
+          const initialCompletedAt = initialStatus === ChallengeStatus.Completed ? new Date() : null;
+
           addChallenge({ 
-              userId: userId, type: ChallengeType.ExerciseVariety, status: ChallengeStatus.NotStarted,
+              userId: userId, type: ChallengeType.ExerciseVariety, 
+              status: initialStatus, 
               metric: ChallengeMetric.Exercises, unit: 'exercises', title: `Perform ${goalVariety} Unique Exercises`,
               description: `Log at least ${goalVariety} different exercises this month.`,
               goalValue: goalVariety, 
-              startValue: initialExerciseIds.size, // Use function parameter
-              currentValue: initialExerciseIds.size, // Use function parameter
+              startValue: initialExerciseIds.size, 
+              currentValue: initialExerciseIds.size, 
               month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
+              completedAt: initialCompletedAt, 
+              relatedWorkoutId: null,
           });
       } catch (e) { console.error("[Challenge Data Gen] Error generating Variety challenge:", e); }
     // --- End of Generation Blocks ---
@@ -340,8 +373,11 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
 
     // --- <<< NEW: Fetch ALL workouts THIS MONTH for initial values >>> ---
     console.log(`[Challenge Action Gen] Fetching existing workouts for ${currentYear}-${currentMonth}...`);
-    const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
-    const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999);
+    // Use UTC dates for boundaries to avoid timezone issues
+    const startOfMonthUTC = new Date(Date.UTC(currentYear, currentMonth - 1, 1));
+    // End of the last day of the month in UTC
+    const endOfMonthUTC = new Date(Date.UTC(currentYear, currentMonth, 1) - 1); 
+    console.log(`[Challenge Action Gen] Querying workouts between UTC: ${startOfMonthUTC.toISOString()} and ${endOfMonthUTC.toISOString()}`);
     let initialMonthlyDistanceKm = 0;
     let initialMonthlyVolumeKg = 0;
     let initialMonthlySessions = 0;
@@ -356,9 +392,10 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
         await dbConnect(); // Ensure Mongoose connection
         const workoutsThisMonth = await WorkoutModel.find({
             userId: userObjectId,
-            date: { $gte: startOfMonth, $lte: endOfMonth }
+            // Use UTC boundaries for the date query
+            date: { $gte: startOfMonthUTC, $lte: endOfMonthUTC }
         })
-        .select('_id date type distance calculatedVolume') // Select needed fields, remove workoutExercises
+        .select('_id date type distance calculatedVolume duration') // Select needed fields, remove workoutExercises
         .lean();
 
         console.log(`[Challenge Action Gen] Found ${workoutsThisMonth.length} workouts this month.`);
@@ -384,26 +421,29 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
         initialMonthlySessions = workoutsThisMonth.length;
 
         workoutsThisMonth.forEach((workout: any) => {
+            // <<< DETAILED LOGGING for Pace Calculation >>>
+            console.log(`[DBG Pace Check Month] Workout ID: ${workout._id}, Date: ${workout.date}, Type: ${workout.type}, Dist: ${workout.distance}, Dur: ${workout.duration}`);
+            // <<< END LOGGING >>>
             initialMonthlyDays.add(new Date(workout.date).toISOString().split('T')[0]);
-            if ((workout.type === 'running' || workout.type === 'run') && workout.distance) {
-                const distanceKm = workout.distance / 1000; // Convert meters to KM
+            
+            // Accumulate distance, handling potential unit inconsistency (m vs km)
+            if ((workout.type === 'running' || workout.type === 'run') && workout.distance && workout.distance > 0) { 
+                // Heuristic: If distance is large (>1000?), assume meters, else assume km.
+                const distanceKm = workout.distance > 1000 ? workout.distance / 1000 : workout.distance;
+                // Add logging for clarity
+                console.log(`[DBG Dist Check Month] Workout ID: ${workout._id}, Original Dist: ${workout.distance}, Calculated DistKm: ${distanceKm}`);
                 initialMonthlyDistanceKm += distanceKm; 
                 initialMonthlyMaxRunKm = Math.max(initialMonthlyMaxRunKm, distanceKm);
             }
             if (workout.type === 'strength' && workout.calculatedVolume) {
                 initialMonthlyVolumeKg += workout.calculatedVolume;
             }
-            // <<< Calculate best pace this month >>>
-            if ((workout.type === 'running' || workout.type === 'run') && 
-                workout.distance && workout.distance >= 5000 && 
-                workout.duration && workout.duration > 0) 
-            {
-                const paceSm = workout.duration / workout.distance; // seconds per meter
-                if (paceSm < bestPaceThisMonthSm) {
-                    bestPaceThisMonthSm = paceSm;
-                }
+            const paceSm = workout.duration / workout.distance; // seconds per meter
+            if (paceSm < bestPaceThisMonthSm) {
+                bestPaceThisMonthSm = paceSm;
+                // <<< LOG when pace is updated >>>
+                console.log(`[DBG Pace Check Month] New best pace found: ${paceSm.toFixed(3)}s/m from Workout ID: ${workout._id}`);
             }
-            // <<< End calculation >>>
         });
 
         // --- Calculate Pace Benchmark (90d before this month) --- 
@@ -577,8 +617,11 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
 
     // --- <<< NEW: Fetch ALL workouts THIS MONTH for initial values (Copied from generateAndSaveChallenges) >>> ---
     console.log(`[refreshChallengesAction] Fetching existing workouts for ${currentYear}-${currentMonth}...`);
-    const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
-    const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999);
+     // Use UTC dates for boundaries to avoid timezone issues
+    const startOfMonthUTC = new Date(Date.UTC(currentYear, currentMonth - 1, 1));
+    // End of the last day of the month in UTC
+    const endOfMonthUTC = new Date(Date.UTC(currentYear, currentMonth, 1) - 1); 
+    console.log(`[refreshChallengesAction] Querying workouts between UTC: ${startOfMonthUTC.toISOString()} and ${endOfMonthUTC.toISOString()}`);
     let initialMonthlyDistanceKm = 0;
     let initialMonthlyVolumeKg = 0;
     let initialMonthlySessions = 0;
@@ -593,9 +636,11 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
         await dbConnect(); // Ensure Mongoose connection
         const workoutsThisMonth = await WorkoutModel.find({
             userId: userObjectId,
-            date: { $gte: startOfMonth, $lte: endOfMonth }
+             // Use UTC boundaries for the date query
+            date: { $gte: startOfMonthUTC, $lte: endOfMonthUTC }
         })
-        .select('_id date type distance calculatedVolume') // Select needed fields, remove workoutExercises
+         // Include 'duration' in the select statement
+        .select('_id date type distance calculatedVolume duration') // Select needed fields, remove workoutExercises
         .lean();
 
         console.log(`[refreshChallengesAction] Found ${workoutsThisMonth.length} workouts this month.`);
@@ -621,26 +666,29 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
         initialMonthlySessions = workoutsThisMonth.length;
 
         workoutsThisMonth.forEach((workout: any) => {
+            // <<< DETAILED LOGGING for Pace Calculation >>>
+            console.log(`[DBG Pace Check Month Refresh] Workout ID: ${workout._id}, Date: ${workout.date}, Type: ${workout.type}, Dist: ${workout.distance}, Dur: ${workout.duration}`);
+            // <<< END LOGGING >>>
             initialMonthlyDays.add(new Date(workout.date).toISOString().split('T')[0]);
-            if ((workout.type === 'running' || workout.type === 'run') && workout.distance) {
-                const distanceKm = workout.distance / 1000; // Convert meters to KM
+            
+            // Accumulate distance, handling potential unit inconsistency (m vs km)
+            if ((workout.type === 'running' || workout.type === 'run') && workout.distance && workout.distance > 0) { 
+                // Heuristic: If distance is large (>1000?), assume meters, else assume km.
+                const distanceKm = workout.distance > 1000 ? workout.distance / 1000 : workout.distance;
+                 // Add logging for clarity
+                console.log(`[DBG Dist Check Month Refresh] Workout ID: ${workout._id}, Original Dist: ${workout.distance}, Calculated DistKm: ${distanceKm}`);
                 initialMonthlyDistanceKm += distanceKm; 
                 initialMonthlyMaxRunKm = Math.max(initialMonthlyMaxRunKm, distanceKm);
             }
             if (workout.type === 'strength' && workout.calculatedVolume) {
                 initialMonthlyVolumeKg += workout.calculatedVolume;
             }
-            // <<< Calculate best pace this month >>>
-            if ((workout.type === 'running' || workout.type === 'run') && 
-                workout.distance && workout.distance >= 5000 && 
-                workout.duration && workout.duration > 0) 
-            {
-                const paceSm = workout.duration / workout.distance; // seconds per meter
-                if (paceSm < bestPaceThisMonthSm) {
-                    bestPaceThisMonthSm = paceSm;
-                }
+            const paceSm = workout.duration / workout.distance; // seconds per meter
+            if (paceSm < bestPaceThisMonthSm) {
+                bestPaceThisMonthSm = paceSm;
+                 // <<< LOG when pace is updated >>>
+                console.log(`[DBG Pace Check Month Refresh] New best pace found: ${paceSm.toFixed(3)}s/m from Workout ID: ${workout._id}`);
             }
-            // <<< End calculation >>>
         });
 
         // --- Calculate Pace Benchmark (90d before this month) --- 
@@ -1060,6 +1108,8 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
       // Consider revalidating challenges path here if needed immediately,
       // although it's often better to revalidate after the main action completes.
       // revalidatePath('/challenges'); 
+      revalidatePath('/challenges'); 
+      console.log('[updateChallengesAfterWorkout] Revalidated /challenges path.');
     } else {
       console.log(`[updateChallengesAfterWorkout] No challenge updates required for this workout.`);
     }
