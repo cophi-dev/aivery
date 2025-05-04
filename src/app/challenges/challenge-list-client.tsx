@@ -440,12 +440,13 @@ export function ChallengeListClient({ initialChallenges, onRefreshChallenges }: 
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
-  // Add stats
-  const completedChallenges = challenges.filter(c => c.status === 'Completed').length;
-  const totalProgress = challenges.reduce((acc, c) => {
-    const progress = calculateProgress(c.currentValue, c.goalValue, c.startValue, c.metric);
-    return acc + progress;
-  }, 0) / challenges.length;
+  // Calculate stats based on the *current* state
+  const totalChallenges = challenges.length;
+  // Correctly compare status with the string literal
+  const completedCount = challenges.filter(c => c.status === "Completed").length; 
+  const overallProgress = totalChallenges > 0 
+      ? challenges.reduce((sum, c) => sum + calculateProgress(c.currentValue, c.goalValue, c.startValue, c.metric), 0) / totalChallenges
+      : 0;
 
   useEffect(() => {
     console.log("[ChallengeListClient] initialChallenges prop changed, updating state.");
@@ -526,7 +527,7 @@ export function ChallengeListClient({ initialChallenges, onRefreshChallenges }: 
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Completed</p>
-                  <h2 className="text-2xl font-bold">{completedChallenges}</h2>
+                  <h2 className="text-2xl font-bold">{completedCount}</h2>
                 </div>
                 <CheckCircle className="h-8 w-8 text-primary opacity-75" />
               </div>
@@ -538,7 +539,7 @@ export function ChallengeListClient({ initialChallenges, onRefreshChallenges }: 
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Overall Progress</p>
-                  <h2 className="text-2xl font-bold">{totalProgress.toFixed(0)}%</h2>
+                  <h2 className="text-2xl font-bold">{overallProgress.toFixed(0)}%</h2>
                 </div>
                 <BarChart className="h-8 w-8 text-primary opacity-75" />
               </div>

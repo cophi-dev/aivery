@@ -39,6 +39,267 @@ type LeanExercisePR = Omit<IExercisePR, keyof Document | '__v'> & {
   updatedAt: Date;
 };
 
+// --- <<< NEW Helper Function for Challenge Generation Logic >>> ---
+async function generateChallengeData(
+    userId: string,
+    currentMonth: number,
+    currentYear: number,
+    exercisePRMap: Record<string, LeanExercisePR>,
+    // Use the structure fetched by Prisma in both calling functions
+    recentWorkouts: Array<{ 
+      date: Date; 
+      type: string | null; 
+      distance: number | null; 
+      duration: number | null;
+      exercises: Array<{ 
+        exercise: { name: string | null; category: string | null } | null 
+      }>;
+    }>,
+    initialMonthlyDistanceKm: number,
+    initialMonthlyVolumeKg: number,
+    initialMonthlySessions: number,
+    initialMonthlyDays: Set<string>,
+    initialExerciseIds: Set<string>,
+    initialMonthlyMaxRunKm: number,
+    bestPaceThisMonthSm: number,
+    paceBenchmarkSm: number,
+    paceBenchmarkDate: Date | null
+): Promise<Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>[]> {
+    const generatedChallengesData: Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>[] = [];
+    const generatedTypes = new Set<ChallengeType>();
+    
+    // Helper to add challenges, ensuring uniqueness and limit
+    const addChallenge = (data: Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>) => {
+        if (!generatedTypes.has(data.type) && generatedChallengesData.length < 12) {
+            generatedChallengesData.push(data); 
+            generatedTypes.add(data.type);
+        }
+    };
+
+     // --- Strength PRs ---
+    const prExercises = ['Bench Press', 'Squat', 'Deadlift'];
+    shuffle(prExercises);
+    for (const exName of prExercises) {
+      try {
+        if (generatedTypes.has(ChallengeType.StrengthPR)) break; 
+        // Assuming prisma client is accessible in this scope (it's defined globally in the file)
+        const exercise = await prisma.exercise.findUnique({ where: { name: exName } });
+        if (exercise) { 
+          const pr = exercisePRMap[`${exercise.id}_kg`];
+          const currentPRValue = pr?.value ?? 0;
+          const goalValue = Math.max(currentPRValue + 2.5, Math.round((currentPRValue * 1.025) / 2.5) * 2.5);
+          if (goalValue > currentPRValue) {
+            addChallenge({
+              userId: userId, type: ChallengeType.StrengthPR, status: ChallengeStatus.NotStarted,
+              metric: ChallengeMetric.Weight, unit: 'kg', title: `New ${exName} PR`,
+              description: `Lift ${goalValue}kg in ${exName}. Your best is ${currentPRValue}kg.`,
+              goalValue: goalValue, startValue: currentPRValue, currentValue: currentPRValue,
+              month: currentMonth, year: currentYear, exerciseId: exercise.id,
+              completedAt: null, relatedWorkoutId: null,
+            });
+          }
+        }
+      } catch (e) { console.error(`[Challenge Data Gen] Error generating ${exName} challenge:`, e); }
+    }
+    // --- Bodyweight Reps ---
+    const bwExercises = ['Pull-up', 'Push-up'];
+    shuffle(bwExercises); 
+     for (const exName of bwExercises) {
+       try {
+          if (generatedTypes.has(ChallengeType.BodyweightReps)) break;
+          const exercise = await prisma.exercise.findUnique({ where: { name: exName } });
+          if (exercise) {
+              const pr = exercisePRMap[`${exercise.id}_reps`];
+              const currentPRValue = pr?.value ?? 0;
+              const goalValue = currentPRValue + (currentPRValue > 5 ? 2 : 1); 
+              addChallenge({
+                  userId: userId, type: ChallengeType.BodyweightReps, status: ChallengeStatus.NotStarted,
+                  metric: ChallengeMetric.Reps, unit: 'reps', title: `Achieve ${goalValue} ${exName}s`,
+                  description: `Complete ${goalValue} consecutive ${exName}s. Your best is ${currentPRValue}.`,
+                  goalValue: goalValue, startValue: currentPRValue, currentValue: currentPRValue,
+                  month: currentMonth, year: currentYear, exerciseId: exercise.id,
+                  completedAt: null, relatedWorkoutId: null,
+              });
+          }
+      } catch(e) { console.error(`[Challenge Data Gen] Error generating ${exName} challenge:`, e); }
+     }
+      // --- Longest Run ---
+      try {
+          // Filter recent workouts for running
+          const recentRunningWorkouts = recentWorkouts.filter( // Use function parameter
+              w => (w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run') && w.distance
+          );
+          // Find max distance in meters from recent runs
+          const maxRecentDistanceMeters = recentRunningWorkouts.reduce((max, w) => Math.max(max, w.distance ?? 0), 0);
+          const maxRecentDistanceKm = maxRecentDistanceMeters / 1000;
+
+          console.log(`[Challenge Data Gen] Max run distance in last 90d: ${maxRecentDistanceKm.toFixed(2)}km`);
+
+          // Set goal based on recent max, ensure minimum goal like 1km?
+          const goalLongestRunKm = Math.max(1, Math.round(maxRecentDistanceKm * 1.05 * 10) / 10); // e.g., 5% increase, rounded to 0.1km
+
+          // Only create challenge if the goal is meaningfully larger than the recent max
+          if (goalLongestRunKm > maxRecentDistanceKm) { 
+              addChallenge({
+                  userId: userId, type: ChallengeType.LongestSession, status: ChallengeStatus.NotStarted,
+                  metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalLongestRunKm}km`,
+                  description: `Complete a single run of ${goalLongestRunKm}km. Your longest in the last 90 days is ${maxRecentDistanceKm.toFixed(1)}km.`, // Updated description
+                  goalValue: goalLongestRunKm, 
+                  startValue: maxRecentDistanceKm, // Start value reflects recent max
+                  currentValue: initialMonthlyMaxRunKm, // Use function parameter
+                  month: currentMonth, year: currentYear, exerciseId: null, 
+                  completedAt: null, relatedWorkoutId: null,
+              });
+          } else {
+              console.log(`[Challenge Data Gen] Skipping Longest Run challenge as goal (${goalLongestRunKm}km) is not greater than recent max (${maxRecentDistanceKm}km).`);
+          }
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Longest Run challenge:", e); }
+       // --- Fastest 5k Pace --- 
+       try {
+          // Filter recent workouts for runs >= 5km with duration and distance
+          let bestRecentPaceSm = Infinity; // Lower is better
+          let bestRecentPaceDate: Date | null = null;
+
+          console.log(`[Challenge Data Gen] Checking ${recentWorkouts.length} recent workouts for 5k pace.`);
+          recentWorkouts.forEach(w => { // Use function parameter
+              if ((w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run') && 
+                  w.distance && w.distance >= 5000 && 
+                  w.duration && w.duration > 0) 
+              {
+                  const paceSm = w.duration / w.distance; // seconds per meter
+                  if (paceSm < bestRecentPaceSm) {
+                      bestRecentPaceSm = paceSm;
+                      bestRecentPaceDate = w.date; // Keep track of the date of the best pace
+                  }
+              }
+          });
+
+          if (isFinite(bestRecentPaceSm)) { // Check if a valid recent pace was found
+              console.log(`[Challenge Data Gen] Best 5k+ pace in last 90d: ${bestRecentPaceSm.toFixed(3)} s/m`);
+              const goalPace = bestRecentPaceSm * 0.98; // Target 2% improvement
+              
+              const formatPace = (paceSm: number): string => {
+                  const totalSecondsPerKm = paceSm * 1000;
+                  if (isNaN(totalSecondsPerKm) || !isFinite(totalSecondsPerKm)) return 'N/A'; 
+                  const minutes = Math.floor(totalSecondsPerKm / 60);
+                  const seconds = Math.floor(totalSecondsPerKm % 60); // Use floor and modulo to prevent 60
+                  return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
+              };
+
+              // Create date string with instanceof check
+              let achievementDateString = 'recently';
+              if (bestRecentPaceDate) { // Check if the date is not null
+                  achievementDateString = new Date(bestRecentPaceDate).toLocaleDateString();
+              }
+
+              addChallenge({
+                  userId: userId, type: ChallengeType.DistancePace, status: ChallengeStatus.NotStarted,
+                  metric: ChallengeMetric.Pace, unit: 's/m', title: `Faster 5k Pace`,
+                  description: `Beat your pre-month 5k pace benchmark (${formatPace(paceBenchmarkSm)}, set ${paceBenchmarkDate ? new Date(paceBenchmarkDate).toLocaleDateString() : 'recently'}). Target: ${formatPace(goalPace)}.`, 
+                  goalValue: goalPace,
+                  startValue: paceBenchmarkSm, // Start value is the benchmark pace
+                  // Use benchmark if no pace set this month yet
+                  currentValue: isFinite(bestPaceThisMonthSm) ? bestPaceThisMonthSm : paceBenchmarkSm, 
+                  month: currentMonth, year: currentYear, exerciseId: null,
+                  completedAt: null, relatedWorkoutId: null,
+              });
+          } else {
+              // Optional: Fallback or skip if no benchmark found? 
+              // For now, we skip if no pre-month benchmark exists.
+              console.log("[Challenge Data Gen] Skipping Faster 5k Pace challenge: No qualifying runs found in 90 days before this month.");
+          }
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Fastest Pace challenge:", e); }
+      // --- Monthly Running Distance ---
+      try {
+          const runningWorkouts = recentWorkouts.filter(w => w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run'); // Use function parameter
+          const distancesMeters = runningWorkouts.map(w => w.distance ?? 0); 
+          const totalDistanceMetersLast90d = distancesMeters.reduce((sum, dist) => sum + dist, 0);
+          const avgMonthlyDistanceMeters = totalDistanceMetersLast90d / 3;
+          const goalMonthlyDistanceMeters = Math.max(5000, Math.round((avgMonthlyDistanceMeters * 1.1) / 1000) * 1000); 
+          addChallenge({
+              userId: userId, type: ChallengeType.MonthlyDistance, status: ChallengeStatus.NotStarted,
+              metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalMonthlyDistanceMeters / 1000}km This Month`,
+              description: `Accumulate ${goalMonthlyDistanceMeters / 1000}km of running distance in ${new Date(currentYear, currentMonth - 1).toLocaleString('default', { month: 'long' })}.`,
+              goalValue: goalMonthlyDistanceMeters / 1000, 
+              startValue: initialMonthlyDistanceKm, // Use function parameter
+              currentValue: initialMonthlyDistanceKm, // Use function parameter
+              month: currentMonth, year: currentYear, exerciseId: null,
+              completedAt: null, relatedWorkoutId: null,
+          });
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Monthly Distance challenge:", e); }
+      // --- Monthly Volume ---
+      try {
+          // TODO: Calculate recent average monthly strength volume for a better goal?
+          const goalMonthlyVolume = 10000; // Example: Target 10,000kg volume
+          addChallenge({
+              userId: userId, type: ChallengeType.MonthlyVolume, status: ChallengeStatus.NotStarted,
+              metric: ChallengeMetric.Volume, unit: 'kg', title: `Lift ${goalMonthlyVolume}kg Total Volume`,
+              description: `Accumulate ${goalMonthlyVolume}kg of total lifting volume this month.`,
+              goalValue: goalMonthlyVolume, 
+              startValue: initialMonthlyVolumeKg, // Use function parameter
+              currentValue: initialMonthlyVolumeKg, // Use function parameter
+              month: currentMonth, year: currentYear, exerciseId: null,
+              completedAt: null, relatedWorkoutId: null,
+          });
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Monthly Volume challenge:", e); }
+      // --- Workout Frequency ---
+      try {
+          const uniqueWorkoutDaysLast90d = new Set(recentWorkouts.map(w => w.date.toISOString().split('T')[0])).size; // Use function parameter
+          const avgMonthlyFrequency = Math.max(4, Math.round(uniqueWorkoutDaysLast90d / 3)); 
+          const goalFrequency = Math.min(20, avgMonthlyFrequency + 2); 
+          addChallenge({
+              userId: userId, type: ChallengeType.WorkoutFrequency, status: ChallengeStatus.NotStarted,
+              metric: ChallengeMetric.Sessions, unit: 'sessions', title: `Complete ${goalFrequency} Workouts`,
+              description: `Log ${goalFrequency} workout sessions this month.`,
+              goalValue: goalFrequency, 
+              startValue: initialMonthlySessions, // Use function parameter
+              currentValue: initialMonthlySessions, // Use function parameter
+              month: currentMonth, year: currentYear, exerciseId: null,
+              completedAt: null, relatedWorkoutId: null,
+          });
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Workout Frequency challenge:", e); }
+      // --- Consistency Streak ---
+      try {
+           // Goal can be dynamic, e.g., based on previous month or avg freq
+           const goalConsistency = 12; 
+           addChallenge({
+                userId: userId, type: ChallengeType.ConsistencyStreak, status: ChallengeStatus.NotStarted,
+                metric: ChallengeMetric.Days, unit: 'days', title: `Workout on ${goalConsistency} Days`,
+                description: `Log workouts on ${goalConsistency} different days this month.`,
+                goalValue: goalConsistency, 
+                startValue: initialMonthlyDays.size, // Use function parameter
+                currentValue: initialMonthlyDays.size, // Use function parameter
+                month: currentMonth, year: currentYear, exerciseId: null,
+                completedAt: null, relatedWorkoutId: null,
+           });
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Consistency challenge:", e); }
+      // --- Exercise Variety ---
+      try {
+          // Use 90-day history to set a reasonable goal
+          const uniqueExercisesUsed90d = new Set(
+              recentWorkouts.flatMap(w => // Use function parameter
+                 w.exercises?.map((ex: any) => ex.exercise?.name).filter(Boolean) ?? [] 
+              )
+          );
+          const goalVariety = Math.min(15, Math.max(5, uniqueExercisesUsed90d.size + 2)); // Goal based on recent variety
+          addChallenge({ 
+              userId: userId, type: ChallengeType.ExerciseVariety, status: ChallengeStatus.NotStarted,
+              metric: ChallengeMetric.Exercises, unit: 'exercises', title: `Perform ${goalVariety} Unique Exercises`,
+              description: `Log at least ${goalVariety} different exercises this month.`,
+              goalValue: goalVariety, 
+              startValue: initialExerciseIds.size, // Use function parameter
+              currentValue: initialExerciseIds.size, // Use function parameter
+              month: currentMonth, year: currentYear, exerciseId: null,
+              completedAt: null, relatedWorkoutId: null,
+          });
+      } catch (e) { console.error("[Challenge Data Gen] Error generating Variety challenge:", e); }
+    // --- End of Generation Blocks ---
+
+    console.log(`[Challenge Data Gen] Generated ${generatedChallengesData.length} challenge data objects.`);
+    return generatedChallengesData;
+}
+// --- <<< END Helper Function >>> ---
+
 // --- Challenge Generation Logic (Helper for getChallengesForUser) ---
 async function generateAndSaveChallenges(userId: string, currentYear: number, currentMonth: number): Promise<Challenge[]> {
     console.log(`[Challenge Action Gen] Generating challenges for ${userId} for ${currentYear}-${currentMonth}`);
@@ -67,7 +328,13 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
     const recentWorkoutsPrisma = await prisma.workout.findMany({
       where: { userId: userId, date: { gte: historyCutoff } },
       select: { date: true, type: true, distance: true, duration: true,
-        exercises: { select: { exercise: { select: { name: true, category: true } } } }
+        exercises: { 
+          select: { // Select from WorkoutExercise model via relation
+            exercise: { // Select details from the related Exercise
+              select: { name: true, category: true }
+            }
+          }
+        }
       }
     });
 
@@ -80,6 +347,10 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
     let initialMonthlySessions = 0;
     const initialMonthlyDays = new Set<string>();
     const initialExerciseIds = new Set<string>();
+    let initialMonthlyMaxRunKm = 0;
+    let bestPaceThisMonthSm = Infinity; // <<< Initialize best pace this month
+    let paceBenchmarkSm = Infinity; // <<< Initialize pace benchmark (pre-month)
+    let paceBenchmarkDate: Date | null = null; // <<< Initialize benchmark date
 
     try {
         await dbConnect(); // Ensure Mongoose connection
@@ -115,14 +386,44 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
         workoutsThisMonth.forEach((workout: any) => {
             initialMonthlyDays.add(new Date(workout.date).toISOString().split('T')[0]);
             if ((workout.type === 'running' || workout.type === 'run') && workout.distance) {
-                initialMonthlyDistanceKm += (workout.distance / 1000); // Convert meters to KM
+                const distanceKm = workout.distance / 1000; // Convert meters to KM
+                initialMonthlyDistanceKm += distanceKm; 
+                initialMonthlyMaxRunKm = Math.max(initialMonthlyMaxRunKm, distanceKm);
             }
             if (workout.type === 'strength' && workout.calculatedVolume) {
                 initialMonthlyVolumeKg += workout.calculatedVolume;
             }
+            // <<< Calculate best pace this month >>>
+            if ((workout.type === 'running' || workout.type === 'run') && 
+                workout.distance && workout.distance >= 5000 && 
+                workout.duration && workout.duration > 0) 
+            {
+                const paceSm = workout.duration / workout.distance; // seconds per meter
+                if (paceSm < bestPaceThisMonthSm) {
+                    bestPaceThisMonthSm = paceSm;
+                }
+            }
+            // <<< End calculation >>>
         });
 
-        console.log(`[Challenge Action Gen] Initial values: Sessions=${initialMonthlySessions}, Days=${initialMonthlyDays.size}, Distance=${initialMonthlyDistanceKm.toFixed(1)}km, Volume=${initialMonthlyVolumeKg}kg, Variety=${initialExerciseIds.size}`);
+        // --- Calculate Pace Benchmark (90d before this month) --- 
+        const startOfMonthDate = new Date(currentYear, currentMonth - 1, 1);
+        recentWorkoutsPrisma.forEach(w => {
+            if (w.date < startOfMonthDate && // <<< Only consider workouts BEFORE this month
+                (w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run') && 
+                w.distance && w.distance >= 5000 && 
+                w.duration && w.duration > 0) 
+            {
+                const paceSm = w.duration / w.distance; 
+                if (paceSm < paceBenchmarkSm) {
+                    paceBenchmarkSm = paceSm;
+                    paceBenchmarkDate = w.date; // <<< Store date of benchmark
+                }
+            }
+        });
+        // --- End Pace Benchmark Calculation ---
+
+        console.log(`[Challenge Action Gen] Initial values: Sessions=${initialMonthlySessions}, Days=${initialMonthlyDays.size}, Distance=${initialMonthlyDistanceKm.toFixed(1)}km, Volume=${initialMonthlyVolumeKg}kg, Variety=${initialExerciseIds.size}, MaxRun=${initialMonthlyMaxRunKm.toFixed(1)}km, PaceNow=${isFinite(bestPaceThisMonthSm) ? bestPaceThisMonthSm.toFixed(3) + 's/m' : 'N/A'}, PaceBench=${isFinite(paceBenchmarkSm) ? paceBenchmarkSm.toFixed(3) + 's/m' : 'N/A'}`);
 
     } catch (err) {
         console.error("[Challenge Action Gen] Error fetching workouts this month:", err);
@@ -131,188 +432,27 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
     // --- <<< END NEW: Fetch workouts THIS MONTH >>> ---
     
     // --- Generate Challenge Data --- 
-    const generatedChallengesData: Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>[] = [];
-    const generatedTypes = new Set<ChallengeType>();
-    const addChallenge = (data: Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>) => {
-        if (!generatedTypes.has(data.type) && generatedChallengesData.length < 12) {
-            generatedChallengesData.push(data); 
-            generatedTypes.add(data.type);
-        }
-    };
-    // [ ... PASTE ALL CHALLENGE GENERATION BLOCKS (Strength, BW, Run, Pace, Monthly, etc.) HERE ... ]
-     // --- Strength PRs ---
-    const prExercises = ['Bench Press', 'Squat', 'Deadlift'];
-    shuffle(prExercises);
-    for (const exName of prExercises) {
-      try {
-        if (generatedTypes.has(ChallengeType.StrengthPR)) break; 
-        const exercise = await prisma.exercise.findUnique({ where: { name: exName } });
-        if (exercise) { 
-          const pr = exercisePRMap[`${exercise.id}_kg`];
-          const currentPRValue = pr?.value ?? 0;
-          const goalValue = Math.max(currentPRValue + 2.5, Math.round((currentPRValue * 1.025) / 2.5) * 2.5);
-          if (goalValue > currentPRValue) {
-            addChallenge({
-              userId: userId, type: ChallengeType.StrengthPR, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Weight, unit: 'kg', title: `New ${exName} PR`,
-              description: `Lift ${goalValue}kg in ${exName}. Your best is ${currentPRValue}kg.`,
-              goalValue: goalValue, startValue: currentPRValue, currentValue: currentPRValue,
-              month: currentMonth, year: currentYear, exerciseId: exercise.id,
-              completedAt: null, relatedWorkoutId: null,
-            });
-          }
-        }
-      } catch (e) { console.error(`[Challenge Action Gen] Error generating ${exName} challenge:`, e); }
-    }
-    // --- Bodyweight Reps ---
-    const bwExercises = ['Pull-up', 'Push-up'];
-    shuffle(bwExercises); 
-     for (const exName of bwExercises) {
-       try {
-          if (generatedTypes.has(ChallengeType.BodyweightReps)) break;
-          const exercise = await prisma.exercise.findUnique({ where: { name: exName } });
-          if (exercise) {
-              const pr = exercisePRMap[`${exercise.id}_reps`];
-              const currentPRValue = pr?.value ?? 0;
-              const goalValue = currentPRValue + (currentPRValue > 5 ? 2 : 1); 
-              addChallenge({
-                  userId: userId, type: ChallengeType.BodyweightReps, status: ChallengeStatus.NotStarted,
-                  metric: ChallengeMetric.Reps, unit: 'reps', title: `Achieve ${goalValue} ${exName}s`,
-                  description: `Complete ${goalValue} consecutive ${exName}s. Your best is ${currentPRValue}.`,
-                  goalValue: goalValue, startValue: currentPRValue, currentValue: currentPRValue,
-                  month: currentMonth, year: currentYear, exerciseId: exercise.id,
-                  completedAt: null, relatedWorkoutId: null,
-              });
-          }
-      } catch(e) { console.error(`[Challenge Action Gen] Error generating ${exName} challenge:`, e); }
-     }
-      // --- Longest Run ---
-      try {
-          const currentLongestRun = (typeof overallPRs.longestRun?.value === 'number') ? overallPRs.longestRun.value : 0; 
-          const goalLongestRun = Math.round(currentLongestRun * 1.05 * 10) / 10; 
-          if (goalLongestRun > currentLongestRun && goalLongestRun >= 1) { 
-              addChallenge({
-                  userId: userId, type: ChallengeType.LongestSession, status: ChallengeStatus.NotStarted,
-                  metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalLongestRun}km`,
-                  description: `Complete a single run of ${goalLongestRun}km. Your longest is ${currentLongestRun}km.`,
-                  goalValue: goalLongestRun, startValue: currentLongestRun, currentValue: 0, 
-                  month: currentMonth, year: currentYear, exerciseId: null, 
-                  completedAt: null, relatedWorkoutId: null,
-              });
-          }
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Longest Run challenge:", e); }
-       // --- Fastest 5k Pace --- 
-       try {
-          const currentFastestPace = (typeof overallPRs.fastest5kPace?.value === 'number' && overallPRs.fastest5kPace.value !== Infinity) ? overallPRs.fastest5kPace.value : null; 
-          if (currentFastestPace) {
-              const goalPace = currentFastestPace * 0.98; 
-              const formatPace = (paceSm: number): string => {
-                  const paceMinKm = (paceSm * 1000) / 60;
-                  const minutes = Math.floor(paceMinKm);
-                  const seconds = Math.round((paceMinKm - minutes) * 60);
-                  return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
-              };
-               addChallenge({
-                  userId: userId, type: ChallengeType.DistancePace, status: ChallengeStatus.NotStarted,
-                  metric: ChallengeMetric.Pace, unit: 's/m', title: `Faster 5k Pace`,
-                  description: `Beat your 5k pace PR of ${formatPace(currentFastestPace)}. Target: ${formatPace(goalPace)}.`, 
-                  goalValue: goalPace, 
-                  startValue: currentFastestPace, currentValue: currentFastestPace, 
-                  month: currentMonth, year: currentYear, exerciseId: null, 
-                  completedAt: null, relatedWorkoutId: null,
-              });
-          }
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Fastest Pace challenge:", e); }
-      // --- Monthly Running Distance ---
-      try {
-          const runningWorkouts = recentWorkoutsPrisma.filter(w => w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run');
-          const distancesMeters = runningWorkouts.map(w => w.distance ?? 0); 
-          const totalDistanceMetersLast90d = distancesMeters.reduce((sum, dist) => sum + dist, 0);
-          const avgMonthlyDistanceMeters = totalDistanceMetersLast90d / 3;
-          const goalMonthlyDistanceMeters = Math.max(5000, Math.round((avgMonthlyDistanceMeters * 1.1) / 1000) * 1000); 
-          addChallenge({
-              userId: userId, type: ChallengeType.MonthlyDistance, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalMonthlyDistanceMeters / 1000}km This Month`,
-              description: `Accumulate ${goalMonthlyDistanceMeters / 1000}km of running distance in ${new Date(currentYear, currentMonth - 1).toLocaleString('default', { month: 'long' })}.`,
-              goalValue: goalMonthlyDistanceMeters / 1000, 
-              // <<< Use calculated initial value >>>
-              startValue: initialMonthlyDistanceKm, 
-              currentValue: initialMonthlyDistanceKm, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Monthly Distance challenge:", e); }
-      // --- Monthly Volume ---
-      try {
-          // TODO: Calculate recent average monthly strength volume for a better goal?
-          const goalMonthlyVolume = 10000; // Example: Target 10,000kg volume
-          addChallenge({
-              userId: userId, type: ChallengeType.MonthlyVolume, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Volume, unit: 'kg', title: `Lift ${goalMonthlyVolume}kg Total Volume`,
-              description: `Accumulate ${goalMonthlyVolume}kg of total lifting volume this month.`,
-              goalValue: goalMonthlyVolume, 
-              // <<< Use calculated initial value >>>
-              startValue: initialMonthlyVolumeKg, 
-              currentValue: initialMonthlyVolumeKg, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Monthly Volume challenge:", e); }
-      // --- Workout Frequency ---
-      try {
-          const uniqueWorkoutDaysLast90d = new Set(recentWorkoutsPrisma.map(w => w.date.toISOString().split('T')[0])).size;
-          const avgMonthlyFrequency = Math.max(4, Math.round(uniqueWorkoutDaysLast90d / 3)); 
-          const goalFrequency = Math.min(20, avgMonthlyFrequency + 2); 
-          addChallenge({
-              userId: userId, type: ChallengeType.WorkoutFrequency, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Sessions, unit: 'sessions', title: `Complete ${goalFrequency} Workouts`,
-              description: `Log ${goalFrequency} workout sessions this month.`,
-              goalValue: goalFrequency, 
-              // <<< Use calculated initial value >>>
-              startValue: initialMonthlySessions, 
-              currentValue: initialMonthlySessions, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Workout Frequency challenge:", e); }
-      // --- Consistency Streak ---
-      try {
-           // Goal can be dynamic, e.g., based on previous month or avg freq
-           const goalConsistency = 12; 
-           addChallenge({
-                userId: userId, type: ChallengeType.ConsistencyStreak, status: ChallengeStatus.NotStarted,
-                metric: ChallengeMetric.Days, unit: 'days', title: `Workout on ${goalConsistency} Days`,
-                description: `Log workouts on ${goalConsistency} different days this month.`,
-                goalValue: goalConsistency, 
-                // <<< Use calculated initial value >>>
-                startValue: initialMonthlyDays.size, 
-                currentValue: initialMonthlyDays.size, 
-                month: currentMonth, year: currentYear, exerciseId: null,
-                completedAt: null, relatedWorkoutId: null,
-           });
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Consistency challenge:", e); }
-      // --- Exercise Variety ---
-      try {
-          // Use 90-day history to set a reasonable goal
-          const uniqueExercisesUsed90d = new Set(
-              recentWorkoutsPrisma.flatMap(w => 
-                 w.exercises?.map((ex: any) => ex.exercise?.name).filter(Boolean) ?? [] 
-              )
-          );
-          const goalVariety = Math.min(15, Math.max(5, uniqueExercisesUsed90d.size + 2)); // Goal based on recent variety
-          addChallenge({ 
-              userId: userId, type: ChallengeType.ExerciseVariety, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Exercises, unit: 'exercises', title: `Perform ${goalVariety} Unique Exercises`,
-              description: `Log at least ${goalVariety} different exercises this month.`,
-              goalValue: goalVariety, 
-              // <<< Use calculated initial value >>>
-              startValue: initialExerciseIds.size, 
-              currentValue: initialExerciseIds.size, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("[Challenge Action Gen] Error generating Variety challenge:", e); }
-    // --- End of Generation Blocks ---
+    // --- <<< REMOVE GENERATION BLOCKS (Moved to helper) >>> ---
+    // Remove the addChallenge definition and all the try/catch blocks for specific challenges
+    // They are now in generateChallengeData
+
+    // --- <<< CALL the new helper function >>> ---
+    const generatedChallengesData = await generateChallengeData(
+        userId,
+        currentMonth,
+        currentYear,
+        exercisePRMap,
+        recentWorkoutsPrisma, // Pass the fetched Prisma data
+        initialMonthlyDistanceKm,
+        initialMonthlyVolumeKg,
+        initialMonthlySessions,
+        initialMonthlyDays,
+        initialExerciseIds,
+        initialMonthlyMaxRunKm,
+        bestPaceThisMonthSm,
+        paceBenchmarkSm,
+        paceBenchmarkDate
+    );
 
     // --- Save generated challenges --- 
     if (generatedChallengesData.length > 0) {
@@ -444,6 +584,10 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
     let initialMonthlySessions = 0;
     const initialMonthlyDays = new Set<string>();
     const initialExerciseIds = new Set<string>();
+    let initialMonthlyMaxRunKm = 0;
+    let bestPaceThisMonthSm = Infinity; // <<< Initialize best pace this month
+    let paceBenchmarkSm = Infinity; // <<< Initialize pace benchmark (pre-month)
+    let paceBenchmarkDate: Date | null = null; // <<< Initialize benchmark date
 
     try {
         await dbConnect(); // Ensure Mongoose connection
@@ -479,14 +623,44 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
         workoutsThisMonth.forEach((workout: any) => {
             initialMonthlyDays.add(new Date(workout.date).toISOString().split('T')[0]);
             if ((workout.type === 'running' || workout.type === 'run') && workout.distance) {
-                initialMonthlyDistanceKm += (workout.distance / 1000); // Convert meters to KM
+                const distanceKm = workout.distance / 1000; // Convert meters to KM
+                initialMonthlyDistanceKm += distanceKm; 
+                initialMonthlyMaxRunKm = Math.max(initialMonthlyMaxRunKm, distanceKm);
             }
             if (workout.type === 'strength' && workout.calculatedVolume) {
                 initialMonthlyVolumeKg += workout.calculatedVolume;
             }
+            // <<< Calculate best pace this month >>>
+            if ((workout.type === 'running' || workout.type === 'run') && 
+                workout.distance && workout.distance >= 5000 && 
+                workout.duration && workout.duration > 0) 
+            {
+                const paceSm = workout.duration / workout.distance; // seconds per meter
+                if (paceSm < bestPaceThisMonthSm) {
+                    bestPaceThisMonthSm = paceSm;
+                }
+            }
+            // <<< End calculation >>>
         });
 
-        console.log(`[refreshChallengesAction] Initial values: Sessions=${initialMonthlySessions}, Days=${initialMonthlyDays.size}, Distance=${initialMonthlyDistanceKm.toFixed(1)}km, Volume=${initialMonthlyVolumeKg}kg, Variety=${initialExerciseIds.size}`);
+        // --- Calculate Pace Benchmark (90d before this month) --- 
+        const startOfMonthDate = new Date(currentYear, currentMonth - 1, 1);
+        recentWorkouts.forEach(w => { // Use recentWorkouts (already fetched)
+            if (w.date < startOfMonthDate && // <<< Only consider workouts BEFORE this month
+                (w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run') && 
+                  w.distance && w.distance >= 5000 && 
+                  w.duration && w.duration > 0) 
+              {
+                const paceSm = w.duration / w.distance; 
+                if (paceSm < paceBenchmarkSm) {
+                    paceBenchmarkSm = paceSm;
+                    paceBenchmarkDate = w.date; // <<< Store date of benchmark
+                  }
+              }
+          });
+        // --- End Pace Benchmark Calculation ---
+
+        console.log(`[refreshChallengesAction] Initial values: Sessions=${initialMonthlySessions}, Days=${initialMonthlyDays.size}, Distance=${initialMonthlyDistanceKm.toFixed(1)}km, Volume=${initialMonthlyVolumeKg}kg, Variety=${initialExerciseIds.size}, MaxRun=${initialMonthlyMaxRunKm.toFixed(1)}km, PaceNow=${isFinite(bestPaceThisMonthSm) ? bestPaceThisMonthSm.toFixed(3) + 's/m' : 'N/A'}, PaceBench=${isFinite(paceBenchmarkSm) ? paceBenchmarkSm.toFixed(3) + 's/m' : 'N/A'}`);
 
     } catch (err) {
         console.error("[refreshChallengesAction] Error fetching workouts this month:", err);
@@ -495,192 +669,27 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
     // --- <<< END NEW: Fetch workouts THIS MONTH >>> ---
 
     // --- 3. Generate Challenge Data (Copied & adapted from API GET logic) ---
-    const generatedChallengesData: Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>[] = [];
-    const generatedTypes = new Set<ChallengeType>();
-    const addChallenge = (data: Omit<Challenge, 'id' | 'createdAt' | 'updatedAt' | 'user' | 'exercise' | 'relatedWorkout'>) => {
-        if (!generatedTypes.has(data.type) && generatedChallengesData.length < 12) {
-          generatedChallengesData.push(data);
-          generatedTypes.add(data.type);
-        }
-    };
+    // --- <<< REMOVE GENERATION BLOCKS (Moved to helper) >>> ---
+    // Remove the addChallenge definition and all the try/catch blocks for specific challenges
+    // They are now in generateChallengeData
 
-    // --- Strength PRs ---
-    const prExercises = ['Bench Press', 'Squat', 'Deadlift'];
-    shuffle(prExercises);
-    for (const exName of prExercises) {
-      try {
-        if (generatedTypes.has(ChallengeType.StrengthPR)) break; 
-        const exercise = await prisma.exercise.findUnique({ where: { name: exName } });
-        if (exercise) { 
-          const pr = exercisePRMap[`${exercise.id}_kg`];
-          const currentPRValue = pr?.value ?? 0;
-          const goalValue = Math.max(currentPRValue + 2.5, Math.round((currentPRValue * 1.025) / 2.5) * 2.5);
-          if (goalValue > currentPRValue) {
-            addChallenge({
-              userId: userId, type: ChallengeType.StrengthPR, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Weight, unit: 'kg', title: `New ${exName} PR`,
-              description: `Lift ${goalValue}kg in ${exName}. Your best is ${currentPRValue}kg.`,
-              goalValue: goalValue, startValue: currentPRValue, currentValue: currentPRValue,
-              month: currentMonth, year: currentYear, exerciseId: exercise.id,
-              completedAt: null, relatedWorkoutId: null,
-            });
-          }
-        }
-      } catch (e) { console.error(`Error generating ${exName} challenge:`, e); }
-    }
-    
-    // --- Bodyweight Reps ---
-    const bwExercises = ['Pull-up', 'Push-up'];
-    shuffle(bwExercises); 
-     for (const exName of bwExercises) {
-       try {
-          if (generatedTypes.has(ChallengeType.BodyweightReps)) break;
-          const exercise = await prisma.exercise.findUnique({ where: { name: exName } });
-          if (exercise) {
-              const pr = exercisePRMap[`${exercise.id}_reps`];
-              const currentPRValue = pr?.value ?? 0;
-              const goalValue = currentPRValue + (currentPRValue > 5 ? 2 : 1); 
-              addChallenge({
-                  userId: userId, type: ChallengeType.BodyweightReps, status: ChallengeStatus.NotStarted,
-                  metric: ChallengeMetric.Reps, unit: 'reps', title: `Achieve ${goalValue} ${exName}s`,
-                  description: `Complete ${goalValue} consecutive ${exName}s. Your best is ${currentPRValue}.`,
-                  goalValue: goalValue, startValue: currentPRValue, currentValue: currentPRValue,
-                  month: currentMonth, year: currentYear, exerciseId: exercise.id,
-                  completedAt: null, relatedWorkoutId: null,
-              });
-          }
-      } catch(e) { console.error(`Error generating ${exName} challenge:`, e); }
-     }
-      
-      // --- Longest Run ---
-      try {
-          const currentLongestRun = (typeof overallPRs.longestRun?.value === 'number') ? overallPRs.longestRun.value : 0; 
-          const goalLongestRun = Math.round(currentLongestRun * 1.05 * 10) / 10; 
-          if (goalLongestRun > currentLongestRun && goalLongestRun >= 1) { 
-              addChallenge({
-                  userId: userId, type: ChallengeType.LongestSession, status: ChallengeStatus.NotStarted,
-                  metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalLongestRun}km`,
-                  description: `Complete a single run of ${goalLongestRun}km. Your longest is ${currentLongestRun}km.`,
-                  goalValue: goalLongestRun, startValue: currentLongestRun, currentValue: 0, 
-                  month: currentMonth, year: currentYear, exerciseId: null, 
-                  completedAt: null, relatedWorkoutId: null,
-              });
-          }
-      } catch (e) { console.error("Error generating Longest Run challenge:", e); }
-
-       // --- Fastest 5k Pace --- 
-       try {
-          const currentFastestPace = (typeof overallPRs.fastest5kPace?.value === 'number' && overallPRs.fastest5kPace.value !== Infinity) ? overallPRs.fastest5kPace.value : null; 
-          if (currentFastestPace) {
-              const goalPace = currentFastestPace * 0.98; 
-              const formatPace = (paceSm: number): string => {
-                  const paceMinKm = (paceSm * 1000) / 60;
-                  const minutes = Math.floor(paceMinKm);
-                  const seconds = Math.round((paceMinKm - minutes) * 60);
-                  return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
-              };
-               addChallenge({
-                  userId: userId, type: ChallengeType.DistancePace, status: ChallengeStatus.NotStarted,
-                  metric: ChallengeMetric.Pace, unit: 's/m', title: `Faster 5k Pace`,
-                  description: `Beat your 5k pace PR of ${formatPace(currentFastestPace)}. Target: ${formatPace(goalPace)}.`, 
-                  goalValue: goalPace, 
-                  startValue: currentFastestPace, currentValue: currentFastestPace, 
-                  month: currentMonth, year: currentYear, exerciseId: null, 
-                  completedAt: null, relatedWorkoutId: null,
-              });
-          }
-      } catch (e) { console.error("Error generating Fastest Pace challenge:", e); }
-      
-      // --- Monthly Running Distance ---
-      try {
-          const runningWorkouts = recentWorkouts.filter(w => w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run');
-          const distancesMeters = runningWorkouts.map(w => w.distance ?? 0); 
-          const totalDistanceMetersLast90d = distancesMeters.reduce((sum, dist) => sum + dist, 0);
-          const avgMonthlyDistanceMeters = totalDistanceMetersLast90d / 3;
-          const goalMonthlyDistanceMeters = Math.max(5000, Math.round((avgMonthlyDistanceMeters * 1.1) / 1000) * 1000); 
-          addChallenge({
-              userId: userId, type: ChallengeType.MonthlyDistance, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Distance, unit: 'km', title: `Run ${goalMonthlyDistanceMeters / 1000}km This Month`,
-              description: `Accumulate ${goalMonthlyDistanceMeters / 1000}km of running distance in ${now.toLocaleString('default', { month: 'long' })}.`,
-              goalValue: goalMonthlyDistanceMeters / 1000, 
-              // <<< Use calculated initial value >>>
-              startValue: initialMonthlyDistanceKm, 
-              currentValue: initialMonthlyDistanceKm, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("Error generating Monthly Distance challenge:", e); }
-
-      // --- Monthly Volume ---
-      try {
-          const goalMonthlyVolume = 10000; 
-          addChallenge({
-              userId: userId, type: ChallengeType.MonthlyVolume, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Volume, unit: 'kg', title: `Lift ${goalMonthlyVolume}kg Total Volume`,
-              description: `Accumulate ${goalMonthlyVolume}kg of total lifting volume this month.`,
-              goalValue: goalMonthlyVolume, 
-              // <<< Use calculated initial value >>>
-              startValue: initialMonthlyVolumeKg, 
-              currentValue: initialMonthlyVolumeKg, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("Error generating Monthly Volume challenge:", e); }
-      
-      // --- Workout Frequency ---
-      try {
-          const uniqueWorkoutDaysLast90d = new Set(recentWorkouts.map(w => w.date.toISOString().split('T')[0])).size;
-          const avgMonthlyFrequency = Math.max(4, Math.round(uniqueWorkoutDaysLast90d / 3)); 
-          const goalFrequency = Math.min(20, avgMonthlyFrequency + 2);
-          addChallenge({
-              userId: userId, type: ChallengeType.WorkoutFrequency, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Sessions, unit: 'sessions', title: `Complete ${goalFrequency} Workouts`,
-              description: `Log ${goalFrequency} workout sessions this month.`,
-              goalValue: goalFrequency, 
-              // <<< Use calculated initial value >>>
-              startValue: initialMonthlySessions, 
-              currentValue: initialMonthlySessions, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("Error generating Workout Frequency challenge:", e); }
-
-      // --- Consistency Streak ---
-      try {
-           const goalConsistency = 12; 
-           addChallenge({
-                userId: userId, type: ChallengeType.ConsistencyStreak, status: ChallengeStatus.NotStarted,
-                metric: ChallengeMetric.Days, unit: 'days', title: `Workout on ${goalConsistency} Days`,
-                description: `Log workouts on ${goalConsistency} different days this month.`,
-                goalValue: goalConsistency, 
-                // <<< Use calculated initial value >>>
-                startValue: initialMonthlyDays.size, 
-                currentValue: initialMonthlyDays.size, 
-                month: currentMonth, year: currentYear, exerciseId: null,
-                completedAt: null, relatedWorkoutId: null,
-           });
-      } catch (e) { console.error("Error generating Consistency challenge:", e); }
-
-      // --- Exercise Variety ---
-      try {
-          const uniqueExercisesUsed = new Set(
-              recentWorkouts.flatMap(w => 
-                 w.exercises?.map(ex => ex.exercise?.name).filter(Boolean) ?? [] 
-              )
-          );
-          const goalVariety = Math.min(15, Math.max(5, uniqueExercisesUsed.size + 2)); 
-          addChallenge({
-              userId: userId, type: ChallengeType.ExerciseVariety, status: ChallengeStatus.NotStarted,
-              metric: ChallengeMetric.Exercises, unit: 'exercises', title: `Perform ${goalVariety} Unique Exercises`,
-              description: `Log at least ${goalVariety} different exercises this month.`,
-              goalValue: goalVariety, 
-              // <<< Use calculated initial value >>>
-              startValue: initialExerciseIds.size, 
-              currentValue: initialExerciseIds.size, 
-              month: currentMonth, year: currentYear, exerciseId: null,
-              completedAt: null, relatedWorkoutId: null,
-          });
-      } catch (e) { console.error("Error generating Variety challenge:", e); }
+    // --- <<< CALL the new helper function >>> ---
+    const generatedChallengesData = await generateChallengeData(
+        userId,
+        currentMonth,
+        currentYear,
+        exercisePRMap,
+        recentWorkouts, // Pass the fetched Prisma data (already named recentWorkouts here)
+        initialMonthlyDistanceKm,
+        initialMonthlyVolumeKg,
+        initialMonthlySessions,
+        initialMonthlyDays,
+        initialExerciseIds,
+        initialMonthlyMaxRunKm,
+        bestPaceThisMonthSm,
+        paceBenchmarkSm,
+        paceBenchmarkDate
+    );
 
     // --- 4. Save generated challenges --- 
     if (generatedChallengesData.length > 0) {
@@ -826,19 +835,28 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
         // --- Example: Longest Run Challenge ---
         if (challenge.type === ChallengeType.LongestSession && challenge.metric === ChallengeMetric.Distance && challenge.unit === 'km' && (workoutData.type === 'running' || workoutData.type === 'run') && workoutData.distance) {
             const workoutDistanceKm = workoutData.distance / 1000; // Assuming workoutData.distance is in meters
-            console.log(`[updateChallengesAfterWorkout] Checking LongestRun challenge. Workout distance: ${workoutDistanceKm}km. Goal: ${challenge.goalValue}km.`);
+            const currentMonthlyMax = challenge.currentValue ?? 0; // currentValue should represent the max run logged this month so far
+            
+            console.log(`[updateChallengesAfterWorkout] Checking LongestRun challenge. Workout: ${workoutDistanceKm}km. Current Monthly Max: ${currentMonthlyMax}km. Goal: ${challenge.goalValue}km.`);
+
+            // Check for completion first
             if (workoutDistanceKm >= challenge.goalValue) {
-                updateData.currentValue = workoutDistanceKm; // Update current value to the completing run's distance
+                updateData.currentValue = Math.max(workoutDistanceKm, currentMonthlyMax); // Ensure currentValue reflects the actual max run distance
                 updateData.status = ChallengeStatus.Completed;
-                updateData.completedAt = now;
+                updateData.completedAt = now; // Use workout date
                 updateData.relatedWorkoutId = workoutData._id.toString();
                 needsUpdate = true;
-                console.log(`[updateChallengesAfterWorkout] LongestRun challenge COMPLETED!`);
-            } else if (workoutDistanceKm > (challenge.currentValue ?? 0)) {
-                 // Optional: Update currentValue even if goal not met, to show longest run this month
-                 updateData.currentValue = workoutDistanceKm; 
+                console.log(`[updateChallengesAfterWorkout] LongestRun challenge COMPLETED! Set currentValue to ${updateData.currentValue}km.`);
+            } 
+            // If not complete, check if this run is the new longest for the month
+            else if (workoutDistanceKm > currentMonthlyMax) {
+                 updateData.currentValue = workoutDistanceKm; // Update the monthly max
                  needsUpdate = true;
-                 console.log(`[updateChallengesAfterWorkout] LongestRun challenge progress updated (longest this month).`);
+                 console.log(`[updateChallengesAfterWorkout] LongestRun challenge progress updated (new longest this month: ${workoutDistanceKm}km).`);
+            } 
+            // Otherwise, no update needed for this challenge based on this workout
+            else {
+                console.log(`[updateChallengesAfterWorkout] LongestRun challenge: Workout distance (${workoutDistanceKm}km) is not >= goal (${challenge.goalValue}km) and not > current monthly max (${currentMonthlyMax}km). No update.`);
             }
         }
 
@@ -866,6 +884,9 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
             const workoutVolumeKg = workoutData.calculatedVolume;
             const currentProgress = challenge.currentValue ?? 0;
             const newProgress = currentProgress + workoutVolumeKg;
+            // <<< ADD LOGGING >>>
+            console.log(`[DBG Vol Check] Challenge ID: ${challenge.id}, Current: ${currentProgress} (Type: ${typeof currentProgress}), Goal: ${challenge.goalValue} (Type: ${typeof challenge.goalValue}), New: ${newProgress} (Type: ${typeof newProgress}), Comparing: ${newProgress} >= ${challenge.goalValue}`);
+            // <<< END LOGGING >>>
             console.log(`[updateChallengesAfterWorkout] Checking MonthlyVolume challenge. Added ${workoutVolumeKg}kg. New total: ${newProgress}kg. Goal: ${challenge.goalValue}kg.`);
 
             updateData.currentValue = newProgress;
@@ -882,9 +903,11 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
         
         // --- Example: Workout Frequency Challenge ---
         if (challenge.type === ChallengeType.WorkoutFrequency && challenge.metric === ChallengeMetric.Sessions) {
-             // Simply increment the count for *any* workout logged this month
              const currentProgress = challenge.currentValue ?? 0;
              const newProgress = currentProgress + 1;
+             // <<< ADD LOGGING >>>
+             console.log(`[DBG Freq Check] Challenge ID: ${challenge.id}, Current: ${currentProgress} (Type: ${typeof currentProgress}), Goal: ${challenge.goalValue} (Type: ${typeof challenge.goalValue}), New: ${newProgress} (Type: ${typeof newProgress}), Comparing: ${newProgress} >= ${challenge.goalValue}`);
+             // <<< END LOGGING >>>
              console.log(`[updateChallengesAfterWorkout] Checking WorkoutFrequency challenge. Incrementing count. New total: ${newProgress} sessions. Goal: ${challenge.goalValue}.`);
 
              updateData.currentValue = newProgress;
@@ -985,6 +1008,36 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
              }
         }
 
+        // --- Example: Distance Pace Challenge ---
+        if (challenge.type === ChallengeType.DistancePace && 
+            challenge.metric === ChallengeMetric.Pace && 
+            challenge.unit === 's/m' &&
+            (workoutData.type === 'running' || workoutData.type === 'run') &&
+            workoutData.distance && workoutData.distance >= 5000 && // Ensure it's a qualifying run (e.g., 5k+)
+            workoutData.duration && workoutData.duration > 0) 
+        { 
+            const workoutPaceSm = workoutData.duration / workoutData.distance; // seconds per meter
+            const currentBestPaceSm = challenge.currentValue ?? Infinity; // Default to Infinity if no current value
+
+            console.log(`[updateChallengesAfterWorkout] Checking DistancePace challenge. Workout Pace: ${workoutPaceSm.toFixed(3)} s/m. Current Best: ${currentBestPaceSm.toFixed(3)} s/m. Goal: ${challenge.goalValue.toFixed(3)} s/m.`);
+
+            // Update if the new pace is better (lower) than the current best pace for the month
+            if (workoutPaceSm < currentBestPaceSm) {
+                updateData.currentValue = workoutPaceSm;
+                needsUpdate = true;
+                console.log(`[updateChallengesAfterWorkout] DistancePace challenge progress updated (new best pace this month).`);
+
+                // Check for completion: Is the new best pace <= goal pace?
+                if (workoutPaceSm <= challenge.goalValue) {
+                    updateData.status = ChallengeStatus.Completed;
+                    updateData.completedAt = updateData.completedAt || now; // Set completion date if not already set
+                    updateData.relatedWorkoutId = workoutData._id.toString(); // Link completion to workout
+                    console.log(`[updateChallengesAfterWorkout] DistancePace challenge COMPLETED!`);
+                }
+            } else {
+                console.log(`[updateChallengesAfterWorkout] DistancePace challenge: Workout pace (${workoutPaceSm.toFixed(3)}s/m) is not better than current best (${currentBestPaceSm.toFixed(3)}s/m). No update needed.`);
+            }
+        }
 
         // TODO: Add logic for other challenge types (Pace, etc.)
 
