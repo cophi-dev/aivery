@@ -28,8 +28,63 @@ import dbConnect from '@/lib/db/mongodb'; // Ensure dbConnect is imported
 import ExercisePRModel, { IExercisePR } from '@/lib/db/models/exercisePR';
 import { PrismaClient, ChallengeStatus, ChallengeType, ChallengeMetric } from '@prisma/client';
 import type { Challenge } from '@prisma/client';
+// --- Import the new challenge update function ---
+import { updateChallengesAfterWorkout } from './challenge-actions';
 
 const prisma = new PrismaClient(); // Instantiate PrismaClient
+
+// --- Define types for populated lean data --- START
+interface LeanSet {
+  _id: Types.ObjectId;
+  weight?: number;
+  reps?: number;
+  duration?: number;
+  distance?: number;
+  notes?: string;
+  order?: number;
+}
+
+interface LeanExercise {
+  _id: Types.ObjectId;
+  name: string;
+  category: "strength" | "cardio" | "flexibility";
+  equipment?: string[];
+  trackMaxReps?: boolean; // Include the flag
+}
+
+interface LeanWorkoutExercise {
+  _id: Types.ObjectId;
+  workoutId: Types.ObjectId;
+  exerciseId: LeanExercise | null; // Populated exercise
+  order?: number;
+  notes?: string;
+  sets?: LeanSet[]; // Populated sets
+  duration?: number;
+  distance?: number;
+}
+
+interface LeanWorkout {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  name?: string;
+  date?: Date; // Expecting Date object after lean
+  duration?: number;
+  distance?: number;
+  intensity?: string;
+  type?: string;
+  notes?: string;
+  completed?: boolean;
+  completedAt?: Date;
+  source?: string;
+  sourceId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  calculatedVolume?: number;
+  cardioDetails?: ICardioDetails;
+  records?: any[]; // Keep records loosely typed for now
+  workoutExercises?: LeanWorkoutExercise[]; // Populated exercises
+}
+// --- Define types for populated lean data --- END
 
 // --- START NEW Performance Data Types (mirroring frontend) ---
 // These might eventually live in a shared types file
@@ -617,6 +672,18 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     exerciseId?: string; // Keep this for the find logic below
   }> 
 }): Promise<IWorkout> { 
+  // <<< ADD LOG: Absolute Entry Point >>>
+  console.log(`
+🚀🚀🚀 [CreateWorkout ACTION ENTRY] 🚀🚀🚀
+`);
+  console.log(`[CreateWorkout ACTION ENTRY] Received workoutData keys: ${Object.keys(workoutData).join(', ')}`);
+  if (workoutData.exercises) {
+    console.log(`[CreateWorkout ACTION ENTRY] Received exercises count: ${workoutData.exercises.length}`);
+  } else {
+    console.log(`[CreateWorkout ACTION ENTRY] No exercises received in initial data.`);
+  }
+  // <<< END LOG >>>
+
   let savedWorkout: IWorkout | null = null;
   const createdWorkoutExerciseIds: Types.ObjectId[] = [];
   
@@ -856,11 +923,90 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
     // <<< ADD LOG >>>
     console.log(`[CreateWorkout] Finished calling updateUserWorkouts.`);
     
+    // --- <<< NEW: Update Challenge Progress >>> ---
+    if (savedWorkout) {
+      try {
+        console.log(`[CreateWorkout] Calling updateChallengesAfterWorkout for user ${userId} and workout ${workoutId}...`);
+        
+        // --- REVISED DATA PASSING --- 
+        // Construct the data object needed by the challenge function directly
+        // We need the saved workout details and the structured exercises INPUT data
+        
+        // 1. Get the basic saved workout data (as plain object)
+        const workoutBaseData = savedWorkout.toObject();
+
+        // 2. Get the structured exercise data *as it was processed for saving*
+        //    (This assumes workoutData.exercises reflects the processed structure)
+        //    We need to map it slightly to match the expected populated structure
+        const workoutExercisesForChallenge = (workoutData.exercises || [])
+            .map((exerciseInput, index) => {
+                // Find the corresponding canonical exercise details (assuming ExerciseModel is available)
+                // This might require fetching exercises again if not readily available
+                // For now, let's assume we just need the ID and structure
+                let foundExerciseId: Types.ObjectId | null = null;
+                if ((exerciseInput as any).exerciseId && Types.ObjectId.isValid((exerciseInput as any).exerciseId)) {
+                    foundExerciseId = new Types.ObjectId((exerciseInput as any).exerciseId);
+                } 
+                // Ideally, we'd have the full exercise name/category too, but depends on availability
+
+                return {
+                    // Simulate the populated structure expected by updateChallengesAfterWorkout
+                    _id: createdWorkoutExerciseIds[index], // Use the saved WorkoutExercise ID if available
+                    workoutId: workoutId,
+                    order: index,
+                    notes: exerciseInput.notes,
+                    sets: exerciseInput.sets?.map((set, setIndex) => ({ // Map sets
+                        weight: set.weight,
+                        reps: set.reps,
+                        order: set.order ?? setIndex,
+                        // Add other set fields if needed by challenge logic
+                    })),
+                    exerciseId: foundExerciseId ? { _id: foundExerciseId, name: exerciseInput.name } : null // Basic populated structure
+                    // Add duration/distance if relevant for the exercise
+                };
+            })
+            .filter(ex => ex.exerciseId !== null); // Filter out exercises where ID wasn't resolved
+            
+        // 3. Combine base workout data with the structured exercises
+        const dataForChallengeUpdate = {
+            ...workoutBaseData,
+            workoutExercises: workoutExercisesForChallenge, // Add the structured exercises
+        };
+        // --- END REVISED DATA PASSING ---
+
+        // OLD Re-fetch logic REMOVED
+        /*
+        const workoutWithExercises = await WorkoutModel.findById(workoutId)
+          .populate({ 
+            path: 'workoutExercises',
+            populate: { 
+              path: 'exerciseId',
+              model: 'Exercise'
+            }
+          })
+          .lean();
+        */
+        
+        // Pass the directly constructed data
+        // if (workoutWithExercises) { // Check the constructed data instead
+        if (dataForChallengeUpdate) { 
+          await updateChallengesAfterWorkout(userId, dataForChallengeUpdate);
+        } else {
+          console.warn(`[CreateWorkout] Could not construct workout data with exercises for challenge update.`);
+        }
+      } catch (challengeError) {
+        console.error(`[CreateWorkout] Error during challenge update processing:`, challengeError);
+        // Log error, but don't throw, to avoid blocking the main workout save response.
+      }
+    }
+    // --- <<< END: Update Challenge Progress >>> ---
+
     console.log('Revalidating paths...');
     revalidatePath("/calendar");
     revalidatePath("/workouts");
     revalidatePath("/dashboard");
     revalidatePath("/activity");
+    revalidatePath("/challenges"); // <<< ADD: Revalidate challenges path
     console.log('Paths revalidated');
 
     // --- Update User Summaries --- 
@@ -1168,82 +1314,6 @@ export async function updateUserWorkoutSummaries(userId: string): Promise<void> 
         }
     });
 
-    // --- Update Active Challenges ---
-    for (const challenge of activeChallenges) {
-        try {
-            let updatedValue = 0;
-            let shouldUpdate = true;
-
-            // Calculate the updated value based on challenge type
-            switch (challenge.type) {
-                case ChallengeType.MonthlyDistance:
-                    updatedValue = monthlyDistance;
-                    break;
-                case ChallengeType.MonthlyVolume:
-                    // For strength workouts, use the calculated volume
-                    updatedValue = monthlyVolume;
-                    console.log(`[Summ] Monthly Volume Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
-                    break;
-                case ChallengeType.WorkoutFrequency:
-                    updatedValue = monthlySessions;
-                    console.log(`[Summ] Workout Frequency Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
-                    break;
-                case ChallengeType.ExerciseVariety:
-                    updatedValue = monthlyCategoriesUsed.size;
-                    console.log(`[Summ] Exercise Variety Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
-                    break;
-                case ChallengeType.ConsistencyStreak:
-                    updatedValue = monthlyWorkoutDays.size;
-                    console.log(`[Summ] Consistency Streak Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
-                    break;
-                case ChallengeType.BodyweightReps:
-                    if (challenge.exerciseId) {
-                        updatedValue = monthlyMaxRepsPerExercise[challenge.exerciseId] ?? 0;
-                        console.log(`[Summ] Bodyweight Reps Challenge - Current: ${updatedValue}, Goal: ${challenge.goalValue}`);
-                    } else {
-                        shouldUpdate = false;
-                    }
-                    break;
-                default:
-                    shouldUpdate = false;
-                    console.warn(`[Summ] Unknown challenge type: ${challenge.type}`);
-            }
-
-            // Only update if we have a valid value to update with
-            if (shouldUpdate) {
-                console.log(`[Summ] Updating challenge ${challenge.id} (${challenge.type}):`, {
-                    currentValue: updatedValue,
-                    goalValue: challenge.goalValue,
-                    willComplete: updatedValue >= challenge.goalValue
-                });
-
-                // Update challenge progress
-                // <<< ADD LOGGING >>>
-                console.log(`[Summ] Attempting Prisma update for challenge ${challenge.id}...`);
-                try {
-                  await prisma.challenge.update({
-                      where: { id: challenge.id },
-                      data: {
-                          currentValue: updatedValue,
-                          status: updatedValue >= challenge.goalValue ? 
-                              ChallengeStatus.Completed : 
-                              ChallengeStatus.InProgress,
-                          completedAt: updatedValue >= challenge.goalValue ? 
-                              new Date() : null
-                      }
-                  });
-                  console.log(`[Summ] >>> Prisma update SUCCEEDED for challenge ${challenge.id}. New value: ${updatedValue}`);
-                } catch (prismaError) {
-                   console.error(`[Summ] !!! Prisma update FAILED for challenge ${challenge.id}:`, prismaError);
-                   // Decide if you want to continue updating other challenges or stop
-                }
-                // <<< END LOGGING >>>
-            }
-        } catch (error) {
-            console.error(`[Summ] Error updating challenge ${challenge.id}:`, error);
-        }
-    }
-
     // --- Update User Document (Overall Summaries & PRs - Mongoose) ---
     // ... construct userUpdateData ...
     // IMPORTANT: Ensure the overallXyz variables being saved here contain ObjectId for workoutId if that's expected by Mongoose schema/consumers
@@ -1333,58 +1403,7 @@ function calculateWorkoutVolumeWithBodyweight(
 }
 // --- END HELPER FUNCTION ---
 
-// --- Define types for populated lean data --- START
-interface LeanSet {
-  _id: Types.ObjectId;
-  weight?: number;
-  reps?: number;
-  duration?: number;
-  distance?: number;
-  notes?: string;
-  order?: number;
-}
-
-interface LeanExercise {
-  _id: Types.ObjectId;
-  name: string;
-  category: "strength" | "cardio" | "flexibility";
-  equipment?: string[];
-  trackMaxReps?: boolean; // Include the flag
-}
-
-interface LeanWorkoutExercise {
-  _id: Types.ObjectId;
-  workoutId: Types.ObjectId;
-  exerciseId: LeanExercise | null; // Populated exercise
-  order?: number;
-  notes?: string;
-  sets?: LeanSet[]; // Populated sets
-  duration?: number;
-  distance?: number;
-}
-
-interface LeanWorkout {
-  _id: Types.ObjectId;
-  userId: Types.ObjectId;
-  name?: string;
-  date?: Date; // Expecting Date object after lean
-  duration?: number;
-  distance?: number;
-  intensity?: string;
-  type?: string;
-  notes?: string;
-  completed?: boolean;
-  completedAt?: Date;
-  source?: string;
-  sourceId?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-  calculatedVolume?: number;
-  cardioDetails?: ICardioDetails;
-  records?: any[]; // Keep records loosely typed for now
-  workoutExercises?: LeanWorkoutExercise[]; // Populated exercises
-}
-// --- Define types for populated lean data --- END
+// --- LEAN TYPE DEFINITIONS MOVED TO TOP ---
 
 // --- Define intermediate type BEFORE its first use ---
 interface PopulatedLeanWorkout { 
@@ -1412,18 +1431,21 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
   console.log(`[updateExercisePRs] Starting for user: ${userId}, specific workout: ${specificWorkoutId || 'all'}`);
 
   try {
+    // <<< FIX: Define userObjectId here >>>
     const userObjectId = new Types.ObjectId(userId);
-    let user = await UserModel.findById(userObjectId).lean<IUser>();
+    
+    // <<< FIX: Fetch user and userWeight here >>>
+    const user = await UserModel.findById(userObjectId).select('weight').lean<IUser>();
     if (!user) {
       console.error(`[updateExercisePRs] User not found: ${userId}`);
       return;
     }
     const userWeight = (typeof user.weight === 'number' && user.weight > 0) ? user.weight : null;
 
+    // <<< FIX: Define workoutQuery correctly >>>
     const workoutQuery: any = { userId: userObjectId };
     if (specificWorkoutId && Types.ObjectId.isValid(specificWorkoutId)) {
       workoutQuery._id = new Types.ObjectId(specificWorkoutId);
-      // workoutQuery.completed = true; // Keep commented out based on previous decision
       console.log(`[updateExercisePRs] Querying for specific workout: ${specificWorkoutId}`);
     } else {
       console.log(`[updateExercisePRs] Querying for ALL workouts for user: ${userId}`);
@@ -1431,10 +1453,10 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
 
     // --- REFACTORED DATA FETCHING --- 
     
-    // 1. Fetch Workout documents (only need _id and date for PR logic)
-    const workoutDocs = await WorkoutModel.find(workoutQuery)
-      .select('_id date') // Select only necessary fields from Workout
-      .sort({ date: 1 }) // Process chronologically
+    // 1. Fetch Workout documents (use the defined workoutQuery)
+    const workoutDocs = await WorkoutModel.find(workoutQuery) // <<< Use workoutQuery
+      .select('_id date') 
+      .sort({ date: 1 }) 
       .lean();
       
     if (!workoutDocs || workoutDocs.length === 0) {
@@ -1508,6 +1530,7 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
               effectiveWeight = setWeight; // Use actual weight if provided
             } else if (setReps > 0) {
               // Only estimate bodyweight if weight is 0 AND reps are > 0
+              // <<< FIX: Pass userWeight here >>>
               effectiveWeight = estimateBodyweightForExercise(exerciseName, userWeight);
             }
 
@@ -1572,7 +1595,8 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
       bulkOps.push({
         updateOne: {
           filter: {
-            userId: prData.userId,
+            // <<< FIX: Use userObjectId >>>
+            userId: userObjectId,
             exerciseId: prData.exerciseId,
             unit: prData.unit // Filter by the correct unit ('kg' or 'reps')
           },
@@ -1592,7 +1616,8 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
         bulkOps.push({
           deleteOne: {
             filter: {
-              userId: prData.userId,
+              // <<< FIX: Use userObjectId >>>
+              userId: userObjectId,
               exerciseId: prData.exerciseId,
               unit: unitToDelete // Filter by the unit we want to remove
             }
@@ -1815,27 +1840,84 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
 // Function to update a user's workouts array (Restored)
 async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Promise<void> {
   try {
-    // Update User's Workout Array
-    console.log('[updateUserWorkouts] Updating user workouts array...'); // Added log
-    await UserModel.findByIdAndUpdate(
-      userId,
-      { $push: { workouts: workoutId } }
-    );
-    console.log('[updateUserWorkouts] User workouts array updated.'); // Added log
+    await dbConnect();
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      console.error(`User not found for ID: ${userId}`);
+      return;
+    }
+
+    // Ensure the workouts array exists
+    if (!user.workouts) {
+      user.workouts = [];
+    }
+
+    // Add the new workout ID if it's not already there (idempotency)
+    if (!user.workouts.some((id: Types.ObjectId) => id.equals(workoutId))) {
+      user.workouts.push(workoutId);
+    }
     
-    // Revalidate Paths (This might be redundant if called later, but keep for now)
-    // console.log('[updateUserWorkouts] Revalidating paths...');
-    // revalidatePath("/calendar");
-    // revalidatePath("/workout"); 
-    // revalidatePath("/workouts");
-    // revalidatePath("/dashboard");
-    // revalidatePath("/activity");
-    // console.log('[updateUserWorkouts] Paths revalidated');
+    // --- REMOVE PR CHECKING LOGIC HERE ---
+    // The following block was causing errors and is redundant with 
+    // updateUserWorkoutSummaries and updateChallengesAfterWorkout.
+    /* 
+      // <<< START REMOVED BLOCK >>>
+      const workout = await WorkoutModel.findById(workoutId)
+        .populate<{ workoutExercises: PopulatedWorkoutExerciseLean[] }>({
+          path: 'workoutExercises',
+          populate: { path: 'exerciseId', model: 'Exercise' }
+        })
+        .lean(); // Use lean for plain object
+
+      if (!workout || !workout.workoutExercises) {
+        console.error(`Workout or exercises not found for ID: ${workoutId}`);
+        return;
+      }
+
+      const personalRecords = user.personalRecords || {};
+      let updatedPRs = false;
+
+      for (const exercise of workout.workoutExercises) {
+        if (!exercise.exerciseId || !exercise.sets || exercise.sets.length === 0) continue;
+
+        const exId = exercise.exerciseId._id.toString();
+        const unit = exercise.exerciseId.category === 'strength' ? 'kg' : 'reps'; // Simplified unit
+        const prKey = `${exId}_${unit}`;
+
+        let currentPRValue = personalRecords[prKey]?.value ?? 0;
+        let highestValueInWorkout = 0;
+
+        for (const set of exercise.sets) {
+          const setValue = unit === 'kg' ? (set.weight ?? 0) : (set.reps ?? 0);
+          if (setValue > highestValueInWorkout) {
+            highestValueInWorkout = setValue;
+          }
+        }
+
+        if (highestValueInWorkout > currentPRValue) {
+          personalRecords[prKey] = {
+            value: highestValueInWorkout,
+            date: workout.date || new Date(), // Use workout date
+            workoutId: workoutId, // Link PR to this workout
+            exerciseId: exercise.exerciseId._id // Store exercise ID reference
+          };
+          updatedPRs = true;
+          console.log(`[updateUserWorkouts] New PR detected for ${exercise.exerciseId.name}: ${highestValueInWorkout}${unit}`);
+        }
+      }
+
+      if (updatedPRs) {
+        user.personalRecords = personalRecords;
+        console.log('[updateUserWorkouts] Updated personalRecords on user model.');
+      }
+      // <<< END REMOVED BLOCK >>>
+    */
+
+    await user.save();
+    console.log(`[updateUserWorkouts] Added workout ${workoutId} to user ${userId}'s workout list.`);
+
   } catch (error) {
-    // Log specifically for this function
-    console.error(`[updateUserWorkouts] Error updating user workouts array for user ${userId}:`, error);
-    // Re-throw the error so createWorkout's catch block can handle rollback if necessary
-    throw error; 
+    console.error(`Error updating user workouts for user ${userId}:`, error);
   }
 }
 

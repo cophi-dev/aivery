@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import {
     AlertDialogTrigger 
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
-import { Trophy, Target, TrendingUp, Activity, Gauge, Route, Dumbbell, CalendarDays, Sparkles, Repeat, RefreshCw, Loader2, Info, Lightbulb, BarChart } from "lucide-react";
+import { Trophy, Target, TrendingUp, Activity, Gauge, Route, Dumbbell, CalendarDays, Sparkles, Repeat, RefreshCw, Loader2, Info, Lightbulb, BarChart, CheckCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,9 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import type { Challenge } from '@prisma/client'; // Use Prisma type
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { format } from "date-fns";
+import type { ChallengeMetric } from "@prisma/client";
 
 // --- Helper functions (Copied from original page.tsx) ---
 
@@ -110,21 +114,358 @@ interface ChallengeListClientProps {
   onRefreshChallenges: () => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
+function ChallengeDetailModal({ 
+  challenge, 
+  isOpen, 
+  onClose 
+}: { 
+  challenge: Challenge | null;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  if (!challenge) return null;
+
+  const progress = calculateProgress(
+    challenge.currentValue, 
+    challenge.goalValue, 
+    challenge.startValue, 
+    challenge.metric
+  );
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[500px]">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              {challengeIcons[challenge.type] && (
+                <span className="text-primary">
+                  {React.createElement(challengeIcons[challenge.type], { size: 24 })}
+                </span>
+              )}
+              {challenge.title}
+            </DialogTitle>
+            <DialogDescription className="text-base pt-2">
+              {challenge.description}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-6 space-y-6">
+            {/* Progress Circle */}
+            <div className="flex justify-center">
+              <div className="relative w-32 h-32">
+                <svg className="w-full h-full" viewBox="0 0 100 100">
+                  {/* Background circle */}
+                  <circle
+                    className="text-muted-foreground/20"
+                    strokeWidth="8"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="40"
+                    cx="50"
+                    cy="50"
+                  />
+                  {/* Progress circle */}
+                  <motion.circle
+                    className="text-primary"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="40"
+                    cx="50"
+                    cy="50"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: progress / 100 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    style={{
+                      transform: "rotate(-90deg)",
+                      transformOrigin: "50% 50%",
+                    }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <span className="text-2xl font-bold">{progress.toFixed(0)}%</span>
+                    <span className="block text-sm text-muted-foreground">Complete</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Challenge Details */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Current Value</p>
+                  <p className="text-lg font-semibold">
+                    {formatValue(challenge.currentValue, challenge.unit)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Goal</p>
+                  <p className="text-lg font-semibold">
+                    {formatValue(challenge.goalValue, challenge.unit)}
+                  </p>
+                </div>
+                {challenge.startValue !== null && (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Starting Value</p>
+                      <p className="text-lg font-semibold">
+                        {formatValue(challenge.startValue, challenge.unit)}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Improvement</p>
+                      <p className="text-lg font-semibold">
+                        {calculateImprovement(challenge.currentValue, challenge.startValue, challenge.metric)}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {challenge.completedAt && (
+                <div className="pt-4 border-t">
+                  <p className="text-sm text-muted-foreground">
+                    Completed on {format(new Date(challenge.completedAt), 'MMMM d, yyyy')}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>Close</Button>
+            {!challenge.completedAt && (
+              <Button onClick={() => router.push('/workouts/new')}>
+                Start Workout
+              </Button>
+            )}
+          </DialogFooter>
+        </motion.div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function calculateImprovement(current: number, start: number, metric: ChallengeMetric): string {
+  if (metric === 'Pace' || metric === 'Time') {
+    // For these metrics, lower is better
+    const improvement = ((start - current) / start) * 100;
+    return improvement > 0 ? `${improvement.toFixed(1)}% faster` : `${Math.abs(improvement).toFixed(1)}% slower`;
+  } else {
+    // For other metrics, higher is better
+    const improvement = ((current - start) / start) * 100;
+    return improvement > 0 ? `+${improvement.toFixed(1)}%` : `${improvement.toFixed(1)}%`;
+  }
+}
+
+// Add this component for the confetti animation
+function Confetti() {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
+      {[...Array(50)].map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute h-2 w-2 rounded-full bg-primary"
+          initial={{
+            opacity: 1,
+            scale: 0,
+            x: 0,
+            y: 0,
+          }}
+          animate={{
+            opacity: 0,
+            scale: 1,
+            x: Math.random() * 400 - 200,
+            y: Math.random() * 400 - 200,
+            rotate: Math.random() * 360,
+          }}
+          transition={{
+            duration: 1,
+            ease: "easeOut",
+            delay: Math.random() * 0.2,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Add this component for the challenge card
+function ChallengeCard({ challenge, onClick }: { challenge: Challenge; onClick: () => void }) {
+  const Icon = challengeIcons[challenge.type] || challengeIcons.default;
+  const progress = calculateProgress(challenge.currentValue, challenge.goalValue, challenge.startValue, challenge.metric);
+  // const feasibility = getFeasibility(challenge);
+  // const controls = useAnimation();
+
+  // useEffect(() => {
+  //   if (challenge.status === 'Completed') {
+  //     controls.start({
+  //       scale: [1, 1.02, 1],
+  //       transition: { duration: 0.3 }
+  //     });
+  //   }
+  // }, [challenge.status, controls]);
+
+  return (
+    // <motion.div
+    //   layout
+    //   initial={{ opacity: 0, y: 20 }}
+    //   animate={controls}
+    //   whileHover={{ scale: 1.02 }}
+    //   whileTap={{ scale: 0.98 }}
+    //   transition={{ duration: 0.2 }}
+    // >
+      <Card 
+        className={`
+          relative overflow-hidden group transition-all duration-300 ease-in-out cursor-pointer border-2 border-red-500 // Added red border for visibility
+          ${challenge.status === 'Completed' ? 'bg-primary/5 dark:bg-primary/10' : ''}
+        `}
+        onClick={onClick}
+      >
+        {/* Feasibility Badge - Commented out for simplicity */}
+        {/* <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Badge 
+            variant="default" 
+            className={`
+              absolute top-3 right-3 text-xs font-medium px-2 py-1 rounded-full 
+              backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90
+              ${feasibility.color.replace('bg-', 'bg-opacity-90 ')}
+            `}
+          >
+            {feasibility.level}
+          </Badge>
+        </motion.div> */}
+
+        {/* Progress Arc Background - Commented out */}
+        {/* <motion.div 
+          className="absolute right-0 top-0 w-32 h-32 -mr-16 -mt-16 opacity-5"
+          initial={{ rotate: -90 }}
+          animate={{ rotate: (progress * 3.6) - 90 }}
+          transition={{ duration: 1, ease: "easeOut" }}
+          style={{
+            background: `conic-gradient(currentColor ${progress}%, transparent ${progress}%)`,
+            borderRadius: '50%'
+          }}
+        /> */}
+                
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-lg font-semibold tracking-tight pr-12">
+            {challenge.title}
+          </CardTitle>
+          {/* <motion.div
+            whileHover={{ rotate: 360 }}
+            transition={{ duration: 0.5 }}
+          > */}
+            <Icon className="h-5 w-5 text-primary" />
+          {/* </motion.div> */}
+        </CardHeader>
+
+        <CardContent>
+          <div className="text-sm text-muted-foreground mb-4">
+            {challenge.description}
+          </div>
+
+          {/* Progress Section */}
+          <div className="space-y-3">
+            <div className="relative">
+              <Progress 
+                value={progress} 
+                className={`h-2 ${challenge.status === 'Completed' ? 'bg-primary/20' : ''}`}
+              />
+              {/* <motion.div
+                className="absolute inset-0 bg-primary/10"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: progress / 100 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                style={{ transformOrigin: "left" }}
+              /> */}
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center space-x-2">
+                {/* <motion.span 
+                  className="font-medium"
+                  animate={{ opacity: [0, 1], y: [10, 0] }}
+                  transition={{ duration: 0.3 }}
+                > */}
+                  {formatValue(challenge.currentValue, challenge.unit)}
+                {/* </motion.span> */}
+                <span className="text-muted-foreground">/</span>
+                <span className="text-muted-foreground">
+                  {formatValue(challenge.goalValue, challenge.unit)}
+                </span>
+              </div>
+              {/* <motion.span 
+                className={`font-medium ${progress === 100 ? 'text-primary' : 'text-muted-foreground'}`}
+                animate={progress === 100 ? {
+                  scale: [1, 1.2, 1],
+                  transition: { duration: 0.3 }
+                } : {}}
+              > */}
+                {challenge.status === 'Completed' ? (
+                  <span className="flex items-center">
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    Complete
+                  </span>
+                ) : (
+                  `${progress.toFixed(0)}%`
+                )}
+              {/* </motion.span> */}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    // </motion.div>
+  );
+}
+
 export function ChallengeListClient({ initialChallenges, onRefreshChallenges }: ChallengeListClientProps) {
-  // Use initialChallenges directly, no client-side fetching needed here
+  const router = useRouter();
   const [challenges, setChallenges] = useState<Challenge[]>(initialChallenges); 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null); // Keep error state for refresh action
+  const [error, setError] = useState<string | null>(null);
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  // Add stats
+  const completedChallenges = challenges.filter(c => c.status === 'Completed').length;
+  const totalProgress = challenges.reduce((acc, c) => {
+    const progress = calculateProgress(c.currentValue, c.goalValue, c.startValue, c.metric);
+    return acc + progress;
+  }, 0) / challenges.length;
+
+  useEffect(() => {
+    console.log("[ChallengeListClient] initialChallenges prop changed, updating state.");
+    setChallenges(initialChallenges);
+  }, [initialChallenges]);
+
+  // Handle challenge completion
+  useEffect(() => {
+    const completedCount = challenges.filter(c => c.status === 'Completed').length;
+    if (completedCount > 0) {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 2000);
+    }
+  }, [challenges]);
 
   const handleRefreshClick = async () => {
     setIsRefreshing(true);
     setError(null);
     try {
-      await onRefreshChallenges(); // Call the passed server action
-      // Note: We might not need to manually setChallenges here if revalidatePath works
-      // But for immediate feedback, could potentially refetch or rely on router.refresh() in parent
+      await onRefreshChallenges();
       toast({ title: "Challenges Refreshed!", description: "New challenges generated." });
     } catch (e: any) {
       console.error("Failed to refresh challenges:", e);
@@ -139,11 +480,6 @@ export function ChallengeListClient({ initialChallenges, onRefreshChallenges }: 
     }
   };
 
-  const handleOpenDetail = (challenge: Challenge) => {
-    setSelectedChallenge(challenge);
-    setIsDetailOpen(true);
-  };
-
   // --- Render Logic ---
   if (error && !isRefreshing) {
     return <div className="text-red-500 text-center p-4">Error: {error}</div>;
@@ -151,150 +487,159 @@ export function ChallengeListClient({ initialChallenges, onRefreshChallenges }: 
 
   return (
     <>
-      {/* Header section with interactive elements */}
-      <div className="flex justify-between items-center mb-6"> 
-         {/* <h1 className="text-3xl font-bold tracking-tight">Monthly Challenges</h1> */}
-         {/* Add a placeholder or adjust spacing if needed now title is gone */}
-         <div></div> {/* Placeholder to maintain flex layout */}
-         {/* Keep Refresh Button and Dialog here */}
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" disabled={isRefreshing}>
-              {isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Refresh Challenges
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Refresh Monthly Challenges?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will clear your current challenges and generate a new set for this month. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isRefreshing}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleRefreshClick} disabled={isRefreshing}>
-                {isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Continue
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      {/* Confetti Animation */}
+      <AnimatePresence>
+        {showConfetti && <Confetti />}
+      </AnimatePresence>
+
+      {/* Header Stats Section */}
+      <motion.div 
+        className="mb-8 space-y-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex flex-col space-y-2">
+          <h1 className="text-4xl font-bold tracking-tight text-center bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
+            Monthly Challenges
+          </h1>
+          <p className="text-center text-muted-foreground">
+            Push your limits, track your progress, achieve your goals
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="bg-primary/5">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Active Challenges</p>
+                  <h2 className="text-2xl font-bold">{challenges.length}</h2>
+                </div>
+                <Trophy className="h-8 w-8 text-primary opacity-75" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-primary/5">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Completed</p>
+                  <h2 className="text-2xl font-bold">{completedChallenges}</h2>
+                </div>
+                <CheckCircle className="h-8 w-8 text-primary opacity-75" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-primary/5">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Overall Progress</p>
+                  <h2 className="text-2xl font-bold">{totalProgress.toFixed(0)}%</h2>
+                </div>
+                <BarChart className="h-8 w-8 text-primary opacity-75" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Refresh Button */}
+        <div className="flex justify-end">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                disabled={isRefreshing}
+                className="relative group"
+              >
+                <RefreshCw className={`
+                  mr-2 h-4 w-4 
+                  ${isRefreshing ? 'animate-spin' : 'group-hover:animate-spin'}
+                `} />
+                Refresh Challenges
+                {!isRefreshing && (
+                  <span className="absolute inset-0 rounded-md bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Refresh Monthly Challenges?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will generate a new set of personalized challenges based on your recent progress. Previous challenges will be archived.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isRefreshing}>Cancel</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={handleRefreshClick} 
+                  disabled={isRefreshing}
+                  className="relative group"
+                >
+                  {isRefreshing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Generate New Challenges
+                  <span className="absolute inset-0 rounded-md bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </motion.div>
 
       {/* Empty state message */}
       {challenges.length === 0 && !isRefreshing && (
-         <div className="text-center text-gray-500 py-10">
-            <p>No challenges found for this month.</p>
-            <p>Complete some workouts or click Refresh to generate new ones.</p>
-         </div>
-       )}
+        <div className="text-center py-12">
+          <div className="inline-block p-3 rounded-full bg-primary/5 mb-4">
+            <Trophy className="h-8 w-8 text-primary" />
+          </div>
+          <h3 className="text-lg font-semibold mb-2">No Active Challenges</h3>
+          <p className="text-muted-foreground mb-6">
+            Complete some workouts or click Refresh to generate new personalized challenges.
+          </p>
+          <Button onClick={() => router.push('/workouts/new')}>
+            Start a Workout
+          </Button>
+        </div>
+      )}
 
       {/* Challenge Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {challenges.map((challenge) => {
-          const Icon = challengeIcons[challenge.type] || challengeIcons.default;
-          const progress = calculateProgress(challenge.currentValue, challenge.goalValue, challenge.startValue, challenge.metric);
-          const feasibility = getFeasibility(challenge);
-          
-          return (
-            <Card key={challenge.id} className="hover:shadow-lg transition-shadow duration-200 cursor-pointer relative overflow-hidden group" onClick={() => handleOpenDetail(challenge)}>
-              {/* Feasibility Badge */}
-               <Badge 
-                    variant="default" 
-                    className={`absolute top-2 right-2 text-xs font-semibold px-2 py-1 rounded-full text-white ${feasibility.color}`}
-                >
-                    {feasibility.level}
-                </Badge>
-                
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium pr-10"> {/* Added padding right */}
-                  {challenge.title}
-                </CardTitle>
-                <Icon className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-xs text-muted-foreground mb-2">
-                  {challenge.description}
-                </div>
-                <Progress value={progress} className="mb-2 h-2" />
-                <div className="text-xs font-medium flex justify-between">
-                  <span>{formatValue(challenge.currentValue, challenge.unit)} / {formatValue(challenge.goalValue, challenge.unit)}</span>
-                  <span className={`${progress === 100 ? 'text-green-500' : 'text-muted-foreground'}`}>
-                     {challenge.status === 'Completed' ? 'Completed!' : `${progress.toFixed(0)}%`}
-                   </span>
-                </div>
-              </CardContent>
-               {/* Info icon for suggestions hint */}
-               <Info className="absolute bottom-2 right-2 h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </Card>
-          );
-        })}
-      </div>
+      <motion.div 
+        className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: { opacity: 0 },
+          show: {
+            opacity: 1,
+            transition: {
+              staggerChildren: 0.1
+            }
+          }
+        }}
+      >
+        {challenges.map((challenge) => (
+          <ChallengeCard
+            key={challenge.id}
+            challenge={challenge}
+            onClick={() => {
+              setSelectedChallenge(challenge);
+              setIsDetailOpen(true);
+            }}
+          />
+        ))}
+      </motion.div>
 
       {/* Challenge Detail Modal */}
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center"><Target className="mr-2 h-5 w-5"/> {selectedChallenge?.title}</DialogTitle>
-            <DialogDescription>
-              {selectedChallenge?.description}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">Current Progress:</span>
-                <span className="text-sm font-semibold">{formatValue(selectedChallenge?.currentValue, selectedChallenge?.unit)}</span>
-            </div>
-             <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">Goal:</span>
-                <span className="text-sm font-semibold">{formatValue(selectedChallenge?.goalValue, selectedChallenge?.unit)}</span>
-            </div>
-             <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">Status:</span>
-                <Badge 
-                    variant={"default"} 
-                    className={selectedChallenge?.status === 'Completed' ? 'bg-green-500 text-white' : 'bg-secondary text-secondary-foreground'}
-                >
-                     {selectedChallenge?.status}
-                </Badge>
-            </div>
-            <Progress 
-                value={calculateProgress(selectedChallenge?.currentValue ?? 0, selectedChallenge?.goalValue ?? 0, selectedChallenge?.startValue, selectedChallenge?.metric)} 
-                className="h-3" />
-            
-             {/* Feasibility */}
-            {selectedChallenge && (
-                <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-muted-foreground">Feasibility:</span>
-                    <Badge 
-                        variant="default" 
-                        className={`text-xs font-semibold px-2 py-1 rounded-full text-white ${getFeasibility(selectedChallenge).color}`}
-                    >
-                        {getFeasibility(selectedChallenge).level}
-                    </Badge>
-                </div>
-            )}
-
-            {/* Suggestions */}
-            {selectedChallenge && (
-                <div className="mt-4 pt-4 border-t">
-                    <h4 className="text-sm font-semibold mb-2 flex items-center"><Lightbulb className="mr-2 h-4 w-4 text-yellow-500"/> Suggestions:</h4>
-                    <ul className="list-disc list-inside space-y-1 text-xs text-muted-foreground">
-                        {getSuggestions(selectedChallenge).map((suggestion, index) => (
-                            <li key={index}>{suggestion}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-          </div>
-          <DialogFooter>
-             <DialogClose asChild>
-                 <Button type="button" variant="secondary">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AnimatePresence>
+        <ChallengeDetailModal
+          challenge={selectedChallenge}
+          isOpen={isDetailOpen}
+          onClose={() => setIsDetailOpen(false)}
+        />
+      </AnimatePresence>
     </>
   );
 } 

@@ -1280,16 +1280,19 @@ export default function NewWorkoutPage() {
             type: workoutPayload.type,
             notes: workoutPayload.notes,
             duration: workoutPayload.duration, 
-            // Cast problematic fields to 'any' to bypass strict type checking here
-            exercises: workoutPayload.exercises as any, 
-            cardioDetails: workoutPayload.cardioDetails as any, 
+            // Cast problematic fields to 'any' to bypass strict type checking here - REMOVED CASTS
+            exercises: workoutPayload.exercises, // Removed 'as any' 
+            cardioDetails: workoutPayload.cardioDetails, // Removed 'as any' 
             source: workoutPayload.source || 'manual', 
             intensity: workoutPayload.intensity, 
         };
 
         console.log("[handleSaveWorkout] Sending createPayload to createWorkoutAction:", JSON.stringify(createPayload, null, 2));
 
-        savedWorkout = await createWorkoutAction(createPayload);
+        // ---> THE ACTUAL CALL <--- 
+        savedWorkout = await createWorkoutAction(createPayload); // Original Call Restored
+        // savedWorkout = await createWorkoutAction(simplifiedPayload); // Use simplified payload for testing
+        // ---> END CALL <---
         toast.success('Workout created successfully!');
       }
       if (savedWorkout && savedWorkout._id) {
