@@ -18,12 +18,17 @@
       {
         "pattern": "lib/ai-*.ts",
         "action": "requireConfirmation",
-        "message": "This file affects AI behavior. Confirm you’re not breaking prompt contracts."
+        "message": "This file affects AI behavior. Confirm you're not breaking prompt contracts."
       },
       {
         "pattern": "lib/stripe*.ts",
         "action": "requireConfirmation",
         "message": "This file handles payment logic. Test carefully before pushing changes."
+      },
+      {
+        "pattern": "{lib,components,pages/api}/**/*",
+        "action": "reminder",
+        "message": "🧭 Aivery reminder: Check relevant docs in `docs/` before adding features: codebase-overview.md, database-schema.md, prompts.md, and weekly-checklist.md."
       }
     ]
   }
