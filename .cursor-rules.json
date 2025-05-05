@@ -1,0 +1,30 @@
+{
+    "rules": [
+      {
+        "pattern": "__deprecated__/**/*",
+        "action": "forbid",
+        "message": "This file is archived. Restore it to the main codebase before editing."
+      },
+      {
+        "pattern": "docs/**/*",
+        "action": "warn",
+        "message": "You're editing internal documentation — make sure changes are intentional."
+      },
+      {
+        "pattern": "pages/api/**/*.ts",
+        "action": "warn",
+        "message": "Editing an API route — ensure you understand frontend dependencies."
+      },
+      {
+        "pattern": "lib/ai-*.ts",
+        "action": "requireConfirmation",
+        "message": "This file affects AI behavior. Confirm you’re not breaking prompt contracts."
+      },
+      {
+        "pattern": "lib/stripe*.ts",
+        "action": "requireConfirmation",
+        "message": "This file handles payment logic. Test carefully before pushing changes."
+      }
+    ]
+  }
+  
