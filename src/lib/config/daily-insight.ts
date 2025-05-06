@@ -30,10 +30,7 @@ Keep the entire response concise (2-4 sentences max).`,
     description: 'Spotlight a specific win',
     icon: Sparkles,
     prompt: 
-`Identify ONE specific small achievement or positive data point from the User Data Summary (last 7 days). 
-This could be consistency, hitting a certain duration, distance, or volume, or even just showing up. 
-Highlight this 'Tiny Triumph'. 
-Keep the entire response encouraging and brief (2-3 sentences max).`,
+`Based on the User Data Summary, identify a \'Tiny Triumph\'. Look for notable percentage increases in weekly Total Volume (tons) or Total Cardio minutes compared to the previous week. Also, check for any New Rep PRs achieved. Briefly highlight one significant achievement related to these metrics. Keep the response encouraging and concise (2-3 sentences max).`,
   },
   {
     day: 'Wednesday',

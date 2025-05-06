@@ -12,7 +12,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
   - User name
   - Workout data (type, duration, distance, volume)
   - User preferences and goals (optional)
-  - Historical context (PRs, workout counts)
+  - Historical context (e.g., PRs achieved, recent trends in weekly volume/duration)
   - Landmark comparison (optional)
 - **Sample Snippet**:
 ```
@@ -41,7 +41,7 @@ Instructions:
 - **Trigger**: Dashboard load or user request
 - **Input Structure**:
   - User nickname
-  - Workout count
+  - Recent activity summary (volume, cardio minutes, PRs)
   - Recent workout types
   - Time of day
   - Day of week
@@ -273,7 +273,7 @@ Follow the instructions precisely. Address the user by name (${displayName}). Ke
 ```
 - **Daily Variations**:
   - **Monday (Momentum)**: Focus on last week summary, upcoming week forecast, & acknowledge today's activity.
-  - **Tuesday (Tiny Triumph)**: Highlight a small, specific win from recent workouts.
+  - **Tuesday (Tiny Triumph)**: Highlight a specific recent win, such as an increase in total weekly volume (tons) or cardio minutes, or achieving new rep PRs (total or for specific exercises).
   - **Wednesday (Midweek Pulse)**: Check-in, reflect on week so far, offer gentle nudge.
   - **Thursday (The Shift)**: Overview of week, potential actions before Sunday.
   - **Friday (Your Rhythm)**: Analyze patterns over last few weeks, point out one interesting one.

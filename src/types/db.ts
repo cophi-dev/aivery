@@ -222,4 +222,19 @@ export interface DailyInsightData {
 // --- Subscription & Plan Types ---
 export interface SubscriptionPlan {
   // ... (existing subscription plan type)
+}
+
+// --- Exercise Personal Record Type ---
+export interface ExercisePRData {
+  _id: string;
+  userId: string;
+  exerciseId: string; // Reference to ExerciseData._id
+  type: 'weight' | 'reps' | 'volume'; // Type of PR
+  value: number; // The actual PR value (e.g., max weight, max reps)
+  date: Date | string; // Date PR was achieved
+  workoutId?: string; // Optional: reference to WorkoutData._id
+  workoutExerciseId?: string; // Optional: reference to WorkoutExerciseData._id
+  setId?: string; // Optional: reference to Set._id
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 } 

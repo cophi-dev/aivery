@@ -7,6 +7,13 @@ import { findLatestInsightForUserAndDate, createOrUpdateInsight } from '@/lib/db
 import type { WorkoutData, DailyInsightData } from '@/types/db'; // Import WorkoutData type
 import { getUserById } from '@/lib/db/repositories/userRepository';
 import { getToken } from "next-auth/jwt";
+import {
+  calculateFullWeekAggregates,
+  calculateCurrentWeekToDateAggregates,
+  getFormattedNewRepPRsForPeriod,
+  WeeklyAggregates,
+  FormattedRepPREntry
+} from '@/lib/user-period-metrics';
 
 // Ensure the route is always dynamic and not cached
 export const dynamic = 'force-dynamic';
@@ -84,7 +91,7 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
 }
 // --- End Date Range Calculation Helper ---
 
-// Helper to format workouts for the prompt
+// Helper to format workouts for the prompt (GENERAL USE)
 function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date): string {
   if (!workouts || workouts.length === 0) {
     return "No workouts recorded in this period.";
@@ -146,6 +153,56 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date): stri
   // finalString += "\nPast Workouts in Period:\n" + formatSummary(pastWorkouts);
 
   return finalString.trim();
+}
+
+// NEW Helper to format data specifically for Tuesday's "Tiny Triumph" insight
+function formatTuesdayInsightDataForPrompt(
+  currentWeek: WeeklyAggregates,
+  previousWeek: WeeklyAggregates | null, // Previous week might not have data
+  newRepPRs: FormattedRepPREntry[],
+  displayName: string // For personalization if needed in the string, though prompt handles it
+): string {
+  let summary = "This Week's Progress So Far:\n";
+  summary += `- Total Volume: ${(currentWeek.totalVolumeKg / 1000).toFixed(2)} tons\n`;
+  summary += `- Total Cardio: ${currentWeek.totalCardioMinutes} minutes\n`;
+  summary += `- Workouts Logged: ${currentWeek.workoutCount}\n`;
+
+  if (previousWeek && previousWeek.workoutCount > 0) {
+    summary += "\nComparison to Last Full Week:\n";
+    
+    // Volume Change
+    if (previousWeek.totalVolumeKg > 0) {
+      const volumeChangePercent = ((currentWeek.totalVolumeKg - previousWeek.totalVolumeKg) / previousWeek.totalVolumeKg) * 100;
+      summary += `- Volume Change: ${volumeChangePercent >= 0 ? '+' : ''}${volumeChangePercent.toFixed(1)}%\n`;
+    } else if (currentWeek.totalVolumeKg > 0) {
+      summary += "- Volume: Up from no volume last week!\n";
+    } else {
+      summary += "- Volume: Consistent with no volume last week.\n";
+    }
+
+    // Cardio Minutes Change
+    if (previousWeek.totalCardioMinutes > 0) {
+      const cardioChangePercent = ((currentWeek.totalCardioMinutes - previousWeek.totalCardioMinutes) / previousWeek.totalCardioMinutes) * 100;
+      summary += `- Cardio Minutes Change: ${cardioChangePercent >= 0 ? '+' : ''}${cardioChangePercent.toFixed(1)}%\n`;
+    } else if (currentWeek.totalCardioMinutes > 0) {
+      summary += "- Cardio Minutes: Up from zero last week!\n";
+    } else {
+      summary += "- Cardio Minutes: Consistent with zero last week.\n";
+    }
+  } else {
+    summary += "\nNo comparable data from last full week to show trends.\n";
+  }
+
+  summary += "\nNew Rep PRs This Week (Last 7 Days):\n";
+  if (newRepPRs.length > 0) {
+    newRepPRs.forEach(pr => {
+      summary += `- ${pr.exerciseName}: ${pr.reps} reps (on ${new Date(pr.date).toLocaleDateString()})\n`;
+    });
+  } else {
+    summary += "- No new rep PRs logged in the last 7 days.\n";
+  }
+
+  return summary.trim();
 }
 
 export async function GET() {
@@ -226,20 +283,89 @@ export async function GET() {
     // --- End Check --- 
 
     // --- Calculate Date Range for Data Fetching --- 
-    const { startDate, endDate, description: dateRangeDescription } = calculateDateRangeForDay(dayName);
+    const { startDate: generalStartDate, endDate: generalEndDate, description: dateRangeDescription } = calculateDateRangeForDay(dayName);
 
-    // --- Fetch Workout Data --- 
-    let fetchedWorkouts: WorkoutData[] = [];
+    let workoutDataString: string = "No workout data processed.";
     let dataFetchError: string | null = null;
-    let latestWorkoutTsInData: Date | null = null;
-    try {
-      console.log(`[Daily Insight] Fetching workouts for ${displayName} (${userId}) period: ${dateRangeDescription} (${startDate.toISOString()} to ${endDate.toISOString()})`);
-      fetchedWorkouts = await getUserWorkoutsByDateRange(userId, startDate, endDate);
-      latestWorkoutTsInData = findLatestTimestampInWorkouts(fetchedWorkouts); // Find the latest timestamp within the fetched data
-      console.log(`[Daily Insight] Fetched ${fetchedWorkouts.length} workouts. Latest timestamp in data: ${latestWorkoutTsInData?.toISOString()}`);
-    } catch (fetchError) {
-       console.error("[Daily Insight] Error fetching workout data:", fetchError);
-       dataFetchError = fetchError instanceof Error ? fetchError.message : "Failed to load workout data.";
+    let latestWorkoutTsInData: Date | null = null; 
+
+    if (dayName === 'Tuesday') {
+      try {
+        console.log(`[Daily Insight - Tuesday] Calculating specific metrics for ${displayName} (${userId})`);
+        const todayForMetrics = new Date(); 
+
+        const dateInPreviousWeek = new Date(todayForMetrics);
+        dateInPreviousWeek.setDate(todayForMetrics.getDate() - 7); // Date within the previous week
+        const previousWeekAggregates = await calculateFullWeekAggregates(userId, dateInPreviousWeek);
+
+        const currentWeekAggregates = await calculateCurrentWeekToDateAggregates(userId, todayForMetrics);
+        
+        // PRs are fetched for the general "last 7 days" window for Tuesday
+        const newRepPRs = await getFormattedNewRepPRsForPeriod(userId, generalStartDate, generalEndDate);
+
+        workoutDataString = formatTuesdayInsightDataForPrompt(
+          currentWeekAggregates, 
+          previousWeekAggregates, 
+          newRepPRs, 
+          displayName
+        );
+        
+        // Determine latestWorkoutTsInData for staleness. This should be the latest timestamp 
+        // from ANY data that went into the insight (current week workouts, previous week workouts, or PR dates).
+        // For simplicity now, we will use the latest of current week workouts or PRs.
+        let latestActivityDate: Date | null = null;
+        if (currentWeekAggregates.workoutCount > 0) {
+            // Assuming calculateCurrentWeekToDateAggregates could return workouts or their timestamps
+            // For now, we need to re-fetch or have the aggregate function return the latest timestamp
+            // Let's re-fetch for simplicity to ensure we have individual workout dates if needed
+            const currentWeekWorkouts = await getUserWorkoutsByDateRange(userId, 
+                new Date(new Date(todayForMetrics).setDate(todayForMetrics.getDate() - (todayForMetrics.getDay() === 0 ? 6 : todayForMetrics.getDay() -1))),
+                todayForMetrics
+            );
+            latestActivityDate = findLatestTimestampInWorkouts(currentWeekWorkouts);
+        }
+
+        if (newRepPRs.length > 0) {
+            const latestPRDate = newRepPRs.reduce((latest, pr) => 
+                new Date(pr.date) > latest ? new Date(pr.date) : latest, 
+            new Date(0));
+            if (!latestActivityDate || latestPRDate > latestActivityDate) {
+                latestActivityDate = latestPRDate;
+            }
+        }
+        latestWorkoutTsInData = latestActivityDate;
+
+        // If no specific activity, fall back to general latest workout for the user for staleness
+        if (!latestWorkoutTsInData) {
+            latestWorkoutTsInData = await getLatestWorkoutTimestampForUser(userId);
+        }
+
+      } catch (tuesdayError) {
+        console.error("[Daily Insight - Tuesday] Error calculating specific metrics:", tuesdayError);
+        dataFetchError = tuesdayError instanceof Error ? tuesdayError.message : "Failed to load specific Tuesday metrics.";
+        let fallbackWorkouts: WorkoutData[] = [];
+        try {
+            fallbackWorkouts = await getUserWorkoutsByDateRange(userId, generalStartDate, generalEndDate);
+            latestWorkoutTsInData = findLatestTimestampInWorkouts(fallbackWorkouts);
+            workoutDataString = formatWorkoutsForPrompt(fallbackWorkouts, today);
+        } catch (fallbackFetchError) {
+            console.error("[Daily Insight - Tuesday Fallback] Error fetching workout data:", fallbackFetchError);
+            dataFetchError = fallbackFetchError instanceof Error ? fallbackFetchError.message : "Failed to load workout data on fallback.";
+        }
+      }
+    } else {
+        let fetchedWorkouts: WorkoutData[] = [];
+        try {
+          console.log(`[Daily Insight] Fetching workouts for ${displayName} (${userId}) period: ${dateRangeDescription} (${generalStartDate.toISOString()} to ${generalEndDate.toISOString()})`);
+          fetchedWorkouts = await getUserWorkoutsByDateRange(userId, generalStartDate, generalEndDate);
+          latestWorkoutTsInData = findLatestTimestampInWorkouts(fetchedWorkouts); 
+          console.log(`[Daily Insight] Fetched ${fetchedWorkouts.length} workouts. Latest timestamp in data: ${latestWorkoutTsInData?.toISOString()}`);
+          workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today);
+        } catch (fetchError) {
+           console.error("[Daily Insight] Error fetching workout data:", fetchError);
+           dataFetchError = fetchError instanceof Error ? fetchError.message : "Failed to load workout data.";
+           workoutDataString = `Could not load workout data for period: ${dateRangeDescription}.`; 
+        }
     }
 
     // --- Generate Insight using AI --- 
@@ -254,7 +380,6 @@ export async function GET() {
     } else {
         try {
             // Pass today's date to the formatting function
-            const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today);
             const systemPrompt = `\
 You are Aivery, a friendly and insightful AI fitness coach providing a daily insight for ${displayName}.
 
@@ -283,7 +408,7 @@ Follow the instructions precisely. Address the user by name (${displayName}). Ke
                 messages: [
                   { role: 'system', content: systemPrompt },
                 ],
-                max_tokens: 1024, // Already increased
+                max_tokens: 2048,
                 temperature: 0.7,
                 stream: false,
               })
