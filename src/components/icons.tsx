@@ -19,6 +19,8 @@ import {
   BarChart,
   Plus,
   ChevronRight,
+  CalendarDays,
+  Save,
 } from "lucide-react"
 
 export type IconProps = React.HTMLAttributes<SVGElement>
@@ -42,4 +44,6 @@ export const Icons = {
   chart: BarChart,
   add: Plus,
   chevronRight: ChevronRight,
+  Today: CalendarDays,
+  Save: Save,
 } 

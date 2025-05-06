@@ -185,4 +185,41 @@ export interface WorkoutExerciseData {
   calories?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Activity Insight Types ---
+export interface ActivityInsightData {
+  _id?: string; // Optional _id for frontend use
+  userId: string; // Link to user
+  periodType: 'weekly' | 'monthly';
+  periodStartDate: Date;
+  insightData: {
+    highlight?: string;
+    positiveTrends?: string[];
+    negativeTrends?: string[];
+    milestones?: string[];
+  };
+  generatedAt?: Date;
+  lastWorkoutTimestamp?: Date | null; // Nullable for older records
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// --- Daily Insight Types ---
+export interface DailyInsightData {
+  _id?: string;
+  userId: string;
+  date: Date; // The specific date the insight applies to
+  title: string; // Title from dailyContentConfig
+  description: string; // Description from dailyContentConfig
+  insightText: string; // Generated AI insight
+  generatedAt?: Date;
+  lastWorkoutTimestamp?: Date | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// --- Subscription & Plan Types ---
+export interface SubscriptionPlan {
+  // ... (existing subscription plan type)
 } 

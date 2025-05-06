@@ -15,14 +15,18 @@ import { DashboardHeader } from "./_components/DashboardHeaderClient";
 import { LogWorkoutButton } from "./_components/LogWorkoutButtonClient"; 
 import { ProgressCards } from "./_components/ProgressCardsClient"; 
 import { SpotlightCards } from "./_components/SpotlightCardsClient"; 
-import { PersonalRecordsCard } from "./_components/PersonalRecordsCardClient"; 
+import { PersonalRecordsCard } from "./_components/PersonalRecordsCardClient";
 import { QuickActionsCard } from "./_components/QuickActionsCardClient";
 import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assuming a loading indicator component
+// Replace DailyInsightCard with AiveryInsights
+import AiveryInsights from "@/components/dashboard/AiveryInsights"; // <-- Updated import
+import TodaysSummaryCard from "@/components/dashboard/TodaysSummaryCard"; // Import the new card
 // Import the type for exercise PRs and IUser for overall PRs
 import type { DashboardPREntry } from "@/lib/workout-actions";
 import type { IUser } from '@/lib/db/models/user';
 import { Button } from "@/components/ui/button"; // Import Button
 import UserNicknameDisplay from "@/components/UserNicknameDisplay";
+import type { ObjectId } from 'mongoose'; // Import ObjectId for type checking
 
 // Define a type for the metrics data
 interface DashboardMetrics {
@@ -153,130 +157,140 @@ export default function DashboardPage() {
     console.log(`[Dashboard Page] Rendering. isLoadingMetrics: ${isLoadingMetrics}, metrics: ${JSON.stringify(metrics, null, 2)}, workoutCount: ${metrics?.workoutCount}`);
 
     return (
-        <div className="container mx-auto px-4 py-8 flex flex-col items-center space-y-8 md:space-y-10 bg-background">
-            <DashboardHeader 
-                displayName={<UserNicknameDisplay fallback={displayName} />} 
-                userImage={userImage} 
-            />
+        <div className="container mx-auto px-4 sm:px-6 md:py-10 py-6 flex flex-col items-center bg-background">
+            <div className="w-full max-w-5xl space-y-6 md:space-y-8 lg:space-y-10">
+                <DashboardHeader 
+                    displayName={<UserNicknameDisplay fallback={displayName} />} 
+                    userImage={userImage} 
+                />
 
-            <div className="flex flex-col gap-8 w-full max-w-4xl">
-                <LogWorkoutButton />
-                <SubscriptionStatus /> 
+                <div className="space-y-6 md:space-y-8">
+                    <LogWorkoutButton />
+                    <SubscriptionStatus />
+                    
+                    {/* Grid for Insights and Today's Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 lg:gap-8">
+                      <div className="md:transform md:transition-all md:duration-300 md:hover:translate-y-[-4px]">
+                        <AiveryInsights />
+                      </div>
+                      <div className="md:transform md:transition-all md:duration-300 md:hover:translate-y-[-4px]">
+                        <TodaysSummaryCard />
+                      </div>
+                    </div>
 
-                {/* --- NEW: AI Preferences Prompt --- */} 
-                {/* Use the real flag from metrics */}
-                {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
-                    <Card className="border-secondary/70 dark:border-secondary/80 bg-secondary/50 dark:bg-secondary/30 shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl">
-                         <CardHeader className="flex flex-row items-center justify-between pb-3">
-                             <div className="space-y-1">
-                                <CardTitle className="text-base font-semibold text-secondary-foreground dark:text-secondary-foreground flex items-center">
-                                     <Sparkles className="w-5 h-5 mr-2 text-primary dark:text-primary" />
-                                     Unlock Deeper Insights!
-                                 </CardTitle>
-                                <CardDescription className="text-sm text-secondary-foreground/80 dark:text-secondary-foreground/80">
-                                     Tell Aivery about your goals and preferences for a truly personalized experience.
-                                 </CardDescription>
-                             </div>
-                            <Link href="/settings?tab=ai">
-                                 <Button variant="outline" size="sm" className="bg-background dark:bg-card border-border dark:border-border text-foreground dark:text-foreground hover:bg-muted dark:hover:bg-muted/50">
-                                     Set Preferences <ArrowRight className="w-4 h-4 ml-1.5" />
-                                 </Button>
-                             </Link>
-                         </CardHeader>
-                    </Card>
-                )}
-                {/* --- END: AI Preferences Prompt --- */}
-                
-                {/* Conditional rendering for Getting Started / Progress & Records */} 
-                {isLoadingMetrics ? (
-                    <div className="flex justify-center items-center h-24"><LoadingIndicator /></div>
-                ) : errorMetrics ? (
-                     <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
-                ) : metrics && metrics.workoutCount === 0 ? (
-                    // --- Getting Started Card ---
-                    <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-sm rounded-xl">
-                        <CardHeader>
-                            <CardTitle className="text-primary dark:text-primary text-xl font-semibold">🚀 Let's Get Started!</CardTitle>
-                            <CardDescription className="text-primary/80 dark:text-primary/70">Your Aivery journey begins now. How do you want to add your first workout?</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex flex-col sm:flex-row gap-5">
-                                {/* Option 1: Import */}
-                                <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
-                                    <div className="flex items-center mb-2">
-                                        <Upload className="w-5 h-5 mr-2 text-primary dark:text-primary" />
-                                        <h4 className="font-medium text-primary/90 dark:text-foreground">Import History</h4>
+                    {/* AI Preferences Card */}
+                    {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
+                        <Card className="border-secondary/70 dark:border-secondary/80 bg-secondary/50 dark:bg-secondary/30 shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl">
+                             <CardHeader className="flex flex-row items-center justify-between pb-3">
+                                 <div className="space-y-1">
+                                    <CardTitle className="text-base font-semibold text-secondary-foreground dark:text-secondary-foreground flex items-center">
+                                         <Sparkles className="w-5 h-5 mr-2 text-primary dark:text-primary" />
+                                         Unlock Deeper Insights!
+                                     </CardTitle>
+                                    <CardDescription className="text-sm text-secondary-foreground/80 dark:text-secondary-foreground/80">
+                                         Tell Aivery about your goals and preferences for a truly personalized experience.
+                                     </CardDescription>
+                                 </div>
+                                <Link href="/settings?tab=ai">
+                                     <Button variant="outline" size="sm" className="bg-background dark:bg-card border-border dark:border-border text-foreground dark:text-foreground hover:bg-muted dark:hover:bg-muted/50">
+                                         Set Preferences <ArrowRight className="w-4 h-4 ml-1.5" />
+                                     </Button>
+                                 </Link>
+                             </CardHeader>
+                        </Card>
+                    )}
+                    
+                    {/* Conditional rendering for Getting Started / Progress & Records */} 
+                    {isLoadingMetrics ? (
+                        <div className="flex justify-center items-center h-24"><LoadingIndicator /></div>
+                    ) : errorMetrics ? (
+                         <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
+                    ) : metrics && metrics.workoutCount === 0 ? (
+                        // --- Getting Started Card ---
+                        <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-sm rounded-xl">
+                            <CardHeader>
+                                <CardTitle className="text-primary dark:text-primary text-xl font-semibold">🚀 Let's Get Started!</CardTitle>
+                                <CardDescription className="text-primary/80 dark:text-primary/70">Your Aivery journey begins now. How do you want to add your first workout?</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="flex flex-col sm:flex-row gap-5">
+                                    {/* Option 1: Import */}
+                                    <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
+                                        <div className="flex items-center mb-2">
+                                            <Upload className="w-5 h-5 mr-2 text-primary dark:text-primary" />
+                                            <h4 className="font-medium text-primary/90 dark:text-foreground">Import History</h4>
+                                        </div>
+                                        <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Got data on Strava? Bring it over to fill your timeline.</p>
+                                        <Link href="/integrations">
+                                            <Button variant="outline" size="sm" className="w-full bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
+                                                Go to Integrations <ArrowRight className="w-4 h-4 ml-1" />
+                                            </Button>
+                                        </Link>
                                     </div>
-                                    <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Got data on Strava? Bring it over to fill your timeline.</p>
-                                    <Link href="/integrations">
-                                        <Button variant="outline" size="sm" className="w-full bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
-                                            Go to Integrations <ArrowRight className="w-4 h-4 ml-1" />
-                                        </Button>
-                                    </Link>
-                                </div>
-                                
-                                {/* Option 2: Manual Log / Auto-Sync */}
-                                <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
-                                     <div className="flex items-center mb-2">
-                                        <Edit3 className="w-5 h-5 mr-2 text-primary dark:text-primary" />
-                                        <h4 className="font-medium text-primary/90 dark:text-foreground">Start Fresh</h4>
+                                    
+                                    {/* Option 2: Manual Log / Auto-Sync */}
+                                    <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
+                                         <div className="flex items-center mb-2">
+                                            <Edit3 className="w-5 h-5 mr-2 text-primary dark:text-primary" />
+                                            <h4 className="font-medium text-primary/90 dark:text-foreground">Start Fresh</h4>
+                                        </div>
+                                        <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Log workouts manually or connect Strava for auto-syncing new ones.</p>
+                                        <Link href="/log-workout">
+                                            <Button variant="outline" size="sm" className="w-full mb-2 bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
+                                                Log First Workout <ArrowRight className="w-4 h-4 ml-1" />
+                                            </Button>
+                                        </Link>
+                                        <Link href="/integrations">
+                                            <Button variant="link" size="sm" className="text-primary/70 dark:text-muted-foreground hover:text-primary dark:hover:text-foreground w-full text-xs p-0 h-auto">
+                                                Setup Auto-Sync
+                                            </Button>
+                                        </Link>
                                     </div>
-                                    <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Log workouts manually or connect Strava for auto-syncing new ones.</p>
-                                    <Link href="/log-workout">
-                                        <Button variant="outline" size="sm" className="w-full mb-2 bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
-                                            Log First Workout <ArrowRight className="w-4 h-4 ml-1" />
-                                        </Button>
-                                    </Link>
-                                    <Link href="/integrations">
-                                        <Button variant="link" size="sm" className="text-primary/70 dark:text-muted-foreground hover:text-primary dark:hover:text-foreground w-full text-xs p-0 h-auto">
-                                            Setup Auto-Sync
-                                        </Button>
-                                    </Link>
                                 </div>
+                            </CardContent>
+                        </Card>
+                        // --- End Getting Started Card ---
+                    ) : metrics ? (
+                        // --- Regular Metrics Cards ---
+                        <>
+                            <ProgressCards 
+                                strengthVolume={metrics.strengthVolumeLast7Days}
+                                cardioDuration={metrics.cardioDurationLast7Days}
+                                cardioDistance={metrics.cardioDistanceLast7Days}
+                                strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
+                                cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
+                                cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
+                            />
+                            {/* Add Personal Records and Spotlight cards in a grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <PersonalRecordsCard 
+                                    exercisePRs={metrics.exercisePRs || []}
+                                    overallPRs={{
+                                        longestRun: metrics.overallPRs?.longestRun ? {
+                                            ...metrics.overallPRs.longestRun,
+                                            workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
+                                        } : undefined,
+                                        fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
+                                            ...metrics.overallPRs.fastest5kPace,
+                                            workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
+                                        } : undefined,
+                                        maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
+                                            ...metrics.overallPRs.maxStrengthVolume,
+                                            workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
+                                        } : undefined
+                                    }}
+                                />
+                                <SpotlightCards />
                             </div>
-                        </CardContent>
-                    </Card>
-                    // --- End Getting Started Card ---
-                ) : metrics ? (
-                    // --- Regular Metrics Cards ---
-                    <>
-                        <ProgressCards 
-                            strengthVolume={metrics.strengthVolumeLast7Days}
-                            cardioDuration={metrics.cardioDurationLast7Days}
-                            cardioDistance={metrics.cardioDistanceLast7Days}
-                            strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
-                            cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
-                            cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
-                        />
-                        {/* Wrap Spotlight and QuickActions in a grid first */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <SpotlightCards />
-                            <QuickActionsCard sendAiMessage={handleSendAiMessage} /> {/* Restore sendAiMessage prop */}
-                        </div>
-                        {/* PersonalRecordsCard is now last */}
-                        <PersonalRecordsCard 
-                            exercisePRs={metrics.exercisePRs || []} 
-                            overallPRs={{
-                                longestRun: metrics.overallPRs?.longestRun ? {
-                                    ...metrics.overallPRs.longestRun,
-                                    workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
-                                } : undefined,
-                                fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
-                                    ...metrics.overallPRs.fastest5kPace,
-                                    workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
-                                } : undefined,
-                                maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
-                                    ...metrics.overallPRs.maxStrengthVolume,
-                                    workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
-                                } : undefined
-                            }}
-                        />
-                    </>
-                    // --- End Regular Metrics Cards ---
-                ) : (
-                    <p className="text-center text-muted-foreground">Metrics data not available.</p>
-                )}
-                
+                            {/* Quick Actions Card - Correct prop name */}
+                            <QuickActionsCard sendAiMessage={handleSendAiMessage} />
+                        </>
+                        // --- End Regular Metrics Cards ---
+                    ) : (
+                        <p className="text-center text-muted-foreground">Metrics data not available.</p>
+                    )}
+                    
+                </div>
             </div>
         </div>
     );

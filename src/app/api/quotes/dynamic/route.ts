@@ -386,45 +386,26 @@ export async function GET(request: NextRequest) {
                        );
                          
       if (tokensUsed > 0) {
-         console.log(`[RateLimit] Updating usage for user ${sessionUserId}. Adding ${tokensUsed} tokens.`);
-         User.updateOne({ _id: sessionUserId }, { $inc: { dailyGrokTokenUsage: tokensUsed } })
-           .catch(err => console.error("[RateLimit] Failed to update usage count in DB:", err));
+          console.log(`[RateLimit] Updating usage for user ${sessionUserId}. Adding ${tokensUsed} tokens.`);
+          // Comment out the database update to isolate the garbled string issue
+          // User.updateOne({ _id: sessionUserId }, { $inc: { dailyGrokTokenUsage: tokensUsed } })
+          //   .catch(err => console.error("[RateLimit] Failed to update usage count in DB:", err));
       } else {
-         console.warn("[RateLimit] AI call succeeded but reported 0 tokens used?", grokUsageData);
+          console.warn("[RateLimit] AI call succeeded but reported 0 tokens used?", grokUsageData);
       }
     }
 
     // Add a cache-busting timestamp to the quote (invisible to user)
     const timestampedQuote = quote;
 
-    // Update or create the cookie with recent quotes
-    if (lastQuotes.length > 0) {
-      try {
-        // Sanitize quotes to ensure they contain only ASCII characters
-        const sanitizedQuotes = lastQuotes.map((q) =>
-          encodeURIComponent(q.replace(/[^\x00-\x7F]/g, "")),
-        );
-        const newCookie = JSON.stringify(
-          [
-            encodeURIComponent(quote.replace(/[^\x00-\x7F]/g, "")),
-            ...sanitizedQuotes,
-          ].slice(0, 5),
-        );
-        headers.append(
-          "Set-Cookie",
-          `last-quotes=${newCookie}; Path=/; Max-Age=86400; SameSite=Strict`,
-        );
-      } catch (cookieError) {
-        console.error("Error setting quote cookie:", cookieError);
-        // Continue without setting cookie
-      }
-    }
-
     // Log the quote being returned
     console.log(
       `[QUOTES-DYNAMIC] Returning ${quoteSource} quote: "${timestampedQuote.substring(0, 40)}..."`,
     );
 
+    // Restore the original JSON response
+    // --- TEMPORARY DEBUG --- Comment out the final return to isolate garbled string issue
+    // /*
     // Return response with the quote
     return NextResponse.json(
       {
@@ -438,6 +419,10 @@ export async function GET(request: NextRequest) {
         status: 200,
       },
     );
+    // */
+   // Return a simple placeholder response instead
+   // return new NextResponse("Debug: Quote generation finished", { status: 200, headers });
+
   } catch (error) {
     console.error("Error in dynamic quote API:", error);
     return NextResponse.json(

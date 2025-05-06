@@ -242,3 +242,41 @@ Your task is to explain fitness concepts clearly and accurately. When creating y
   - Exercise history data
 - **Sample Snippet**: N/A (uses algorithmic calculations)
 - **Output Format**: Structured object with insight text and metrics 
+
+## Daily Dashboard Insights
+
+### **Feature Name**: Daily Insight Card
+- **Prompt Type**: System prompt
+- **Model Used**: Grok-3-mini-latest (or configured model)
+- **Trigger**: Dashboard load (via `/api/daily-insight` endpoint)
+- **Caching**: The generated insight is stored in the `dailyInsights` collection. It is only regenerated if the day changes or if a new workout relevant to the insight's data period has been logged since the last generation.
+- **Input Structure**:
+  - User nickname/name
+  - Current day of the week
+  - Daily instruction template (from `dailyContentConfig`)
+  - Workout data summary for the relevant period (e.g., last 7 days, this week)
+  - Optional: Note about data fetching errors
+- **Base System Prompt Structure**:
+```
+You are Aivery, a friendly and insightful AI fitness coach providing a daily insight for ${displayName}.
+
+Today is ${dayName}. Your task is to generate a response based *only* on the following instructions and data:
+
+**Instructions for ${dayName} (${content.title}):**
+${content.prompt} // Specific instructions for the day are injected here
+
+**User Data Summary (${dateRangeDescription}):**
+${workoutDataString} // Summary of workouts for the calculated period
+${dataFetchError ? `\n(Note: Error fetching workout data: ${dataFetchError})` : ''}
+
+Follow the instructions precisely. Address the user by name (${displayName}). Keep the response concise (typically 2-4 sentences max, based on the specific day's prompt) and aligned with the specified tone for the day.
+```
+- **Daily Variations**:
+  - **Monday (Momentum)**: Focus on last week summary, upcoming week forecast, & acknowledge today's activity.
+  - **Tuesday (Tiny Triumph)**: Highlight a small, specific win from recent workouts.
+  - **Wednesday (Midweek Pulse)**: Check-in, reflect on week so far, offer gentle nudge.
+  - **Thursday (The Shift)**: Overview of week, potential actions before Sunday.
+  - **Friday (Your Rhythm)**: Analyze patterns over last few weeks, point out one interesting one.
+  - **Saturday (The Vibe)**: Generate something playful/visual/inspiring based on recent activity.
+  - **Sunday (Reset Mode)**: Reflect on past week (what worked/didn't), offer mental reset.
+- **Output Format**: Plain text, tailored to the day's specific prompt instructions (concise, typically 2-4 sentences). 

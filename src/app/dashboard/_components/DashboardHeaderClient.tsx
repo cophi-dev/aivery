@@ -5,6 +5,9 @@ import { UserAvatar } from "@/components/user-avatar";
 import { getQuote } from "@/lib/client-utils";
 import UserNicknameDisplay from "@/components/UserNicknameDisplay";
 import { type ReactNode } from 'react';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import { Sparkle } from 'lucide-react';
 
 interface DashboardHeaderProps {
   displayName: ReactNode;
@@ -13,72 +16,145 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps) {
   const [quote, setQuote] = useState("Loading quote...");
-  const [location, setLocation] = useState<{lat: number; lon: number} | null>(null); // Optional location state
+  const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
 
-  // Function to fetch quote (similar to original logic)
   const fetchQuoteData = useCallback(async (forceFresh = false) => {
     try {
-      // console.log(`[Header] Fetching quote...`);
-      // Pass location if available, and force refresh flag
       const quoteText = await getQuote(location?.lat, location?.lon, forceFresh);
       setQuote(quoteText);
-      // console.log(`[Header] Quote updated: ${quoteText.substring(0, 20)}...`);
     } catch (error) {
       console.error('Error fetching quote:', error);
-      setQuote("Your fitness journey begins with a single step."); // Fallback quote
+      setQuote("Your fitness journey begins with a single step.");
     }
-  }, [location]); // Dependency on location if used
+  }, [location]);
 
-  // Initial quote fetch and setup interval/listeners (similar to original logic)
   useEffect(() => {
     let isMounted = true;
-
-    // Fetch immediately
     fetchQuoteData(true);
 
-    // Optional: Get location if needed for quote API
-    // navigator.geolocation.getCurrentPosition(pos => {
-    //   if (isMounted) setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-    // }, err => console.error("Geo error:", err));
-
-    // Refresh on visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // console.log('[Header] Tab visible again, refreshing quote');
         fetchQuoteData(true);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Refresh periodically
     const quoteInterval = setInterval(() => {
-      // console.log('[Header] Quote refresh interval');
       fetchQuoteData(true);
-    }, 5 * 60 * 1000); // Refresh every 5 minutes
+    }, 5 * 60 * 1000);
 
-    // Cleanup
     return () => {
       isMounted = false;
       clearInterval(quoteInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [fetchQuoteData]); // Ensure fetchQuoteData is stable or included
+  }, [fetchQuoteData]);
+
+  // Animation variants
+  const containerVariants = {
+    initial: { y: -20, opacity: 0 },
+    animate: { 
+      y: 0, 
+      opacity: 1,
+      transition: { 
+        type: "spring", 
+        stiffness: 300, 
+        damping: 20,
+        staggerChildren: 0.1,
+        delayChildren: 0.1
+      }
+    }
+  };
+
+  const childVariants = {
+    initial: { y: -10, opacity: 0 },
+    animate: { 
+      y: 0, 
+      opacity: 1,
+      transition: { type: "spring", stiffness: 400, damping: 20 }
+    }
+  };
+
+  const quoteVariants = {
+    initial: { opacity: 0, y: 5 },
+    animate: { 
+      opacity: 1, 
+      y: 0,
+      transition: { delay: 0.3, duration: 0.5 }
+    }
+  };
+
+  const sparkleVariants = {
+    animate: {
+      scale: [1, 1.2, 1],
+      opacity: [0.6, 1, 0.6],
+      transition: {
+        duration: 2,
+        repeat: Infinity,
+        repeatType: "reverse" as const
+      }
+    }
+  };
 
   return (
-    <section className="p-4 md:p-6 bg-card rounded-xl shadow-sm w-full max-w-4xl">
-      <div className="flex items-center gap-3 md:gap-4">
-        <UserAvatar 
-          imageUrl={userImage}
-          size="lg"
-        />
+    <motion.section 
+      className={cn(
+        "relative overflow-hidden p-6 md:p-8 rounded-2xl w-full",
+        "bg-white dark:bg-[#1a1a1a]",
+        "border border-[#c0daff40] dark:border-[#58a3ff30] shadow-sm",
+        "hover:border-[#58a3ff] dark:hover:border-[#58a3ff]",
+        "transition-all duration-300"
+      )}
+      variants={containerVariants}
+      initial="initial"
+      animate="animate"
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
+    >
+      {/* Extremely subtle background effect instead of gradient */}
+      <motion.div 
+        className="absolute inset-0 bg-[#58a3ff05] dark:bg-[#58a3ff08]"
+        animate={{ 
+          opacity: isHovered ? 0.8 : 0.2,
+          transition: { duration: 0.5 }
+        }}
+      />
+      
+      {/* Single subtle sparkle element */}
+      <motion.div 
+        className="absolute top-6 right-8 text-[#58a3ff30] dark:text-[#58a3ff30]" 
+        variants={sparkleVariants}
+        animate="animate"
+      >
+        <Sparkle size={20} />
+      </motion.div>
+      
+      <div className="relative z-10 flex flex-col sm:flex-row items-center gap-5 md:gap-6">
+        <motion.div variants={childVariants}>
+          <UserAvatar 
+            imageUrl={userImage}
+            size="lg"
+            className="shadow-sm border-2 border-white dark:border-[#2a2a2a]"
+          />
+        </motion.div>
+        
         <div className="flex-1 text-center sm:text-left">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">
-            Hey {displayName}!
-          </h1>
-          {/* Add a button to manually refresh quote? */} 
-          <p className="text-sm text-muted-foreground mt-1 italic">{quote}</p> 
+          <motion.h1 
+            className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-[#333333] dark:text-white"
+            variants={childVariants}
+          >
+            Hey <span className="text-[#58a3ff] dark:text-[#58a3ff]">{displayName}</span>!
+          </motion.h1>
+          
+          <motion.p 
+            className="text-sm md:text-base text-slate-600 dark:text-[#c0daff] mt-2 italic font-light"
+            variants={quoteVariants}
+          >
+            {quote}
+          </motion.p> 
         </div>
       </div>
-    </section>
+    </motion.section>
   );
 } 

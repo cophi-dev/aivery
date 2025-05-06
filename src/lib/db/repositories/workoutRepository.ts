@@ -6,6 +6,7 @@ import WorkoutModel, { IWorkout } from '../models/workout'
 import WorkoutExerciseModel from '../models/workoutExercise'
 import mongoose, { Document, FlattenMaps } from 'mongoose'
 import ExerciseModel from "../models/exercise"
+import { Types } from 'mongoose'
 
 type LeanDocument<T> = {
   [P in keyof T]: T[P] extends Document ? LeanDocument<T[P]> : T[P]
@@ -1093,5 +1094,86 @@ export async function getRecentWorkouts(userId: string, limit = 10): Promise<any
      // Return empty array on error, consistent with other functions
      return [];
   }
+}
+
+// Get all workouts for a user within a specific date range
+export async function getUserWorkoutsByDateRange(
+  userId: string,
+  startDate: Date,
+  endDate: Date,
+  limit = 1000
+): Promise<WorkoutData[]> {
+  try {
+    await dbConnect();
+    
+    console.log(`[getUserWorkoutsByDateRange] Fetching workouts for user ${userId} between ${startDate.toISOString()} and ${endDate.toISOString()}`);
+    
+    const workoutDocs = await WorkoutModel.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      date: {
+        $gte: startDate,
+        $lte: endDate,
+      },
+      deletedAt: null // Exclude soft-deleted workouts
+    })
+      .sort({ date: -1 })
+      .limit(limit)
+      .lean()
+      .exec() as any[]; // Use a less strict type after lean()
+
+    console.log(`[getUserWorkoutsByDateRange] Found ${workoutDocs.length} workouts.`);
+
+    // Convert Mongoose documents to plain objects suitable for client/API response
+    const plainWorkouts = workoutDocs.map(doc => convertToPlainObject(doc) as WorkoutData);
+    
+    return plainWorkouts;
+
+  } catch (error) {
+    console.error(`Error fetching workouts for user ${userId} by date range:`, error);
+    throw new Error("Failed to fetch workouts by date range.");
+  }
+}
+
+// Function to get the timestamp of the latest workout for a user
+export async function getLatestWorkoutTimestampForUser(userId: string): Promise<Date | null> {
+    await dbConnect();
+    console.log(`[WorkoutRepo] Fetching latest workout timestamp for User ${userId}`);
+    try {
+        // Explicitly type the expected result after .select and .lean
+        const latestWorkout = await WorkoutModel.findOne({ 
+            userId: new Types.ObjectId(userId),
+            deletedAt: null // Only consider non-deleted workouts
+        })
+        .sort({ date: -1 }) // Sort by date descending to get the latest
+        .select('date') // Only select the date field
+        .lean() as { date: Date } | null; // Cast the result type
+
+        if (latestWorkout && latestWorkout.date) {
+            console.log(`[WorkoutRepo] Found latest workout date: ${latestWorkout.date.toISOString()}`);
+            return latestWorkout.date;
+        }
+        console.log(`[WorkoutRepo] No workouts found for user.`);
+        return null;
+    } catch (error) {
+        console.error('[WorkoutRepo] Error fetching latest workout timestamp:', error);
+        throw new Error('Failed to fetch latest workout timestamp.');
+    }
+}
+
+// Helper function to find the latest date among an array of workouts
+export function findLatestTimestampInWorkouts(workouts: WorkoutData[]): Date | null {
+    if (!workouts || workouts.length === 0) {
+        return null;
+    }
+    // Assuming workouts are already sorted or we need to find the max date
+    // For simplicity, let's assume the `date` field is reliable
+    let latestDate: Date | null = null;
+    for (const workout of workouts) {
+        const workoutDate = new Date(workout.date); // Ensure it's a Date object
+        if (!latestDate || workoutDate > latestDate) {
+            latestDate = workoutDate;
+        }
+    }
+    return latestDate;
 }
 

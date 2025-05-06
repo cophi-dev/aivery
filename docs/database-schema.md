@@ -17,6 +17,7 @@ This document outlines the MongoDB collections used in the Aivery application, i
 | `accounts` | OAuth account connections | `users` |
 | `sessions` | Authentication sessions | `users` |
 | `weightHistory` | Tracks user weight changes over time | `users` |
+| `dailyInsights` | Stores generated daily insights | `users` |
 
 ## Collection Details
 
@@ -296,6 +297,30 @@ This document outlines the MongoDB collections used in the Aivery application, i
 - AI-generated workout insights
 - Weekly and monthly summaries
 - User dashboard
+
+### `dailyInsights`
+
+**Description**: Stores daily insights generated for the dashboard, allowing for caching.
+
+**Fields**:
+- `_id`: ObjectId (primary key)
+- `userId`: ObjectId (required, references `users`)
+- `date`: Date (required, the date the insight applies to, start of day UTC)
+- `title`: String (required, title from `dailyContentConfig`)
+- `description`: String (required, description from `dailyContentConfig`)
+- `insightText`: String (required, the generated AI insight)
+- `generatedAt`: Date (required, timestamp when the insight was generated)
+- `lastWorkoutTimestamp`: Date (nullable, timestamp of the latest workout considered for this insight)
+- `createdAt`: Date
+- `updatedAt`: Date
+
+**Indexes**:
+- Compound index: `{ userId: 1, date: 1 }` (unique)
+- Index on `userId`
+
+**Used by**:
+- Dashboard daily insight card
+- Caching mechanism for daily insights
 
 ### `accounts`
 
