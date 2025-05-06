@@ -1,14 +1,23 @@
-import mongoose, { Document, Model, Schema } from 'mongoose';
-import { DailyInsightData } from '@/types/db'; // Assuming this type will be defined
+import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { DailyInsightData as BaseDailyInsightData } from '@/types/db'; // Renamed for clarity
 
-// Define the interface for the document
-interface IDailyInsight extends DailyInsightData, Document {}
+// Interface for the Mongoose Document
+interface IDailyInsight extends Document {
+  userId: Types.ObjectId; // Override from string to Types.ObjectId
+  date: Date;
+  title: string;
+  description: string;
+  insightText: string;
+  generatedAt: Date;
+  lastWorkoutTimestamp?: Date | null; // Already optional and Date in BaseDailyInsightData
+  // createdAt and updatedAt are added by timestamps: true
+}
 
-// Define the Mongoose schema
-const DailyInsightSchema: Schema<IDailyInsight> = new Schema(
+// Mongoose Schema
+const DailyInsightSchema: Schema<IDailyInsight> = new Schema( // Schema uses the final document interface
   {
     userId: {
-      type: Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId, // Correct type for Mongoose schema
       ref: 'User', // Reference to the User model
       required: true,
     },
@@ -24,7 +33,7 @@ const DailyInsightSchema: Schema<IDailyInsight> = new Schema(
       type: String, // Description from dailyContentConfig
       required: true,
     },
-    insightText: {
+    insightText: { // This field is in DailyInsightData, ensure it's included
       type: String, // The generated AI insight
       required: true,
     },

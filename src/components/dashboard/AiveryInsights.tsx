@@ -8,13 +8,26 @@ import { CalendarClock, Sparkles, Zap, ArrowUpRight, BarChart4, Flame, RefreshCw
 import { cn } from '@/lib/utils';
 
 interface InsightData {
-  title: string;
-  description: string;
-  insight: string;
+  title?: string; // Made optional for overview-insights
+  description?: string; // Made optional for overview-insights
+  insight?: string; // Made optional for overview-insights. Actual content might be in highlight, trends, etc.
+  highlight?: string; // For overview-insights
+  positiveTrends?: string[]; // For overview-insights
+  negativeTrends?: string[]; // For overview-insights
+  milestones?: string[]; // For overview-insights
   error?: {
     message: string;
     type: string;
   } | null;
+}
+
+// Props for AiveryInsights component
+interface AiveryInsightsProps {
+  dateRange?: {
+    start: Date;
+    end: Date;
+  };
+  className?: string; // Allow passing additional class names
 }
 
 // Enhanced day themes with more Apple-like aesthetics
@@ -63,45 +76,57 @@ const dayThemes = {
   }
 };
 
-export default function AiveryInsights() {
+export default function AiveryInsights({ dateRange, className }: AiveryInsightsProps) {
   const { data: session } = useSession();
   const [insight, setInsight] = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   
-  // Get current day name
-  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  const theme = dayThemes[dayName as keyof typeof dayThemes] || dayThemes.Monday;
+  const isDateRangedInsight = !!dateRange;
+
+  // Get current day name for daily insights
+  const dayName = !isDateRangedInsight ? new Date().toLocaleDateString('en-US', { weekday: 'long' }) : '';
+  const theme = !isDateRangedInsight && dayName ? (dayThemes[dayName as keyof typeof dayThemes] || dayThemes.Monday) : dayThemes.Monday; // Default theme if dateRanged
   
   useEffect(() => {
-    async function fetchInsight() {
+    async function fetchInsightData() {
       if (!session?.user) return;
       
       try {
         setLoading(true);
+        setError(null); // Clear previous errors
         const cacheBuster = Date.now();
-        const response = await fetch(`/api/fetch-daily-insight?t=${cacheBuster}`, {
-          cache: 'no-store'
-        });
+        let apiUrl = '';
+        let apiDesc = '';
+
+        if (isDateRangedInsight) {
+          apiUrl = `/api/ai/overview-insights?startDate=${dateRange.start.toISOString()}&endDate=${dateRange.end.toISOString()}&t=${cacheBuster}`;
+          apiDesc = 'overview insight';
+        } else {
+          apiUrl = `/api/fetch-daily-insight?t=${cacheBuster}`;
+          apiDesc = 'daily insight';
+        }
+
+        const response = await fetch(apiUrl, { cache: 'no-store' });
         
         if (!response.ok) {
-          throw new Error(`Failed to fetch insight: ${response.statusText}`);
+          throw new Error(`Failed to fetch ${apiDesc}: ${response.statusText} (${response.status})`);
         }
         
         const data = await response.json();
-        console.log("[AiveryInsights] Raw data received from /api/fetch-daily-insight:", JSON.stringify(data, null, 2));
+        console.log(`[AiveryInsights] Raw data received from ${apiUrl}:`, JSON.stringify(data, null, 2));
         setInsight(data);
       } catch (err) {
-        console.error('Error fetching daily insight:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load daily insight');
+        console.error(`Error fetching ${isDateRangedInsight ? 'overview' : 'daily'} insight:`, err);
+        setError(err instanceof Error ? err.message : `Failed to load ${isDateRangedInsight ? 'overview' : 'daily'} insight`);
       } finally {
         setLoading(false);
       }
     }
     
-    fetchInsight();
-  }, [session, dayName]);
+    fetchInsightData();
+  }, [session, dateRange, isDateRangedInsight]); // Added dateRange and isDateRangedInsight to dependencies
 
   // Icon animation variants based on day
   const iconAnimations = {
@@ -180,7 +205,7 @@ export default function AiveryInsights() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full h-full"
+        className={cn("w-full h-full", className)}
       >
         <motion.div
           variants={cardVariants}
@@ -194,21 +219,24 @@ export default function AiveryInsights() {
             "h-full rounded-xl transition-all duration-300",
             "dark:bg-slate-800/70 border border-slate-200/50 dark:border-slate-700/50",
             "hover:border-slate-300/80 dark:hover:border-slate-600/80",
+            className
           )}>
             {/* Background gradient */}
-            <motion.div 
-              className={cn(
-                "absolute inset-0 opacity-10 bg-gradient-to-br", 
-                theme.gradient
-              )}
-              animate={{
-                opacity: isHovered ? 0.15 : 0.1,
-                transition: { duration: 0.3 }
-              }}
-            />
+            {!isDateRangedInsight && (
+              <motion.div 
+                className={cn(
+                  "absolute inset-0 opacity-10 bg-gradient-to-br", 
+                  theme.gradient
+                )}
+                animate={{
+                  opacity: isHovered ? 0.15 : 0.1,
+                  transition: { duration: 0.3 }
+                }}
+              />
+            )}
             
             <div className="relative z-10 p-6 flex flex-col h-full">
-              {/* Header with day theme icon */}
+              {/* Header with day theme icon or generic title */}
               <motion.div 
                 className="flex items-center justify-between mb-4"
                 variants={contentVariants}
@@ -216,32 +244,37 @@ export default function AiveryInsights() {
                 animate="visible"
               >
                 <div className="flex items-center gap-2">
-                  {/* Animated icon container */}
-                  <motion.div
-                    className={cn(
-                      "p-2 rounded-full bg-gradient-to-br", 
-                      theme.gradient,
-                      "text-white shadow-sm"
-                    )}
-                    whileHover={{ 
-                      scale: 1.05,
-                      transition: { duration: 0.2 } 
-                    }}
-                    variants={itemVariants}
-                  >
+                  {!isDateRangedInsight && (
                     <motion.div
-                      animate={iconAnimations[animationType]}
+                      className={cn(
+                        "p-2 rounded-full bg-gradient-to-br", 
+                        theme.gradient,
+                        "text-white shadow-sm"
+                      )}
+                      whileHover={{ 
+                        scale: 1.05,
+                        transition: { duration: 0.2 } 
+                      }}
+                      variants={itemVariants}
                     >
-                      <Icon size={18} />
+                      <motion.div
+                        animate={iconAnimations[animationType]}
+                      >
+                        <Icon size={18} />
+                      </motion.div>
                     </motion.div>
-                  </motion.div>
+                  )}
                   
                   <motion.div variants={itemVariants}>
                     <h3 className="font-medium text-lg tracking-tight">
-                      {`${dayName} ${insight?.title || 'Insights'}`}
+                      {isDateRangedInsight 
+                        ? (insight?.title || 'Overview Insights') 
+                        : `${dayName} ${insight?.title || 'Insights'}`}
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {insight?.description || "Your daily fitness insight"}
+                      {isDateRangedInsight
+                        ? (insight?.description || 'Your performance overview')
+                        : (insight?.description || "Your daily fitness insight")}
                     </p>
                   </motion.div>
                 </div>
@@ -274,6 +307,22 @@ export default function AiveryInsights() {
                   >
                     {insight.error.message}
                   </motion.p>
+                ) : isDateRangedInsight ? (
+                  <motion.div variants={itemVariants} className="space-y-3 text-sm">
+                    {insight?.highlight && <p><strong>Highlight:</strong> {insight.highlight}</p>}
+                    {insight?.positiveTrends && insight.positiveTrends.length > 0 && (
+                      <div><strong>Positive Trends:</strong><ul>{insight.positiveTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>
+                    )}
+                    {insight?.negativeTrends && insight.negativeTrends.length > 0 && (
+                      <div><strong>Areas to Watch:</strong><ul>{insight.negativeTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>
+                    )}
+                    {insight?.milestones && insight.milestones.length > 0 && (
+                      <div><strong>Milestones:</strong><ul>{insight.milestones.map((stone, i) => <li key={i}>- {stone}</li>)}</ul></div>
+                    )}
+                    {!(insight?.highlight || insight?.positiveTrends?.length || insight?.negativeTrends?.length || insight?.milestones?.length) && (
+                        <p className="text-slate-500 dark:text-slate-400">No specific insights generated for this period. Keep up the good work!</p>
+                    )}
+                  </motion.div>
                 ) : (
                   <motion.div
                     variants={itemVariants}
@@ -287,44 +336,46 @@ export default function AiveryInsights() {
               </motion.div>
               
               {/* Visual indicator for day context */}
-              <motion.div 
-                className="pt-4 mt-auto"
-                variants={contentVariants}
-                initial="hidden"
-                animate="visible"
-              >
-                <div className="flex gap-1">
-                  {Array.from({ length: 7 }).map((_, i) => {
-                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const currentDayIndex = days.indexOf(dayName);
-                    const isCurrentDay = i === currentDayIndex;
-                    return (
-                      <motion.div 
-                        key={i} 
-                        className={cn(
-                          "h-1.5 rounded-full flex-1 transition-all",
-                          isCurrentDay 
-                            ? `bg-gradient-to-r ${theme.gradient}` 
-                            : "bg-slate-300/30 dark:bg-slate-700/30"
-                        )}
-                        variants={itemVariants}
-                        whileHover={{
-                          scaleY: isCurrentDay ? 1.3 : 1.1,
-                          transition: { duration: 0.2 }
-                        }}
-                        animate={isCurrentDay ? {
-                          opacity: [0.7, 1, 0.7],
-                          transition: { 
-                            repeat: Infinity,
-                            duration: 3,
-                            ease: "easeInOut"
-                          }
-                        } : {}}
-                      />
-                    );
-                  })}
-                </div>
-              </motion.div>
+              {!isDateRangedInsight && (
+                <motion.div 
+                  className="pt-4 mt-auto"
+                  variants={contentVariants}
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <div className="flex gap-1">
+                    {Array.from({ length: 7 }).map((_, i) => {
+                      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                      const currentDayIndex = days.indexOf(dayName);
+                      const isCurrentDay = i === currentDayIndex;
+                      return (
+                        <motion.div 
+                          key={i} 
+                          className={cn(
+                            "h-1.5 rounded-full flex-1 transition-all",
+                            isCurrentDay 
+                              ? `bg-gradient-to-r ${theme.gradient}` 
+                              : "bg-slate-300/30 dark:bg-slate-700/30"
+                          )}
+                          variants={itemVariants}
+                          whileHover={{
+                            scaleY: isCurrentDay ? 1.3 : 1.1,
+                            transition: { duration: 0.2 }
+                          }}
+                          animate={isCurrentDay ? {
+                            opacity: [0.7, 1, 0.7],
+                            transition: { 
+                              repeat: Infinity,
+                              duration: 3,
+                              ease: "easeInOut"
+                            }
+                          } : {}}
+                        />
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
             </div>
           </Card>
         </motion.div>

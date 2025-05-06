@@ -93,38 +93,43 @@ const nextConfig = {
   },
 
   // Add Webpack configuration to handle Playwright bundling issues
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     // Exclude problematic modules from server bundle
     if (isServer) {
       config.externals.push(
         'electron',
         'bufferutil',        // Add bufferutil
-        'utf-8-validate',    // Add utf-8-validate
+        'utf-8-validate'    // Add utf-8-validate
         // Add other modules if they cause issues
         // '@playwright/test' // If you were using the full test runner
       );
-      
-      // Resolve fix for chromium-bidi
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        // Ignore these specific problematic imports
-        'chromium-bidi/lib/cjs/bidiMapper/BidiMapper': false, 
-        'chromium-bidi/lib/cjs/cdp/CdpConnection': false,
-      };
-      
+    }
+
+    // Add a fallback for 'electron' to prevent client-side bundling attempts
+    // or issues where `isServer` condition might not cover all cases.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'electron': false, // This tells webpack to treat 'electron' as an empty module
+      // The existing aliases for chromium-bidi should remain
+      'chromium-bidi/lib/cjs/bidiMapper/BidiMapper': false, 
+      'chromium-bidi/lib/cjs/cdp/CdpConnection': false,
+    };
+    
+    // Existing rules for fonts and playwright-core html files should remain
+    if (isServer) {
       // Ignore font files
       config.module.rules.push({
         test: /\.(woff|woff2|eot|ttf|otf)$/i,
         type: 'asset/resource',
         generator: {
-            filename: 'static/media/[name].[hash][ext]', // Output path
+            filename: 'static/media/[name].[hash][ext]',
         },
       });
       
-      // Ignore .html files specifically from playwright-core to prevent parse errors
+      // Ignore .html files specifically from playwright-core
       config.module.rules.push({
           test: /index\.html$/,
-          include: [/node_modules\/playwright-core/], // Only target html within playwright-core
+          include: [/node_modules\/playwright-core/],
           use: 'ignore-loader',
       });
     }
