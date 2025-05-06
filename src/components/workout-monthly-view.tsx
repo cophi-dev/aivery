@@ -45,25 +45,50 @@ interface MonthlyWorkoutMetrics {
 }
 
 // Updated Function to get metrics for a given month
-async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts: WorkoutData[]): Promise<MonthlyWorkoutMetrics> {
+async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsInput: WorkoutData[]): Promise<MonthlyWorkoutMetrics> {
     // console.log(`Calculating metrics for month: ${format(monthStart, 'yyyy-MM')}`);
-    const monthlyWorkouts = allWorkouts.filter(w => {
+    const workoutsInDateRange = allWorkoutsInput.filter(w => {
         if (!w.date) return false;
         const workoutDate = startOfDay(parseISO(w.date.toString()));
         return !isBefore(workoutDate, monthStart) && !isAfter(workoutDate, monthEnd);
     });
 
-    let totalWorkouts = monthlyWorkouts.length;
+    // Process workouts to normalize distance to KM
+    const processedWorkouts = workoutsInDateRange.map(originalWorkout => {
+        const workout = { ...originalWorkout }; // Shallow copy to allow modification
+
+        // Prioritize cardioDetails.distance, then workout.distance. Default to 0.
+        // This will be our canonical distance in KM.
+        let canonicalDistanceKm = workout.cardioDetails?.distance ?? workout.distance ?? 0;
+
+        // Heuristic: If cardioDetails.distance is not present, workout.distance might be in meters
+        // for types like 'run' or 'running'.
+        if (workout.cardioDetails?.distance == null && // Check if cardioDetails.distance is null or undefined
+            workout.distance != null && // Check if workout.distance is not null or undefined
+            (workout.type?.toLowerCase() === 'run' || workout.type?.toLowerCase() === 'running') &&
+            workout.distance > 200 // Threshold suggesting meters (e.g., value 5000 for 5km)
+        ) {
+            canonicalDistanceKm = workout.distance / 1000;
+        }
+        
+        // Update the workout object's distance to the canonical KM value.
+        // This ensures that rendering logic later uses the corrected KM distance.
+        workout.distance = canonicalDistanceKm;
+
+        return workout;
+    });
+
+    let totalWorkouts = processedWorkouts.length;
     let totalDuration = 0;
-    let totalDistance = 0;
+    let totalDistance = 0; // This will be in KM
     let totalVolume = 0;
     // Initialize map to hold weekly aggregates
     const weeklyChartDataMap: { [weekNum: number]: Omit<WeeklyChartData, 'week'> } = {};
 
-    monthlyWorkouts.forEach(w => {
+    processedWorkouts.forEach(w => { // Iterate over PROCESSED workouts
         const duration = w.duration || 0;
-        // Prioritize cardioDetails.distance, fallback to top-level distance. Assume km.
-        const distanceKm = (w.cardioDetails?.distance ?? w.distance ?? 0);
+        // w.distance is now consistently in KM (or what we assume is KM after processing)
+        const distanceKm = w.distance || 0; 
         const volumeKg = w.calculatedVolume || 0;
         const volumeTons = volumeKg / 1000; // Convert kg to tons
         const typeLower = w.type?.toLowerCase() || 'other';
@@ -111,10 +136,10 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkouts:
     return { 
         totalWorkouts, 
         totalDuration, 
-        totalDistance, 
+        totalDistance, // This is now correctly summed KM
         totalVolume, 
         weeklyChartData,
-        allWorkoutsInMonth: monthlyWorkouts 
+        allWorkoutsInMonth: processedWorkouts // Return the processed workouts with corrected .distance
     };
 }
 
@@ -350,32 +375,42 @@ export default function WorkoutMonthlyView() {
                 </CardHeader>
                 <CardContent>
                     {isMetricsLoading ? (
-                        <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                        <div className="flex justify-center items-center p-4">
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
                     ) : monthlyMetrics ? (
                         <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-                            <MetricContent 
-                                title="Workouts" 
-                                value={monthlyMetrics.totalWorkouts.toString()} 
-                                change={calculatePercentageChange(monthlyMetrics.totalWorkouts, previousMonthMetrics?.totalWorkouts)}
-                            />
-                            <MetricContent 
-                                title="Total Duration" 
-                                value={formatDuration(monthlyMetrics.totalDuration)} 
-                                change={calculatePercentageChange(monthlyMetrics.totalDuration, previousMonthMetrics?.totalDuration)}
-                            />
-                            <MetricContent 
-                                title="Total Distance" 
-                                value={formatDistance(monthlyMetrics.totalDistance)} 
-                                change={monthlyMetrics.totalDistance > 0 ? calculatePercentageChange(monthlyMetrics.totalDistance, previousMonthMetrics?.totalDistance) : null}
-                            />
-                            <MetricContent 
-                                title="Total Volume" 
-                                value={`${monthlyMetrics.totalVolume.toLocaleString(undefined, {maximumFractionDigits: 1})} t`} 
-                                change={monthlyMetrics.totalVolume > 0 ? calculatePercentageChange(monthlyMetrics.totalVolume, previousMonthMetrics?.totalVolume) : null}
-                            />
+                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
+                                <MetricContent 
+                                    title="Workouts" 
+                                    value={monthlyMetrics.totalWorkouts.toString()} 
+                                    change={calculatePercentageChange(monthlyMetrics.totalWorkouts, previousMonthMetrics?.totalWorkouts)}
+                                />
+                            </Card>
+                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
+                                <MetricContent 
+                                    title="Total Duration" 
+                                    value={formatDuration(monthlyMetrics.totalDuration)} 
+                                    change={calculatePercentageChange(monthlyMetrics.totalDuration, previousMonthMetrics?.totalDuration)}
+                                />
+                            </Card>
+                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
+                                <MetricContent 
+                                    title="Total Distance" 
+                                    value={formatDistance(monthlyMetrics.totalDistance)} 
+                                    change={monthlyMetrics.totalDistance > 0 ? calculatePercentageChange(monthlyMetrics.totalDistance, previousMonthMetrics?.totalDistance) : null}
+                                />
+                            </Card>
+                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
+                                <MetricContent 
+                                    title="Total Volume" 
+                                    value={`${(monthlyMetrics.totalVolume / 1000).toFixed(1)}t`}
+                                    change={monthlyMetrics.totalVolume > 0 ? calculatePercentageChange(monthlyMetrics.totalVolume, previousMonthMetrics?.totalVolume) : null}
+                                />
+                            </Card>
                         </div>
                     ) : (
-                        <p className="text-muted-foreground">No data available for this month.</p>
+                        <p className="text-muted-foreground text-sm">No data available for this month.</p>
                     )}
                 </CardContent>
             </Card>
@@ -563,7 +598,7 @@ export default function WorkoutMonthlyView() {
 
              {/* Monthly Workout List */}
               {monthlyMetrics && monthlyMetrics.allWorkoutsInMonth.length > 0 && (
-                 <Card>
+                 <Card className="mt-6 border border-border/10">
                      <CardHeader>
                          <CardTitle className="text-base font-semibold">Workouts This Month</CardTitle>
                      </CardHeader>
@@ -574,10 +609,10 @@ export default function WorkoutMonthlyView() {
                                  return (
                                      <li key={workout._id}
                                         onClick={() => handleWorkoutClick(workout._id)}
-                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30 cursor-pointer"
+                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/10 hover:bg-muted/20 transition-colors border border-border/5 cursor-pointer"
                                      >
                                         {/* Badge (Column 1, Row 1 & 2) */}
-                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses}`}>
+                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses} bg-background/50`}>
                                             {icon}
                                             <span className="ml-1.5 text-xs">{workout.type}</span>
                                         </Badge>
@@ -590,9 +625,19 @@ export default function WorkoutMonthlyView() {
                                         
                                         {/* Metrics (Column 2, Row 2) */}
                                         <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
-                                            {workout.distance != null && workout.distance > 0 && <span className="flex items-center"><Route className="h-3 w-3 mr-1" /> {formatDistance(workout.distance)}</span>} {/* Assume distance is already km */}
-                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {(workout.calculatedVolume / 1000).toLocaleString(undefined, {maximumFractionDigits: 2})} t</span>}
+                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1 text-primary" /> {formatDuration(workout.duration || 0)}</span>
+                                            {workout.distance != null && workout.distance > 0 && 
+                                                <span className="flex items-center">
+                                                    <Route className="h-3 w-3 mr-1 text-primary" /> 
+                                                    {formatDistance(workout.distance)}
+                                                </span>
+                                            }
+                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && 
+                                                <span className="flex items-center">
+                                                    <Weight className="h-3 w-3 mr-1 text-primary" /> 
+                                                    {(workout.calculatedVolume / 1000).toLocaleString(undefined, {maximumFractionDigits: 2})} t
+                                                </span>
+                                            }
                                         </div>
                                      </li>
                                  );

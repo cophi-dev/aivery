@@ -30,7 +30,14 @@ Keep the entire response concise (2-4 sentences max).`,
     description: 'Spotlight a specific win',
     icon: Sparkles,
     prompt: 
-`Based on the User Data Summary, identify a \'Tiny Triumph\'. Look for notable percentage increases in weekly Total Volume (tons) or Total Cardio minutes compared to the previous week. Also, check for any New Rep PRs achieved. Briefly highlight one significant achievement related to these metrics. Keep the response encouraging and concise (2-3 sentences max).`,
+`Identify ONE specific small achievement or positive data point from the User Data Summary (last 7 days).
+AVOID focusing on the number of workouts, as the user may do many short workouts in a day.
+Instead, focus on either:
+- Total strength volume (in kg/tons) for strength workouts
+- Total cardio minutes or distance for cardio workouts
+- OR any other positive trend/metric that shows actual effort over raw workout counts
+Highlight this 'Tiny Triumph'.
+Keep the entire response encouraging and brief (2-3 sentences max).`,
   },
   {
     day: 'Wednesday',

@@ -7,78 +7,59 @@ import { findLatestInsightForUserAndDate, createOrUpdateInsight } from '@/lib/db
 import type { WorkoutData, DailyInsightData } from '@/types/db'; // Import WorkoutData type
 import { getUserById } from '@/lib/db/repositories/userRepository';
 import { getToken } from "next-auth/jwt";
-import {
-  calculateFullWeekAggregates,
-  calculateCurrentWeekToDateAggregates,
-  getFormattedNewRepPRsForPeriod,
-  WeeklyAggregates,
-  FormattedRepPREntry
-} from '@/lib/user-period-metrics';
 
 // Ensure the route is always dynamic and not cached
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'; // Force Node.js environment for server-side fetch API
 
-// TODO: Move the config from the component to a shared lib file
-
-// Helper function to get start of day in UTC
+/*
+ * Helper function to get the start of day in UTC for a given date
+ */
 const getStartOfDayUTC = (date: Date): Date => {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
+  const startOfDayUTC = new Date(date);
+  startOfDayUTC.setUTCHours(0, 0, 0, 0);
+  return startOfDayUTC;
 };
 
-// --- Date Range Calculation Helper (Week starts Monday) ---
 function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: Date, description: string } {
   const today = new Date();
-  // Set time to end of day for endDate calculations involving today
-  const endOfDayToday = new Date(today);
-  endOfDayToday.setHours(23, 59, 59, 999);
-
-  // Set time to start of day for startDate calculations
+  const endDate = new Date(today); // Default end date is today
+  let startDate = new Date(today);
+  let description = ""; // Description of the date range
+  
   const startOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
+    const newDate = new Date(date);
+    newDate.setHours(0, 0, 0, 0);
+    return newDate;
   };
 
-  let startDate = startOfDay(today);
-  let endDate = endOfDayToday;
-  let description = "";
-
-  const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
-  // Adjust Sunday to be 7 for easier Monday-start week calculation
-  const dayIndex = dayOfWeek === 0 ? 7 : dayOfWeek;
-
-  switch (dayName) {
-    case "Monday":
-    case "Tuesday":
-    case "Saturday":
-      // Last 7 days (including today)
-      startDate.setDate(today.getDate() - 7);
+  // Calculate different start dates based on day
+  switch(dayName) {
+    case 'Monday':
+      // Get previous week (Mon-Sun)
+      startDate.setDate(today.getDate() - (today.getDay() === 0 ? 7 : today.getDay()) - 6); // Go back to previous Monday
+      description = "previous week (Mon-Sun)";
+      break;
+    case 'Tuesday':
+    case 'Saturday':
+    case 'Wednesday':
+      // Last 7 days for Tuesday, Wednesday, Saturday
+      startDate.setDate(today.getDate() - 7); // Go back 7 days
       description = "last 7 days";
       break;
-    case "Wednesday":
-    case "Thursday":
-      // This week (from Monday to Today)
-      const diffToMonday = dayIndex - 1;
-      startDate.setDate(today.getDate() - diffToMonday);
-      description = "this week so far";
+    case 'Thursday':
+      // Current week Mon-Thu
+      startDate.setDate(today.getDate() - today.getDay() + 1); // Go back to Monday of this week
+      description = "this week (Mon-Thu)";
       break;
-    case "Friday":
-      // Last 21 days (including today)
-      startDate.setDate(today.getDate() - 21);
+    case 'Friday':
+      // Last 3 weeks (including the current one)
+      startDate.setDate(today.getDate() - 21); // Go back 3 weeks
       description = "last 3 weeks";
       break;
-    case "Sunday":
-      // Previous Full Week (Mon-Sun)
-      const diffToLastSunday = dayIndex; // Days since last Sunday
-      const diffToPreviousMonday = dayIndex + 6; // Days since the Monday before that
-      endDate = startOfDay(today); // Start of today is the end boundary (exclusive)
-      endDate.setDate(today.getDate() - diffToLastSunday);
-      endDate.setHours(23, 59, 59, 999); // End of previous Sunday
-      startDate = startOfDay(today);
-      startDate.setDate(today.getDate() - diffToPreviousMonday);
-      startDate.setHours(0, 0, 0, 0); // Start of previous Monday
+    case 'Sunday':
+      // Previous week (Mon-Sun)
+      startDate.setDate(today.getDate() - 7 - today.getDay() + 1); // Go to Monday of previous week
       description = "last complete week (Mon-Sun)";
       break;
     default:
@@ -91,8 +72,8 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
 }
 // --- End Date Range Calculation Helper ---
 
-// Helper to format workouts for the prompt (GENERAL USE)
-function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date): string {
+// Helper to format workouts for the prompt
+function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userPersonalRecords?: any): string {
   if (!workouts || workouts.length === 0) {
     return "No workouts recorded in this period.";
   }
@@ -132,6 +113,13 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date): stri
     summary += `  - Total Duration: ${Math.round(duration / 60)} min\n`;
     if (distance > 0) summary += `  - Total Distance: ${distance.toFixed(2)} km\n`;
     if (volume > 0) summary += `  - Total Volume: ${Math.round(volume).toLocaleString()} kg`;
+    
+    // Add volume in tons for better readability if more than 1000kg
+    if (volume >= 1000) {
+      const tons = volume / 1000;
+      summary += ` (${tons.toFixed(2)} tons)`;
+    }
+    
     return summary;
   };
 
@@ -148,61 +136,47 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date): stri
         finalString += "\n";
     });
   }
+  
+  // Add Personal Records section if data is available
+  if (userPersonalRecords) {
+    finalString += "\nPersonal Records:\n";
+    
+    // Max Strength Volume PR
+    if (userPersonalRecords.maxStrengthVolume?.value > 0) {
+      const maxVolume = userPersonalRecords.maxStrengthVolume.value;
+      const maxVolumeDate = new Date(userPersonalRecords.maxStrengthVolume.date);
+      finalString += `  - Max Strength Volume: ${Math.round(maxVolume).toLocaleString()} kg`;
+      
+      // Add volume in tons for better readability if more than 1000kg
+      if (maxVolume >= 1000) {
+        const tons = maxVolume / 1000;
+        finalString += ` (${tons.toFixed(2)} tons)`;
+      }
+      
+      finalString += ` on ${maxVolumeDate.toLocaleDateString()}\n`;
+    }
+    
+    // Longest Run PR
+    if (userPersonalRecords.longestRun?.value > 0) {
+      const longestRun = userPersonalRecords.longestRun.value;
+      const longestRunDate = new Date(userPersonalRecords.longestRun.date);
+      finalString += `  - Longest Run: ${longestRun.toFixed(2)} km on ${longestRunDate.toLocaleDateString()}\n`;
+    }
+    
+    // Fastest 5k Pace PR
+    if (userPersonalRecords.fastest5kPace?.value > 0) {
+      const paceSecs = userPersonalRecords.fastest5kPace.value;
+      const paceMinutes = Math.floor(paceSecs / 60);
+      const paceSeconds = Math.round(paceSecs % 60);
+      const paceDate = new Date(userPersonalRecords.fastest5kPace.date);
+      finalString += `  - Fastest 5K Pace: ${paceMinutes}:${paceSeconds.toString().padStart(2, '0')}/km on ${paceDate.toLocaleDateString()}\n`;
+    }
+  }
 
   // Optionally add summary of past workouts if needed, but focus might be better
   // finalString += "\nPast Workouts in Period:\n" + formatSummary(pastWorkouts);
 
   return finalString.trim();
-}
-
-// NEW Helper to format data specifically for Tuesday's "Tiny Triumph" insight
-function formatTuesdayInsightDataForPrompt(
-  currentWeek: WeeklyAggregates,
-  previousWeek: WeeklyAggregates | null, // Previous week might not have data
-  newRepPRs: FormattedRepPREntry[],
-  displayName: string // For personalization if needed in the string, though prompt handles it
-): string {
-  let summary = "This Week's Progress So Far:\n";
-  summary += `- Total Volume: ${(currentWeek.totalVolumeKg / 1000).toFixed(2)} tons\n`;
-  summary += `- Total Cardio: ${currentWeek.totalCardioMinutes} minutes\n`;
-  summary += `- Workouts Logged: ${currentWeek.workoutCount}\n`;
-
-  if (previousWeek && previousWeek.workoutCount > 0) {
-    summary += "\nComparison to Last Full Week:\n";
-    
-    // Volume Change
-    if (previousWeek.totalVolumeKg > 0) {
-      const volumeChangePercent = ((currentWeek.totalVolumeKg - previousWeek.totalVolumeKg) / previousWeek.totalVolumeKg) * 100;
-      summary += `- Volume Change: ${volumeChangePercent >= 0 ? '+' : ''}${volumeChangePercent.toFixed(1)}%\n`;
-    } else if (currentWeek.totalVolumeKg > 0) {
-      summary += "- Volume: Up from no volume last week!\n";
-    } else {
-      summary += "- Volume: Consistent with no volume last week.\n";
-    }
-
-    // Cardio Minutes Change
-    if (previousWeek.totalCardioMinutes > 0) {
-      const cardioChangePercent = ((currentWeek.totalCardioMinutes - previousWeek.totalCardioMinutes) / previousWeek.totalCardioMinutes) * 100;
-      summary += `- Cardio Minutes Change: ${cardioChangePercent >= 0 ? '+' : ''}${cardioChangePercent.toFixed(1)}%\n`;
-    } else if (currentWeek.totalCardioMinutes > 0) {
-      summary += "- Cardio Minutes: Up from zero last week!\n";
-    } else {
-      summary += "- Cardio Minutes: Consistent with zero last week.\n";
-    }
-  } else {
-    summary += "\nNo comparable data from last full week to show trends.\n";
-  }
-
-  summary += "\nNew Rep PRs This Week (Last 7 Days):\n";
-  if (newRepPRs.length > 0) {
-    newRepPRs.forEach(pr => {
-      summary += `- ${pr.exerciseName}: ${pr.reps} reps (on ${new Date(pr.date).toLocaleDateString()})\n`;
-    });
-  } else {
-    summary += "- No new rep PRs logged in the last 7 days.\n";
-  }
-
-  return summary.trim();
 }
 
 export async function GET() {
@@ -226,10 +200,14 @@ export async function GET() {
   
   // --- Fetch User Details for Nickname ---
   let displayName = session.user.name || 'User'; // Start with session name
+  let personalRecords = null;
   try {
     const user = await getUserById(userId);
     if (user?.nickname) {
       displayName = user.nickname; // Use nickname if available
+    }
+    if (user?.personalRecords) {
+      personalRecords = user.personalRecords; // Get personal records if available
     }
     console.log(`[Daily Insight] Using display name: ${displayName}`);
   } catch (userError) {
@@ -283,89 +261,20 @@ export async function GET() {
     // --- End Check --- 
 
     // --- Calculate Date Range for Data Fetching --- 
-    const { startDate: generalStartDate, endDate: generalEndDate, description: dateRangeDescription } = calculateDateRangeForDay(dayName);
+    const { startDate, endDate, description: dateRangeDescription } = calculateDateRangeForDay(dayName);
 
-    let workoutDataString: string = "No workout data processed.";
+    // --- Fetch Workout Data --- 
+    let fetchedWorkouts: WorkoutData[] = [];
     let dataFetchError: string | null = null;
-    let latestWorkoutTsInData: Date | null = null; 
-
-    if (dayName === 'Tuesday') {
-      try {
-        console.log(`[Daily Insight - Tuesday] Calculating specific metrics for ${displayName} (${userId})`);
-        const todayForMetrics = new Date(); 
-
-        const dateInPreviousWeek = new Date(todayForMetrics);
-        dateInPreviousWeek.setDate(todayForMetrics.getDate() - 7); // Date within the previous week
-        const previousWeekAggregates = await calculateFullWeekAggregates(userId, dateInPreviousWeek);
-
-        const currentWeekAggregates = await calculateCurrentWeekToDateAggregates(userId, todayForMetrics);
-        
-        // PRs are fetched for the general "last 7 days" window for Tuesday
-        const newRepPRs = await getFormattedNewRepPRsForPeriod(userId, generalStartDate, generalEndDate);
-
-        workoutDataString = formatTuesdayInsightDataForPrompt(
-          currentWeekAggregates, 
-          previousWeekAggregates, 
-          newRepPRs, 
-          displayName
-        );
-        
-        // Determine latestWorkoutTsInData for staleness. This should be the latest timestamp 
-        // from ANY data that went into the insight (current week workouts, previous week workouts, or PR dates).
-        // For simplicity now, we will use the latest of current week workouts or PRs.
-        let latestActivityDate: Date | null = null;
-        if (currentWeekAggregates.workoutCount > 0) {
-            // Assuming calculateCurrentWeekToDateAggregates could return workouts or their timestamps
-            // For now, we need to re-fetch or have the aggregate function return the latest timestamp
-            // Let's re-fetch for simplicity to ensure we have individual workout dates if needed
-            const currentWeekWorkouts = await getUserWorkoutsByDateRange(userId, 
-                new Date(new Date(todayForMetrics).setDate(todayForMetrics.getDate() - (todayForMetrics.getDay() === 0 ? 6 : todayForMetrics.getDay() -1))),
-                todayForMetrics
-            );
-            latestActivityDate = findLatestTimestampInWorkouts(currentWeekWorkouts);
-        }
-
-        if (newRepPRs.length > 0) {
-            const latestPRDate = newRepPRs.reduce((latest, pr) => 
-                new Date(pr.date) > latest ? new Date(pr.date) : latest, 
-            new Date(0));
-            if (!latestActivityDate || latestPRDate > latestActivityDate) {
-                latestActivityDate = latestPRDate;
-            }
-        }
-        latestWorkoutTsInData = latestActivityDate;
-
-        // If no specific activity, fall back to general latest workout for the user for staleness
-        if (!latestWorkoutTsInData) {
-            latestWorkoutTsInData = await getLatestWorkoutTimestampForUser(userId);
-        }
-
-      } catch (tuesdayError) {
-        console.error("[Daily Insight - Tuesday] Error calculating specific metrics:", tuesdayError);
-        dataFetchError = tuesdayError instanceof Error ? tuesdayError.message : "Failed to load specific Tuesday metrics.";
-        let fallbackWorkouts: WorkoutData[] = [];
-        try {
-            fallbackWorkouts = await getUserWorkoutsByDateRange(userId, generalStartDate, generalEndDate);
-            latestWorkoutTsInData = findLatestTimestampInWorkouts(fallbackWorkouts);
-            workoutDataString = formatWorkoutsForPrompt(fallbackWorkouts, today);
-        } catch (fallbackFetchError) {
-            console.error("[Daily Insight - Tuesday Fallback] Error fetching workout data:", fallbackFetchError);
-            dataFetchError = fallbackFetchError instanceof Error ? fallbackFetchError.message : "Failed to load workout data on fallback.";
-        }
-      }
-    } else {
-        let fetchedWorkouts: WorkoutData[] = [];
-        try {
-          console.log(`[Daily Insight] Fetching workouts for ${displayName} (${userId}) period: ${dateRangeDescription} (${generalStartDate.toISOString()} to ${generalEndDate.toISOString()})`);
-          fetchedWorkouts = await getUserWorkoutsByDateRange(userId, generalStartDate, generalEndDate);
-          latestWorkoutTsInData = findLatestTimestampInWorkouts(fetchedWorkouts); 
-          console.log(`[Daily Insight] Fetched ${fetchedWorkouts.length} workouts. Latest timestamp in data: ${latestWorkoutTsInData?.toISOString()}`);
-          workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today);
-        } catch (fetchError) {
-           console.error("[Daily Insight] Error fetching workout data:", fetchError);
-           dataFetchError = fetchError instanceof Error ? fetchError.message : "Failed to load workout data.";
-           workoutDataString = `Could not load workout data for period: ${dateRangeDescription}.`; 
-        }
+    let latestWorkoutTsInData: Date | null = null;
+    try {
+      console.log(`[Daily Insight] Fetching workouts for ${displayName} (${userId}) period: ${dateRangeDescription} (${startDate.toISOString()} to ${endDate.toISOString()})`);
+      fetchedWorkouts = await getUserWorkoutsByDateRange(userId, startDate, endDate);
+      latestWorkoutTsInData = findLatestTimestampInWorkouts(fetchedWorkouts); // Find the latest timestamp within the fetched data
+      console.log(`[Daily Insight] Fetched ${fetchedWorkouts.length} workouts. Latest timestamp in data: ${latestWorkoutTsInData?.toISOString()}`);
+    } catch (fetchError) {
+       console.error("[Daily Insight] Error fetching workout data:", fetchError);
+       dataFetchError = fetchError instanceof Error ? fetchError.message : "Failed to load workout data.";
     }
 
     // --- Generate Insight using AI --- 
@@ -380,6 +289,7 @@ export async function GET() {
     } else {
         try {
             // Pass today's date to the formatting function
+            const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords);
             const systemPrompt = `\
 You are Aivery, a friendly and insightful AI fitness coach providing a daily insight for ${displayName}.
 
@@ -408,7 +318,7 @@ Follow the instructions precisely. Address the user by name (${displayName}). Ke
                 messages: [
                   { role: 'system', content: systemPrompt },
                 ],
-                max_tokens: 2048,
+                max_tokens: 1024, // Already increased
                 temperature: 0.7,
                 stream: false,
               })

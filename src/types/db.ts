@@ -9,29 +9,27 @@ export interface Set {
   notes?: string;
 }
 
+export interface SetData {
+  _id: string;
+  workoutExerciseId: string;
+  order: number;
+  weight: number;
+  reps: number;
+  duration?: number;
+  distance?: number;
+  notes?: string;
+}
+
 export interface WorkoutData {
   _id: string;
   userId: string;
-  type: string;
-  name?: string;
-  date: Date | string;
+  name: string;
+  date: string | Date;
   duration: number;
   distance?: number;
-  calories?: number;
-  notes?: string;
   intensity?: string;
-  completed?: boolean;
-  completedAt?: Date | string;
-  workoutExercises?: WorkoutExerciseData[];
-  previousWorkouts?: Array<{
-    date: Date | string;
-    duration: number;
-    distance?: number;
-    calculatedVolume?: number;
-    cardioDetails?: {
-      pace?: number;
-    };
-  }>;
+  type: string;
+  calculatedVolume?: number;
   cardioDetails?: {
     distance?: number;
     duration?: number;
@@ -42,88 +40,17 @@ export interface WorkoutData {
     heartRate?: {
       average?: number;
       max?: number;
-      zones?: {
-        thresholds: {
-          easy: number;
-          moderate: number;
-          hard: number;
-          peak: number;
-        };
-        distribution: {
-          easy: number;
-          moderate: number;
-          hard: number;
-          peak: number;
-        };
-      };
-    };
-    laps?: Array<{
-      number?: number;
-      time?: number;
-      distance?: number;
-      pace?: number;
-      duration?: number;
-    }>;
-    poolLength?: number;
-    strokeType?: string;
-    bikeType?: string;
-    power?: {
-      average?: number;
-      max?: number;
-    };
-    sportDetails?: {
-      sport?: string;
-      subSport?: string;
-    };
-    gearInfo?: {
-      id?: string;
-      name?: string;
-      distance?: number;
-    };
-    weather?: {
-      temperature?: number;
-      humidity?: number;
-      windSpeed?: number;
-      conditions?: string;
-    };
-    stravaSpecific?: {
-      segmentEfforts?: number;
-      achievementCount?: number;
-      kudosCount?: number;
-      athleteWeight?: number;
-      commute?: boolean;
-      deviceName?: string;
     };
   };
-  source?: string;
+  notes?: string;
+  source?: 'manual' | 'garmin' | 'coros' | 'strava' | 'apple' | 'ai' | '';
   sourceId?: string;
   importedFrom?: string;
   importId?: string;
   stravaLink?: string;
-  aiHighlight?: string;
   createdAt: string;
   updatedAt: string;
-  progressMetrics?: {
-    durationChange?: number;
-    durationChangePercent?: number;
-    distanceChange?: number;
-    distanceChangePercent?: number;
-    paceChange?: number;
-    paceChangePercent?: number;
-  };
-  pace?: number;
-  calculatedVolume?: number;
-  records?: Array<{ 
-    timestamp: Date | string;
-    heart_rate?: number;
-    distance?: number;
-    speed?: number;
-    altitude?: number;
-    latitude?: number;
-    longitude?: number;
-    cadence?: number;
-    power?: number;
-  }>;
+  workoutExercises?: WorkoutExerciseData[];
 }
 
 export interface UserData {
@@ -172,9 +99,9 @@ export interface WorkoutExerciseData {
   exerciseId: {
     _id: string;
     name: string;
-    category?: string;
+    category: string;
   };
-  sets: Set[];
+  sets?: SetData[];
   notes?: string;
   order?: number;
   duration?: number;
@@ -222,19 +149,4 @@ export interface DailyInsightData {
 // --- Subscription & Plan Types ---
 export interface SubscriptionPlan {
   // ... (existing subscription plan type)
-}
-
-// --- Exercise Personal Record Type ---
-export interface ExercisePRData {
-  _id: string;
-  userId: string;
-  exerciseId: string; // Reference to ExerciseData._id
-  type: 'weight' | 'reps' | 'volume'; // Type of PR
-  value: number; // The actual PR value (e.g., max weight, max reps)
-  date: Date | string; // Date PR was achieved
-  workoutId?: string; // Optional: reference to WorkoutData._id
-  workoutExerciseId?: string; // Optional: reference to WorkoutExerciseData._id
-  setId?: string; // Optional: reference to Set._id
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
 } 

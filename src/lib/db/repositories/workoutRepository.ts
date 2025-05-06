@@ -117,92 +117,80 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
   try {
     await dbConnect()
     
+    // 1. Fetch workouts
     const workoutDocs = await WorkoutModel.find({ userId: new ObjectId(userId) })
       .sort({ date: -1 })
-      .select({
-        _id: 1,
-        name: 1,
-        date: 1,
-        type: 1,
-        duration: 1,
-        intensity: 1,
-        distance: 1,              // Fallback distance
-        calculatedVolume: 1,      // Preferred strength volume
-        'cardioDetails.distance': 1, // Preferred cardio distance
-        'workoutExercises.sets.weight': 1, // For volume calculation fallback
-        'workoutExercises.sets.reps': 1,   // For volume calculation fallback
-        createdAt: 1 // Keep createdAt in select if needed elsewhere, though not sorting by it now
-      })
       .limit(limit)
       .lean()
       .exec() as any[];
     
-    // --- DEBUG LOGGING START ---
-    console.log(`[getWorkoutsByUserId] DB Query Result Count: ${workoutDocs.length}`);
-    if (workoutDocs.length > 0) {
-      console.log(`[getWorkoutsByUserId] DB Query - First few workout IDs: ${workoutDocs.slice(0, 5).map(d => d._id?.toString()).join(', ')}`);
-    }
-    // --- DEBUG LOGGING END ---
+    // 2. Get all workout IDs
+    const workoutIds = workoutDocs.map(doc => doc._id);
+
+    // 3. Fetch all workout exercises for these workouts
+    const workoutExercises = await WorkoutExerciseModel.find({
+      workoutId: { $in: workoutIds }
+    })
+    .populate('exerciseId')
+    .lean()
+    .exec();
+
+    // 4. Group exercises by workout ID
+    const exercisesByWorkout = workoutExercises.reduce((acc, exercise) => {
+      const workoutId = exercise.workoutId.toString();
+      if (!acc[workoutId]) {
+        acc[workoutId] = [];
+      }
+      acc[workoutId].push(exercise);
+      return acc;
+    }, {} as Record<string, any[]>);
     
-    // Process documents to ensure they're safe for client components
-    // This mapping is still useful for serialization (toString, toISOString)
-    // and creating clean objects, even with projection.
+    // 5. Map workouts with their exercises
     return workoutDocs.map((doc: any) => {
-      // Create a new clean object with only the properties we need
-      // Note: Some fields might not exist if they weren't selected or don't exist on the doc
+      const workoutId = doc._id.toString();
       return {
-        _id: doc._id ? doc._id.toString() : '',
-        userId: userId, // We know the userId already
-        type: doc.type || '',
+        _id: workoutId,
+        userId: doc.userId.toString(),
         name: doc.name || '',
-        date: doc.date instanceof Date ? doc.date.toISOString() :
+        date: doc.date instanceof Date ? doc.date.toISOString() : 
               (doc.date ? new Date(doc.date).toISOString() : new Date().toISOString()),
         duration: doc.duration || 0,
-        distance: doc.distance || 0, // Will be undefined if not selected & not present
-        calories: doc.calories || 0, // Not selected, will default to 0
-        notes: doc.notes || '',       // Not selected, will default to ''
+        distance: doc.distance || 0,
         intensity: doc.intensity || '',
-        volume: doc.volume || 0,       // Keep top-level volume if exists? Or rely on calculatedVolume? Using calculatedVolume if present.
-        calculatedVolume: doc.calculatedVolume, // Use the projected value
-        
-        // Only map exercises if they exist (they might not due to projection complexity)
-        exercises: Array.isArray(doc.workoutExercises) ? doc.workoutExercises.map((exercise: any) => ({
-          // We only selected sets.weight and sets.reps within workoutExercises
-          // The structure might be sparse here due to projection.
-          // Let the client handle volume calculation based on what's available.
-          // Return a minimal structure or adjust based on actual projected data shape.
-          // For now, let's assume the projection gives us the needed set data within exercises:
-          _id: exercise._id ? exercise._id.toString() : undefined, // Not selected
-          name: exercise.name || '', // Not selected
-          sets: Array.isArray(exercise.sets) ? exercise.sets.map((set: any) => ({
-            weight: set.weight || 0, // Selected
-            reps: set.reps || 0,   // Selected
-          })) : []
-        })) : [],
-        
-        // Only map cardioDetails if distance exists (it was selected)
-        cardioDetails: doc.cardioDetails ? {
-          distance: doc.cardioDetails.distance || 0, // Selected
-          // Other cardio details are not selected
-          duration: 0, // Not selected
-          pace: 0, // Not selected
-          speed: 0, // Not selected
-          maxSpeed: 0, // Not selected
-          elevationGain: 0, // Not selected
-        } : undefined,
-        
-        // Metadata fields not selected
-        source: '',
-        sourceId: '',
-        importedFrom: '',
-        importId: '',
-        stravaLink: '',
-        
-        // Ensure dates are properly serialized
-        createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() :
+        type: doc.type || '',
+        calculatedVolume: doc.calculatedVolume,
+        cardioDetails: doc.cardioDetails,
+        notes: doc.notes || '',
+        source: doc.source || '',
+        sourceId: doc.sourceId || '',
+        importedFrom: doc.importedFrom || '',
+        importId: doc.importId || '',
+        stravaLink: doc.stravaLink || '',
+        createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : 
                   (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
-        // updatedAt not selected, provide a default or omit
-        updatedAt: new Date().toISOString() // Provide a default or adjust based on need
+        updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
+                  (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
+        workoutExercises: (exercisesByWorkout[workoutId] || []).map(exercise => ({
+          _id: exercise._id.toString(),
+          workoutId: exercise.workoutId.toString(),
+          exerciseId: exercise.exerciseId ? {
+            _id: exercise.exerciseId._id.toString(),
+            name: exercise.exerciseId.name,
+            category: exercise.exerciseId.category
+          } : null,
+          sets: (exercise.sets || []).map(set => ({
+            weight: set.weight || 0,
+            reps: set.reps || 0,
+            duration: set.duration,
+            distance: set.distance,
+            notes: set.notes,
+            order: set.order
+          })),
+          notes: exercise.notes || '',
+          order: exercise.order,
+          duration: exercise.duration,
+          distance: exercise.distance
+        }))
       };
     });
   } catch (error) {

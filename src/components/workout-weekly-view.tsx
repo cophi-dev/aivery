@@ -453,35 +453,34 @@ export default function WorkoutWeeklyView() {
                 {!weeklyMetrics ? ( 
                     <p className="text-muted-foreground text-sm">No data available for this week.</p>
                 ) : (
-                    // Reverted to 4-column grid, wrapping MetricContent in Card
                     <div className="grid gap-3 grid-cols-2 sm:grid-cols-4"> 
-                        <Card className="p-3 min-h-[90px]"> {/* Apply Card style here */} 
-                             <MetricContent 
+                        <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors"> 
+                            <MetricContent 
                                 title="Workouts"
                                 value={weeklyMetrics.totalWorkouts.toString()}
                                 change={calculatePercentageChange(weeklyMetrics.totalWorkouts, previousWeekMetrics?.totalWorkouts)}
                             />
                         </Card>
-                         <Card className="p-3 min-h-[90px]">
+                        <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
                             <MetricContent
                                 title="Total Duration"
                                 value={formatDuration(weeklyMetrics.totalDuration)}
                                 change={calculatePercentageChange(weeklyMetrics.totalDuration, previousWeekMetrics?.totalDuration)}
                             />
                         </Card>
-                        <Card className="p-3 min-h-[90px]">
+                        <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
                             <MetricContent
                                 title="Total Distance"
                                 value={formatDistance(weeklyMetrics.totalDistance)}
                                 change={calculatePercentageChange(weeklyMetrics.totalDistance, previousWeekMetrics?.totalDistance)}
-                             />
+                            />
                         </Card>
-                        <Card className="p-3 min-h-[90px]">
-                             <MetricContent
+                        <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
+                            <MetricContent
                                 title="Total Volume"
-                                value={`${weeklyMetrics.totalVolume.toLocaleString(undefined, {maximumFractionDigits: 1})} t`} 
+                                value={`${(weeklyMetrics.totalVolume / 1000).toFixed(1)}t`}
                                 change={calculatePercentageChange(weeklyMetrics.totalVolume, previousWeekMetrics?.totalVolume)}
-                             />
+                            />
                         </Card>
                     </div>
                 )}
@@ -674,7 +673,7 @@ export default function WorkoutWeeklyView() {
 
              {/* Weekly Workout List Card (Volume display adjusted) */} 
               {weeklyMetrics && weeklyMetrics.allWorkoutsInWeek.length > 0 && ( 
-                 <Card className="border-border/50">
+                 <Card className="mt-6 border border-border/10">
                      <CardHeader>
                          <CardTitle className="text-base font-semibold">Workouts This Week</CardTitle>
                      </CardHeader>
@@ -683,36 +682,36 @@ export default function WorkoutWeeklyView() {
                              {weeklyMetrics.allWorkoutsInWeek.map(workout => { 
                                  const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
                                  const volumeKg = workout.calculatedVolume || 0;
-                                 const volumeTons = volumeKg / 1000; // Convert for display
+                                 const volumeTons = volumeKg / 1000;
                                  return (
                                      <li key={workout._id} 
                                         onClick={() => handleWorkoutClick(workout._id)}
-                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/30 cursor-pointer"
+                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/10 hover:bg-muted/20 transition-colors border border-border/5 cursor-pointer"
                                      >
-                                        {/* Badge - Adjusted margins */}
-                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses}`}>
+                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses} bg-background/50`}>
                                             {icon}
                                             <span className="ml-1.5 text-xs">{workout.type}</span>
                                         </Badge>
 
-                                        {/* Workout Name & Date (Column 2, Row 1) */}
                                         <div className="col-start-2 row-start-1 flex justify-between items-center">
                                             <p className="font-semibold text-sm truncate pr-2">{workout.name || 'Unnamed Workout'}</p>
                                             <span className="text-xs text-muted-foreground flex-shrink-0">{format(parseISO(workout.date.toString()), 'EEE, MMM d')}</span>
                                         </div>
                                         
-                                        {/* Metrics (Column 2, Row 2) */}
                                         <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1" /> {formatDuration(workout.duration || 0)}</span>
-                                            {/* Conditionally format distance */}
+                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1 text-primary" /> {formatDuration(workout.duration || 0)}</span>
                                             {workout.distance != null && workout.distance > 0 && 
-                                              <span className="flex items-center">
-                                                <Route className="h-3 w-3 mr-1" /> 
-                                                {formatDistance(workout.distance < 100 ? workout.distance : workout.distance / 1000)}
-                                              </span>
+                                                <span className="flex items-center">
+                                                    <Route className="h-3 w-3 mr-1 text-primary" /> 
+                                                    {formatDistance(workout.distance < 100 ? workout.distance : workout.distance / 1000)}
+                                                </span>
                                             }
-                                            {/* Display Volume in Tons */}
-                                            {volumeTons > 0 && <span className="flex items-center"><Weight className="h-3 w-3 mr-1" /> {volumeTons.toLocaleString(undefined, {maximumFractionDigits: 2})} t</span>}
+                                            {volumeTons > 0 && 
+                                                <span className="flex items-center">
+                                                    <Weight className="h-3 w-3 mr-1 text-primary" /> 
+                                                    {volumeTons.toLocaleString(undefined, {maximumFractionDigits: 2})} t
+                                                </span>
+                                            }
                                         </div>
                                      </li>
                                  );

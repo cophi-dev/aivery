@@ -910,7 +910,11 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
 
         // --- Example: Monthly Running Distance Challenge ---
         if (challenge.type === ChallengeType.MonthlyDistance && challenge.metric === ChallengeMetric.Distance && challenge.unit === 'km' && (workoutData.type === 'running' || workoutData.type === 'run') && workoutData.distance) {
-          const workoutDistanceKm = workoutData.distance / 1000; // Assuming workoutData.distance is in meters
+          // Assuming workoutData.distance is already in kilometers, consistent with other parts of the app.
+          // The previous fix in workout-monthly-view.tsx and the general expectation of formatDistance utility is KM.
+          // If workoutData.distance were raw from DB (meters), this would need division.
+          // However, if it's processed (e.g. from API save response or an already transformed object), it should be KM.
+          const workoutDistanceKm = workoutData.distance; 
           const currentProgress = challenge.currentValue ?? 0;
           const newProgress = currentProgress + workoutDistanceKm;
           console.log(`[updateChallengesAfterWorkout] Checking MonthlyDistance challenge. Added ${workoutDistanceKm}km. New total: ${newProgress}km. Goal: ${challenge.goalValue}km.`);
