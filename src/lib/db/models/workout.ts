@@ -67,7 +67,7 @@ export interface IWorkout extends Document {
   // volume?: number // Volume might be better calculated on the fly from WorkoutExercises
   calculatedVolume?: number; // Added field for storing total calculated volume
   distance: number // <-- Uncomment this line
-  // calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
+  calories?: number // Total calories might be better calculated on the fly from WorkoutExercises
   // REMOVED: exercises?: IExercise[] // This is now handled by WorkoutExercise collection
   aiHighlight?: string
   cardioDetails?: ICardioDetails // Keep for potentially storing *overall* cardio summary if needed, distinct from individual exercise performance
@@ -197,7 +197,7 @@ const WorkoutSchema: Schema = new Schema(
     // REMOVED: volume: { type: Number },
     calculatedVolume: { type: Number, default: 0 }, // Added field to schema definition
     distance: { type: Number }, // <-- Uncomment this line
-    // REMOVED: calories: { type: Number },
+    calories: { type: Number }, // <-- Uncomment this line and define its type
     // REMOVED: exercises: [ExerciseSchema], // Removed embedded exercises
     aiHighlight: { type: String, required: false }, // <-- Added field for AI highlight
     cardioDetails: { type: CardioDetailsSchema, required: false }, // Ensure required: false if not always present

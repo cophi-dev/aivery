@@ -31,9 +31,29 @@ interface WorkoutCardProps {
   workout: Workout
 }
 
+// Utility functions for distance and pace
+const formatDistance = (distance: number | undefined): string => {
+  if (!distance) return "";
+  // Convert meters to kilometers if needed (assuming distance is in meters)
+  const km = distance >= 1000 ? distance / 1000 : distance;
+  return `${km.toFixed(1)} km`;
+}
+
+const calculatePace = (duration: number, distance: number | undefined): string | undefined => {
+  if (!distance) return undefined;
+  // Convert distance to kilometers if needed
+  const km = distance >= 1000 ? distance / 1000 : distance;
+  // Calculate minutes per kilometer
+  const paceMinPerKm = duration / km;
+  // Format pace as MM:SS
+  const paceMinutes = Math.floor(paceMinPerKm);
+  const paceSeconds = Math.round((paceMinPerKm - paceMinutes) * 60);
+  return `${paceMinutes}:${paceSeconds.toString().padStart(2, '0')}`;
+}
+
 export function WorkoutCard({ workout }: WorkoutCardProps) {
   const distance = workout.distance || workout.cardioDetails?.distance
-  const pace = distance ? (workout.duration / distance).toFixed(2) : undefined
+  const pace = calculatePace(workout.duration, distance)
   
   const formatDate = (date: Date) => {
     try {
@@ -76,7 +96,7 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
     if (workout.type.toLowerCase() === "running" || 
         workout.type.toLowerCase() === "cycling" || 
         workout.type.toLowerCase() === "swimming") {
-      return distance ? `${distance.toFixed(1)} km` : "";
+      return formatDistance(distance);
     } else if (workout.type.toLowerCase() === "strength") {
       // Calculate total volume if not stored directly
       if (workout.volume !== undefined) {
@@ -97,7 +117,7 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
   }
 
   return (
-    <Link href={`/workout/${workout.id}`} className="block">
+    <Link href={`/workouts/${workout.id}`} className="block">
       <Card className="w-full hover:shadow-sm transition-shadow border-muted/60">
         <CardContent className="p-3">
           <div className="flex flex-col gap-2">

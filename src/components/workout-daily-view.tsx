@@ -43,7 +43,9 @@ async function getMetricsForDate(date: Date, allWorkouts: WorkoutWithExercises[]
 
     workoutsOnDate.forEach(w => {
         totalDuration += w.duration || 0;
-        if (w.distance) totalDistance += w.distance;
+        // Check both direct distance and cardioDetails.distance, convert to kilometers
+        const workoutDistance = (w.distance || (w.cardioDetails?.distance) || 0) / 1000;
+        totalDistance += workoutDistance;
         if (w.calculatedVolume) totalVolume += w.calculatedVolume;
     });
 
@@ -57,54 +59,60 @@ async function getMetricsForDate(date: Date, allWorkouts: WorkoutWithExercises[]
 }
 
 const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
+    const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
     // Format pace (min/km)
     const formatPace = (duration: number, distance: number) => {
         if (!distance || !duration) return '--:--';
-        const paceInMinutes = duration / 60 / distance;
+        // Convert distance to kilometers
+        const distanceInKm = distance / 1000;
+        if (distanceInKm === 0) return '--:--';
+        
+        const paceInMinutes = duration / 60 / distanceInKm;
         const minutes = Math.floor(paceInMinutes);
         const seconds = Math.round((paceInMinutes - minutes) * 60);
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     };
 
-    const pace = formatPace(workout.duration, workout.distance || workout.cardioDetails?.distance || 0);
+    const distance = (workout.distance || workout.cardioDetails?.distance || 0) / 1000; // Convert to km
+    const pace = formatPace(workout.duration || 0, workout.distance || workout.cardioDetails?.distance || 0);
     const avgHeartRate = workout.cardioDetails?.heartRate?.average;
     const maxHeartRate = workout.cardioDetails?.heartRate?.max;
     const elevationGain = workout.cardioDetails?.elevationGain;
     const maxSpeed = workout.cardioDetails?.maxSpeed;
 
     return (
-        <Card className="mb-4 overflow-hidden bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/10 hover:from-[#58a3ff]/10 hover:to-[#58a3ff]/15 transition-all duration-300 border border-[#58a3ff]/10 shadow-sm">
-            <CardHeader className="pb-2 bg-gradient-to-r from-[#58a3ff]/10 to-transparent">
+        <Card className="mb-6 overflow-hidden bg-[#58a3ff]/[0.02] hover:bg-[#58a3ff]/[0.04] transition-all duration-300 border-0 shadow-none">
+            <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Activity className="h-5 w-5 text-[#58a3ff]" />
                         <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#58a3ff]/10">
+                    <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#58a3ff]/5">
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                         <Clock className="h-5 w-5 mb-2 text-[#58a3ff]" />
                         <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
                         <span className="text-xs text-muted-foreground">Duration</span>
                     </div>
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                         <Route className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                        <span className="text-base font-medium mb-1">{formatDistance(workout.distance || workout.cardioDetails?.distance || 0)} km</span>
+                        <span className="text-base font-medium mb-1">{distance.toFixed(1)} km</span>
                         <span className="text-xs text-muted-foreground">Distance</span>
                     </div>
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                         <Activity className="h-5 w-5 mb-2 text-[#58a3ff]" />
                         <span className="text-base font-medium mb-1">{pace}</span>
                         <span className="text-xs text-muted-foreground">Pace (min/km)</span>
                     </div>
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                         <Zap className="h-5 w-5 mb-2 text-[#58a3ff]" />
                         <span className="text-base font-medium mb-1">{maxSpeed ? `${maxSpeed.toFixed(1)} km/h` : '--'}</span>
                         <span className="text-xs text-muted-foreground">Max Speed</span>
@@ -115,21 +123,21 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
                     <>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
                             {avgHeartRate && (
-                                <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                                     <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
                                     <span className="text-base font-medium mb-1">{Math.round(avgHeartRate)} bpm</span>
                                     <span className="text-xs text-muted-foreground">Avg Heart Rate</span>
                                 </div>
                             )}
                             {maxHeartRate && (
-                                <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                                     <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
                                     <span className="text-base font-medium mb-1">{Math.round(maxHeartRate)} bpm</span>
                                     <span className="text-xs text-muted-foreground">Max Heart Rate</span>
                                 </div>
                             )}
                             {elevationGain && (
-                                <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/10 to-[#58a3ff]/5">
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
                                     <Ruler className="h-5 w-5 mb-2 text-[#58a3ff]" />
                                     <span className="text-base font-medium mb-1">{Math.round(elevationGain)}m</span>
                                     <span className="text-xs text-muted-foreground">Elevation Gain</span>
@@ -146,6 +154,15 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
                                 <p className="text-sm text-[#58a3ff]/90">{workout.aiHighlight}</p>
                             </div>
                         )}
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#58a3ff]/20 text-[#58a3ff] hover:bg-[#58a3ff]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
                     </>
                 )}
             </CardContent>
@@ -154,6 +171,7 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
 };
 
 const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
+    const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
     // Calculate total volume and stats
@@ -164,36 +182,36 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
     const totalExercises = workout.workoutExercises?.length || 0;
 
     return (
-        <Card className="mb-4 overflow-hidden bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/10 hover:from-[#fa9f7b]/10 hover:to-[#fa9f7b]/15 transition-all duration-300 border border-[#fa9f7b]/10 shadow-sm">
-            <CardHeader className="pb-2 bg-gradient-to-r from-[#fa9f7b]/10 to-transparent">
+        <Card className="mb-6 overflow-hidden bg-[#fa9f7b]/[0.02] hover:bg-[#fa9f7b]/[0.04] transition-all duration-300 border-0 shadow-none">
+            <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Dumbbell className="h-5 w-5 text-[#fa9f7b]" />
                         <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#fa9f7b]/10">
+                    <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#fa9f7b]/5">
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/10 to-[#fa9f7b]/5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                         <Clock className="h-5 w-5 mb-2 text-[#fa9f7b]" />
                         <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
                         <span className="text-xs text-muted-foreground">Duration</span>
                     </div>
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/10 to-[#fa9f7b]/5">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                         <Weight className="h-5 w-5 mb-2 text-[#fa9f7b]" />
                         <span className="text-base font-medium mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
                         <span className="text-xs text-muted-foreground">Volume</span>
                     </div>
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/10 to-[#fa9f7b]/5">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                         <Activity className="h-5 w-5 mb-2 text-[#fa9f7b]" />
                         <span className="text-base font-medium mb-1">{totalReps}</span>
                         <span className="text-xs text-muted-foreground">Total Reps</span>
                     </div>
-                    <div className="flex flex-col items-center p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/10 to-[#fa9f7b]/5">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                         <Dumbbell className="h-5 w-5 mb-2 text-[#fa9f7b]" />
                         <span className="text-base font-medium mb-1">{totalSets}</span>
                         <span className="text-xs text-muted-foreground">Sets</span>
@@ -202,13 +220,13 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
 
                 {isExpanded && (
                     <>
-                        <div className="space-y-4 mt-4">
+                        <div className="space-y-4 mt-6">
                             {workout.workoutExercises?.map((exercise) => {
                                 const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
                                 const exerciseVolume = exercise.sets?.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0) || 0;
                                 
                                 return (
-                                    <div key={exercise._id} className="p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/10 to-[#fa9f7b]/5">
+                                    <div key={exercise._id} className="p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="font-medium">{exercise.exerciseId.name}</span>
                                             <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -239,6 +257,15 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                                 <p className="text-sm text-[#fa9f7b]/90">{workout.aiHighlight}</p>
                             </div>
                         )}
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#fa9f7b]/20 text-[#fa9f7b] hover:bg-[#fa9f7b]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
                     </>
                 )}
             </CardContent>
@@ -339,7 +366,7 @@ export default function WorkoutDailyView() {
     };
 
     const handleWorkoutClick = (workoutId: string) => {
-        router.push(`/workout/${workoutId}`);
+        router.push(`/workouts/${workoutId}`);
     };
 
     if (isLoading) {
@@ -470,7 +497,7 @@ export default function WorkoutDailyView() {
                                 <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/10">
                                     <MetricContent 
                                         title="Distance" 
-                                        value={formatDistance(dailyMetrics.totalDistance / 1000)}
+                                        value={formatDistance(dailyMetrics.totalDistance)}
                                         icon={<Route className="h-4 w-4 text-blue-500" />}
                                     />
                                 </div>
