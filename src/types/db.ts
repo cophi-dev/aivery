@@ -30,6 +30,7 @@ export interface WorkoutData {
   intensity?: string;
   type: string;
   calculatedVolume?: number;
+  calories?: number;
   cardioDetails?: {
     distance?: number;
     duration?: number;
