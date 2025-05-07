@@ -1684,7 +1684,7 @@ export type WorkoutUpdatePayload = {
   intensity?: string;
   completed?: boolean;
   completedAt?: Date | string;
-  source?: string; // <-- Add source field
+  source?: WorkoutData['source']; // <-- Changed from string to use WorkoutData type
   cardioDetails?: {
     distance?: number;
     duration?: number;
