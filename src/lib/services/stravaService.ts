@@ -51,7 +51,7 @@ interface ImportActivity {
   maxSpeed: number;
   totalElevationGain: number;
   sportType: string;
-  source: string;
+  source: 'strava';
   sourceData: any;
 }
 
@@ -335,7 +335,7 @@ interface ImportActivity {
   maxSpeed: number;
   totalElevationGain: number;
   sportType: string;
-  source: string;
+  source: 'strava';
   sourceData: any;
 }
 
