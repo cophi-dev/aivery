@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createWorkout } from "@/lib/workout-actions";
+import type { WorkoutData } from "@/types/db";
 import { revalidatePath } from "next/cache";
 import { transformStravaActivity } from "@/lib/services/stravaService";
 import { getDatabase } from '@/lib/db/mongodb';
 import { Buffer } from 'buffer';
+import type { ImportActivity } from "@/lib/services/stravaService";
 
 // Keep runtime (Node.js needed for file handling)
 export const runtime = 'nodejs';
@@ -150,19 +152,31 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Create workout object
-    const workoutToSave = {
-      ...transformedWorkout,
-      distance: transformedWorkout.distance,
-      duration: transformedWorkout.duration || 0,
+    // Define an intermediate type for explicit typing
+    type WorkoutInputType = Omit<ImportActivity, 'source'> & { 
+      userId: string; 
+      source: 'strava'; // Ensure literal type
+      sourceId: string;
+      stravaLink?: string; // Allow undefined
+      // Ensure required fields from WorkoutData are included if not already in ImportActivity
+      distance: number;
+      duration: number;
+    };
+
+    // Create workout object with explicit type
+    const workoutToSave: WorkoutInputType = {
+      ...transformedWorkout, // Spread result (source should be 'strava' here already)
       userId: session.user.id,
-      source: "strava",
+      source: 'strava', // Explicit assignment reinforces the type
       sourceId: fileName.replace(/\.[^/.]+$/, ""), // Use filename without extension as ID
-      stravaLink: undefined // No Strava link for manual uploads
+      stravaLink: undefined, // No Strava link for manual uploads
+      // Ensure required fields are present and correctly typed
+      distance: transformedWorkout.distance ?? 0, 
+      duration: transformedWorkout.duration ?? 0, 
     };
     
     console.log('Processed workout data:', {
-      name: (workoutToSave as any).name, // Cast to any for logging to bypass TS error
+      name: workoutToSave.title, // Use title from ImportActivity structure
       type: workoutToSave.type,
       date: workoutToSave.date,
       duration: workoutToSave.duration,
@@ -190,7 +204,8 @@ export async function POST(request: NextRequest) {
     // Save workout to database with error handling
     try {
       // First try creating the workout directly
-      await createWorkout(workoutToSave);
+      // Use a more precise assertion reflecting createWorkout's expected parameter type
+      await createWorkout(workoutToSave as Parameters<typeof createWorkout>[0]); 
       console.log(`Successfully imported workout from ${fileName}`);
     } catch (error) {
       // Check if the error is about missing exercise data
@@ -221,7 +236,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true,
       workout: {
-        name: (workoutToSave as any).name, // Cast to any to bypass TS error
+        name: workoutToSave.title, // Use title from ImportActivity structure
         type: workoutToSave.type,
         date: workoutToSave.date,
         duration: workoutToSave.duration,

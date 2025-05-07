@@ -36,7 +36,8 @@ interface StravaActivity {
   sport_type?: string;
 }
 
-interface ImportActivity {
+// Export this interface
+export interface ImportActivity {
   id: string;
   title: string;
   description: string;
