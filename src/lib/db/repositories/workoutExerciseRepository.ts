@@ -29,12 +29,12 @@ function convertDocToWorkoutExerciseData(doc: any, exercise?: any, workout?: any
     workoutId: doc.workoutId ? doc.workoutId.toString() : '',
     exerciseId: exercise ? {
         _id: exercise._id ? exercise._id.toString() : '',
-        name: exercise.name || '',
-        category: exercise.category || 'unknown'
+        name: exercise.name || 'Unknown Exercise',
+        category: exercise.category || ''
     } : {
         _id: doc.exerciseId ? doc.exerciseId.toString() : '',
         name: 'Unknown Exercise',
-        category: 'unknown'
+        category: ''
     },
     sets: doc.sets || [],
     notes: doc.notes || '',
