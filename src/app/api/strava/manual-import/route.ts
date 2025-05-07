@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
       distance: transformedWorkout.distance,
       duration: transformedWorkout.duration || 0,
       userId: session.user.id,
-      source: "strava",
+      source: "strava" as const,
       sourceId: fileName.replace(/\.[^/.]+$/, ""), // Use filename without extension as ID
       stravaLink: undefined // No Strava link for manual uploads
     };
