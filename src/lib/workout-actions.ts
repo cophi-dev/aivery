@@ -1684,7 +1684,8 @@ export type WorkoutUpdatePayload = {
   intensity?: string;
   completed?: boolean;
   completedAt?: Date | string;
-  source?: string; // <-- Add source field
+  // Use the specific union type for source, consistent with WorkoutData
+  source?: 'manual' | 'garmin' | 'coros' | 'strava' | 'apple' | 'ai' | ''; 
   cardioDetails?: {
     distance?: number;
     duration?: number;
