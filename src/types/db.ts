@@ -42,6 +42,13 @@ export interface WorkoutData {
       average?: number;
       max?: number;
     };
+    laps?: Array<{
+      number: number;
+      distance: number; // Assuming meters
+      duration: number; // Assuming seconds
+      pace?: number; // Assuming min/km or similar
+      // Add other relevant lap properties if available
+    }>;
   };
   notes?: string;
   source?: 'manual' | 'garmin' | 'coros' | 'strava' | 'apple' | 'ai' | '';
