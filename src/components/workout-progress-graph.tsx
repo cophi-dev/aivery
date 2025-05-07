@@ -246,7 +246,7 @@ const WorkoutProgressGraph: React.FC<WorkoutProgressGraphProps> = ({ currentWork
       mappedData = timeFilteredWorkouts.map(w => {
           let value: number | null = null;
           const workoutDate = new Date(w.date);
-          if (selectedMetric === 'pace') value = w.pace ?? null; 
+          if (selectedMetric === 'pace') value = w.cardioDetails?.pace ?? null; 
           else if (selectedMetric === 'distance') value = w.distance ?? w.cardioDetails?.distance ?? null;
           else if (selectedMetric === 'volume') value = w.calculatedVolume ?? null;
           if (value === null && selectedMetric === 'distance') value = 0;
