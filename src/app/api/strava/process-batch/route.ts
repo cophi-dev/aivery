@@ -864,7 +864,7 @@ export async function POST(request: NextRequest) {
         const workoutToSave = {
           ...transformedWorkout,
           userId: userId,
-          source: "strava",
+          source: "strava" as const,
           equipment: [], // Equipment should be an array
           muscleGroups: [], // Keep muscle groups as array since that's expected
           sourceId: (() => {
