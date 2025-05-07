@@ -16,7 +16,7 @@ import { authOptions } from "@/lib/auth"
 import { ObjectId } from 'mongodb'
 import WorkoutExerciseModel, { IWorkoutExercise } from "@/lib/db/models/workoutExercise"
 import ExerciseModel, { IExercise } from "@/lib/db/models/exercise"
-import type { WorkoutData } from "@/types/db"
+import type { WorkoutData, WorkoutDataForAI, WorkoutExerciseData, SetData } from "@/types/db"
 import mongoose, { Types } from 'mongoose'
 import WorkoutModel, { type IWorkout, type ICardioDetails } from "@/lib/db/models/workout"
 import { format } from 'date-fns'
@@ -1840,84 +1840,19 @@ export async function getRecentPerformedExercisesAction(): Promise<any[]> { // R
 // Function to update a user's workouts array (Restored)
 async function updateUserWorkouts(userId: string, workoutId: Types.ObjectId): Promise<void> {
   try {
-    await dbConnect();
-    const user = await UserModel.findById(userId);
-    if (!user) {
-      console.error(`User not found for ID: ${userId}`);
-      return;
-    }
-
-    // Ensure the workouts array exists
-    if (!user.workouts) {
-      user.workouts = [];
-    }
-
-    // Add the new workout ID if it's not already there (idempotency)
-    if (!user.workouts.some((id: Types.ObjectId) => id.equals(workoutId))) {
-      user.workouts.push(workoutId);
-    }
+    // Example: Re-calculate user's overall workout summary or specific exercise PRs
+    // This would involve fetching relevant data and updating summary documents or PR records.
+    console.log(`[updateUserWorkouts] Placeholder: Updating summaries/PRs for user ${userId} after workout ${workoutId.toString()}`);
     
-    // --- REMOVE PR CHECKING LOGIC HERE ---
-    // The following block was causing errors and is redundant with 
-    // updateUserWorkoutSummaries and updateChallengesAfterWorkout.
-    /* 
-      // <<< START REMOVED BLOCK >>>
-      const workout = await WorkoutModel.findById(workoutId)
-        .populate<{ workoutExercises: PopulatedWorkoutExerciseLean[] }>({
-          path: 'workoutExercises',
-          populate: { path: 'exerciseId', model: 'Exercise' }
-        })
-        .lean(); // Use lean for plain object
+    // Example: Trigger an update for the user's overall performance summary
+    // await updateUserPerformanceSummary(userId.toString());
 
-      if (!workout || !workout.workoutExercises) {
-        console.error(`Workout or exercises not found for ID: ${workoutId}`);
-        return;
-      }
-
-      const personalRecords = user.personalRecords || {};
-      let updatedPRs = false;
-
-      for (const exercise of workout.workoutExercises) {
-        if (!exercise.exerciseId || !exercise.sets || exercise.sets.length === 0) continue;
-
-        const exId = exercise.exerciseId._id.toString();
-        const unit = exercise.exerciseId.category === 'strength' ? 'kg' : 'reps'; // Simplified unit
-        const prKey = `${exId}_${unit}`;
-
-        let currentPRValue = personalRecords[prKey]?.value ?? 0;
-        let highestValueInWorkout = 0;
-
-        for (const set of exercise.sets) {
-          const setValue = unit === 'kg' ? (set.weight ?? 0) : (set.reps ?? 0);
-          if (setValue > highestValueInWorkout) {
-            highestValueInWorkout = setValue;
-          }
-        }
-
-        if (highestValueInWorkout > currentPRValue) {
-          personalRecords[prKey] = {
-            value: highestValueInWorkout,
-            date: workout.date || new Date(), // Use workout date
-            workoutId: workoutId, // Link PR to this workout
-            exerciseId: exercise.exerciseId._id // Store exercise ID reference
-          };
-          updatedPRs = true;
-          console.log(`[updateUserWorkouts] New PR detected for ${exercise.exerciseId.name}: ${highestValueInWorkout}${unit}`);
-        }
-      }
-
-      if (updatedPRs) {
-        user.personalRecords = personalRecords;
-        console.log('[updateUserWorkouts] Updated personalRecords on user model.');
-      }
-      // <<< END REMOVED BLOCK >>>
-    */
-
-    await user.save();
-    console.log(`[updateUserWorkouts] Added workout ${workoutId} to user ${userId}'s workout list.`);
+    // Example: Trigger an update for exercise PRs affected by this workout
+    // await updateExercisePRs(userId.toString(), workoutId.toString());
 
   } catch (error) {
-    console.error(`Error updating user workouts for user ${userId}:`, error);
+    console.error(`[updateUserWorkouts] Error updating user workouts for user ${userId} and workout ${workoutId.toString()}:`, error);
+    // Decide on error handling strategy (e.g., log, retry, notify)
   }
 }
 
@@ -2016,23 +1951,148 @@ export async function updateWorkoutAction(id: string, workoutData: Partial<Worko
   }
 }
 
-export async function fetchWorkoutForAI(id: string): Promise<WorkoutData | null> {
-  const user = await getCurrentUser();
-  if (!user?.id) {
-    console.error("[fetchWorkoutForAI] User not authenticated.");
-    throw new Error('Not authenticated');
+export async function fetchWorkoutForAI(id: string): Promise<WorkoutDataForAI | null> {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    console.error("[fetchWorkoutForAI] Invalid or missing ID provided.");
+    return null;
   }
 
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    console.warn("[fetchWorkoutForAI] User not authenticated.");
+    return null;
+  }
+  const userId = new mongoose.Types.ObjectId(session.user.id);
+
+  console.log(`[fetchWorkoutForAI] Fetching workout ${id} for user ${userId}`);
+
   try {
-    const workout = await fetchWorkout(id);
-    if (!workout) {
-      throw new Error('Workout not found');
+    await dbConnect();
+
+    // 1. Fetch the target workout with populated lean details
+    const targetWorkout = await WorkoutModel.findOne({ _id: new mongoose.Types.ObjectId(id), userId })
+      .populate<{
+        workoutExercises: Array<
+          Omit<IWorkoutExercise, 'exerciseId' | 'sets'> & {
+            exerciseId: LeanExercise | null; // Defined in this file
+            sets: LeanSet[]; // Defined in this file
+          }
+        >;
+      }>({
+        path: "workoutExercises",
+        populate: [
+          { path: "exerciseId", model: ExerciseModel, select: "name category equipment trackMaxReps" },
+          { path: "sets", model: SetModel, select: "weight reps duration distance notes order" }
+        ],
+      })
+      .lean<LeanWorkout>() // LeanWorkout is defined in this file
+      .exec();
+
+    if (!targetWorkout) {
+      console.warn(`[fetchWorkoutForAI] Workout ${id} not found for user ${userId}.`);
+      return null;
     }
 
-    return workout;
+    console.log(`[fetchWorkoutForAI] Target workout fetched. Name: ${targetWorkout.name}, Type: ${targetWorkout.type}`);
+
+    const workoutDataForAIReturn: Partial<WorkoutDataForAI> = {
+      ...(targetWorkout as any), // Cast to any to allow spreading LeanWorkout
+      _id: targetWorkout._id.toString(),
+      userId: targetWorkout.userId.toString(),
+      date: targetWorkout.date ? format(new Date(targetWorkout.date), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx") : new Date().toISOString(),
+      // Ensure workoutExercises and their nested fields are correctly typed and serialized
+      workoutExercises: targetWorkout.workoutExercises?.map(we => {
+        const exerciseIdObj = we.exerciseId ? {
+          ...(we.exerciseId as any), // Spread LeanExercise
+          _id: we.exerciseId._id.toString(),
+          // Ensure all fields expected by WorkoutExerciseData['exerciseId'] are present
+          category: we.exerciseId.category || 'other', // Provide default if missing from LeanExercise
+        } : undefined;
+
+        return {
+          ...(we as any), // Spread LeanWorkoutExercise
+          _id: we._id.toString(),
+          workoutId: we.workoutId.toString(), // This should be targetWorkout._id.toString() or similar
+          exerciseId: exerciseIdObj as WorkoutExerciseData['exerciseId'], // Assert type
+          sets: we.sets?.map(s => ({
+            ...(s as any), // Spread LeanSet
+            _id: s._id.toString(),
+            // Ensure all fields expected by SetData are present
+            weight: s.weight || 0, // Provide default
+            reps: s.reps || 0, // Provide default
+            order: s.order || 0, // Provide default
+            workoutExerciseId: we._id.toString() // Link back to parent
+          } as SetData)) // Assert type for each set
+        } as WorkoutExerciseData; // Assert type for each workoutExercise
+      }),
+      previousWorkouts: [],
+      progressMetrics: {}
+    };
+    
+    // Ensure `source` is valid if it exists on targetWorkout
+    if (targetWorkout.source && !['manual', 'garmin', 'coros', 'strava', 'apple', 'ai', ''].includes(targetWorkout.source)) {
+        delete (workoutDataForAIReturn as any).source; // Remove if invalid
+    }
+
+
+    const previousWorkoutsRaw = await getPreviousWorkoutsByType(
+      userId.toString(),
+      targetWorkout.type || "",
+      new Date(targetWorkout.date || Date.now()),
+      targetWorkout._id.toString(), // Corrected: currentWorkoutId (string)
+      5                             // Corrected: limit (number)
+    );
+    
+    console.log(`[fetchWorkoutForAI] Fetched ${previousWorkoutsRaw.length} previous workouts of type ${targetWorkout.type}`);
+
+    workoutDataForAIReturn.previousWorkouts = previousWorkoutsRaw.map(pw => {
+      // Ensure the mapped object conforms to Partial<WorkoutData>
+      // pw should be of type WorkoutData (or at least its properties that are used)
+      const mappedPw: Partial<WorkoutData> = {
+        _id: pw._id, // pw._id is already a string as per WorkoutData type
+        userId: pw.userId, // pw.userId is already a string as per WorkoutData type
+        name: pw.name,
+        type: pw.type,
+        date: pw.date ? format(new Date(pw.date), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx") : undefined,
+        duration: pw.duration,
+        distance: pw.distance,
+        calculatedVolume: pw.calculatedVolume,
+        cardioDetails: pw.cardioDetails ? {
+          pace: pw.cardioDetails.pace,
+        } : undefined,
+        completed: pw.completed, // Uncommented
+        completedAt: pw.completedAt ? format(new Date(pw.completedAt), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx") : undefined, // Uncommented and formatted
+      };
+      // Validate source for previous workouts as well
+      if (pw.source && !['manual', 'garmin', 'coros', 'strava', 'apple', 'ai', ''].includes(pw.source)) {
+        // Don't include invalid source
+      } else if (pw.source) {
+        mappedPw.source = pw.source as WorkoutData['source'];
+      }
+      return mappedPw;
+    });
+
+    if (workoutDataForAIReturn.previousWorkouts && workoutDataForAIReturn.previousWorkouts.length > 0) {
+      const prevDurations = workoutDataForAIReturn.previousWorkouts.map(pw => pw.duration).filter(d => d !== undefined) as number[];
+      const avgPrevDuration = prevDurations.length > 0 ? prevDurations.reduce((a, b) => a + b, 0) / prevDurations.length : 0;
+      
+      const prevDistances = workoutDataForAIReturn.previousWorkouts.map(pw => pw.distance).filter(d => d !== undefined) as number[];
+      const avgPrevDistance = prevDistances.length > 0 ? prevDistances.reduce((a, b) => a + b, 0) / prevDistances.length : 0;
+
+      workoutDataForAIReturn.progressMetrics = {
+        vsAverageDuration: workoutDataForAIReturn.duration && avgPrevDuration > 0 ? workoutDataForAIReturn.duration - avgPrevDuration : undefined,
+        vsAverageDistance: workoutDataForAIReturn.distance && avgPrevDistance > 0 ? workoutDataForAIReturn.distance - avgPrevDistance : undefined,
+      };
+      console.log(`[fetchWorkoutForAI] Calculated progress metrics:`, workoutDataForAIReturn.progressMetrics);
+    }
+
+    console.log(`[fetchWorkoutForAI] Successfully prepared data for workout ${id}.`);
+    // Perform a final cast to WorkoutDataForAI after all augmentations
+    return workoutDataForAIReturn as WorkoutDataForAI;
+
   } catch (error) {
-    console.error("[fetchWorkoutForAI] Error fetching workout:", error);
-    throw error;
+    console.error(`[fetchWorkoutForAI] Error fetching workout details for AI (ID: ${id}):`, error);
+    return null;
   }
 }
     

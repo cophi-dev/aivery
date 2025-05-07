@@ -52,6 +52,14 @@ export interface WorkoutData {
   createdAt: string;
   updatedAt: string;
   workoutExercises?: WorkoutExerciseData[];
+  completed?: boolean;
+  completedAt?: string | Date;
+}
+
+// New type for AI-specific workout data
+export interface WorkoutDataForAI extends WorkoutData {
+  previousWorkouts?: Partial<WorkoutData>[]; // Or a more specific summary type
+  progressMetrics?: any; // Define more specifically if possible
 }
 
 export interface UserData {
