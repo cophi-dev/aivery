@@ -56,6 +56,7 @@ export interface WorkoutData {
   completed?: boolean;
   completedAt?: string | Date;
   records?: any[];
+  aiHighlight?: string;
 }
 
 export interface UserData {
@@ -154,4 +155,8 @@ export interface DailyInsightData {
 // --- Subscription & Plan Types ---
 export interface SubscriptionPlan {
   // ... (existing subscription plan type)
+}
+
+export interface UserSettings {
+  // ... existing code ...
 } 

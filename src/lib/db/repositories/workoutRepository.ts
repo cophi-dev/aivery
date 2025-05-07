@@ -171,14 +171,18 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
         updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
                   (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
         workoutExercises: (exercisesByWorkout[workoutId] || []).map(exercise => ({
-          _id: exercise._id.toString(),
-          workoutId: exercise.workoutId.toString(),
+          _id: exercise._id ? exercise._id.toString() : '',
+          workoutId: exercise.workoutId ? exercise.workoutId.toString() : '',
           exerciseId: exercise.exerciseId ? {
-            _id: exercise.exerciseId._id.toString(),
-            name: exercise.exerciseId.name,
-            category: exercise.exerciseId.category
-          } : null,
-          sets: (exercise.sets || []).map(set => ({
+            _id: exercise.exerciseId._id ? exercise.exerciseId._id.toString() : '',
+            name: exercise.exerciseId.name || 'Unknown Exercise',
+            category: exercise.exerciseId.category || ''
+          } : {
+            _id: '', // Default _id if exercise.exerciseId is null/undefined
+            name: 'Unknown Exercise',
+            category: ''
+          },
+          sets: (exercise.sets || []).map((set: any) => ({ // Added :any for set to address linter warning
             weight: set.weight || 0,
             reps: set.reps || 0,
             duration: set.duration,
@@ -188,8 +192,10 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
           })),
           notes: exercise.notes || '',
           order: exercise.order,
-          duration: exercise.duration,
-          distance: exercise.distance
+          duration: exercise.duration, 
+          distance: exercise.distance, 
+          createdAt: exercise.createdAt ? new Date(exercise.createdAt).toISOString() : new Date().toISOString(),
+          updatedAt: exercise.updatedAt ? new Date(exercise.updatedAt).toISOString() : new Date().toISOString()
         }))
       };
     });
