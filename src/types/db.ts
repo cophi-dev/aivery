@@ -42,6 +42,7 @@ export interface WorkoutData {
       average?: number;
       max?: number;
     };
+    laps?: any[];
   };
   notes?: string;
   source?: 'manual' | 'garmin' | 'coros' | 'strava' | 'apple' | 'ai' | '';
