@@ -61,6 +61,17 @@ export interface WorkoutData {
   workoutExercises?: WorkoutExerciseData[];
   completed?: boolean;
   completedAt?: string | Date;
+  records?: Array<{
+    timestamp: string;
+    heart_rate?: number;
+    distance?: number;
+    speed?: number;
+    altitude?: number;
+    latitude?: number;
+    longitude?: number;
+    cadence?: number;
+    power?: number;
+  }>;
 }
 
 // New type for AI-specific workout data
