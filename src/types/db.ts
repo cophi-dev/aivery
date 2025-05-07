@@ -55,6 +55,7 @@ export interface WorkoutData {
   workoutExercises?: WorkoutExerciseData[];
   completed?: boolean;
   completedAt?: string | Date;
+  records?: any[];
 }
 
 export interface UserData {
