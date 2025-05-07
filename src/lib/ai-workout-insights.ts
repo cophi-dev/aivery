@@ -61,8 +61,8 @@ export async function generateExerciseInsights(exerciseHistory: WorkoutExerciseD
   const latest = sortedHistory[0]
   const previous = sortedHistory[1]
   
-  const latestMetrics = calculateWorkoutMetrics(latest.sets)
-  const previousMetrics = calculateWorkoutMetrics(previous.sets)
+  const latestMetrics = calculateWorkoutMetrics(latest.sets ?? [])
+  const previousMetrics = calculateWorkoutMetrics(previous.sets ?? [])
   
   // Calculate changes
   const weightChange = latestMetrics.avgWeight - previousMetrics.avgWeight
