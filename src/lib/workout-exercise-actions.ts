@@ -11,7 +11,7 @@ import {
 } from "./db/repositories/workoutExerciseRepository"
 import { getWorkoutById } from "./db/repositories/workoutRepository"
 import { getExerciseById } from "./db/repositories/exerciseRepository"
-import type { WorkoutExerciseData } from "@/types/db"
+import type { WorkoutExerciseData, SetData } from "@/types/db"
 import { getCurrentUser } from "./auth"
 
 // Fetch all workout exercises for a workout
@@ -87,13 +87,23 @@ export async function addExerciseToWorkout(workoutId: string, exerciseId: string
 
     const workoutExerciseData: Partial<WorkoutExerciseData> = {
       workoutId,
-      // Construct the exerciseId object as required by the type
       exerciseId: {
           _id: exerciseId, 
-          name: exerciseDetails.name, // Use fetched name
-          category: exerciseDetails.category // Use fetched category (optional)
+          name: exerciseDetails.name,
+          category: exerciseDetails.category
       },
-      sets: sets || [{weight: 0, reps: 0}]
+      sets: sets 
+        ? sets.map((s, index) => ({ 
+            _id: '', // Placeholder for new set ID
+            workoutExerciseId: '', // Placeholder, actual ID unknown until WorkoutExercise is created
+            order: index, 
+            weight: s.weight, 
+            reps: s.reps,
+            duration: undefined, // Ensure all SetData fields are present
+            distance: undefined,
+            notes: undefined
+          }))
+        : [{ _id: '', workoutExerciseId: '', order: 0, weight: 0, reps: 0, duration: undefined, distance: undefined, notes: undefined }]
     }
 
     const newWorkoutExercise = await createWorkoutExercise(workoutExerciseData)
@@ -121,13 +131,25 @@ export async function updateWorkoutExerciseSets(id: string, sets: Array<{weight:
       throw new Error("Workout exercise not found")
     }
 
-    // Check if the workout belongs to the current user
     const workout = await getWorkoutById(workoutExercise.workoutId)
     if (!workout || workout.userId !== user.id) {
       throw new Error("Workout not found or unauthorized")
     }
 
-    const updatedWorkoutExercise = await updateWorkoutExercise(id, { sets, notes })
+    // Transform the simple input 'sets' to SetData[]
+    const setsForUpdate: SetData[] = sets.map((s, index) => ({
+      _id: '', // Assuming these replace existing sets, so new _ids or backend handles existing by position/order.
+                 // If specific sets need to be updated by ID, the input 'sets' type needs to include _id.
+      workoutExerciseId: id, // 'id' is the workoutExerciseId for the parent document
+      order: index,
+      weight: s.weight,
+      reps: s.reps,
+      duration: undefined, // Ensure all SetData fields are present
+      distance: undefined,
+      notes: undefined
+    }));
+
+    const updatedWorkoutExercise = await updateWorkoutExercise(id, { sets: setsForUpdate, notes })
     
     revalidatePath(`/workout/${workoutExercise.workoutId}`)
     revalidatePath(`/workout/edit/${workoutExercise.workoutId}`)
