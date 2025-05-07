@@ -36,8 +36,7 @@ interface StravaActivity {
   sport_type?: string;
 }
 
-// Export this interface
-export interface ImportActivity {
+interface ImportActivity {
   id: string;
   title: string;
   description: string;
@@ -52,7 +51,7 @@ export interface ImportActivity {
   maxSpeed: number;
   totalElevationGain: number;
   sportType: string;
-  source: 'strava';
+  source: string;
   sourceData: any;
 }
 
@@ -336,7 +335,7 @@ interface ImportActivity {
   maxSpeed: number;
   totalElevationGain: number;
   sportType: string;
-  source: 'strava';
+  source: string;
   sourceData: any;
 }
 

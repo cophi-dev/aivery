@@ -202,7 +202,11 @@ export async function POST(request: NextRequest) {
 
             // Save workout
             console.log(`Saving workout to DB for user ${userId}, file: ${fileNameForProcessing}`);
-            const workoutInput = { userId: userId, ...transformedData };
+            const workoutInput = {
+              userId: userId,
+              ...transformedData,
+              source: 'strava' as const // Explicitly set source to 'strava'
+            };
             // Use createWorkout as it handles finding/creating Exercise etc.
             const createdWorkout = await createWorkout(workoutInput); 
             if (!createdWorkout) {

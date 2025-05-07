@@ -14,6 +14,20 @@ import { startOfDay } from "date-fns"; // Import startOfDay
 import { format, /* Other date-fns imports if needed */ } from "date-fns"; 
 import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository"; 
 import { fetchWorkoutForAI } from "@/lib/workout-actions"; // Re-add this import
+import { WorkoutData } from '@/types/db'; // Assuming this is the correct path
+
+// Define the structure for the data expected by the AI coach
+interface AICoachWorkoutData extends WorkoutData {
+  previousWorkouts?: Array<{
+    date: string | Date;
+    duration?: number;
+    distance?: number;
+    calculatedVolume?: number;
+    cardioDetails?: { pace?: number };
+    // Add any other fields that are expected from previous workouts
+  }>;
+  progressMetrics?: any; // TODO: Define a more specific type for progressMetrics if possible
+}
 
 // Explicitly mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -180,7 +194,7 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
     }
 
     console.log(`[generateInitialWorkoutInsight] Fetching workout details for AI: ${workoutId}`);
-    const workoutDataForAI = await fetchWorkoutForAI(workoutId);
+    const workoutDataForAI: AICoachWorkoutData | null = await fetchWorkoutForAI(workoutId);
 
     if (!workoutDataForAI) {
       console.log(`[generateInitialWorkoutInsight] Workout ${workoutId} not found.`);

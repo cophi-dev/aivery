@@ -20,8 +20,6 @@ import {
   generateActivityName,
   extractStravaIdFromFilename
 } from '@/lib/services/stravaArchiveService'
-import { ImportActivity } from '@/lib/services/stravaService'
-import type { WorkoutData } from "@/types/db"
 
 // Keep runtime (Node.js needed for processing)
 export const runtime = 'nodejs'
@@ -862,28 +860,13 @@ export async function POST(request: NextRequest) {
         console.log(`Batch Add: ${distanceInKm.toFixed(2)}km, ${durationInSeconds}s. Batch Totals: ${batchResults.batchDistanceKm.toFixed(2)}km, ${batchResults.batchDurationSeconds}s`);
         console.log(`State Totals: ${state.totalDistance.toFixed(2)}km, ${state.totalDuration.toFixed(2)}min`);
         
-        // Define an intermediate type for explicit typing
-        type WorkoutInputType = Omit<ImportActivity, 'source' | 'title' | 'description'> & { 
-          userId: string; 
-          source: 'strava'; // Ensure literal type
-          sourceId?: string;
-          stravaLink?: string;
-          equipment?: string[];
-          muscleGroups?: string[];
-          // Ensure required fields are included
-          distance: number;
-          duration: number;
-          date: Date; // Ensure date is Date type
-          type: string; // Reflecting ImportActivity/transform output
-        };
-        
-        // Prepare the final object for saving with explicit type
-        const workoutToSave: WorkoutInputType = {
+        // Prepare the final object for saving
+        const workoutToSave = {
           ...transformedWorkout,
           userId: userId,
-          source: "strava", // Reinforce literal type
+          source: "strava",
           equipment: [], // Equipment should be an array
-          muscleGroups: [], // Keep muscle groups as array
+          muscleGroups: [], // Keep muscle groups as array since that's expected
           sourceId: (() => {
             const id = extractStravaIdFromFilename(normalizedFilePath)
             return id && /^\d{5,}$/.test(id) ? id : undefined
@@ -891,23 +874,8 @@ export async function POST(request: NextRequest) {
           stravaLink: (() => {
             const id = extractStravaIdFromFilename(normalizedFilePath)
             return id && /^\d{5,}$/.test(id) ? `https://www.strava.com/activities/${id}` : undefined
-          })(),
-          // Ensure date, distance, duration are present and correctly typed
-          date: transformedWorkout.date ? new Date(transformedWorkout.date) : new Date(),
-          distance: transformedWorkout.distance ?? 0,
-          duration: transformedWorkout.duration ?? 0,
-          // Include other necessary fields from ImportActivity that WorkoutInputType expects
-          id: transformedWorkout.id,
-          averageHeartRate: transformedWorkout.averageHeartRate,
-          maxHeartRate: transformedWorkout.maxHeartRate,
-          averageSpeed: transformedWorkout.averageSpeed,
-          maxSpeed: transformedWorkout.maxSpeed,
-          totalElevationGain: transformedWorkout.totalElevationGain,
-          sportType: transformedWorkout.sportType,
-          sourceData: transformedWorkout.sourceData,
-          calories: transformedWorkout.calories,
-          type: transformedWorkout.type, // Ensure type is included
-        };
+          })()
+        }
         
         // Count activity type
         const activityType = workoutToSave.type || 'unknown'
@@ -1084,7 +1052,7 @@ export async function POST(request: NextRequest) {
                 name: workoutName,
                 duration: durationInMinutes,
                 distance: distanceInKm
-              } as Parameters<typeof createWorkout>[0]);
+              });
               
               console.log(`Successfully imported workout after creating base exercise`)
               batchResults.imported++

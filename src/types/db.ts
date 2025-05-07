@@ -42,13 +42,6 @@ export interface WorkoutData {
       average?: number;
       max?: number;
     };
-    laps?: Array<{
-      number: number;
-      distance: number; // Assuming meters
-      duration: number; // Assuming seconds
-      pace?: number; // Assuming min/km or similar
-      // Add other relevant lap properties if available
-    }>;
   };
   notes?: string;
   source?: 'manual' | 'garmin' | 'coros' | 'strava' | 'apple' | 'ai' | '';
@@ -61,23 +54,6 @@ export interface WorkoutData {
   workoutExercises?: WorkoutExerciseData[];
   completed?: boolean;
   completedAt?: string | Date;
-  records?: Array<{
-    timestamp: string;
-    heart_rate?: number;
-    distance?: number;
-    speed?: number;
-    altitude?: number;
-    latitude?: number;
-    longitude?: number;
-    cadence?: number;
-    power?: number;
-  }>;
-}
-
-// New type for AI-specific workout data
-export interface WorkoutDataForAI extends WorkoutData {
-  previousWorkouts?: Partial<WorkoutData>[]; // Or a more specific summary type
-  progressMetrics?: any; // Define more specifically if possible
 }
 
 export interface UserData {
