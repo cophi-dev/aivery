@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { format, isToday, isPast, isFuture, parseISO, differenceInDays } from "date-fns"
@@ -9,6 +9,7 @@ import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Che
 import { cn } from "@/lib/utils"
 import { toast } from 'react-hot-toast'
 import { motion, AnimatePresence } from 'motion/react'
+import { SlidingNumber } from "@/components/ui/sliding-number"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -231,6 +232,95 @@ const cardioExerciseNames: Partial<Record<WorkoutTypeOption, string>> = {
   cycling: "Cycling",
   walking: "Walking",
 };
+
+// Update the NumberSlider component to have fixed width
+function NumberSlider({
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  step = 1,
+  unit = "",
+  className,
+  isDecimal = false
+}: {
+  value: string | number;
+  onChange: (value: string) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  className?: string;
+  isDecimal?: boolean;
+}) {
+  // Convert to number and ensure it's within bounds
+  const numValue = Math.max(min, Math.min(max, Number(value) || 0));
+  
+  // Format value for display - if decimal, multiply by 10 for sliding number
+  const displayValue = isDecimal ? numValue * 10 : numValue;
+  
+  // Handle increment/decrement
+  const increment = () => {
+    const newVal = Math.min(max, numValue + step);
+    onChange(String(newVal));
+  };
+  
+  const decrement = () => {
+    const newVal = Math.max(min, numValue - step);
+    onChange(String(newVal));
+  };
+  
+  return (
+    <div className={`flex flex-col space-y-2 ${className}`}>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={decrement}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
+        >
+          <LucideMinus className="h-4 w-4" />
+          <span className="sr-only">Decrease</span>
+        </button>
+        
+        <div className="flex items-center justify-center rounded-lg bg-muted/50 px-4 py-2 min-w-[100px]">
+          <div className="flex items-baseline">
+            <div className="text-2xl font-medium tabular-nums tracking-tighter w-20 text-right h-8 flex items-center justify-end">
+              {isDecimal ? (
+                <>
+                  <SlidingNumber value={Math.floor(displayValue / 10)} />
+                  <span>.</span>
+                  <SlidingNumber value={displayValue % 10} />
+                </>
+              ) : (
+                <SlidingNumber value={numValue} />
+              )}
+            </div>
+            {unit && <span className="ml-1 text-sm text-muted-foreground min-w-10">{unit}</span>}
+          </div>
+        </div>
+        
+        <button
+          type="button"
+          onClick={increment}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
+        >
+          <LucidePlus className="h-4 w-4" />
+          <span className="sr-only">Increase</span>
+        </button>
+      </div>
+      
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={numValue}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+      />
+    </div>
+  );
+}
 
 export default function NewWorkoutPage() {
   const router = useRouter()
@@ -983,56 +1073,18 @@ export default function NewWorkoutPage() {
     try {
       // Corrected action call: Pass only exerciseId
       const stats = await getExercisePerformanceStatsAction(dbExerciseId); 
+      
+      // Find the canonical exercise to check if it's bodyweight
+      const currentExercise = dbExercises.find(ex => ex._id === dbExerciseId);
+      const isBodyweight = currentExercise ? isBodyweightExercise(currentExercise) : false;
 
       // Corrected result handling: Check if stats is not null
       if (stats) {
         // No need to access stats.data, stats itself is the data
         setExercisePerformanceData(prev => ({ ...prev, [exerciseStateId]: stats }));
 
-        // --- Generate AI Recommendation (logic remains the same) --- 
-        let recommendation = "";
-        const lastPerf = stats.lastWorkout;
-        const pr = stats.personalRecord;
-
-        if (lastPerf && pr) {
-            const lastDate = parseISO(lastPerf.date as unknown as string); // Ensure date is string before parsing
-            const daysSinceLast = differenceInDays(new Date(), lastDate);
-            const lastWeight = typeof lastPerf.weight === 'number' ? lastPerf.weight : 0; // Use number type
-            const lastReps = typeof lastPerf.reps === 'number' ? lastPerf.reps : 0; // Use number type
-            const prWeight = typeof pr.weight === 'number' ? pr.weight : 0; // Use number type
-            const prReps = typeof pr.reps === 'number' ? pr.reps : 0; // Use number type
-
-            if (daysSinceLast <= 14) {
-                 if (lastWeight >= prWeight && lastReps >= prReps) {
-                     const suggestedWeight = lastWeight + 2.5;
-                     recommendation = `PR last time! Let's try ${suggestedWeight}kg x ${lastReps} reps.`;
-                 } else if (lastWeight >= prWeight * 0.9) {
-                     const suggestedWeight = lastWeight > 0 ? lastWeight : prWeight;
-                     recommendation = `Close to PR last time (${lastWeight}kg). Aim for ${suggestedWeight}kg x ${lastReps} reps or try beating the PR ${prWeight}kg!`;
-                 } else {
-                     recommendation = `Last: ${lastWeight}kg x ${lastReps} reps (${format(lastDate, 'dd MMM')}). Let's build back up towards your PR of ${prWeight}kg!`;
-                 }
-            } else if (daysSinceLast <= 30) {
-                recommendation = `It's been ${daysSinceLast} days. Start around ${lastWeight}kg x ${lastReps} reps & see how it feels.`;
-            } else {
-                 recommendation = `Over a month since you did this (${format(lastDate, 'dd MMM')})! Maybe start light, around ${Math.max(0, lastWeight * 0.8).toFixed(1)}kg, and focus on form.`;
-            }
-        } else if (pr) {
-             const prWeight = typeof pr.weight === 'number' ? pr.weight : 0;
-             const prReps = typeof pr.reps === 'number' ? pr.reps : 0;
-            recommendation = `No recent data, but your PR is ${prWeight}kg x ${prReps} reps. Go for it!`;
-        } else if (lastPerf) {
-             const lastDate = parseISO(lastPerf.date as unknown as string);
-             const daysSinceLast = differenceInDays(new Date(), lastDate);
-             const lastWeight = typeof lastPerf.weight === 'number' ? lastPerf.weight : 0;
-             const lastReps = typeof lastPerf.reps === 'number' ? lastPerf.reps : 0;
-             if (daysSinceLast <= 14) {
-                 const suggestedWeight = lastWeight + 2.5;
-                 recommendation = `Solid work last time (${lastWeight}kg x ${lastReps} reps). Maybe try ${suggestedWeight}kg?`;
-             } else {
-                 recommendation = `It's been ${daysSinceLast} days since ${lastWeight}kg x ${lastReps} reps. Ease back in!`;
-             }
-        }
+        // Generate recommendation based on whether it's a bodyweight exercise or not
+        const recommendation = generateExerciseRecommendation(stats, isBodyweight);
         
         if (recommendation) {
             updateExerciseField(exerciseStateId, 'aiRecommendation', recommendation);
@@ -1040,7 +1092,6 @@ export default function NewWorkoutPage() {
              // Explicitly clear recommendation if logic doesn't produce one
             updateExerciseField(exerciseStateId, 'aiRecommendation', ''); 
         }
-        // --- END Recommendation Logic --- 
         
       } else {
         // Handle case where action returned null (no stats found or error occurred)
@@ -1329,9 +1380,9 @@ export default function NewWorkoutPage() {
   const exerciseBodyStyle = "px-6 pb-6 space-y-6"
   const exerciseStatsStyle = "flex items-center gap-2 text-sm text-muted-foreground"
   const exerciseStatBadgeStyle = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20"
-  const setRowStyle = "group relative grid grid-cols-[auto_1fr_1fr_auto] items-center gap-6 rounded-xl p-4 transition-colors hover:bg-muted/50"
-  const inputGroupStyle = "flex flex-col items-center space-y-2 w-full"
-  const inputLabelStyle = "text-xs font-medium text-muted-foreground/80"
+  const setRowStyle = "group relative grid grid-cols-[2rem_1fr_1fr_auto] gap-6 rounded-xl p-5 bg-card shadow-sm border border-border/30 mb-4"
+  const inputGroupStyle = "flex flex-col items-start space-y-2 w-full"
+  const inputLabelStyle = "text-xs font-medium text-muted-foreground/80 tracking-wide uppercase"
   const numberControlStyle = "flex items-center justify-center gap-2 w-full max-w-[160px]"
 
   // Add these style constants at the top with other styles
@@ -1349,6 +1400,136 @@ export default function NewWorkoutPage() {
 
   // Update the style constants
   const aiSuggestionStyle = "flex items-start p-4 space-x-3 rounded-xl bg-blue-500/10 dark:bg-blue-400/10 border border-blue-200/20 dark:border-blue-300/20"
+
+  // Add a function to check if an exercise is a bodyweight exercise
+  const isBodyweightExercise = (exercise: any): boolean => {
+    if (!exercise) return false;
+    
+    // Check if exercise name includes common bodyweight exercise names
+    const name = exercise.name?.toLowerCase() || '';
+    if (
+      name.includes('bodyweight') || 
+      name.includes('body weight') || 
+      name.includes('push-up') || 
+      name.includes('pushup') ||
+      name.includes('pull-up') || 
+      name.includes('pullup') ||
+      name.includes('chin-up') ||
+      name.includes('chinup') ||
+      name.includes('dip') ||
+      name.includes('plank') ||
+      name.includes('crunch') ||
+      name.includes('sit-up') ||
+      name.includes('situp') ||
+      name.includes('lunge') ||
+      name.includes('burpee') ||
+      name.includes('jumping jack') ||
+      name.includes('mountain climber') ||
+      name.includes('squat')
+    ) {
+      return true;
+    }
+
+    // Check if exercise has bodyweight in equipment
+    const equipment = exercise.equipment || [];
+    if (Array.isArray(equipment)) {
+      return equipment.some(e => 
+        typeof e === 'string' && 
+        (e.toLowerCase().includes('bodyweight') || 
+         e.toLowerCase().includes('body weight') ||
+         e.toLowerCase() === 'body only')
+      );
+    }
+    
+    return false;
+  };
+
+  // Function to generate recommendations that handles both bodyweight and weighted exercises
+  const generateExerciseRecommendation = (
+    stats: ExercisePerformanceStats,
+    isBodyweight: boolean
+  ): string => {
+    let recommendation = "";
+    const lastPerf = stats.lastWorkout;
+    const pr = stats.personalRecord;
+
+    if (lastPerf && pr) {
+      const lastDate = parseISO(lastPerf.date as unknown as string);
+      const daysSinceLast = differenceInDays(new Date(), lastDate);
+      const lastReps = typeof lastPerf.reps === 'number' ? lastPerf.reps : 0;
+      const prReps = typeof pr.reps === 'number' ? pr.reps : 0;
+
+      if (isBodyweight) {
+        // Bodyweight exercise recommendations (focus only on reps)
+        if (daysSinceLast <= 14) {
+          if (lastReps >= prReps) {
+            const suggestedReps = Math.ceil(lastReps * 1.1); // Suggest 10% more reps
+            recommendation = `Great job last time with ${lastReps} reps! Try pushing for ${suggestedReps} reps this time.`;
+          } else if (lastReps >= prReps * 0.9) {
+            recommendation = `Last time you did ${lastReps} reps. You're close to your PR of ${prReps}! Push for it today.`;
+          } else {
+            recommendation = `${lastReps} reps last time (${format(lastDate, 'dd MMM')}). Your PR is ${prReps} reps. Keep building up!`;
+          }
+        } else if (daysSinceLast <= 30) {
+          recommendation = `It's been ${daysSinceLast} days. Last time you did ${lastReps} reps. See if you can match or beat that.`;
+        } else {
+          const suggestedReps = Math.floor(lastReps * 0.8); // Start at 80% of last performance after long break
+          recommendation = `It's been over a month (${format(lastDate, 'dd MMM')}). Start with ${suggestedReps}-${lastReps} reps today.`;
+        }
+      } else {
+        // Weighted exercise recommendations
+        const lastWeight = typeof lastPerf.weight === 'number' ? lastPerf.weight : 0;
+        const prWeight = typeof pr.weight === 'number' ? pr.weight : 0;
+        
+        if (daysSinceLast <= 14) {
+          if (lastWeight >= prWeight && lastReps >= prReps) {
+            const suggestedWeight = lastWeight + 2.5;
+            recommendation = `PR last time! Let's try ${suggestedWeight}kg x ${lastReps} reps.`;
+          } else if (lastWeight >= prWeight * 0.9) {
+            const suggestedWeight = lastWeight > 0 ? lastWeight : prWeight;
+            recommendation = `Close to PR last time (${lastWeight}kg). Aim for ${suggestedWeight}kg x ${lastReps} reps or try beating the PR ${prWeight}kg!`;
+          } else {
+            recommendation = `Last: ${lastWeight}kg x ${lastReps} reps (${format(lastDate, 'dd MMM')}). Let's build back up towards your PR of ${prWeight}kg!`;
+          }
+        } else if (daysSinceLast <= 30) {
+          recommendation = `It's been ${daysSinceLast} days. Start around ${lastWeight}kg x ${lastReps} reps & see how it feels.`;
+        } else {
+          recommendation = `Over a month since you did this (${format(lastDate, 'dd MMM')})! Maybe start light, around ${Math.max(0, lastWeight * 0.8).toFixed(1)}kg, and focus on form.`;
+        }
+      }
+    } else if (pr) {
+      const prReps = typeof pr.reps === 'number' ? pr.reps : 0;
+      if (isBodyweight) {
+        recommendation = `Your PR is ${prReps} reps. See if you can match that today!`;
+      } else {
+        const prWeight = typeof pr.weight === 'number' ? pr.weight : 0;
+        recommendation = `No recent data, but your PR is ${prWeight}kg x ${prReps} reps. Go for it!`;
+      }
+    } else if (lastPerf) {
+      const lastDate = parseISO(lastPerf.date as unknown as string);
+      const daysSinceLast = differenceInDays(new Date(), lastDate);
+      const lastReps = typeof lastPerf.reps === 'number' ? lastPerf.reps : 0;
+      
+      if (isBodyweight) {
+        if (daysSinceLast <= 14) {
+          const suggestedReps = Math.ceil(lastReps * 1.1); // Suggest 10% more reps
+          recommendation = `Last time you completed ${lastReps} reps. Try for ${suggestedReps} reps today!`;
+        } else {
+          recommendation = `It's been ${daysSinceLast} days since you did ${lastReps} reps. Start with that goal today.`;
+        }
+      } else {
+        const lastWeight = typeof lastPerf.weight === 'number' ? lastPerf.weight : 0;
+        if (daysSinceLast <= 14) {
+          const suggestedWeight = lastWeight + 2.5;
+          recommendation = `Solid work last time (${lastWeight}kg x ${lastReps} reps). Maybe try ${suggestedWeight}kg?`;
+        } else {
+          recommendation = `It's been ${daysSinceLast} days since ${lastWeight}kg x ${lastReps} reps. Ease back in!`;
+        }
+      }
+    }
+    
+    return recommendation;
+  }
 
   return (
     <>
@@ -1451,29 +1632,31 @@ export default function NewWorkoutPage() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-2 gap-4 pt-4"
+            className="grid grid-cols-2 gap-8 pt-4"
           >
-            <div className={inputGroupStyle}> {/* Reusing style from sets */}
-              <Label className={inputLabelStyle}>OVERALL DURATION (MIN)</Label>
-              <Input
-                type="number"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                className="text-center text-lg font-medium"
-                placeholder="e.g., 30"
-                min="0"
+            <div className={inputGroupStyle}>
+              <Label className={inputLabelStyle}>OVERALL DURATION</Label>
+              <NumberSlider
+                value={duration || '0'}
+                onChange={(value) => setDuration(value)}
+                min={0}
+                max={180}
+                step={5}
+                unit="min"
+                className="mb-1"
               />
             </div>
-            <div className={inputGroupStyle}> {/* Reusing style from sets */}
-              <Label className={inputLabelStyle}>OVERALL DISTANCE (KM)</Label>
-              <Input
-                type="number"
-                value={distance}
-                onChange={(e) => setDistance(e.target.value)}
-                className="text-center text-lg font-medium"
-                placeholder="e.g., 5.2"
-                min="0"
-                step="0.1"
+            <div className={inputGroupStyle}>
+              <Label className={inputLabelStyle}>OVERALL DISTANCE</Label>
+              <NumberSlider
+                value={distance || '0'}
+                onChange={(value) => setDistance(value)}
+                min={0}
+                max={50}
+                step={0.5}
+                unit="km"
+                className="mb-1"
+                isDecimal={true}
               />
             </div>
           </motion.div>
@@ -1555,16 +1738,44 @@ export default function NewWorkoutPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-sm font-medium text-muted-foreground">EXERCISE #{index + 1}</span>
+                          {isBodyweightExercise(canonicalExercise) && (
+                            <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 border-green-500/20">
+                              Bodyweight
+                            </Badge>
+                          )}
                           {performanceStats && (
                             <div className={exerciseStatsStyle}>
+                              {/* Last workout performance */}
                               {performanceStats.lastWorkout && (
                                 <Badge variant="secondary" className={exerciseStatBadgeStyle}>
-                                  Last: {performanceStats.lastWorkout.weight}kg × {performanceStats.lastWorkout.reps}
+                                  Last: {isBodyweightExercise(canonicalExercise) 
+                                    ? `${performanceStats.lastWorkout.reps} reps` 
+                                    : `${performanceStats.lastWorkout.weight}kg × ${performanceStats.lastWorkout.reps}`}
                                 </Badge>
                               )}
+                              
+                              {/* Show last workout total reps for bodyweight exercises */}
+                              {isBodyweightExercise(canonicalExercise) && 
+                               performanceStats.dailyTotalReps?.lastWorkout && (
+                                <Badge variant="secondary" className={exerciseStatBadgeStyle}>
+                                  Day Total: {performanceStats.dailyTotalReps.lastWorkout.totalReps} reps
+                                </Badge>
+                              )}
+                              
+                              {/* Personal record - per set */}
                               {performanceStats.personalRecord && (
                                 <Badge variant="secondary" className={exerciseStatBadgeStyle}>
-                                  PR: {performanceStats.personalRecord.weight}kg × {performanceStats.personalRecord.reps}
+                                  {isBodyweightExercise(canonicalExercise)
+                                    ? `Set PR: ${performanceStats.personalRecord.reps} reps`
+                                    : `PR: ${performanceStats.personalRecord.weight}kg × ${performanceStats.personalRecord.reps}`}
+                                </Badge>
+                              )}
+                              
+                              {/* Show personal record for daily total reps for bodyweight exercises */}
+                              {isBodyweightExercise(canonicalExercise) && 
+                               performanceStats.dailyTotalReps?.personalRecord && (
+                                <Badge variant="secondary" className={cn(exerciseStatBadgeStyle, "bg-green-500/10 text-green-600 dark:text-green-400")}>
+                                  Day PR: {performanceStats.dailyTotalReps.personalRecord.totalReps} total
                                 </Badge>
                               )}
                             </div>
@@ -1718,83 +1929,52 @@ export default function NewWorkoutPage() {
                                 animate={{ opacity: 1, x: 0 }}
                                 exit={{ opacity: 0, x: 20 }}
                                 transition={{ duration: 0.2 }}
-                                className={setRowStyle}
+                                className={cn(
+                                  setRowStyle,
+                                  isBodyweightExercise(canonicalExercise) && "grid-cols-[2rem_1fr_auto] justify-items-center"
+                                )}
                               >
                                 {/* Set Number */}
-                                <span className="text-sm font-medium text-muted-foreground w-6 text-center">
-                                  {setIndex + 1}
-                                </span>
-
-                                {/* Weight Input */}
-                                <div className={inputGroupStyle}>
-                                  <Label className={inputLabelStyle}>WEIGHT (KG)</Label>
-                                  <div className={numberControlStyle}>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8 rounded-full"
-                                      onClick={() => {
-                                        const currentWeight = parseFloat(set.weight || '0') || 0;
-                                        updateSetField(exercise.id, set.id, 'weight', Math.max(0, currentWeight - 1).toString());
-                                      }}
-                                    >
-                                      <LucideMinus className="h-4 w-4" />
-                                    </Button>
-                                    <Input
-                                      type="number"
-                                      value={set.weight}
-                                      onChange={(e) => updateSetField(exercise.id, set.id, 'weight', e.target.value)}
-                                      className="h-9 w-16 text-center text-base font-medium tabular-nums"
-                                      min="0"
-                                    />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8 rounded-full"
-                                      onClick={() => {
-                                        const currentWeight = parseFloat(set.weight || '0') || 0;
-                                        updateSetField(exercise.id, set.id, 'weight', (currentWeight + 1).toString());
-                                      }}
-                                    >
-                                      <LucidePlus className="h-4 w-4" />
-                                    </Button>
+                                <div className="flex items-center justify-center">
+                                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary">
+                                    <span className="text-xs font-semibold">
+                                      {setIndex + 1}
+                                    </span>
                                   </div>
                                 </div>
+                                
+                                {/* Weight Input - Hide for bodyweight exercises */}
+                                {!isBodyweightExercise(canonicalExercise) && (
+                                  <div className={inputGroupStyle}>
+                                    <Label className={inputLabelStyle}>WEIGHT</Label>
+                                    <NumberSlider
+                                      value={set.weight || '0'}
+                                      onChange={(value) => updateSetField(exercise.id, set.id, 'weight', value)}
+                                      min={0}
+                                      max={200}
+                                      step={0.5}
+                                      unit="kg"
+                                      className="mb-1"
+                                      isDecimal={true}
+                                    />
+                                  </div>
+                                )}
 
                                 {/* Reps Input */}
-                                <div className={inputGroupStyle}>
+                                <div className={cn(
+                                  inputGroupStyle,
+                                  isBodyweightExercise(canonicalExercise) && "w-full max-w-[250px] mx-auto"
+                                )}>
                                   <Label className={inputLabelStyle}>REPS</Label>
-                                  <div className={numberControlStyle}>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8 rounded-full"
-                                      onClick={() => {
-                                        const currentReps = parseInt(set.reps || '0') || 0;
-                                        updateSetField(exercise.id, set.id, 'reps', Math.max(0, currentReps - 1).toString());
-                                      }}
-                                    >
-                                      <LucideMinus className="h-4 w-4" />
-                                    </Button>
-                                    <Input
-                                      type="number"
-                                      value={set.reps}
-                                      onChange={(e) => updateSetField(exercise.id, set.id, 'reps', e.target.value)}
-                                      className="h-9 w-16 text-center text-base font-medium tabular-nums"
-                                      min="0"
-                                    />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8 rounded-full"
-                                      onClick={() => {
-                                        const currentReps = parseInt(set.reps || '0') || 0;
-                                        updateSetField(exercise.id, set.id, 'reps', (currentReps + 1).toString());
-                                      }}
-                                    >
-                                      <LucidePlus className="h-4 w-4" />
-                                    </Button>
-                                  </div>
+                                  <NumberSlider
+                                    value={set.reps || '0'}
+                                    onChange={(value) => updateSetField(exercise.id, set.id, 'reps', value)}
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    unit="reps"
+                                    className="mb-1"
+                                  />
                                 </div>
 
                                 {/* Remove Set Button */}
@@ -1802,9 +1982,9 @@ export default function NewWorkoutPage() {
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => removeSet(exercise.id, set.id)}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
+                                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full h-6 w-6"
                                 >
-                                  <LucideX className="h-4 w-4" />
+                                  <LucideX className="h-3 w-3" />
                                   <span className="sr-only">Remove Set {setIndex + 1}</span>
                                 </Button>
                               </motion.div>
@@ -1829,24 +2009,28 @@ export default function NewWorkoutPage() {
                       {exercise.name && isCardioExercise && (
                         <div className="grid grid-cols-2 gap-4">
                           <div className={inputGroupStyle}>
-                            <Label className={inputLabelStyle}>DURATION (MIN)</Label>
-                            <Input
-                              type="number"
-                              value={exercise.duration ?? ""}
-                              onChange={(e) => updateExerciseField(exercise.id, 'duration', e.target.value)}
-                              className="text-center"
-                              min="0"
+                            <Label className={inputLabelStyle}>DURATION</Label>
+                            <NumberSlider
+                              value={exercise.duration || '0'}
+                              onChange={(value) => updateExerciseField(exercise.id, 'duration', value)}
+                              min={0}
+                              max={180}
+                              step={5}
+                              unit="min"
+                              className="mb-1"
                             />
                           </div>
                           <div className={inputGroupStyle}>
-                            <Label className={inputLabelStyle}>DISTANCE (KM)</Label>
-                            <Input
-                              type="number"
-                              value={exercise.distance ?? ""}
-                              onChange={(e) => updateExerciseField(exercise.id, 'distance', e.target.value)}
-                              className="text-center"
-                              min="0"
-                              step="0.1"
+                            <Label className={inputLabelStyle}>DISTANCE</Label>
+                            <NumberSlider
+                              value={exercise.distance || '0'}
+                              onChange={(value) => updateExerciseField(exercise.id, 'distance', value)}
+                              min={0}
+                              max={50}
+                              step={0.5}
+                              unit="km"
+                              className="mb-1"
+                              isDecimal={true}
                             />
                           </div>
                         </div>

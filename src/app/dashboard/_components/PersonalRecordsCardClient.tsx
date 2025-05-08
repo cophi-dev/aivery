@@ -171,7 +171,13 @@ export function PersonalRecordsCard({ exercisePRs = [], overallPRs = {} }: Perso
                       <div className="space-y-1.5">
                         <div className="font-medium text-amber-700 dark:text-amber-400">{pr.exerciseName}</div>
                         <div className="text-xl font-bold">
-                          {pr.value} {pr.unit}
+                          {/* Display differently based on whether it's a bodyweight exercise and what unit it is */}
+                          {pr.unit === 'kg' 
+                            ? `${pr.value} ${pr.unit}`
+                            : pr.unit === 'reps/day' 
+                              ? `${pr.value} reps (Day PR)` // For bodyweight daily total PR
+                              : `${pr.value} ${pr.unit}`
+                          }
                         </div>
                         <div className="text-sm text-muted-foreground">
                           {format(new Date(pr.date), 'MMM d, yyyy')}

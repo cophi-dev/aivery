@@ -97,6 +97,19 @@ type PerformanceSet = {
 export type ExercisePerformanceStats = { // Export the type
   lastWorkout?: PerformanceSet;
   personalRecord?: PerformanceSet; // Represents highest weight lifted for any reps
+  // Add properties for daily total reps
+  dailyTotalReps?: {
+    lastWorkout?: {
+      totalReps: number;
+      date: Date;
+      workoutId?: string;
+    };
+    personalRecord?: {
+      totalReps: number;
+      date: Date;
+      workoutId?: string;
+    };
+  };
 };
 // --- END NEW Performance Data Types ---
 
@@ -204,6 +217,8 @@ export async function getExercisePerformanceStatsAction(
     // ---> Step 1: Find Last Workout Performance <---
     console.log(`[getExercisePerformanceStatsAction] Finding last workout performance...`);
     let lastWorkoutData: PerformanceSet | undefined = undefined;
+    let lastWorkoutTotalReps = 0;
+    let lastWorkoutId: string | undefined = undefined;
     
     // Aggregation to find the most recent workout exercise entry with valid sets
     // Explicitly type the pipeline as any[] to simplify TS checking
@@ -217,6 +232,7 @@ export async function getExercisePerformanceStatsAction(
       { 
         $project: { 
           _id: 0, 
+          workoutId: 1,
           workoutDate: '$workoutDetails.date', 
           sets: '$sets' // Project the embedded sets array directly
         } 
@@ -232,6 +248,17 @@ export async function getExercisePerformanceStatsAction(
     if (lastWorkoutResult && lastWorkoutResult.length > 0) {
       const lastWorkoutExercise = lastWorkoutResult[0]; // This now contains the embedded sets
       console.log(`[getExercisePerformanceStatsAction] Processing lastWorkoutExercise:`, JSON.stringify(lastWorkoutExercise, null, 2));
+      
+      // Calculate total reps for the workout
+      if (lastWorkoutExercise.sets && Array.isArray(lastWorkoutExercise.sets)) {
+        lastWorkoutTotalReps = lastWorkoutExercise.sets.reduce((total, set: any) => {
+          return total + (typeof set.reps === 'number' ? set.reps : 0);
+        }, 0);
+      }
+      
+      if (lastWorkoutExercise.workoutId) {
+        lastWorkoutId = lastWorkoutExercise.workoutId.toString();
+      }
       
       // Find the first valid set directly from the embedded 'sets' array
       const firstValidSetLastWorkout = lastWorkoutExercise.sets?.find((s: any) => s.weight !== undefined && s.reps !== undefined && s.reps > 0);
@@ -259,67 +286,78 @@ export async function getExercisePerformanceStatsAction(
     console.log(`[getExercisePerformanceStatsAction] Finding PR from ExercisePRs collection...`);
     let personalRecordData: PerformanceSet | undefined = undefined;
     let prReps: number | undefined = undefined; // Variable to store reps for the PR set
-
-    const exercisePR = await ExercisePRModel.findOne({
-        userId: userId,
-        exerciseId: canonicalExerciseId,
-        unit: 'kg' 
-      })
-      .sort({ value: -1 }) 
-      .lean<IExercisePR>();
-
-    if (exercisePR) {
-      console.log(`[getExercisePerformanceStatsAction] Found base PR record:`, exercisePR);
-      // ---> Step 2a: If PR has workoutId, find the reps from the original workout <---
-      if (exercisePR.workoutId && Types.ObjectId.isValid(exercisePR.workoutId)) {
-        console.log(`[getExercisePerformanceStatsAction] PR has workoutId ${exercisePR.workoutId}. Fetching original workout exercise...`);
-        const prWorkoutExercise = await WorkoutExerciseModel.findOne({
-          userId: userId,
-          exerciseId: canonicalExerciseId,
-          workoutId: exercisePR.workoutId // Find the specific entry from the PR workout
-        }).lean() as IWorkoutExercise | null; // Cast lean result to include sets
-
-        if (prWorkoutExercise && prWorkoutExercise.sets && prWorkoutExercise.sets.length > 0) {
-          console.log(`[getExercisePerformanceStatsAction] Found original workout exercise. Searching sets for weight ${exercisePR.value}...`);
-          let maxRepsAtPRWeight = 0;
-          prWorkoutExercise.sets.forEach((set: any) => {
-            // Check if the set's weight matches the PR weight
-            if (set.weight === exercisePR.value && typeof set.reps === 'number') {
-              console.log(`[getExercisePerformanceStatsAction] Found matching set with weight ${set.weight} and reps ${set.reps}`);
-              if (set.reps > maxRepsAtPRWeight) {
-                maxRepsAtPRWeight = set.reps;
-              }
-            }
-          });
-
-          if (maxRepsAtPRWeight > 0) {
-            prReps = maxRepsAtPRWeight;
-            console.log(`[getExercisePerformanceStatsAction] Determined max reps at PR weight (${exercisePR.value}kg) to be: ${prReps}`);
-          } else {
-             console.log(`[getExercisePerformanceStatsAction] Could not find any sets matching the PR weight ${exercisePR.value} in the original workout exercise.`);
-          }
-        } else {
-          console.log(`[getExercisePerformanceStatsAction] Could not find the original workout exercise document for workoutId ${exercisePR.workoutId}.`);
-        }
-      } else {
-         console.log(`[getExercisePerformanceStatsAction] PR record does not have a valid workoutId.`);
-      }
-      // ---> End Step 2a <---
-
-      personalRecordData = {
-        weight: exercisePR.value, 
-        reps: prReps, // Assign the found reps (or undefined if not found)
-        date: exercisePR.date, 
-      };
-      console.log(`[getExercisePerformanceStatsAction] Found PR data (with reps attempt):`, personalRecordData);
-    } else {
-      console.log(`[getExercisePerformanceStatsAction] No 'kg' PR found in ExercisePRs collection.`);
-    }
     
+    // Step 2b: Find max daily total reps
+    console.log(`[getExercisePerformanceStatsAction] Finding maximum daily total reps...`);
+    let maxDailyRepsData: { totalReps: number; date: Date; workoutId?: string } | undefined = undefined;
+    
+    // Aggregation to find the workout with maximum total reps
+    const maxDailyRepsPipeline: any[] = [
+      { $match: { userId: userId, exerciseId: canonicalExerciseId } },
+      { $lookup: { from: 'workouts', localField: 'workoutId', foreignField: '_id', as: 'workoutDetails' } },
+      { $unwind: '$workoutDetails' },
+      { $match: { 'workoutDetails.userId': userId } },
+      {
+        $addFields: {
+          totalReps: {
+            $reduce: {
+              input: { $ifNull: ['$sets', []] },
+              initialValue: 0,
+              in: { $add: ['$$value', { $ifNull: ['$$this.reps', 0] }] }
+            }
+          }
+        }
+      },
+      { $sort: { totalReps: -1 } },
+      { $limit: 1 },
+      {
+        $project: {
+          _id: 0,
+          workoutId: 1,
+          totalReps: 1,
+          date: '$workoutDetails.date'
+        }
+      }
+    ];
+    
+    const maxDailyRepsResult = await WorkoutExerciseModel.aggregate(maxDailyRepsPipeline);
+    
+    if (maxDailyRepsResult && maxDailyRepsResult.length > 0) {
+      const maxRepsWorkout = maxDailyRepsResult[0];
+      console.log(`[getExercisePerformanceStatsAction] Found maximum daily reps:`, JSON.stringify(maxRepsWorkout, null, 2));
+      
+      maxDailyRepsData = {
+        totalReps: maxRepsWorkout.totalReps,
+        date: maxRepsWorkout.date,
+        workoutId: maxRepsWorkout.workoutId ? maxRepsWorkout.workoutId.toString() : undefined
+      };
+    } else {
+      console.log(`[getExercisePerformanceStatsAction] No maximum daily reps found for exercise.`);
+    }
+
     // ---> Step 3: Combine Results <---
     const result: ExercisePerformanceStats = {};
     if (lastWorkoutData) result.lastWorkout = lastWorkoutData;
     if (personalRecordData) result.personalRecord = personalRecordData;
+    
+    // Add daily total reps information
+    if (lastWorkoutTotalReps > 0 || maxDailyRepsData) {
+      result.dailyTotalReps = {};
+      
+      // Add last workout totals
+      if (lastWorkoutTotalReps > 0 && lastWorkoutData?.date) {
+        result.dailyTotalReps.lastWorkout = {
+          totalReps: lastWorkoutTotalReps,
+          date: lastWorkoutData.date,
+          workoutId: lastWorkoutId
+        };
+      }
+      
+      // Add PR for daily total reps
+      if (maxDailyRepsData) {
+        result.dailyTotalReps.personalRecord = maxDailyRepsData;
+      }
+    }
 
     // canonicalExerciseId is in scope
     console.log(`[getExercisePerformanceStatsAction] Final combined result for ${canonicalExerciseId}:`, JSON.stringify(result));
@@ -1718,14 +1756,14 @@ export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPRE
 
     await dbConnect();
 
-    // Use aggregation with $sample instead of sort/limit
-    const prs = await ExercisePRModel.aggregate([
+    // Fetch regular PRs
+    const regularPRsPromise = ExercisePRModel.aggregate([
       { $match: { userId: new Types.ObjectId(userId) } }, // Match the user
-      { $sample: { size: limit } }, // Randomly sample 'limit' documents
+      { $sample: { size: Math.floor(limit/2) } }, // Use half the limit for regular PRs
       {
         // Project only the necessary fields
         $project: {
-          _id: 1, // Need _id for serialization
+          _id: 1,
           exerciseName: 1,
           value: 1,
           unit: 1,
@@ -1733,32 +1771,111 @@ export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPRE
           workoutId: 1,
         }
       }
-    ]).exec(); 
-
-    // Aggregation returns plain JS objects. Need to handle potential missing fields.
-    const serializedPRs: DashboardPREntry[] = prs.map((pr: any) => { // Use any for initial mapping flexibility
+    ]).exec();
+    
+    // Fetch bodyweight exercise daily total reps PRs
+    const bodyweightPRsPromise = WorkoutExerciseModel.aggregate([
+      { $match: { userId: new Types.ObjectId(userId) } },
+      // Lookup to get exercise details to identify bodyweight exercises
+      { $lookup: { 
+          from: 'exercises',
+          localField: 'exerciseId',
+          foreignField: '_id',
+          as: 'exerciseDetails'
+        } 
+      },
+      { $unwind: '$exerciseDetails' },
+      // Filter to only include bodyweight exercises (matching equipment)
+      { $match: { 
+          '$or': [
+            { 'exerciseDetails.equipment': { $regex: /bodyweight/i } },
+            { 'exerciseDetails.equipment': { $regex: /body weight/i } },
+            { 'exerciseDetails.equipment': { $regex: /body only/i } },
+            { 'exerciseDetails.name': { $regex: /push.?up|pull.?up|chin.?up|dip|plank|crunch|sit.?up|burpee/i } }
+          ]
+        }
+      },
+      // Calculate total reps for the workout exercise
+      {
+        $addFields: {
+          totalReps: {
+            $reduce: {
+              input: { $ifNull: ['$sets', []] },
+              initialValue: 0,
+              in: { $add: ['$$value', { $ifNull: ['$$this.reps', 0] }] }
+            }
+          }
+        }
+      },
+      // Group by exercise to find the max total reps for each bodyweight exercise
+      {
+        $group: {
+          _id: '$exerciseId',
+          exerciseName: { $first: '$exerciseDetails.name' },
+          value: { $max: '$totalReps' },
+          date: { $first: '$createdAt' },
+          workoutId: { $first: '$workoutId' }
+        }
+      },
+      // Only include records with totalReps > 0
+      { $match: { value: { $gt: 0 } } },
+      // Limit to half the requested entries
+      { $sample: { size: Math.ceil(limit/2) } },
+      // Format the output to match DashboardPREntry
+      {
+        $project: {
+          _id: 1,
+          exerciseName: 1,
+          value: 1,
+          unit: { $literal: 'reps/day' }, // Use special unit to identify bodyweight daily PRs
+          date: 1,
+          workoutId: 1
+        }
+      }
+    ]).exec();
+    
+    // Wait for both queries to complete
+    const [regularPRs, bodyweightPRs] = await Promise.all([regularPRsPromise, bodyweightPRsPromise]);
+    
+    console.log(`[fetchDashboardExercisePRs] Found ${regularPRs.length} regular PRs and ${bodyweightPRs.length} bodyweight daily PRs`);
+    
+    // Combine both types of PRs
+    const combinedPRs = [...regularPRs, ...bodyweightPRs];
+    
+    // Post-process and validate the results
+    const serializedPRs: DashboardPREntry[] = combinedPRs
+      .map((pr: any) => {
        // Perform runtime checks for required fields before creating the object
-       if (!pr?._id || !pr?.exerciseName || pr?.value === undefined || !pr?.unit || !pr?.date || !(pr.date instanceof Date)) {
+       if (!pr?._id || !pr?.exerciseName || pr?.value === undefined || !pr?.unit || !pr?.date) {
            console.warn("[fetchDashboardExercisePRs] Skipping aggregated PR due to missing/invalid fields:", pr);
            return null; // Mark as invalid
        }
+       
+       // Ensure date is valid
+       const dateValue = pr.date instanceof Date ? pr.date : new Date(pr.date);
+       if (isNaN(dateValue.getTime())) {
+           console.warn("[fetchDashboardExercisePRs] Invalid date in PR:", pr);
+           return null;
+       }
+       
        // Construct the final object safely
        return {
          _id: pr._id.toString(), // Safe to call toString() if _id exists
          exerciseName: pr.exerciseName,
          value: pr.value,
          unit: pr.unit,
-         date: pr.date.toISOString(), // Safe to call if date is a valid Date object
+         date: dateValue.toISOString(), // Safe to call if date is a valid Date object
          workoutId: pr?.workoutId?.toString() ?? null, // Safely handle optional workoutId
        };
-     }).filter((pr): pr is DashboardPREntry => pr !== null); // Type predicate to filter out nulls
+     })
+     .filter((pr): pr is DashboardPREntry => pr !== null);
 
-    console.log(`[fetchDashboardExercisePRs] Found and serialized ${serializedPRs.length} random PRs.`);
-    return serializedPRs; // This now correctly returns DashboardPREntry[]
+    // Limit the final result to the requested count
+    return serializedPRs.slice(0, limit);
 
   } catch (error) {
-    console.error("[fetchDashboardExercisePRs] Error fetching PRs:", error);
-    return []; 
+    console.error("[fetchDashboardExercisePRs] Error:", error);
+    return [];
   }
 }
 
