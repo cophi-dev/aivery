@@ -66,6 +66,13 @@ interface DashboardMetrics {
   strengthVolumePrevious7Days: number;
   cardioDurationPrevious7Days: number;
   cardioDistancePrevious7Days: number;
+  // Exercise-specific metrics
+  runningDistanceLast7Days: number;
+  swimmingDistanceLast7Days: number;
+  bikingDistanceLast7Days: number;
+  runningDistancePrevious7Days: number;
+  swimmingDistancePrevious7Days: number;
+  bikingDistancePrevious7Days: number;
   // topPRs: PRData[]; // Keep commented out
   exercisePRs: DashboardPREntry[];
   overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs (optional)
@@ -76,8 +83,12 @@ interface DashboardMetrics {
 // --- Helper to Fetch Workouts in Date Range --- 
 async function fetchWorkoutsForMetrics(userId: string, startDate: Date, endDate: Date): Promise<SerializedWorkout[]> {
   await dbConnect();
-  console.log(`Fetching workouts for user: ${userId} in range ${startDate.toISOString()} - ${endDate.toISOString()}`); // Expanded log
+  console.log(`Fetching workouts for user: ${userId}`);
+  console.log(`Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
   try { // Add try...catch around the query
+    // Log the actual query we're about to run
+    console.log(`MongoDB query: { userId: "${userId}", date: { $gte: ISODate("${startDate.toISOString()}"), $lte: ISODate("${endDate.toISOString()}") } }`);
+    
     const workoutDocs = await WorkoutModel
       .find({
         userId: new mongoose.Types.ObjectId(userId),
@@ -96,7 +107,17 @@ async function fetchWorkoutsForMetrics(userId: string, startDate: Date, endDate:
       .maxTimeMS(15000) // Keep the 15-second timeout for now
       .lean()
       .sort({ date: -1 }); // Requires index { userId: 1, date: -1 }
-    console.log(`Fetched ${workoutDocs.length} workout documents (minimal projection)`); 
+    console.log(`Fetched ${workoutDocs.length} workout documents (minimal projection)`);
+    
+    // Log the exact dates of the fetched workouts to debug date range issues
+    if (workoutDocs.length > 0) {
+      console.log("Workout dates fetched:");
+      workoutDocs.forEach((doc: any) => {
+        const date = doc.date;
+        const type = doc.type;
+        console.log(`- ${date.toISOString()}: ${type} workout`);
+      });
+    }
     
     // Map the minimally projected data
     // Note: Fields like _id, userId, name will be undefined here
@@ -160,7 +181,24 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
   if (!user?.id) {
     console.warn("No user found for dashboard metrics calculation");
     // Return default structure with workoutCount
-    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, /*topPRs: [],*/ exercisePRs: [], overallPRs: {}, workoutCount: 0, hasAiPreferences: false };
+    return { 
+      strengthVolumeLast7Days: 0, 
+      cardioDurationLast7Days: 0, 
+      cardioDistanceLast7Days: 0, 
+      strengthVolumePrevious7Days: 0, 
+      cardioDurationPrevious7Days: 0, 
+      cardioDistancePrevious7Days: 0,
+      runningDistanceLast7Days: 0,
+      swimmingDistanceLast7Days: 0,
+      bikingDistanceLast7Days: 0,
+      runningDistancePrevious7Days: 0,
+      swimmingDistancePrevious7Days: 0,
+      bikingDistancePrevious7Days: 0,
+      exercisePRs: [], 
+      overallPRs: {}, 
+      workoutCount: 0, 
+      hasAiPreferences: false
+    };
   }
   const userId = user.id;
 
@@ -174,6 +212,8 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
     const startOfFetchPeriod = startOfDay(subDays(today, 14));
 
     console.log(`[Metrics] Calculating periods based on current date: ${today.toISOString()}`);
+    console.log(`[Metrics] Current period: ${startOfCurrentPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
+    console.log(`[Metrics] Previous period: ${startOfFetchPeriod.toISOString()} to ${new Date(startOfCurrentPeriod.getTime() - 1).toISOString()}`);
     // Update log to reflect the 14-day fetch range
     console.log(`[Metrics] Fetching workouts from: ${startOfFetchPeriod.toISOString()} to ${endOfCurrentPeriod.toISOString()}`);
 
@@ -235,16 +275,41 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
     let strengthVolumePrevious7Days = 0;
     let cardioDurationPrevious7Days = 0;
     let cardioDistancePrevious7Days = 0;
+    
+    // Initialize exercise-specific metrics
+    let runningDistanceLast7Days = 0;
+    let swimmingDistanceLast7Days = 0;
+    let bikingDistanceLast7Days = 0;
+    let runningDistancePrevious7Days = 0;
+    let swimmingDistancePrevious7Days = 0;
+    let bikingDistancePrevious7Days = 0;
 
     // Define the time boundaries for comparison
     const startOfCurrentPeriodTime = startOfCurrentPeriod.getTime();
     const endOfCurrentPeriodTime = endOfCurrentPeriod.getTime();
     // Previous period is from startOfFetchPeriod up to (but not including) startOfCurrentPeriod
     const startOfPreviousPeriodTime = startOfFetchPeriod.getTime();
-    const endOfPreviousPeriodTime = startOfCurrentPeriodTime;
+    const endOfPreviousPeriodTime = startOfCurrentPeriodTime - 1; // Ensuring no overlap by subtracting 1ms
+
+    // Log time boundaries with dates for better debugging
+    console.log(`[Metrics Debug] Period boundaries:`, {
+      currentPeriod: {
+        start: new Date(startOfCurrentPeriodTime).toISOString(),
+        end: new Date(endOfCurrentPeriodTime).toISOString(),
+      },
+      previousPeriod: {
+        start: new Date(startOfPreviousPeriodTime).toISOString(),
+        end: new Date(endOfPreviousPeriodTime).toISOString(),
+      }
+    });
 
     console.log(`[Metrics Debug] Raw workouts fetched (${workouts.length}):`, JSON.stringify(workouts.slice(0, 5), null, 2)); // Log first 5 raw workouts
 
+    // Count variables for debugging
+    let currentPeriodWorkouts = 0;
+    let previousPeriodWorkouts = 0;
+    let outsidePeriodWorkouts = 0;
+    
     for (const workout of workouts) {
         // Ensure workout.date is valid before parsing
         if (!workout.date || !isValid(parseISO(workout.date))) {
@@ -256,13 +321,21 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
 
         // Check which period the workout falls into
         const isInCurrentPeriod = workoutTime >= startOfCurrentPeriodTime && workoutTime <= endOfCurrentPeriodTime;
-        const isInPreviousPeriod = workoutTime >= startOfPreviousPeriodTime && workoutTime < endOfPreviousPeriodTime; // Use '<' for end
+        const isInPreviousPeriod = workoutTime >= startOfPreviousPeriodTime && workoutTime <= endOfPreviousPeriodTime; // Use <= for end
 
-        // Simplified processing function (remains the same)
+        // Update counters
+        if (isInCurrentPeriod) currentPeriodWorkouts++;
+        else if (isInPreviousPeriod) previousPeriodWorkouts++;
+        else outsidePeriodWorkouts++;
+
+        // Simplified processing function
         const processWorkout = (workout: SerializedWorkout) => {
             let volume = 0;
             let duration = 0;
             let distance = 0; // This will now store distance in meters
+            let runningDistance = 0;
+            let swimmingDistance = 0;
+            let bikingDistance = 0;
 
             if (workout.type === 'strength') {
                 volume = workout.calculatedVolume ?? 0;
@@ -271,13 +344,25 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
                 // Get the raw distance value
                 const rawDistance = workout.distance ?? workout.cardioDetails?.distance ?? 0;
                 // Normalize the distance to meters (assuming values < 100 are km)
+                let normalizedDistance = 0;
                 if (rawDistance > 0 && rawDistance < 100) {
-                    distance = rawDistance * 1000; // Convert km to meters
+                    normalizedDistance = rawDistance * 1000; // Convert km to meters
                 } else {
-                    distance = rawDistance; // Assume already meters or 0
+                    normalizedDistance = rawDistance; // Assume already meters or 0
+                }
+                
+                distance = normalizedDistance;
+                
+                // Assign distance to specific exercise type
+                if (workout.type === 'running' || workout.type === 'walking') {
+                    runningDistance = normalizedDistance;
+                } else if (workout.type === 'swimming') {
+                    swimmingDistance = normalizedDistance;
+                } else if (workout.type === 'cycling') {
+                    bikingDistance = normalizedDistance;
                 }
             }
-            return { volume, duration, distance };
+            return { volume, duration, distance, runningDistance, swimmingDistance, bikingDistance };
         };
 
         const metrics = processWorkout(workout);
@@ -290,14 +375,31 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
         if (isInCurrentPeriod) {
             strengthVolumeLast7Days += metrics.volume;
             cardioDurationLast7Days += metrics.duration;
-            cardioDistanceLast7Days += metrics.distance; // Add normalized distance
+            cardioDistanceLast7Days += metrics.distance;
+            runningDistanceLast7Days += metrics.runningDistance;
+            swimmingDistanceLast7Days += metrics.swimmingDistance;
+            bikingDistanceLast7Days += metrics.bikingDistance;
+            console.log(`[Metrics] Added to CURRENT period: ${workout.type}, Date: ${workout.date}, Duration: ${metrics.duration}, Distance: ${metrics.distance}`);
         } else if (isInPreviousPeriod) {
              // Accumulate metrics for the previous period
             strengthVolumePrevious7Days += metrics.volume;
             cardioDurationPrevious7Days += metrics.duration;
-            cardioDistancePrevious7Days += metrics.distance; // Add normalized distance
+            cardioDistancePrevious7Days += metrics.distance;
+            runningDistancePrevious7Days += metrics.runningDistance;
+            swimmingDistancePrevious7Days += metrics.swimmingDistance;
+            bikingDistancePrevious7Days += metrics.bikingDistance;
+            console.log(`[Metrics] Added to PREVIOUS period: ${workout.type}, Date: ${workout.date}, Duration: ${metrics.duration}, Distance: ${metrics.distance}`);
+        } else {
+            console.log(`[Metrics] Workout OUTSIDE both periods: ${workout.type}, Date: ${workout.date}`);
         }
     }
+
+    console.log("[Metrics] Workouts distribution:", {
+      currentPeriod: currentPeriodWorkouts,
+      previousPeriod: previousPeriodWorkouts,
+      outsidePeriods: outsidePeriodWorkouts,
+      total: workouts.length
+    });
 
     console.log("[Metrics] Final Calculated Metrics:", {
       strengthVolumeLast7Days,
@@ -306,7 +408,12 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
       strengthVolumePrevious7Days,
       cardioDurationPrevious7Days,
       cardioDistancePrevious7Days,
-      workoutCount, // Include count in log
+      runningDistanceLast7Days,
+      swimmingDistanceLast7Days,
+      bikingDistanceLast7Days,
+      runningDistancePrevious7Days,
+      swimmingDistancePrevious7Days,
+      bikingDistancePrevious7Days
     });
 
     // --- Construct final result --- 
@@ -317,6 +424,12 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
         strengthVolumePrevious7Days,
         cardioDurationPrevious7Days,
         cardioDistancePrevious7Days,
+        runningDistanceLast7Days,
+        swimmingDistanceLast7Days,
+        bikingDistanceLast7Days,
+        runningDistancePrevious7Days,
+        swimmingDistancePrevious7Days,
+        bikingDistancePrevious7Days,
         // topPRs: [], // Keep commented out
         exercisePRs: exercisePRs,
         overallPRs: overallPRs, // <-- Pass overall PRs
@@ -332,6 +445,23 @@ export async function calculateDashboardMetrics(): Promise<DashboardMetrics> {
   } catch (error) {
     console.error(`Error calculating dashboard metrics for user ${userId}:`, error);
     // Return default structure on error
-    return { strengthVolumeLast7Days: 0, cardioDurationLast7Days: 0, cardioDistanceLast7Days: 0, strengthVolumePrevious7Days: 0, cardioDurationPrevious7Days: 0, cardioDistancePrevious7Days: 0, /*topPRs: [],*/ exercisePRs: [], overallPRs: {}, workoutCount: 0, hasAiPreferences: false };
+    return { 
+      strengthVolumeLast7Days: 0, 
+      cardioDurationLast7Days: 0, 
+      cardioDistanceLast7Days: 0, 
+      strengthVolumePrevious7Days: 0, 
+      cardioDurationPrevious7Days: 0, 
+      cardioDistancePrevious7Days: 0,
+      runningDistanceLast7Days: 0,
+      swimmingDistanceLast7Days: 0,
+      bikingDistanceLast7Days: 0,
+      runningDistancePrevious7Days: 0,
+      swimmingDistancePrevious7Days: 0,
+      bikingDistancePrevious7Days: 0,
+      exercisePRs: [], 
+      overallPRs: {}, 
+      workoutCount: 0, 
+      hasAiPreferences: false
+    };
   }
 } 

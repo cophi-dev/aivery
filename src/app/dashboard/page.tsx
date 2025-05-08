@@ -42,6 +42,12 @@ interface DashboardMetrics {
     workoutCount: number;
     // Added this field from the backend API 
     hasAiPreferences?: boolean; 
+    runningDistanceLast7Days: number;
+    swimmingDistanceLast7Days: number;
+    bikingDistanceLast7Days: number;
+    runningDistancePrevious7Days: number;
+    swimmingDistancePrevious7Days: number;
+    bikingDistancePrevious7Days: number;
 }
 
 // Placeholder type/interface for a chat message
@@ -69,8 +75,6 @@ export default function DashboardPage() {
     const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
     const [errorMetrics, setErrorMetrics] = useState<string | null>(null);
     
-    // --- REMOVED TEMPORARY STATE ---
-
     // Fetch metrics when session is loaded
     useEffect(() => {
         if (status === "authenticated") {
@@ -260,6 +264,13 @@ export default function DashboardPage() {
                                 strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
                                 cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
                                 cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
+                                // Add new exercise-specific values
+                                runningDistance={metrics.runningDistanceLast7Days}
+                                swimmingDistance={metrics.swimmingDistanceLast7Days}
+                                bikingDistance={metrics.bikingDistanceLast7Days}
+                                runningDistancePrevious={metrics.runningDistancePrevious7Days}
+                                swimmingDistancePrevious={metrics.swimmingDistancePrevious7Days}
+                                bikingDistancePrevious={metrics.bikingDistancePrevious7Days}
                             />
                             {/* Add Personal Records and Spotlight cards in a grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
