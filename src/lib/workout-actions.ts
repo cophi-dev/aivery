@@ -251,7 +251,7 @@ export async function getExercisePerformanceStatsAction(
       
       // Calculate total reps for the workout
       if (lastWorkoutExercise.sets && Array.isArray(lastWorkoutExercise.sets)) {
-        lastWorkoutTotalReps = lastWorkoutExercise.sets.reduce((total, set: any) => {
+        lastWorkoutTotalReps = lastWorkoutExercise.sets.reduce((total: number, set: any) => {
           return total + (typeof set.reps === 'number' ? set.reps : 0);
         }, 0);
       }
