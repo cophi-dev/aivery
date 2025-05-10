@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Component Organization
+
+Components are organized in [src/components](mdc:src/components) directory:
+
+- [src/components/ui](mdc:src/components/ui) - Common UI elements and primitive components
+- [src/components/forms](mdc:src/components/forms) - Form components and input elements
+- [src/components/exercises](mdc:src/components/exercises) - Exercise-specific components
+- [src/components/dashboard](mdc:src/components/dashboard) - Dashboard components
+- [src/components/calendar](mdc:src/components/calendar) - Calendar related components
+
+Each component should be in its own directory when it has associated sub-components or styles.

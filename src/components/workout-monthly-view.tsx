@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isBefore, isAfter, startOfDay, getWeekOfMonth } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isBefore, isAfter, startOfDay, getWeekOfMonth, isSameDay } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame, Activity, Heart, Zap, Ruler, ChevronUp, ChevronDown } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
 import { MetricContent } from '@/components/ui/metric-card';
@@ -15,6 +15,7 @@ import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 import AiveryInsights from '@/components/dashboard/AiveryInsights';
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { PRBadge } from "@/components/ui/pr-badge";
 
 // Import recharts components
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, Label as RechartsLabel } from 'recharts';
@@ -54,29 +55,26 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
     });
 
     // Process workouts to normalize distance to KM
-    const processedWorkouts = workoutsInDateRange.map(originalWorkout => {
-        const workout = { ...originalWorkout }; // Shallow copy to allow modification
+    const processedWorkouts = workoutsInDateRange
+        .filter((w): w is WorkoutData => w !== undefined)
+        .map(originalWorkout => {
+            const workout = { ...originalWorkout }; // Shallow copy to allow modification
 
-        // Prioritize cardioDetails.distance, then workout.distance. Default to 0.
-        // This will be our canonical distance in KM.
-        let canonicalDistanceKm = workout.cardioDetails?.distance ?? workout.distance ?? 0;
+            // Normalize distance to kilometers
+            let distanceInKm = 0;
+            if (workout.cardioDetails?.distance) {
+                // cardioDetails.distance is already in km
+                distanceInKm = workout.cardioDetails.distance;
+            } else if (workout.distance) {
+                // If distance is large (> 100), assume it's in meters and convert to km
+                distanceInKm = workout.distance > 100 ? workout.distance / 1000 : workout.distance;
+            }
+            
+            // Update the workout object's distance to the canonical KM value
+            workout.distance = distanceInKm;
 
-        // Heuristic: If cardioDetails.distance is not present, workout.distance might be in meters
-        // for types like 'run' or 'running'.
-        if (workout.cardioDetails?.distance == null && // Check if cardioDetails.distance is null or undefined
-            workout.distance != null && // Check if workout.distance is not null or undefined
-            (workout.type?.toLowerCase() === 'run' || workout.type?.toLowerCase() === 'running') &&
-            workout.distance > 200 // Threshold suggesting meters (e.g., value 5000 for 5km)
-        ) {
-            canonicalDistanceKm = workout.distance / 1000;
-        }
-        
-        // Update the workout object's distance to the canonical KM value.
-        // This ensures that rendering logic later uses the corrected KM distance.
-        workout.distance = canonicalDistanceKm;
-
-        return workout;
-    });
+            return workout;
+        });
 
     let totalWorkouts = processedWorkouts.length;
     let totalDuration = 0;
@@ -85,19 +83,18 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
     // Initialize map to hold weekly aggregates
     const weeklyChartDataMap: { [weekNum: number]: Omit<WeeklyChartData, 'week'> } = {};
 
-    processedWorkouts.forEach(w => { // Iterate over PROCESSED workouts
-        const duration = w.duration || 0;
-        // w.distance is now consistently in KM (or what we assume is KM after processing)
-        const distanceKm = w.distance || 0; 
-        const volumeKg = w.calculatedVolume || 0;
-        const volumeTons = volumeKg / 1000; // Convert kg to tons
-        const typeLower = w.type?.toLowerCase() || 'other';
+    processedWorkouts.forEach(workout => {
+        const duration = workout.duration || 0;
+        const distanceKm = workout.distance || 0;
+        const volumeKg = workout.calculatedVolume || 0;
+        const volumeTons = volumeKg / 1000;
+        const typeLower = workout.type?.toLowerCase() || 'other';
 
         totalDuration += duration;
-        totalDistance += distanceKm; // Accumulate distance in KM
-        totalVolume += volumeTons; // Accumulate volume in Tons
+        totalDistance += distanceKm;
+        totalVolume += volumeTons;
 
-        const workoutDate = parseISO(w.date.toString());
+        const workoutDate = parseISO(workout.date.toString());
         const weekOfMonth = getWeekOfMonth(workoutDate, { weekStartsOn: 1 });
 
         // Initialize week if it doesn't exist
@@ -106,7 +103,7 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
                 cardioDuration: 0,
                 strengthDuration: 0,
                 cardioDistance: 0,
-                strengthVolume: 0, // Initialize as tons
+                strengthVolume: 0,
             };
         }
 
@@ -117,7 +114,7 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
             weeklyChartDataMap[weekOfMonth].cardioDistance += distanceKm;
         } else if (STRENGTH_TYPES.includes(typeLower)) {
             weeklyChartDataMap[weekOfMonth].strengthDuration += durationMinutes;
-            weeklyChartDataMap[weekOfMonth].strengthVolume += volumeTons; // Add tons
+            weeklyChartDataMap[weekOfMonth].strengthVolume += volumeTons;
         }
     });
 
@@ -142,6 +139,258 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
         allWorkoutsInMonth: processedWorkouts // Return the processed workouts with corrected .distance
     };
 }
+
+const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+    const router = useRouter();
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    // Format pace (min/km)
+    const formatPace = (duration: number, distance: number) => {
+        if (!distance || !duration) return '--:--';
+        // Convert distance to kilometers if needed
+        const distanceInKm = distance > 100 ? distance / 1000 : distance;
+        if (distanceInKm === 0) return '--:--';
+        
+        const paceInMinutes = duration / 60 / distanceInKm;
+        const minutes = Math.floor(paceInMinutes);
+        const seconds = Math.round((paceInMinutes - minutes) * 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    // Normalize distance to kilometers
+    let distanceInKm = 0;
+    if (workout.cardioDetails?.distance) {
+        // cardioDetails.distance is already in km
+        distanceInKm = workout.cardioDetails.distance;
+    } else if (workout.distance) {
+        // If distance is large (> 100), assume it's in meters and convert to km
+        distanceInKm = workout.distance > 100 ? workout.distance / 1000 : workout.distance;
+    }
+
+    const pace = formatPace(workout.duration || 0, distanceInKm);
+    const avgHeartRate = workout.cardioDetails?.heartRate?.average;
+    const maxHeartRate = workout.cardioDetails?.heartRate?.max;
+    const elevationGain = workout.cardioDetails?.elevationGain;
+    const maxSpeed = workout.cardioDetails?.maxSpeed;
+
+    return (
+        <Card className="mb-6 overflow-hidden bg-[#58a3ff]/[0.02] hover:bg-[#58a3ff]/[0.04] transition-all duration-300 border-0 shadow-none">
+            <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-[#58a3ff]" />
+                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {workout.records && workout.records.length > 0 && (
+                            <PRBadge />
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#58a3ff]/5">
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Clock className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
+                        <span className="text-xs text-muted-foreground">Duration</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Route className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <div className="flex items-center gap-1">
+                            <span className="text-base font-medium mb-1">{distanceInKm.toFixed(1)} km</span>
+                            {workout.records?.some(r => r.type === 'longestRun') && (
+                                <PRBadge size="sm" className="mb-1" />
+                            )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">Distance</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Activity className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <div className="flex items-center gap-1">
+                            <span className="text-base font-medium mb-1">{pace}</span>
+                            {workout.records?.some(r => r.type === 'fastest5kPace') && (
+                                <PRBadge size="sm" className="mb-1" />
+                            )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">Pace (min/km)</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Zap className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <span className="text-base font-medium mb-1">{maxSpeed ? `${maxSpeed.toFixed(1)} km/h` : '--'}</span>
+                        <span className="text-xs text-muted-foreground">Max Speed</span>
+                    </div>
+                </div>
+
+                {isExpanded && (
+                    <>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+                            {avgHeartRate && (
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                                    <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                                    <span className="text-base font-medium mb-1">{Math.round(avgHeartRate)} bpm</span>
+                                    <span className="text-xs text-muted-foreground">Avg Heart Rate</span>
+                                </div>
+                            )}
+                            {maxHeartRate && (
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                                    <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                                    <span className="text-base font-medium mb-1">{Math.round(maxHeartRate)} bpm</span>
+                                    <span className="text-xs text-muted-foreground">Max Heart Rate</span>
+                                </div>
+                            )}
+                            {elevationGain && (
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                                    <Ruler className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                                    <span className="text-base font-medium mb-1">{Math.round(elevationGain)}m</span>
+                                    <span className="text-xs text-muted-foreground">Elevation Gain</span>
+                                </div>
+                            )}
+                        </div>
+                        {workout.notes && (
+                            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
+                                <p className="text-sm text-muted-foreground">{workout.notes}</p>
+                            </div>
+                        )}
+                        {workout.aiHighlight && (
+                            <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
+                                <p className="text-sm text-[#58a3ff]/90">{workout.aiHighlight}</p>
+                            </div>
+                        )}
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#58a3ff]/20 text-[#58a3ff] hover:bg-[#58a3ff]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
+const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+    const router = useRouter();
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    // Calculate total volume and stats
+    const totalVolume = workout.calculatedVolume || 0;
+    const totalSets = workout.workoutExercises?.reduce((acc, ex) => acc + (ex.sets?.length || 0), 0) || 0;
+    const totalReps = workout.workoutExercises?.reduce((acc, ex) => 
+        acc + (ex.sets?.reduce((setAcc, set) => setAcc + (set.reps || 0), 0) || 0), 0) || 0;
+    const totalExercises = workout.workoutExercises?.length || 0;
+
+    return (
+        <Card className="mb-6 overflow-hidden bg-[#fa9f7b]/[0.02] hover:bg-[#fa9f7b]/[0.04] transition-all duration-300 border-0 shadow-none">
+            <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Dumbbell className="h-5 w-5 text-[#fa9f7b]" />
+                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {workout.records && workout.records.length > 0 && (
+                            <PRBadge />
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#fa9f7b]/5">
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Clock className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
+                        <span className="text-xs text-muted-foreground">Duration</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Weight className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
+                        <span className="text-xs text-muted-foreground">Volume</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Activity className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{totalReps}</span>
+                        <span className="text-xs text-muted-foreground">Total Reps</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Dumbbell className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{totalSets}</span>
+                        <span className="text-xs text-muted-foreground">Sets</span>
+                    </div>
+                </div>
+
+                {isExpanded && (
+                    <>
+                        <div className="space-y-4 mt-6">
+                            {workout.workoutExercises?.map((exercise) => {
+                                const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
+                                const exerciseVolume = exercise.sets?.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0) || 0;
+                                
+                                // Check if this exercise has a PR
+                                const hasPR = workout.records?.some(record => 
+                                    record.exerciseId === exercise.exerciseId._id.toString()
+                                );
+                                
+                                return (
+                                    <div key={exercise._id} className="p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium">{exercise.exerciseId.name}</span>
+                                                {hasPR && <PRBadge size="sm" />}
+                                            </div>
+                                            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                                <span>{exerciseReps} reps</span>
+                                                <span>•</span>
+                                                <span>{(exerciseVolume / 1000).toFixed(1)}t</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {exercise.sets?.map((set, index) => (
+                                                <div key={index} className="flex items-center justify-between text-sm">
+                                                    <span className="text-muted-foreground">Set {index + 1}</span>
+                                                    <span>{set.weight}kg × {set.reps}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {workout.notes && (
+                            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
+                                <p className="text-sm text-muted-foreground">{workout.notes}</p>
+                            </div>
+                        )}
+                        {workout.aiHighlight && (
+                            <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
+                                <p className="text-sm text-[#fa9f7b]/90">{workout.aiHighlight}</p>
+                            </div>
+                        )}
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#fa9f7b]/20 text-[#fa9f7b] hover:bg-[#fa9f7b]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
 
 export default function WorkoutMonthlyView() {
     const router = useRouter();
@@ -404,7 +653,7 @@ export default function WorkoutMonthlyView() {
                             <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
                                 <MetricContent 
                                     title="Total Volume" 
-                                    value={`${(monthlyMetrics.totalVolume / 1000).toFixed(1)}t`}
+                                    value={`${(monthlyMetrics.totalVolume).toFixed(1)}t`}
                                     change={monthlyMetrics.totalVolume > 0 ? calculatePercentageChange(monthlyMetrics.totalVolume, previousMonthMetrics?.totalVolume) : null}
                                 />
                             </Card>
@@ -596,59 +845,69 @@ export default function WorkoutMonthlyView() {
                  </Card>
              )}
 
-             {/* Monthly Workout List */}
-              {monthlyMetrics && monthlyMetrics.allWorkoutsInMonth.length > 0 && (
+             {/* Workouts List */}
+             {monthlyMetrics && monthlyMetrics.allWorkoutsInMonth.length > 0 && (
                  <Card className="mt-6 border border-border/10">
                      <CardHeader>
                          <CardTitle className="text-base font-semibold">Workouts This Month</CardTitle>
                      </CardHeader>
                      <CardContent>
-                         <ul className="space-y-2">
+                         <div className="space-y-6">
                              {monthlyMetrics.allWorkoutsInMonth.map(workout => {
+                                 if (workout.type === 'running') {
+                                     return <RunningWorkoutCard key={workout._id} workout={workout} />;
+                                 } else if (workout.type === 'strength') {
+                                     return <StrengthWorkoutCard key={workout._id} workout={workout} />;
+                                 }
+                                 
+                                 // For other workout types, use the default card style
                                  const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
                                  return (
-                                     <li key={workout._id}
-                                        onClick={() => handleWorkoutClick(workout._id)}
-                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/10 hover:bg-muted/20 transition-colors border border-border/5 cursor-pointer"
+                                     <Card key={workout._id} 
+                                         className="overflow-hidden bg-muted/5 hover:bg-muted/10 transition-all duration-300 border-0 shadow-none"
+                                         onClick={() => handleWorkoutClick(workout._id)}
                                      >
-                                        {/* Badge (Column 1, Row 1 & 2) */}
-                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses} bg-background/50`}>
-                                            {icon}
-                                            <span className="ml-1.5 text-xs">{workout.type}</span>
-                                        </Badge>
-
-                                        {/* Workout Name & Date (Column 2, Row 1) */}
-                                        <div className="col-start-2 row-start-1 flex justify-between items-center">
-                                            <p className="font-semibold text-sm truncate pr-2">{workout.name || 'Unnamed Workout'}</p>
-                                            <span className="text-xs text-muted-foreground flex-shrink-0">{format(parseISO(workout.date.toString()), 'MMM d')}</span>
-                                        </div>
-                                        
-                                        {/* Metrics (Column 2, Row 2) */}
-                                        <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1 text-primary" /> {formatDuration(workout.duration || 0)}</span>
-                                            {workout.distance != null && workout.distance > 0 && 
-                                                <span className="flex items-center">
-                                                    <Route className="h-3 w-3 mr-1 text-primary" /> 
-                                                    {formatDistance(workout.distance)}
-                                                </span>
-                                            }
-                                            {workout.calculatedVolume != null && workout.calculatedVolume > 0 && 
-                                                <span className="flex items-center">
-                                                    <Weight className="h-3 w-3 mr-1 text-primary" /> 
-                                                    {(workout.calculatedVolume / 1000).toLocaleString(undefined, {maximumFractionDigits: 2})} t
-                                                </span>
-                                            }
-                                        </div>
-                                     </li>
+                                         <CardHeader className="pb-2">
+                                             <div className="flex items-center justify-between">
+                                                 <div className="flex items-center gap-2">
+                                                     {icon}
+                                                     <CardTitle className="text-lg font-medium">{workout.name || 'Unnamed Workout'}</CardTitle>
+                                                 </div>
+                                                 <span className="text-sm text-muted-foreground">
+                                                     {format(parseISO(workout.date.toString()), 'MMM d')}
+                                                 </span>
+                                             </div>
+                                         </CardHeader>
+                                         <CardContent className="pb-3">
+                                             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                                                 <span className="flex items-center">
+                                                     <Clock className="h-4 w-4 mr-1.5" />
+                                                     {formatDuration(workout.duration || 0)}
+                                                 </span>
+                                                 {workout.distance && (
+                                                     <span className="flex items-center">
+                                                         <Route className="h-4 w-4 mr-1.5" />
+                                                         {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
+                                                     </span>
+                                                 )}
+                                                 {workout.calculatedVolume && (
+                                                     <span className="flex items-center">
+                                                         <Weight className="h-4 w-4 mr-1.5" />
+                                                         {(workout.calculatedVolume / 1000).toFixed(1)}t
+                                                     </span>
+                                                 )}
+                                             </div>
+                                         </CardContent>
+                                     </Card>
                                  );
                              })}
-                         </ul>
+                         </div>
                      </CardContent>
                  </Card>
-              )}
-              {monthlyMetrics && monthlyMetrics.totalWorkouts === 0 && (
-                  <p className="text-muted-foreground text-center py-4">No workouts recorded for this month.</p>
-              )}
+             )}
+             {monthlyMetrics && monthlyMetrics.totalWorkouts === 0 && (
+                 <p className="text-muted-foreground text-center py-4">No workouts recorded for this month.</p>
+             )}
 
         </div>
     );

@@ -1,0 +1,22 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# App Router Structure
+
+This project uses Next.js App Router. Each directory under [src/app](mdc:src/app) represents a route:
+
+- [src/app/actions](mdc:src/app/actions) - Server actions
+- [src/app/api](mdc:src/app/api) - API routes
+- [src/app/auth](mdc:src/app/auth) - Authentication related routes
+- [src/app/dashboard](mdc:src/app/dashboard) - Dashboard pages
+- [src/app/exercises](mdc:src/app/exercises) - Exercise management
+- [src/app/workout](mdc:src/app/workout) - Workout pages
+- [src/app/workouts](mdc:src/app/workouts) - Workouts listing
+
+Route files follow Next.js App Router conventions:
+- `page.tsx` - Main page component
+- `layout.tsx` - Layout wrapper
+- `loading.tsx` - Loading state
+- `error.tsx` - Error handling

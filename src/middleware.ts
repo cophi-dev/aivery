@@ -154,15 +154,7 @@ export const config = {
      * - icons/ (app icons)
      * - images/ (public images)
      */
-    // '/((?!_next/static|_next/image|favicon.ico|api/stripe/webhook|api/auth/|icons/|images/).*)',
-    // Match specific API paths if needed, but exclude auth again if the above isn't enough
-    // '/api/(?!auth/).*' // This might be redundant now
-    // --- TEMPORARY DEBUG --- Explicitly match the daily insight route and root
-    '/', 
-    '/api/fetch-daily-insight',
-    // Add other essential API routes if needed for testing
-    '/api/dashboard/metrics',
-    '/api/quotes/dynamic',
-    '/api/user'
+    '/((?!_next/static|_next/image|favicon.ico|api/stripe/webhook|api/auth/|icons/|images/).*)',
+    '/api/:path*'
   ],
 } 

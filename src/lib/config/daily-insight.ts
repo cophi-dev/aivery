@@ -15,83 +15,139 @@ export const daysOfWeek = [
 export const dailyContentConfig: DailyContent[] = [
   {
     day: 'Monday',
-    title: 'Momentum',
-    description: 'Set the tone, scan the past and future',
+    title: 'Fresh Start',
+    description: 'Daily progress and goals',
     icon: Zap,
     prompt: 
-`Summarize key stats from last week's effort (provided in the 'Overall Period Summary'). 
-Look ahead: suggest ONE specific area for focus this upcoming week based on the data (e.g., increasing volume, trying a new run distance, consistency). 
-If the 'Today's Activities So Far' section is present and not empty, briefly acknowledge one or two of those specific activities completed today. 
-Keep the entire response concise (2-4 sentences max).`,
+`Analyze today's activities and context:
+1. What workouts or activities were completed today?
+2. How do they align with the user's typical training style?
+3. What was the intensity and focus of these activities?
+
+Provide a focused daily insight:
+- Acknowledge specific achievements or efforts made today
+- Note any interesting patterns in exercise selection or intensity
+- If no workouts today, provide context about rest and recovery
+- Highlight any milestone reached today (volume, consistency, etc.)
+
+Keep the response encouraging and focused on today's context (2-4 sentences).`,
   },
   {
     day: 'Tuesday',
-    title: 'Tiny Triumph',
-    description: 'Spotlight a specific win',
+    title: 'Daily Focus',
+    description: 'Today\'s efforts and achievements',
     icon: Sparkles,
     prompt: 
-`Identify ONE specific small achievement or positive data point from the User Data Summary (last 7 days).
-AVOID focusing on the number of workouts, as the user may do many short workouts in a day.
-Instead, focus on either:
-- Total strength volume (in kg/tons) for strength workouts
-- Total cardio minutes or distance for cardio workouts
-- OR any other positive trend/metric that shows actual effort over raw workout counts
-Highlight this 'Tiny Triumph'.
-Keep the entire response encouraging and brief (2-3 sentences max).`,
+`Analyze today's training data:
+1. What specific exercises or activities were performed?
+2. How was the intensity managed in today's session(s)?
+3. Were there any notable achievements in form or progression?
+
+Provide a focused daily insight:
+- Highlight specific accomplishments from today's training
+- Note any interesting exercise combinations or sequences
+- If no workouts today, contextualize the rest day
+- Mention any technique improvements or intensity management
+
+Keep the response specific to today's efforts (2-3 sentences).`,
   },
   {
     day: 'Wednesday',
-    title: 'Midweek Pulse',
-    description: 'Check-in and gentle nudge',
+    title: 'Midweek Focus',
+    description: 'Today\'s balance and effort',
     icon: CalendarClock,
     prompt: 
-`Briefly reflect on the week so far based on the User Data Summary (this week Mon-Wed). 
-How is the user tracking towards consistency or goals compared to recent patterns (if data allows)? 
-Offer a short, gentle motivating nudge or tip for the rest of the week. 
-Keep the entire response concise and supportive (2-4 sentences max).`,
+`Examine today's activities in detail:
+1. What was the main focus of today's training?
+2. How was intensity distributed across exercises?
+3. Were there any unique or challenging elements?
+
+Provide a focused daily insight:
+- Comment on the structure of today's workout(s)
+- Note any interesting training choices or adaptations
+- If no workouts today, discuss the role of recovery
+- Highlight any particular challenges tackled
+
+Keep the response centered on today's training context (2-4 sentences).`,
   },
   {
     day: 'Thursday',
-    title: 'The Shift',
-    description: 'Review the week, plan ahead',
+    title: 'Daily Progress',
+    description: 'Today\'s achievements',
     icon: ArrowUpRight,
     prompt: 
-`Provide a quick overview of the activity pattern this week so far (Mon-Thu summary provided). 
-Is the user on track for their usual weekly volume/frequency? 
-Suggest ONE simple, actionable focus for the remainder of the week (e.g., "aim for one more strength session," "consider a longer weekend run"). 
-Keep the entire response brief and action-oriented (2-4 sentences max).`,
+`Analyze today's workout details:
+1. What was the primary type of training?
+2. How was effort distributed throughout the session(s)?
+3. Were there any notable achievements or challenges?
+
+Provide a focused daily insight:
+- Comment on the quality of today's training
+- Note any interesting exercise progressions
+- If no workouts today, contextualize the recovery
+- Highlight any technique or intensity achievements
+
+Keep the response specific to today's accomplishments (2-4 sentences).`,
   },
   {
     day: 'Friday',
-    title: 'Your Rhythm',
-    description: 'Analyze patterns over time',
+    title: 'Daily Review',
+    description: 'Today\'s performance',
     icon: BarChart4,
     prompt: 
-`Analyze the User Data Summary (last 3 weeks). 
-Identify ONE interesting pattern or trend in their activity (e.g., consistency in a specific workout type, gradual increase in volume, common workout days). 
-Briefly mention this pattern. 
-Keep the entire response insightful and concise (2-3 sentences max).`,
+`Examine today's training in detail:
+1. What was accomplished in today's session(s)?
+2. How was training intensity managed?
+3. Were there any standout moments or challenges?
+
+Provide a focused daily insight:
+- Highlight specific achievements from today
+- Note any interesting training approaches
+- If no workouts today, discuss the recovery context
+- Mention any milestone or progress markers
+
+Keep the response focused on today's efforts (2-3 sentences).`,
   },
   {
     day: 'Saturday',
-    title: 'The Vibe',
-    description: 'Weekend energy check',
+    title: 'Weekend Training',
+    description: 'Today\'s activity focus',
     icon: Flame,
     prompt: 
-`Based on the User Data Summary (last 7 days), generate a short, energetic, and positive message for the weekend. 
-Mention a key stat (like total workouts or a peak metric) in a fun way. 
-No specific analysis needed, just capture a positive weekend vibe related to their effort. 
-Keep the entire response upbeat and very brief (1-3 sentences max).`,
+`Analyze today's context and recent activities:
+1. What workouts or activities were completed today (if any)?
+2. How has the training week been so far?
+3. What opportunities exist for today?
+
+Provide a focused daily insight that:
+- If there are workouts today: Highlight and celebrate these specific achievements
+- If no workouts yet today: 
+  • Acknowledge the week's accomplishments so far
+  • Suggest potential activities that complement recent training
+  • Keep suggestions flexible (e.g. "Great options today include...")
+  • Avoid assuming or prescribing rest unless clearly warranted by high recent volume
+- Keep the tone energetic and opportunity-focused
+- Emphasize that today's choices are open
+
+Keep the response specific to today's context (2-3 sentences).`,
   },
   {
     day: 'Sunday',
-    title: 'Reset Mode',
-    description: 'Reflect and prepare',
+    title: 'Daily Reflection',
+    description: 'Today\'s efforts',
     icon: RefreshCw,
     prompt: 
-`Review the User Data Summary (previous full week, Mon-Sun). 
-Briefly reflect on ONE key aspect of the past week's activity (e.g., total volume, consistency, a specific achievement). 
-Offer a short, encouraging thought for mental reset and preparation for the week ahead. 
-Keep the entire response calm and concise (2-4 sentences max).`,
+`Examine today's activities:
+1. What was the focus of today's training?
+2. How was effort managed in the session(s)?
+3. Were there any notable achievements?
+
+Provide a focused daily insight:
+- Comment on today's training approach
+- Note any interesting exercise choices
+- If no workouts today, discuss the recovery context
+- Highlight any specific accomplishments
+
+Keep the response centered on today's activities (2-4 sentences).`,
   }
 ]; 

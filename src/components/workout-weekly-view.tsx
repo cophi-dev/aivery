@@ -6,11 +6,12 @@ import { format, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, eachDayOf
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame, ChevronUp, ChevronDown, Activity, Heart, Zap, Ruler } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
 // NEW: Import Switch and Label for the toggle
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { PRBadge } from "@/components/ui/pr-badge";
 
 // Import recharts components
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, ReferenceLine, Label as RechartsLabel } from 'recharts'; // Renamed Label import
@@ -87,47 +88,44 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     let totalWorkouts = weeklyWorkouts.length;
     let totalDuration = 0;
     let totalDistanceKm = 0;
-    let totalVolumeTons = 0; // <-- CHANGED to Tons
+    let totalVolumeTons = 0;
 
     // Loop 1: Calculate daily totals and overall totals
     for (const w of weeklyWorkouts) {
-        const duration = w.duration || 0;
-        let workoutDistanceMeters = 0;
-        if (w.cardioDetails?.distance) {
-            workoutDistanceMeters = w.cardioDetails.distance * 1000;
-        } else if (typeof w.distance === 'number') {
-            workoutDistanceMeters = w.distance < 100 ? w.distance * 1000 : w.distance;
-        }
-        const volumeKg = w.calculatedVolume || 0; // Volume from DB is in KG
-        const volumeTons = volumeKg / 1000; // Convert to Tons
-        const typeLower = w.type?.toLowerCase() || 'other';
-
-        // Update overall totals
-        totalDuration += duration;
-        totalVolumeTons += volumeTons; // Accumulate in Tons
-        const distanceKmForDay = workoutDistanceMeters / 1000;
-        totalDistanceKm += distanceKmForDay;
-
-        const workoutDate = startOfDay(parseISO(w.date.toString()));
-        const dayKey = formatDateKey(workoutDate);
+        const workoutDate = parseISO(w.date.toString());
         const dayName = format(workoutDate, 'eee');
-
-        // Add to workoutsByDay
-        if (workoutsByDay[dayKey]) {
-            workoutsByDay[dayKey].push(w);
+        const duration = w.duration || 0;
+        const volumeKg = w.calculatedVolume || 0;
+        const volumeTons = volumeKg / 1000;
+        
+        // Normalize distance to kilometers
+        let distanceInKm = 0;
+        if (w.cardioDetails?.distance) {
+            // cardioDetails.distance is already in km
+            distanceInKm = w.cardioDetails.distance;
+        } else if (w.distance) {
+            // If distance is large (> 100), assume it's in meters and convert to km
+            distanceInKm = w.distance > 100 ? w.distance / 1000 : w.distance;
         }
 
-        // Update daily totals map (using Tons)
-        if (dailyTotalsMap[dayName]) {
-            const durationMinutes = Math.round(duration / 60);
-            if (CARDIO_TYPES.includes(typeLower)) {
-                dailyTotalsMap[dayName].cardioDuration += durationMinutes;
-                dailyTotalsMap[dayName].cardioDistance += distanceKmForDay;
-            } else if (STRENGTH_TYPES.includes(typeLower)) {
-                dailyTotalsMap[dayName].strengthDuration += durationMinutes;
-                dailyTotalsMap[dayName].strengthVolume += volumeTons; // Add Tons
-            }
+        // Update totals
+        totalDuration += duration;
+        totalDistanceKm += distanceInKm;
+        totalVolumeTons += volumeTons;
+
+        // Update daily totals based on workout type
+        if (CARDIO_TYPES.includes(w.type?.toLowerCase() || '')) {
+            dailyTotalsMap[dayName].cardioDuration += Math.round(duration / 60); // Convert to minutes
+            dailyTotalsMap[dayName].cardioDistance += distanceInKm;
+        } else if (STRENGTH_TYPES.includes(w.type?.toLowerCase() || '')) {
+            dailyTotalsMap[dayName].strengthDuration += Math.round(duration / 60);
+            dailyTotalsMap[dayName].strengthVolume += volumeTons;
         }
+
+        // Store workout in workoutsByDay
+        const dateKey = formatDateKey(workoutDate);
+        workoutsByDay[dateKey] = workoutsByDay[dateKey] || [];
+        workoutsByDay[dateKey].push(w);
     }
 
     // --- Step 2: Build final chart data array and calculate cumulative (using Tons) --- 
@@ -166,6 +164,258 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
 
     return result;
 }
+
+const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+    const router = useRouter();
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    // Format pace (min/km)
+    const formatPace = (duration: number, distance: number) => {
+        if (!distance || !duration) return '--:--';
+        // Convert distance to kilometers if needed
+        const distanceInKm = distance > 100 ? distance / 1000 : distance;
+        if (distanceInKm === 0) return '--:--';
+        
+        const paceInMinutes = duration / 60 / distanceInKm;
+        const minutes = Math.floor(paceInMinutes);
+        const seconds = Math.round((paceInMinutes - minutes) * 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    // Normalize distance to kilometers
+    let distanceInKm = 0;
+    if (workout.cardioDetails?.distance) {
+        // cardioDetails.distance is already in km
+        distanceInKm = workout.cardioDetails.distance;
+    } else if (workout.distance) {
+        // If distance is large (> 100), assume it's in meters and convert to km
+        distanceInKm = workout.distance > 100 ? workout.distance / 1000 : workout.distance;
+    }
+
+    const pace = formatPace(workout.duration || 0, distanceInKm);
+    const avgHeartRate = workout.cardioDetails?.heartRate?.average;
+    const maxHeartRate = workout.cardioDetails?.heartRate?.max;
+    const elevationGain = workout.cardioDetails?.elevationGain;
+    const maxSpeed = workout.cardioDetails?.maxSpeed;
+
+    return (
+        <Card className="mb-6 overflow-hidden bg-[#58a3ff]/[0.02] hover:bg-[#58a3ff]/[0.04] transition-all duration-300 border-0 shadow-none">
+            <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-[#58a3ff]" />
+                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {workout.records && workout.records.length > 0 && (
+                            <PRBadge />
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#58a3ff]/5">
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Clock className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
+                        <span className="text-xs text-muted-foreground">Duration</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Route className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <div className="flex items-center gap-1">
+                            <span className="text-base font-medium mb-1">{distanceInKm.toFixed(1)} km</span>
+                            {workout.records?.some(r => r.type === 'longestRun') && (
+                                <PRBadge size="sm" className="mb-1" />
+                            )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">Distance</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Activity className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <div className="flex items-center gap-1">
+                            <span className="text-base font-medium mb-1">{pace}</span>
+                            {workout.records?.some(r => r.type === 'fastest5kPace') && (
+                                <PRBadge size="sm" className="mb-1" />
+                            )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">Pace (min/km)</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                        <Zap className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                        <span className="text-base font-medium mb-1">{maxSpeed ? `${maxSpeed.toFixed(1)} km/h` : '--'}</span>
+                        <span className="text-xs text-muted-foreground">Max Speed</span>
+                    </div>
+                </div>
+
+                {isExpanded && (
+                    <>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+                            {avgHeartRate && (
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                                    <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                                    <span className="text-base font-medium mb-1">{Math.round(avgHeartRate)} bpm</span>
+                                    <span className="text-xs text-muted-foreground">Avg Heart Rate</span>
+                                </div>
+                            )}
+                            {maxHeartRate && (
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                                    <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                                    <span className="text-base font-medium mb-1">{Math.round(maxHeartRate)} bpm</span>
+                                    <span className="text-xs text-muted-foreground">Max Heart Rate</span>
+                                </div>
+                            )}
+                            {elevationGain && (
+                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
+                                    <Ruler className="h-5 w-5 mb-2 text-[#58a3ff]" />
+                                    <span className="text-base font-medium mb-1">{Math.round(elevationGain)}m</span>
+                                    <span className="text-xs text-muted-foreground">Elevation Gain</span>
+                                </div>
+                            )}
+                        </div>
+                        {workout.notes && (
+                            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
+                                <p className="text-sm text-muted-foreground">{workout.notes}</p>
+                            </div>
+                        )}
+                        {workout.aiHighlight && (
+                            <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
+                                <p className="text-sm text-[#58a3ff]/90">{workout.aiHighlight}</p>
+                            </div>
+                        )}
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#58a3ff]/20 text-[#58a3ff] hover:bg-[#58a3ff]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
+const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+    const router = useRouter();
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    // Calculate total volume and stats
+    const totalVolume = workout.calculatedVolume || 0;
+    const totalSets = workout.workoutExercises?.reduce((acc, ex) => acc + (ex.sets?.length || 0), 0) || 0;
+    const totalReps = workout.workoutExercises?.reduce((acc, ex) => 
+        acc + (ex.sets?.reduce((setAcc, set) => setAcc + (set.reps || 0), 0) || 0), 0) || 0;
+    const totalExercises = workout.workoutExercises?.length || 0;
+
+    return (
+        <Card className="mb-6 overflow-hidden bg-[#fa9f7b]/[0.02] hover:bg-[#fa9f7b]/[0.04] transition-all duration-300 border-0 shadow-none">
+            <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Dumbbell className="h-5 w-5 text-[#fa9f7b]" />
+                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {workout.records && workout.records.length > 0 && (
+                            <PRBadge />
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#fa9f7b]/5">
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Clock className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
+                        <span className="text-xs text-muted-foreground">Duration</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Weight className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
+                        <span className="text-xs text-muted-foreground">Volume</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Activity className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{totalReps}</span>
+                        <span className="text-xs text-muted-foreground">Total Reps</span>
+                    </div>
+                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Dumbbell className="h-5 w-5 mb-2 text-[#fa9f7b]" />
+                        <span className="text-base font-medium mb-1">{totalSets}</span>
+                        <span className="text-xs text-muted-foreground">Sets</span>
+                    </div>
+                </div>
+
+                {isExpanded && (
+                    <>
+                        <div className="space-y-4 mt-6">
+                            {workout.workoutExercises?.map((exercise) => {
+                                const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
+                                const exerciseVolume = exercise.sets?.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0) || 0;
+                                
+                                // Check if this exercise has a PR
+                                const hasPR = workout.records?.some(record => 
+                                    record.exerciseId === exercise.exerciseId._id.toString()
+                                );
+                                
+                                return (
+                                    <div key={exercise._id} className="p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium">{exercise.exerciseId.name}</span>
+                                                {hasPR && <PRBadge size="sm" />}
+                                            </div>
+                                            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                                <span>{exerciseReps} reps</span>
+                                                <span>•</span>
+                                                <span>{(exerciseVolume / 1000).toFixed(1)}t</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {exercise.sets?.map((set, index) => (
+                                                <div key={index} className="flex items-center justify-between text-sm">
+                                                    <span className="text-muted-foreground">Set {index + 1}</span>
+                                                    <span>{set.weight}kg × {set.reps}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {workout.notes && (
+                            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
+                                <p className="text-sm text-muted-foreground">{workout.notes}</p>
+                            </div>
+                        )}
+                        {workout.aiHighlight && (
+                            <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
+                                <p className="text-sm text-[#fa9f7b]/90">{workout.aiHighlight}</p>
+                            </div>
+                        )}
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#fa9f7b]/20 text-[#fa9f7b] hover:bg-[#fa9f7b]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
 
 export default function WorkoutWeeklyView() {
     const router = useRouter();
@@ -478,7 +728,7 @@ export default function WorkoutWeeklyView() {
                         <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
                             <MetricContent
                                 title="Total Volume"
-                                value={`${(weeklyMetrics.totalVolume / 1000).toFixed(1)}t`}
+                                value={`${(weeklyMetrics.totalVolume).toFixed(1)}t`}
                                 change={calculatePercentageChange(weeklyMetrics.totalVolume, previousWeekMetrics?.totalVolume)}
                             />
                         </Card>
@@ -678,45 +928,56 @@ export default function WorkoutWeeklyView() {
                          <CardTitle className="text-base font-semibold">Workouts This Week</CardTitle>
                      </CardHeader>
                      <CardContent>
-                         <ul className="space-y-2">
-                             {weeklyMetrics.allWorkoutsInWeek.map(workout => { 
+                         <div className="space-y-6">
+                             {weeklyMetrics.allWorkoutsInWeek.map(workout => {
+                                 if (workout.type === 'running') {
+                                     return <RunningWorkoutCard key={workout._id} workout={workout} />;
+                                 } else if (workout.type === 'strength') {
+                                     return <StrengthWorkoutCard key={workout._id} workout={workout} />;
+                                 }
+                                 
+                                 // For other workout types, use the default card style
                                  const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
-                                 const volumeKg = workout.calculatedVolume || 0;
-                                 const volumeTons = volumeKg / 1000;
                                  return (
-                                     <li key={workout._id} 
-                                        onClick={() => handleWorkoutClick(workout._id)}
-                                        className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 p-3 rounded-lg bg-muted/10 hover:bg-muted/20 transition-colors border border-border/5 cursor-pointer"
+                                     <Card key={workout._id} 
+                                         className="overflow-hidden bg-muted/5 hover:bg-muted/10 transition-all duration-300 border-0 shadow-none"
+                                         onClick={() => handleWorkoutClick(workout._id)}
                                      >
-                                        <Badge variant="outline" className={`row-span-2 flex items-center self-center mt-1 px-2 py-0.5 ${colorClasses} bg-background/50`}>
-                                            {icon}
-                                            <span className="ml-1.5 text-xs">{workout.type}</span>
-                                        </Badge>
-
-                                        <div className="col-start-2 row-start-1 flex justify-between items-center">
-                                            <p className="font-semibold text-sm truncate pr-2">{workout.name || 'Unnamed Workout'}</p>
-                                            <span className="text-xs text-muted-foreground flex-shrink-0">{format(parseISO(workout.date.toString()), 'EEE, MMM d')}</span>
-                                        </div>
-                                        
-                                        <div className="col-start-2 row-start-2 text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
-                                            <span className="flex items-center"><Clock className="h-3 w-3 mr-1 text-primary" /> {formatDuration(workout.duration || 0)}</span>
-                                            {workout.distance != null && workout.distance > 0 && 
-                                                <span className="flex items-center">
-                                                    <Route className="h-3 w-3 mr-1 text-primary" /> 
-                                                    {formatDistance(workout.distance < 100 ? workout.distance : workout.distance / 1000)}
-                                                </span>
-                                            }
-                                            {volumeTons > 0 && 
-                                                <span className="flex items-center">
-                                                    <Weight className="h-3 w-3 mr-1 text-primary" /> 
-                                                    {volumeTons.toLocaleString(undefined, {maximumFractionDigits: 2})} t
-                                                </span>
-                                            }
-                                        </div>
-                                     </li>
+                                         <CardHeader className="pb-2">
+                                             <div className="flex items-center justify-between">
+                                                 <div className="flex items-center gap-2">
+                                                     {icon}
+                                                     <CardTitle className="text-lg font-medium">{workout.name || 'Unnamed Workout'}</CardTitle>
+                                                 </div>
+                                                 <span className="text-sm text-muted-foreground">
+                                                     {format(parseISO(workout.date.toString()), 'MMM d')}
+                                                 </span>
+                                             </div>
+                                         </CardHeader>
+                                         <CardContent className="pb-3">
+                                             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                                                 <span className="flex items-center">
+                                                     <Clock className="h-4 w-4 mr-1.5" />
+                                                     {formatDuration(workout.duration || 0)}
+                                                 </span>
+                                                 {workout.distance && (
+                                                     <span className="flex items-center">
+                                                         <Route className="h-4 w-4 mr-1.5" />
+                                                         {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
+                                                     </span>
+                                                 )}
+                                                 {workout.calculatedVolume && (
+                                                     <span className="flex items-center">
+                                                         <Weight className="h-4 w-4 mr-1.5" />
+                                                         {(workout.calculatedVolume / 1000).toFixed(1)}t
+                                                     </span>
+                                                 )}
+                                             </div>
+                                         </CardContent>
+                                     </Card>
                                  );
                              })}
-                         </ul>
+                         </div>
                      </CardContent>
                  </Card>
               )}

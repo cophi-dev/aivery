@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { Card } from '@/components/ui/card';
@@ -8,17 +8,20 @@ import { CalendarClock, Sparkles, Zap, ArrowUpRight, BarChart4, Flame, RefreshCw
 import { cn } from '@/lib/utils';
 
 interface InsightData {
-  title?: string; // Made optional for overview-insights
-  description?: string; // Made optional for overview-insights
-  insight?: string; // Made optional for overview-insights. Actual content might be in highlight, trends, etc.
-  highlight?: string; // For overview-insights
-  positiveTrends?: string[]; // For overview-insights
-  negativeTrends?: string[]; // For overview-insights
-  milestones?: string[]; // For overview-insights
+  title?: string;
+  description?: string;
+  insight?: string;
+  highlight?: string;
+  positiveTrends?: string[];
+  negativeTrends?: string[];
+  milestones?: string[];
   error?: {
     message: string;
     type: string;
   } | null;
+  timestamp?: number;
+  isFinal?: boolean;
+  generatedAt?: string;
 }
 
 // Props for AiveryInsights component
@@ -28,6 +31,7 @@ interface AiveryInsightsProps {
     end: Date;
   };
   className?: string; // Allow passing additional class names
+  onLoad?: () => void; // Callback when insights are loaded
 }
 
 // Enhanced day themes with more Apple-like aesthetics
@@ -76,57 +80,216 @@ const dayThemes = {
   }
 };
 
-export default function AiveryInsights({ dateRange, className }: AiveryInsightsProps) {
+// Add a helper function to check if the insight is a processing placeholder
+function isProcessingPlaceholder(insight: InsightData | null): boolean {
+  if (!insight) return true;
+  
+  // If the response is marked as final, it's not a placeholder
+  if (insight.isFinal) return false;
+  
+  // Check for the common processing message patterns
+  const processingMessages = [
+    "analyzing your latest activities",
+    "your performance data is being processed",
+    "refreshing your insights",
+    "being processed",
+    "being analyzed",
+    "generating insights"
+  ];
+  
+  // If there's a highlight, check if it's a processing message
+  if (insight.highlight) {
+    const isProcessingHighlight = processingMessages.some(msg => 
+      insight.highlight!.toLowerCase().includes(msg.toLowerCase())
+    );
+    
+    // If it's not a processing message and has actual content, it's not a placeholder
+    if (!isProcessingHighlight && insight.highlight.length > 20) {
+      return false;
+    }
+  }
+  
+  // Check for processing messages in positive trends
+  const hasProcessingTrend = insight.positiveTrends?.length === 1 && 
+    processingMessages.some(msg => 
+      insight.positiveTrends![0].toLowerCase().includes(msg.toLowerCase())
+    );
+  
+  // Consider it a placeholder if:
+  // 1. It has no highlight and no trends, or
+  // 2. It has processing messages in either highlight or trends
+  return (!insight.highlight && (!insight.positiveTrends || insight.positiveTrends.length === 0)) ||
+         (insight.highlight && processingMessages.some(msg => insight.highlight!.toLowerCase().includes(msg.toLowerCase()))) ||
+         hasProcessingTrend;
+}
+
+export default function AiveryInsights({ dateRange, className, onLoad }: AiveryInsightsProps) {
   const { data: session } = useSession();
   const [insight, setInsight] = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   
+  // Use refs instead of state for tracking request IDs to avoid state batching issues
+  const currentRequestIdRef = useRef<string | null>(null);
+  const retryCountRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
+  const MAX_RETRIES = 3; // Simplified: reduce retries for faster feedback
+  const RETRY_DELAY = 1500; // Increased to give more time for API
+  
   const isDateRangedInsight = !!dateRange;
 
   // Get current day name for daily insights
   const dayName = !isDateRangedInsight ? new Date().toLocaleDateString('en-US', { weekday: 'long' }) : '';
-  const theme = !isDateRangedInsight && dayName ? (dayThemes[dayName as keyof typeof dayThemes] || dayThemes.Monday) : dayThemes.Monday; // Default theme if dateRanged
+  const theme = !isDateRangedInsight && dayName ? (dayThemes[dayName as keyof typeof dayThemes] || dayThemes.Monday) : dayThemes.Monday;
   
+  // Only re-run the effect when these values change
+  const startDateString = dateRange?.start.toISOString();
+  const endDateString = dateRange?.end.toISOString();
+
   useEffect(() => {
-    async function fetchInsightData() {
-      if (!session?.user) return;
+    console.log("[AiveryInsights] Effect triggered with dates:", { startDateString, endDateString });
+    
+    async function fetchInsights() {
+      // Already loading? Don't start another fetch
+      if (loading && currentRequestIdRef.current) {
+        console.log("[AiveryInsights] Already fetching, skipping new fetch");
+        return;
+      }
+      
+      // No session? Can't fetch
+      if (!session?.user) {
+        console.log("[AiveryInsights] No session, can't fetch insights");
+        setLoading(false);
+        return;
+      }
+      
+      // Cancel any in-progress fetch
+      if (abortControllerRef.current) {
+        console.log("[AiveryInsights] Aborting previous fetch");
+        abortControllerRef.current.abort();
+      }
+      
+      // Create new abort controller and request ID
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+      const requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      currentRequestIdRef.current = requestId;
+      retryCountRef.current = 0;
+      
+      // Reset state
+      setLoading(true);
+      setInsight(null);
+      setError(null);
+      
+      console.log(`[AiveryInsights] Starting new fetch with ID: ${requestId}`);
       
       try {
-        setLoading(true);
-        setError(null); // Clear previous errors
-        const cacheBuster = Date.now();
         let apiUrl = '';
-        let apiDesc = '';
-
+        
         if (isDateRangedInsight) {
-          apiUrl = `/api/ai/overview-insights?startDate=${dateRange.start.toISOString()}&endDate=${dateRange.end.toISOString()}&t=${cacheBuster}`;
-          apiDesc = 'overview insight';
+          if (!dateRange?.start || !dateRange?.end) {
+            console.log("[AiveryInsights] Missing date range, aborting fetch");
+            setLoading(false);
+            return;
+          }
+          
+          const normalizedStart = new Date(Date.UTC(dateRange.start.getFullYear(), dateRange.start.getMonth(), dateRange.start.getDate(), 12, 0, 0, 0));
+          const normalizedEnd = new Date(Date.UTC(dateRange.end.getFullYear(), dateRange.end.getMonth(), dateRange.end.getDate(), 12, 0, 0, 0));
+          apiUrl = `/api/ai/overview-insights?start=${normalizedStart.toISOString()}&end=${normalizedEnd.toISOString()}&t=${requestId}`;
         } else {
-          apiUrl = `/api/fetch-daily-insight?t=${cacheBuster}`;
-          apiDesc = 'daily insight';
+          apiUrl = `/api/daily-insight?t=${requestId}`;
         }
-
-        const response = await fetch(apiUrl, { cache: 'no-store' });
+        
+        console.log(`[AiveryInsights] Fetching from: ${apiUrl}`);
+        
+        const response = await fetch(apiUrl, {
+          signal,
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          }
+        });
+        
+        if (signal.aborted) {
+          console.log(`[AiveryInsights] Fetch aborted for request ${requestId}`);
+          return;
+        }
         
         if (!response.ok) {
-          throw new Error(`Failed to fetch ${apiDesc}: ${response.statusText} (${response.status})`);
+          throw new Error(`API error: ${response.status} ${response.statusText}`);
         }
         
         const data = await response.json();
-        console.log(`[AiveryInsights] Raw data received from ${apiUrl}:`, JSON.stringify(data, null, 2));
-        setInsight(data);
-      } catch (err) {
-        console.error(`Error fetching ${isDateRangedInsight ? 'overview' : 'daily'} insight:`, err);
-        setError(err instanceof Error ? err.message : `Failed to load ${isDateRangedInsight ? 'overview' : 'daily'} insight`);
-      } finally {
+        console.log(`[AiveryInsights] Received data for request ${requestId}:`, { 
+          isFinal: data.isFinal,
+          hasHighlight: !!data.highlight,
+          hasInsight: !!data.insight
+        });
+        
+        // Handle old format where insight field is used instead of highlight
+        if (data.insight && !data.highlight) {
+          data.highlight = data.insight;
+        }
+        
+        // Check if the response is a placeholder
+        if (data.isFinal || !isProcessingPlaceholder(data)) {
+          setInsight(data);
+          setLoading(false);
+        } else if (retryCountRef.current < MAX_RETRIES) {
+          // This is a placeholder response, retry after delay
+          console.log(`[AiveryInsights] Got placeholder response, will retry (${retryCountRef.current + 1}/${MAX_RETRIES})`);
+          if (data.highlight) {
+            setInsight(data); // Show the intermediate placeholder
+          }
+          
+          retryCountRef.current++;
+          setTimeout(fetchInsights, RETRY_DELAY);
+        } else {
+          console.log(`[AiveryInsights] Max retries reached`);
+          setInsight(data);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (signal.aborted) {
+          console.log(`[AiveryInsights] Error ignored due to abort for request ${requestId}`);
+          return;
+        }
+        
+        console.error(`[AiveryInsights] Error fetching insights:`, err);
+        setError(err.message || "Failed to load insights");
         setLoading(false);
       }
     }
     
-    fetchInsightData();
-  }, [session, dateRange, isDateRangedInsight]); // Added dateRange and isDateRangedInsight to dependencies
+    fetchInsights();
+    
+    return () => {
+      console.log("[AiveryInsights] Cleanup: aborting any pending fetch");
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [session, isDateRangedInsight, startDateString, endDateString]);
+
+  // Add effect to notify parent when loading state changes
+  useEffect(() => {
+    if (!loading && insight) {
+      console.log("[AiveryInsights] Notifying parent that insights are loaded");
+      onLoad?.();
+    }
+  }, [loading, insight, onLoad]);
+
+  // Log component state before rendering
+  const renderingState = {
+    loading,
+    error,
+    insightHighlight: insight?.highlight,
+    insightIsFinal: insight?.isFinal,
+    hasPositiveTrends: (insight?.positiveTrends?.length ?? 0) > 0,
+  };
+  console.log('[AiveryInsights render]', renderingState);
 
   // Icon animation variants based on day
   const iconAnimations = {
@@ -281,46 +444,60 @@ export default function AiveryInsights({ dateRange, className }: AiveryInsightsP
               </motion.div>
               
               {/* Content */}
-              <motion.div 
-                className="flex-1"
+              <motion.div
+                className="space-y-4"
                 variants={contentVariants}
                 initial="hidden"
                 animate="visible"
               >
-                {loading ? (
-                  <div className="animate-pulse">
-                    <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4 mb-2.5"></div>
-                    <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-2/4 mb-2.5"></div>
-                    <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div>
-                  </div>
-                ) : error ? (
-                  <motion.p 
-                    className="text-sm text-red-500"
+                {isDateRangedInsight ? (
+                  <motion.div
                     variants={itemVariants}
+                    className="space-y-4"
                   >
-                    {error}
-                  </motion.p>
-                ) : insight?.error ? (
-                  <motion.p 
-                    className="text-sm text-amber-500"
-                    variants={itemVariants}
-                  >
-                    {insight.error.message}
-                  </motion.p>
-                ) : isDateRangedInsight ? (
-                  <motion.div variants={itemVariants} className="space-y-3 text-sm">
-                    {insight?.highlight && <p><strong>Highlight:</strong> {insight.highlight}</p>}
-                    {insight?.positiveTrends && insight.positiveTrends.length > 0 && (
+                    {/* Overview insights display */}
+                    {error ? (
+                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
+                        <p className="text-sm text-destructive">{error}</p>
+                      </div>
+                    ) : insight?.error ? (
+                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
+                        <p className="text-sm text-destructive">⚠️ {insight.error.message}</p>
+                      </div>
+                    ) : insight?.highlight ? (
+                      <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
+                        <p className="text-base text-primary/80">{insight.highlight}</p>
+                      </div>
+                    ) : null}
+                    
+                    {!error && !insight?.error && insight?.positiveTrends && insight.positiveTrends.length > 0 && (
                       <div><strong>Positive Trends:</strong><ul>{insight.positiveTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>
                     )}
-                    {insight?.negativeTrends && insight.negativeTrends.length > 0 && (
+                    {!error && !insight?.error && insight?.negativeTrends && insight.negativeTrends.length > 0 && (
                       <div><strong>Areas to Watch:</strong><ul>{insight.negativeTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>
                     )}
-                    {insight?.milestones && insight.milestones.length > 0 && (
+                    {!error && !insight?.error && insight?.milestones && insight.milestones.length > 0 && (
                       <div><strong>Milestones:</strong><ul>{insight.milestones.map((stone, i) => <li key={i}>- {stone}</li>)}</ul></div>
                     )}
-                    {!(insight?.highlight || insight?.positiveTrends?.length || insight?.negativeTrends?.length || insight?.milestones?.length) && (
-                        <p className="text-slate-500 dark:text-slate-400">No specific insights generated for this period. Keep up the good work!</p>
+                    
+                    {/* Show loading indicator only if loading is true and no error and no actual highlight */}
+                    {loading && !error && !insight?.error && !insight?.highlight && (
+                      <div className="space-y-4">
+                        <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
+                          <p className="text-base text-primary/80">Generating insights for your selected timeframe...</p>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                          <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                          <span>This may take a moment</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fallback for no data when not loading and no error */}
+                    {!loading && !error && !insight?.error && !(insight?.highlight || insight?.positiveTrends?.length || insight?.negativeTrends?.length || insight?.milestones?.length) && (
+                       <div className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/30">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">No insights available for this period. Try selecting a different date range or logging an activity.</p>
+                      </div>
                     )}
                   </motion.div>
                 ) : (
@@ -328,9 +505,24 @@ export default function AiveryInsights({ dateRange, className }: AiveryInsightsP
                     variants={itemVariants}
                     className="space-y-2"
                   >
-                    <p className="text-base font-light leading-relaxed">
-                      {insight?.insight}
-                    </p>
+                    {loading ? (
+                      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                        <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                        <span>Loading your daily insight...</span>
+                      </div>
+                    ) : error ? (
+                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
+                        <p className="text-sm text-destructive">{error}</p>
+                      </div>
+                    ) : insight?.error ? (
+                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
+                        <p className="text-sm text-destructive">⚠️ {insight.error.message}</p>
+                      </div>
+                    ) : (
+                      <p className="text-base font-light leading-relaxed">
+                        {insight?.insight}
+                      </p>
+                    )}
                   </motion.div>
                 )}
               </motion.div>

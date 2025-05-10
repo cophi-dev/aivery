@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Deprecated Code
+
+The [__deprecated__](mdc:__deprecated__) directory contains legacy code that is kept for reference but should not be:
+- Modified
+- Extended
+- Used as a reference for new features
+
+If you need functionality similar to something in the deprecated directory:
+1. Look for the reimplemented version in the main codebase
+2. Create a new implementation following current project patterns
+3. Consult with the team before referencing deprecated code
+
+This helps maintain code quality and prevents reintroducing legacy patterns.

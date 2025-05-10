@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Utility Libraries and Services
+
+Utility functions and services are organized in [src/lib](mdc:src/lib):
+
+- [src/lib/config](mdc:src/lib/config) - Application configuration
+- [src/lib/services](mdc:src/lib/services) - Service layer implementations
+- [src/lib/strava](mdc:src/lib/strava) - Strava API integration
+- [src/lib/utils](mdc:src/lib/utils) - Common utility functions
+
+These modules should be:
+1. Focused on a single responsibility
+2. Well-tested and reusable
+3. Free of UI or presentation logic

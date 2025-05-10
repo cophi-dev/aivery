@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# API Routes
+
+API routes are located in [src/app/api](mdc:src/app/api) using Next.js App Router:
+
+- [src/app/api/auth](mdc:src/app/api/auth) - Authentication endpoints
+- [src/app/api/exercises](mdc:src/app/api/exercises) - Exercise management
+- [src/app/api/workouts](mdc:src/app/api/workouts) - Workout management
+- [src/app/api/user](mdc:src/app/api/user) - User data
+- [src/app/api/strava](mdc:src/app/api/strava) - Strava integration
+
+API route files use the Next.js Route Handlers pattern with:
+- `route.ts` files for GET, POST, PUT, DELETE methods
+- Request/response follows REST API conventions

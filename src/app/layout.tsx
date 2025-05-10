@@ -2,6 +2,7 @@ import "./globals.css"
 import { Inter, Poppins, DM_Serif_Display } from "next/font/google"
 import { ThemeProvider } from "next-themes"
 import { AuthProvider } from "@/components/providers/auth-provider"
+import { PRNotificationProvider } from "@/components/providers/pr-notification-provider"
 import { MainHeader } from "@/components/main-header"
 import { PersistentChat } from "@/components/persistent-chat"
 import { getServerSession } from "next-auth"
@@ -169,8 +170,10 @@ export default async function RootLayout({
             <ToastProvider>
               {/* Always render MainHeader */}
               <MainHeader />
-              {/* Conditionally apply main padding based on session - REMOVED */}
-              <main className="min-h-screen">{children}</main> 
+              {/* Wrap content with PRNotificationProvider */}
+              <PRNotificationProvider>
+                <main className="min-h-screen">{children}</main>
+              </PRNotificationProvider>
               {/* {session?.user && <PersistentChat />} */}
               <Toaster />
             </ToastProvider>

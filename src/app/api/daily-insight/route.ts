@@ -179,8 +179,29 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
   return finalString.trim();
 }
 
-export async function GET() {
+// Helper to format insight response consistently
+function formatInsightResponse(insightData: any, errorData: any = null) {
+  return {
+    title: insightData?.title || "Daily Insight",
+    description: insightData?.description || "Your personalized daily fitness insight",
+    highlight: insightData?.insightText || insightData?.insight || insightData?.highlight || null,
+    positiveTrends: insightData?.positiveTrends || [],
+    negativeTrends: insightData?.negativeTrends || [],
+    milestones: insightData?.milestones || [],
+    isFinal: true, // Always mark as final for daily insights
+    timestamp: Date.now(),
+    error: errorData
+  };
+}
+
+export async function GET(req: Request) {
   console.log(`[Daily Insight API] Received GET request at ${new Date().toISOString()}`);
+  
+  // Parse URL to extract query parameters
+  const url = new URL(req.url);
+  const requestId = url.searchParams.get('t') || `default-${Date.now()}`;
+  console.log(`[Daily Insight API] Processing request with ID: ${requestId}`);
+  
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
@@ -239,12 +260,7 @@ export async function GET() {
 
           if (!isStale) {
             console.log(`[Daily Insight] Stored insight is fresh (date match & no newer workouts). Returning cached insight.`);
-            return NextResponse.json({
-              title: storedInsight.title,
-              description: storedInsight.description,
-              insight: storedInsight.insightText,
-              error: null
-            });
+            return NextResponse.json(formatInsightResponse(storedInsight));
           } else {
             console.log(`[Daily Insight] Stored insight is stale (Newer workout found: ${actualLatestWorkoutTimestamp?.toISOString()} vs Stored: ${storedTimestamp?.toISOString()}). Regenerating...`);
           }
@@ -370,15 +386,17 @@ Follow the instructions precisely. Address the user by name (${displayName}). Ke
     // --- End Save Insight --- 
 
     // Construct the final response body
-    const responseBody = {
-      title: content.title,
-      description: content.description,
-      insight: generatedInsight,
-      error: aiError || dataFetchError ? {
+    const responseBody = formatInsightResponse(
+      {
+        title: content.title,
+        description: content.description,
+        insightText: generatedInsight
+      },
+      aiError || dataFetchError ? {
         message: aiError || dataFetchError || "An unspecified error occurred.",
         type: aiError ? (aiError.includes('save') ? 'save_error' : 'ai_generation') : 'data_fetch'
       } : null
-    };
+    );
 
     return NextResponse.json(responseBody);
 

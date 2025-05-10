@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Project Structure
+
+This is a Next.js application with the following structure:
+
+- [src/app](mdc:src/app) - Main application routes and pages using Next.js App Router
+- [src/components](mdc:src/components) - Reusable UI components
+- [src/lib](mdc:src/lib) - Utility functions, services, and database access
+- [prisma](mdc:prisma) - Database schema and Prisma configuration
+- [public](mdc:public) - Static assets
+
+The `__deprecated__` directory contains legacy code that should not be modified.
