@@ -1059,6 +1059,8 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
        // This should theoretically not happen if save succeeded, but as a safeguard:
        throw new Error("Workout saving process completed without a valid savedWorkout object.");
     }
+    // After workout is created and all operations are complete
+    await updateExercisePRs(userId, workout._id.toString());
     return savedWorkout.toObject(); // Return the plain object 
 
   } catch (error) {
@@ -1558,6 +1560,7 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
 
         // Use the lean sets data directly from the WorkoutExercise document
         if (exercise.sets && exercise.sets.length > 0) { 
+          let totalDailyReps = 0; // Track total reps for the day
           for (const set of exercise.sets) {
             const setWeight = set.weight ?? 0;
             const setReps = set.reps ?? 0;
@@ -1567,8 +1570,6 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
             if (setWeight > 0) {
               effectiveWeight = setWeight; // Use actual weight if provided
             } else if (setReps > 0) {
-              // Only estimate bodyweight if weight is 0 AND reps are > 0
-              // <<< FIX: Pass userWeight here >>>
               effectiveWeight = estimateBodyweightForExercise(exerciseName, userWeight);
             }
 
@@ -1578,9 +1579,70 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
             }
 
             // Update max reps achieved in this workout for this exercise
-            // This applies regardless of weight for bodyweight exercises
             if (setReps > currentMaxReps) {
               currentMaxReps = setReps;
+            }
+
+            // Add to total daily reps
+            totalDailyReps += setReps;
+          }
+
+          // Stage PRs based on the exercise type and achievements
+          
+          // Weight PR (for non-bodyweight exercises)
+          if (!exerciseTrackMaxReps && currentMaxWeight > 0) { 
+            const prKey = `${exerciseIdObj.toString()}_weight`; 
+            const existingPR = potentialPRs[prKey];
+
+            if (!existingPR || currentMaxWeight > existingPR.value || (currentMaxWeight === existingPR.value && workoutDate > existingPR.date)) {
+              potentialPRs[prKey] = {
+                userId: userObjectId,
+                exerciseId: exerciseIdObj,
+                exerciseName: exerciseName,
+                value: currentMaxWeight,
+                unit: 'kg',
+                type: 'weight',
+                date: workoutDate,
+                workoutId: workoutIdObj,
+              };
+            }
+          }
+
+          // Single-set max reps PR (for bodyweight exercises)
+          if (exerciseTrackMaxReps && currentMaxReps > 0) {
+            const prKey = `${exerciseIdObj.toString()}_reps`;
+            const existingPR = potentialPRs[prKey];
+
+            if (!existingPR || currentMaxReps > existingPR.value || (currentMaxReps === existingPR.value && workoutDate > existingPR.date)) {
+              potentialPRs[prKey] = {
+                userId: userObjectId,
+                exerciseId: exerciseIdObj,
+                exerciseName: exerciseName,
+                value: currentMaxReps,
+                unit: 'reps',
+                type: 'reps',
+                date: workoutDate,
+                workoutId: workoutIdObj,
+              };
+            }
+          }
+
+          // Daily total reps PR (for all exercises)
+          if (totalDailyReps > 0) {
+            const prKey = `${exerciseIdObj.toString()}_daily_reps`;
+            const existingPR = potentialPRs[prKey];
+
+            if (!existingPR || totalDailyReps > existingPR.value || (totalDailyReps === existingPR.value && workoutDate > existingPR.date)) {
+              potentialPRs[prKey] = {
+                userId: userObjectId,
+                exerciseId: exerciseIdObj,
+                exerciseName: exerciseName,
+                value: totalDailyReps,
+                unit: 'reps/day',
+                type: 'daily_reps',
+                date: workoutDate,
+                workoutId: workoutIdObj,
+              };
             }
           }
         }
@@ -1702,12 +1764,13 @@ export async function updateExercisePRs(userId: string, specificWorkoutId?: stri
 // --- END NEW FUNCTION ---
 
 // Define the specific return type for the dashboard PRs
-export type DashboardPREntry = { // <-- Added export
+export type DashboardPREntry = {
   _id: string;
   exerciseName: string;
   value: number;
   unit: string;
-  date: string; // ISO string date
+  type: 'weight' | 'reps' | 'daily_reps' | 'volume';
+  date: string;
   workoutId: string | null;
 };
 
@@ -1756,125 +1819,95 @@ export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPRE
 
     await dbConnect();
 
-    // Fetch regular PRs
+    // Fetch regular PRs (weight and single-set reps)
     const regularPRsPromise = ExercisePRModel.aggregate([
-      { $match: { userId: new Types.ObjectId(userId) } }, // Match the user
-      { $sample: { size: Math.floor(limit/2) } }, // Use half the limit for regular PRs
+      { $match: { 
+        userId: new Types.ObjectId(userId),
+        type: { $in: ['weight', 'reps'] } 
+      }},
+      { $sample: { size: Math.floor(limit/2) } },
       {
-        // Project only the necessary fields
         $project: {
           _id: 1,
           exerciseName: 1,
           value: 1,
           unit: 1,
+          type: 1,
           date: 1,
           workoutId: 1,
         }
       }
     ]).exec();
     
-    // Fetch bodyweight exercise daily total reps PRs
-    const bodyweightPRsPromise = WorkoutExerciseModel.aggregate([
-      { $match: { userId: new Types.ObjectId(userId) } },
-      // Lookup to get exercise details to identify bodyweight exercises
-      { $lookup: { 
-          from: 'exercises',
-          localField: 'exerciseId',
-          foreignField: '_id',
-          as: 'exerciseDetails'
-        } 
-      },
-      { $unwind: '$exerciseDetails' },
-      // Filter to only include bodyweight exercises (matching equipment)
+    // Fetch daily total reps PRs
+    const dailyRepsPRsPromise = ExercisePRModel.aggregate([
       { $match: { 
-          '$or': [
-            { 'exerciseDetails.equipment': { $regex: /bodyweight/i } },
-            { 'exerciseDetails.equipment': { $regex: /body weight/i } },
-            { 'exerciseDetails.equipment': { $regex: /body only/i } },
-            { 'exerciseDetails.name': { $regex: /push.?up|pull.?up|chin.?up|dip|plank|crunch|sit.?up|burpee/i } }
-          ]
-        }
-      },
-      // Calculate total reps for the workout exercise
-      {
-        $addFields: {
-          totalReps: {
-            $reduce: {
-              input: { $ifNull: ['$sets', []] },
-              initialValue: 0,
-              in: { $add: ['$$value', { $ifNull: ['$$this.reps', 0] }] }
-            }
-          }
-        }
-      },
-      // Group by exercise to find the max total reps for each bodyweight exercise
-      {
-        $group: {
-          _id: '$exerciseId',
-          exerciseName: { $first: '$exerciseDetails.name' },
-          value: { $max: '$totalReps' },
-          date: { $first: '$createdAt' },
-          workoutId: { $first: '$workoutId' }
-        }
-      },
-      // Only include records with totalReps > 0
-      { $match: { value: { $gt: 0 } } },
-      // Limit to half the requested entries
+        userId: new Types.ObjectId(userId),
+        type: 'daily_reps'
+      }},
       { $sample: { size: Math.ceil(limit/2) } },
-      // Format the output to match DashboardPREntry
       {
         $project: {
           _id: 1,
           exerciseName: 1,
           value: 1,
-          unit: { $literal: 'reps/day' }, // Use special unit to identify bodyweight daily PRs
+          unit: 1,
+          type: 1,
           date: 1,
-          workoutId: 1
+          workoutId: 1,
         }
       }
     ]).exec();
     
     // Wait for both queries to complete
-    const [regularPRs, bodyweightPRs] = await Promise.all([regularPRsPromise, bodyweightPRsPromise]);
+    const [regularPRs, dailyRepsPRs] = await Promise.all([regularPRsPromise, dailyRepsPRsPromise]);
     
-    console.log(`[fetchDashboardExercisePRs] Found ${regularPRs.length} regular PRs and ${bodyweightPRs.length} bodyweight daily PRs`);
+    console.log(`[fetchDashboardExercisePRs] Found ${regularPRs.length} regular PRs and ${dailyRepsPRs.length} daily reps PRs`);
     
     // Combine both types of PRs
-    const combinedPRs = [...regularPRs, ...bodyweightPRs];
+    const combinedPRs = [...regularPRs, ...dailyRepsPRs];
     
     // Post-process and validate the results
     const serializedPRs: DashboardPREntry[] = combinedPRs
       .map((pr: any) => {
-       // Perform runtime checks for required fields before creating the object
-       if (!pr?._id || !pr?.exerciseName || pr?.value === undefined || !pr?.unit || !pr?.date) {
-           console.warn("[fetchDashboardExercisePRs] Skipping aggregated PR due to missing/invalid fields:", pr);
-           return null; // Mark as invalid
-       }
-       
-       // Ensure date is valid
-       const dateValue = pr.date instanceof Date ? pr.date : new Date(pr.date);
-       if (isNaN(dateValue.getTime())) {
-           console.warn("[fetchDashboardExercisePRs] Invalid date in PR:", pr);
-           return null;
-       }
-       
-       // Construct the final object safely
-       return {
-         _id: pr._id.toString(), // Safe to call toString() if _id exists
-         exerciseName: pr.exerciseName,
-         value: pr.value,
-         unit: pr.unit,
-         date: dateValue.toISOString(), // Safe to call if date is a valid Date object
-         workoutId: pr?.workoutId?.toString() ?? null, // Safely handle optional workoutId
-       };
-     })
-     .filter((pr): pr is DashboardPREntry => pr !== null);
+        // Perform runtime checks for required fields before creating the object
+        if (!pr?._id || !pr?.exerciseName || pr?.value === undefined || !pr?.unit || !pr?.date) {
+          console.warn("[fetchDashboardExercisePRs] Skipping aggregated PR due to missing/invalid fields:", pr);
+          return null; // Mark as invalid
+        }
+        
+        // Ensure date is valid
+        const dateValue = pr.date instanceof Date ? pr.date : new Date(pr.date);
+        if (isNaN(dateValue.getTime())) {
+          console.warn("[fetchDashboardExercisePRs] Invalid date in PR:", pr);
+          return null;
+        }
+        
+        // Format the PR value based on type
+        let displayValue = pr.value;
+        let displayUnit = pr.unit;
+        
+        if (pr.type === 'daily_reps') {
+          displayUnit = 'reps in a day'; // More user-friendly display
+        }
+        
+        // Construct the final object safely
+        return {
+          _id: pr._id.toString(),
+          exerciseName: pr.exerciseName,
+          value: displayValue,
+          unit: displayUnit,
+          type: pr.type, // Include type in the response
+          date: dateValue.toISOString(),
+          workoutId: pr?.workoutId?.toString() ?? null,
+        };
+      })
+      .filter((pr): pr is DashboardPREntry => pr !== null);
 
     // Limit the final result to the requested count
     return serializedPRs.slice(0, limit);
-
   } catch (error) {
-    console.error("[fetchDashboardExercisePRs] Error:", error);
+    console.error("[fetchDashboardExercisePRs] Error fetching PRs:", error);
     return [];
   }
 }
@@ -2113,13 +2146,15 @@ export async function createWorkoutFromExisting(workoutData: Partial<WorkoutData
 }
 
 export async function updateWorkoutAction(id: string, workoutData: Partial<WorkoutData>): Promise<WorkoutData | null> {
-  const user = await getCurrentUser();
-  if (!user?.id) {
-    console.error("[updateWorkoutAction] User not authenticated.");
-    throw new Error('Not authenticated');
-  }
-
   try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      throw new Error("User not authenticated");
+    }
+    const userId = user.id;
+
+    await dbConnect();
+
     const updatedWorkout = await updateWorkoutDb(id, workoutData);
     if (!updatedWorkout) {
       throw new Error('Failed to update workout');
@@ -2127,6 +2162,8 @@ export async function updateWorkoutAction(id: string, workoutData: Partial<Worko
 
     revalidatePath('/workouts');
     revalidatePath('/planner');
+    // After workout is updated
+    await updateExercisePRs(userId, id);
     return updatedWorkout;
   } catch (error) {
     console.error("[updateWorkoutAction] Error updating workout:", error);

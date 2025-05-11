@@ -5,7 +5,8 @@ export interface IExercisePR extends Document {
   exerciseId: Types.ObjectId;
   exerciseName: string; // Denormalized for easier display
   value: number; // The PR value (e.g., weight, reps, time in seconds)
-  unit: string; // e.g., 'kg', 'lbs', 'reps', 'seconds', 'meters'
+  unit: string; // e.g., 'kg', 'lbs', 'reps', 'reps/day', 'seconds', 'meters'
+  type: 'weight' | 'reps' | 'daily_reps' | 'volume'; // Added daily_reps type
   date: Date; // Date the PR was achieved
   workoutId?: Types.ObjectId; // Optional: Link to the specific workout
   createdAt: Date;
@@ -38,6 +39,12 @@ const ExercisePRSchema: Schema = new Schema(
     unit: {
       type: String,
       required: true,
+      enum: ['kg', 'lbs', 'reps', 'reps/day', 'seconds', 'meters'],
+    },
+    type: {
+      type: String,
+      required: true,
+      enum: ['weight', 'reps', 'daily_reps', 'volume'],
     },
     date: {
       // Date the PR was set
@@ -53,9 +60,8 @@ const ExercisePRSchema: Schema = new Schema(
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically
-    // Unique compound index to ensure only one PR per user/exercise/unit
-    // (Allows storing different PR types, e.g., max weight AND max reps for the same exercise)
-    indexes: [{ unique: true, fields: ['userId', 'exerciseId', 'unit'] }]
+    // Unique compound index to ensure only one PR per user/exercise/type
+    indexes: [{ unique: true, fields: ['userId', 'exerciseId', 'type'] }]
   }
 );
 

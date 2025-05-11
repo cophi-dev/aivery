@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { ClipboardList, BarChart2, Clock, Ruler, Award } from 'lucide-react';
+import { ClipboardList, BarChart2, Clock, Ruler, Award, CalendarDays, PenLine } from 'lucide-react';
 
 // Temporary placeholder for the server action
 /*
@@ -113,11 +113,11 @@ export default function TodaysSummaryCard() {
       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)'
     },
     hover: { 
-      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.08), 0 0 15px rgba(59, 130, 246, 0.2)',
-      borderColor: 'rgba(226, 232, 240, 0.8)',
-      scale: 1.01,
+      boxShadow: '0 8px 16px rgba(0, 0, 0, 0.06), 0 0 8px rgba(59, 130, 246, 0.1)',
+      borderColor: 'rgba(88, 163, 255, 0.4)',
       transition: {
-        duration: 0.2
+        duration: 0.2,
+        ease: 'easeOut'
       }
     }
   };
@@ -184,6 +184,15 @@ export default function TodaysSummaryCard() {
     );
   };
 
+  const today = new Date();
+  const isWeekend = today.getDay() === 0 || today.getDay() === 6;
+  const formattedDate = today.toLocaleDateString('en-US', { 
+    weekday: 'long',
+    month: 'long', 
+    day: 'numeric', 
+    year: 'numeric' 
+  });
+
   return (
     <AnimatePresence>
       <motion.div
@@ -205,7 +214,7 @@ export default function TodaysSummaryCard() {
             "border-[#c0daff40] dark:border-[#58a3ff30] shadow-sm",
             "hover:border-[#58a3ff] dark:hover:border-[#58a3ff]",
           )}>
-            {/* Extremely subtle background effect */}
+            {/* Background effect */}
             <motion.div 
               className="absolute inset-0 bg-[#58a3ff05] dark:bg-[#58a3ff08]"
               animate={{
@@ -232,11 +241,14 @@ export default function TodaysSummaryCard() {
                   >
                     <ClipboardList size={18} />
                   </motion.div>
-                  <div>
+                  <div className="flex-1">
                     <CardTitle className="text-lg tracking-tight font-semibold text-[#333333] dark:text-white">Today's Summary</CardTitle>
-                    <p className="text-xs text-slate-500 dark:text-[#c0daff80] mt-0.5">
-                      {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <CalendarDays className="h-3.5 w-3.5 text-[#58a3ff]" />
+                      <p className="text-sm font-medium text-[#58a3ff] dark:text-[#c0daff]">
+                        {formattedDate}
+                      </p>
+                    </div>
                   </div>
                 </motion.div>
               </CardHeader>
@@ -261,9 +273,13 @@ export default function TodaysSummaryCard() {
                       transition={{ duration: 0.5 }}
                     >
                       <BarChart2 className="h-12 w-12 mb-3 text-[#c0daff] dark:text-[#58a3ff]" />
-                      <p className="text-sm text-slate-600 dark:text-[#c0daff]">No workouts logged yet today.</p>
-                      <p className="text-xs text-slate-500 dark:text-[#c0daff80] mt-1">
-                        Your completed workouts will appear here.
+                      <p className="text-sm font-medium text-slate-700 dark:text-[#c0daff]">
+                        No Workouts Today {isWeekend ? '(Rest Day?)' : ''}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-[#c0daff80] mt-2 max-w-[250px]">
+                        {isWeekend 
+                          ? "It's the weekend! Take time to rest and recover if needed."
+                          : "Ready to start your workout? Your completed sessions will appear here."}
                       </p>
                     </motion.div>
                   ) : (
@@ -281,13 +297,19 @@ export default function TodaysSummaryCard() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2, duration: 0.4 }}
+                    className="bg-slate-50 dark:bg-slate-800/30 rounded-lg p-3"
                   > 
-                    <label htmlFor="journalEntry" className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-[#c0daff]">
-                      Today's Reflection
-                    </label>
+                    <div className="flex items-center gap-2 mb-2">
+                      <PenLine className="h-4 w-4 text-[#58a3ff]" />
+                      <label htmlFor="journalEntry" className="text-sm font-medium text-slate-700 dark:text-[#c0daff]">
+                        Today's Reflection
+                      </label>
+                    </div>
                     <Textarea
                       id="journalEntry"
-                      placeholder="How did today's session(s) feel? Any thoughts?"
+                      placeholder={todaysWorkouts.length > 0 
+                        ? "How did today's session(s) feel? Any achievements or challenges?"
+                        : "How are you feeling today? Planning any workouts?"}
                       value={journalEntry}
                       onChange={(e) => setJournalEntry(e.target.value)}
                       rows={3}
@@ -303,7 +325,7 @@ export default function TodaysSummaryCard() {
                 <CardFooter className="pt-1">
                   <Button 
                     onClick={handleSaveJournal} 
-                    disabled={isPending || todaysWorkouts.length === 0} 
+                    disabled={isPending || !journalEntry.trim()} 
                     className="w-full bg-[#58a3ff] hover:bg-[#58a3ff]/90 dark:bg-[#58a3ff] dark:hover:bg-[#58a3ff]/90
                               text-white
                               transition-all duration-200 font-medium shadow-sm hover:shadow

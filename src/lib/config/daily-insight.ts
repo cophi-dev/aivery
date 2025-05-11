@@ -133,21 +133,37 @@ Keep the response specific to today's context (2-3 sentences).`,
   },
   {
     day: 'Sunday',
-    title: 'Daily Reflection',
-    description: 'Today\'s efforts',
+    title: 'Weekly Reflection',
+    description: 'Review your week\'s journey',
     icon: RefreshCw,
     prompt: 
-`Examine today's activities:
-1. What was the focus of today's training?
-2. How was effort managed in the session(s)?
-3. Were there any notable achievements?
+`Analyze this week's performance and provide a comprehensive reflection:
 
-Provide a focused daily insight:
-- Comment on today's training approach
-- Note any interesting exercise choices
-- If no workouts today, discuss the recovery context
-- Highlight any specific accomplishments
+1. Weekly Overview:
+   - Review the total workouts and their types
+   - Note the distribution of activities across the week
+   - Highlight any patterns in training focus or intensity
 
-Keep the response centered on today's activities (2-4 sentences).`,
+2. Achievements & Progress:
+   - Celebrate any PRs or milestones reached this week
+   - Note improvements in consistency, volume, or intensity
+   - Acknowledge any technique or form improvements
+
+3. Weekly Assessment:
+   - If it was a strong week: Celebrate the momentum and suggest how to carry it forward
+   - If it was a moderate week: Find positive aspects and areas for potential growth
+   - If it was a lighter week: Frame it constructively and suggest ways to build momentum
+
+4. Looking Forward:
+   - Provide encouraging perspective for the upcoming week
+   - If there were PRs: Suggest focus areas to build on these achievements
+   - If no PRs: Identify potential opportunities for progress
+   - For lighter weeks: Offer motivation to start fresh and create new momentum
+
+Keep the tone reflective but forward-looking, celebrating progress while encouraging continued growth.
+Focus on patterns and achievements that can inspire next week's journey.
+If today had a workout, acknowledge it within the weekly context.
+
+Response should be 4-6 sentences, balancing reflection and motivation.`,
   }
 ]; 

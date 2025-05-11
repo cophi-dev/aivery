@@ -36,14 +36,13 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
   // Calculate different start dates based on day
   switch(dayName) {
     case 'Monday':
-      // Get previous week (Mon-Sun)
-      startDate.setDate(today.getDate() - (today.getDay() === 0 ? 7 : today.getDay()) - 6); // Go back to previous Monday
-      description = "previous week (Mon-Sun)";
+      // Start of current week
+      startDate.setDate(today.getDate() - today.getDay() + 1); // Go to Monday of current week
+      description = "this week so far";
       break;
     case 'Tuesday':
-    case 'Saturday':
     case 'Wednesday':
-      // Last 7 days for Tuesday, Wednesday, Saturday
+      // Last 7 days for Tuesday and Wednesday
       startDate.setDate(today.getDate() - 7); // Go back 7 days
       description = "last 7 days";
       break;
@@ -57,10 +56,15 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
       startDate.setDate(today.getDate() - 21); // Go back 3 weeks
       description = "last 3 weeks";
       break;
+    case 'Saturday':
+      // Current week progress
+      startDate.setDate(today.getDate() - today.getDay() + 1); // Go back to Monday of this week
+      description = "this week's progress";
+      break;
     case 'Sunday':
-      // Previous week (Mon-Sun)
-      startDate.setDate(today.getDate() - 7 - today.getDay() + 1); // Go to Monday of previous week
-      description = "last complete week (Mon-Sun)";
+      // Full current week (Mon-Sun)
+      startDate.setDate(today.getDate() - 6); // Go back to Monday of current week
+      description = "this week's complete performance";
       break;
     default:
       // Default to last 7 days if dayName is unexpected
@@ -255,17 +259,31 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
 
 // Helper to format insight response consistently
 function formatInsightResponse(insightData: any, errorData: any = null) {
-  return {
+  // Ensure we have valid data or defaults
+  const baseResponse = {
     title: insightData?.title || "Daily Insight",
     description: insightData?.description || "Your personalized daily fitness insight",
-    highlight: insightData?.insightText || insightData?.insight || insightData?.highlight || null,
-    positiveTrends: insightData?.positiveTrends || [],
-    negativeTrends: insightData?.negativeTrends || [],
-    milestones: insightData?.milestones || [],
-    isFinal: true, // Always mark as final for daily insights
+    insight: insightData?.insightText || insightData?.insight || "",
+    highlight: insightData?.highlight || null,
+    positiveTrends: Array.isArray(insightData?.positiveTrends) ? insightData.positiveTrends : [],
+    negativeTrends: Array.isArray(insightData?.negativeTrends) ? insightData.negativeTrends : [],
+    milestones: Array.isArray(insightData?.milestones) ? insightData.milestones : [],
+    isFinal: true,
     timestamp: Date.now(),
-    error: errorData
   };
+
+  // If there's an error, add it to the response
+  if (errorData) {
+    return {
+      ...baseResponse,
+      error: {
+        message: typeof errorData === 'string' ? errorData : errorData.message || 'An unknown error occurred',
+        type: errorData.type || 'unknown'
+      }
+    };
+  }
+
+  return baseResponse;
 }
 
 export async function GET(req: Request) {
