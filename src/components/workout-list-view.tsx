@@ -523,36 +523,126 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
             Showing {filteredWorkouts.length} of {workouts.length} workouts
           </span>
           
-          <div className="flex gap-2 items-center">
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-9 w-[130px]">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {workoutTypes.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search name/notes..."
-                className="pl-9 h-9 w-[150px] sm:w-[200px]"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center mb-4">
+            <div className="w-full sm:w-auto flex-1">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search workouts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
             </div>
-            
-            {filtersActive && (
-              <Button variant="ghost" onClick={resetFilters} size="icon" className="h-9 w-9">
-                <X className="h-4 w-4" />
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Filter by type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="running">Running</SelectItem>
+                  <SelectItem value="cycling">Cycling</SelectItem>
+                  <SelectItem value="swimming">Swimming</SelectItem>
+                  <SelectItem value="strength">Strength</SelectItem>
+                  <SelectItem value="hiit">HIIT</SelectItem>
+                  <SelectItem value="flexibility">Flexibility</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={intensityFilter} onValueChange={setIntensityFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Filter intensity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Intensities</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => {
+                  setSortDirection(current => current === "asc" ? "desc" : "asc");
+                }}
+                className="px-2"
+              >
+                <ArrowUpDown className="h-4 w-4" />
+                <span className="sr-only">Toggle sort direction</span>
               </Button>
-            )}
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                className="whitespace-nowrap"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Reset
+              </Button>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="p-4">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Total Workouts
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-2xl font-bold">{workoutStats.totalWorkouts}</div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="p-4">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Total Time
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-2xl font-bold">
+                  {formatDuration(workoutStats.totalSeconds)}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="p-4">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Route className="h-4 w-4" />
+                  Total Distance
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-2xl font-bold">
+                  {formatDistance(workoutStats.totalDistance)}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="p-4">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Dumbbell className="h-4 w-4" />
+                  Total Volume
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-2xl font-bold">
+                  {workoutStats.totalVolume.toLocaleString()} kg
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
         
