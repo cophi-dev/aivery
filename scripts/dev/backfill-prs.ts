@@ -1,15 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
-import { updateExercisePRs } from "@/lib/workout-actions";
-import dbConnect from "@/lib/db/mongodb";
-import User from "@/lib/db/models/user";
+import { updateExercisePRs } from '../../src/lib/workout-actions';
+import dbConnect from '../../src/lib/db/mongodb';
+import User, { IUser } from '../../src/lib/db/models/user';
+import { Types } from 'mongoose';
 
-export async function POST(request: NextRequest) {
+interface UserDoc {
+  _id: Types.ObjectId;
+}
+
+async function backfillPRs() {
   try {
     console.log('Connecting to database...');
     await dbConnect();
 
     console.log('Fetching all users...');
-    const users = await User.find().select('_id').lean();
+    const users = await User.find().select('_id').lean<UserDoc[]>();
     console.log(`Found ${users.length} users`);
 
     for (const user of users) {
@@ -24,9 +28,11 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Backfill complete!');
-    return NextResponse.json({ success: true });
+    process.exit(0);
   } catch (error) {
     console.error('Error during backfill:', error);
-    return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
+    process.exit(1);
   }
-} 
+}
+
+backfillPRs(); 
