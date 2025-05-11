@@ -37,6 +37,7 @@ type LeanExercisePR = Omit<IExercisePR, keyof Document | '__v'> & {
   workoutId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+  type: 'weight' | 'reps' | 'daily_reps' | 'volume';
 };
 
 // --- <<< NEW Helper Function for Challenge Generation Logic >>> ---
@@ -344,11 +345,17 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
     const userWeight = (typeof userDoc?.weight === 'number' && userDoc.weight > 0) ? userDoc.weight : null;
     const rawExercisePRs = await ExercisePRModel.find({ userId: userObjectId }).lean();
     const exercisePRs: LeanExercisePR[] = rawExercisePRs.map(pr => ({
-        _id: pr._id as Types.ObjectId, userId: pr.userId as Types.ObjectId,
-        exerciseId: pr.exerciseId as Types.ObjectId, exerciseName: pr.exerciseName as string,
-        value: pr.value as number, unit: pr.unit as string, date: pr.date as Date,
-        workoutId: pr.workoutId as Types.ObjectId | undefined, createdAt: pr.createdAt as Date,
-        updatedAt: pr.updatedAt as Date,
+        _id: pr._id as Types.ObjectId,
+        userId: pr.userId as Types.ObjectId,
+        exerciseId: pr.exerciseId as Types.ObjectId,
+        exerciseName: pr.exerciseName as string,
+        value: pr.value as number,
+        unit: pr.unit as string,
+        type: pr.type as 'weight' | 'reps' | 'daily_reps' | 'volume',
+        date: pr.date as Date,
+        workoutId: pr.workoutId as Types.ObjectId | undefined,
+        createdAt: pr.createdAt as Date,
+        updatedAt: pr.updatedAt as Date
     }));
     const exercisePRMap = exercisePRs.reduce((map, pr) => {
         map[`${pr.exerciseId.toString()}_${pr.unit}`] = pr; 
@@ -582,12 +589,18 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
     
     const rawExercisePRs = await ExercisePRModel.find({ userId: userObjectId }).lean();
     const exercisePRs: LeanExercisePR[] = rawExercisePRs.map(pr => ({
-        _id: pr._id as Types.ObjectId, userId: pr.userId as Types.ObjectId,
-        exerciseId: pr.exerciseId as Types.ObjectId, exerciseName: pr.exerciseName as string,
-        value: pr.value as number, unit: pr.unit as string, date: pr.date as Date,
-        workoutId: pr.workoutId as Types.ObjectId | undefined, createdAt: pr.createdAt as Date,
-        updatedAt: pr.updatedAt as Date,
-      }));
+        _id: pr._id as Types.ObjectId,
+        userId: pr.userId as Types.ObjectId,
+        exerciseId: pr.exerciseId as Types.ObjectId,
+        exerciseName: pr.exerciseName as string,
+        value: pr.value as number,
+        unit: pr.unit as string,
+        type: pr.type as 'weight' | 'reps' | 'daily_reps' | 'volume',
+        date: pr.date as Date,
+        workoutId: pr.workoutId as Types.ObjectId | undefined,
+        createdAt: pr.createdAt as Date,
+        updatedAt: pr.updatedAt as Date
+    }));
     const exercisePRMap = exercisePRs.reduce((map, pr) => {
         map[`${pr.exerciseId.toString()}_${pr.unit}`] = pr; 
         return map;
