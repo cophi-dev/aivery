@@ -173,8 +173,82 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
     }
   }
 
-  // Optionally add summary of past workouts if needed, but focus might be better
-  // finalString += "\nPast Workouts in Period:\n" + formatSummary(pastWorkouts);
+  // Add a type definition for PR items
+  type PRRecord = {
+    description: string;
+    date: Date;
+    workoutName: string;
+  };
+
+  // Then use this type for the recentPRs array
+  // Add a special section for new PRs in the workout data
+  const recentPRs: PRRecord[] = [];
+  if (workouts && workouts.length > 0) {
+    workouts.forEach(workout => {
+      if (workout.records && workout.records.length > 0) {
+        workout.records.forEach(record => {
+          // Check if the record is recent (within 7 days)
+          const recordDate = record.createdAt || record.date || workout.date;
+          const recordTime = new Date(recordDate).getTime();
+          const now = Date.now();
+          const isRecent = now - recordTime < 7 * 24 * 60 * 60 * 1000; // Within 7 days
+          
+          if (isRecent) {
+            // Create a user-friendly description
+            let prDescription = '';
+            if (record.type === 'longestRun' && record.value) {
+              prDescription = `Longest Run: ${record.value.toFixed(2)} km`;
+            } else if (record.type === 'fastest5kPace' && record.value) {
+              const paceMinutes = Math.floor(record.value / 60);
+              const paceSeconds = Math.round(record.value % 60);
+              prDescription = `Fastest 5K Pace: ${paceMinutes}:${paceSeconds.toString().padStart(2, '0')}/km`;
+            } else if (record.type === 'maxStrengthVolume' && record.value) {
+              const tons = record.value / 1000;
+              prDescription = `Max Strength Volume: ${tons.toFixed(2)} tons`;
+            } else if (record.type === 'explicit_pr' && record.exerciseName) {
+              // Handle explicit PRs added by our enhanced logic in workout-daily-view.tsx
+              if (record.unit === 'reps') {
+                prDescription = `New PR in ${record.exerciseName}: ${record.value} reps`;
+              } else if (record.unit) {
+                prDescription = `New PR in ${record.exerciseName}: ${record.value} ${record.unit}`;
+              } else {
+                prDescription = `New PR in ${record.exerciseName}: ${record.value}`;
+              }
+            } else if (record.exerciseName) {
+              if (record.weight) {
+                prDescription = `New PR in ${record.exerciseName}: ${record.weight}kg`;
+              } else if (record.value && record.unit === 'reps') {
+                prDescription = `New PR in ${record.exerciseName}: ${record.value} reps`;
+              } else if (record.value) {
+                prDescription = `New PR in ${record.exerciseName}: ${record.value} ${record.unit || ''}`;
+              } else if (record.reps) {
+                // Support for reps-only records in bodyweight exercises
+                prDescription = `New PR in ${record.exerciseName}: ${record.reps} reps`;
+              }
+            }
+            
+            if (prDescription) {
+              recentPRs.push({
+                description: prDescription,
+                date: new Date(recordDate),
+                workoutName: workout.name || 'Workout'
+              });
+            }
+          }
+        });
+      }
+    });
+  }
+
+  // Add the recent PRs to the summary
+  if (recentPRs.length > 0) {
+    finalString += "\nRECENT PERSONAL RECORDS (last 7 days):\n";
+    recentPRs.forEach(pr => {
+      finalString += `  - ${pr.description} set on ${pr.date.toLocaleDateString()} during "${pr.workoutName}"\n`;
+    });
+    
+    finalString += "\nPlease highlight these recent PRs prominently in your response!";
+  }
 
   return finalString.trim();
 }
@@ -318,7 +392,16 @@ ${content.prompt}
 ${workoutDataString}
 ${dataFetchError ? `\n(Note: Error fetching workout data: ${dataFetchError})` : ''}
 
-Follow the instructions precisely. Address the user by name (${displayName}). Keep the response concise and aligned with the specified tone for the day.\
+Follow the instructions precisely. Address the user by name (${displayName}). Keep the response concise and aligned with the specified tone for the day.
+
+IMPORTANT PERSONAL RECORD FORMATTING INSTRUCTIONS:
+If any Personal Records (PRs) were achieved:
+- Use the exact phrase "new PR" or "Personal Record" when referring to them
+- Format them as "PR in [exercise]: [value] [unit]" or "New PR: [value] [unit] in [exercise]"
+- Include specific numbers and units when mentioning PRs
+- Look for "New PR in" text in the RECENT PERSONAL RECORDS section and make these the central focus of your response
+- FOR BODYWEIGHT EXERCISES: Especially celebrate PRs involving reps, such as "New PR in Pull-up: 14 reps"
+- If you see rep-based PRs (like "14 reps"), emphasize the strength and endurance achievement
 `;
 
             console.log("[Daily Insight] Sending request to Grok API...");

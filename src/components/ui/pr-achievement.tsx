@@ -45,10 +45,10 @@ export function PRAchievement({ prType, value, isOpen, onClose, className }: PRA
         }
       }());
       
-      // Auto close after 5 seconds
+      // Auto close after 8 seconds
       const timer = setTimeout(() => {
         onClose();
-      }, 5000);
+      }, 8000);
       
       return () => clearTimeout(timer);
     }

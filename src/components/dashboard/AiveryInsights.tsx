@@ -157,14 +157,14 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
         console.log("[AiveryInsights] Already fetching, skipping new fetch");
         return;
       }
-      
+
       // No session? Can't fetch
       if (!session?.user) {
         console.log("[AiveryInsights] No session, can't fetch insights");
         setLoading(false);
-        return;
+          return;
       }
-      
+
       // Cancel any in-progress fetch
       if (abortControllerRef.current) {
         console.log("[AiveryInsights] Aborting previous fetch");
@@ -184,15 +184,15 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
       setError(null);
       
       console.log(`[AiveryInsights] Starting new fetch with ID: ${requestId}`);
-      
+
       try {
         let apiUrl = '';
-        
+
         if (isDateRangedInsight) {
           if (!dateRange?.start || !dateRange?.end) {
             console.log("[AiveryInsights] Missing date range, aborting fetch");
             setLoading(false);
-            return;
+              return;
           }
           
           const normalizedStart = new Date(Date.UTC(dateRange.start.getFullYear(), dateRange.start.getMonth(), dateRange.start.getDate(), 12, 0, 0, 0));
@@ -203,7 +203,7 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
         }
         
         console.log(`[AiveryInsights] Fetching from: ${apiUrl}`);
-        
+
         const response = await fetch(apiUrl, {
           signal,
           headers: {
@@ -211,12 +211,12 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
             'Pragma': 'no-cache',
           }
         });
-        
+
         if (signal.aborted) {
           console.log(`[AiveryInsights] Fetch aborted for request ${requestId}`);
-          return;
+          return; 
         }
-        
+
         if (!response.ok) {
           throw new Error(`API error: ${response.status} ${response.statusText}`);
         }
@@ -227,7 +227,7 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
           hasHighlight: !!data.highlight,
           hasInsight: !!data.insight
         });
-        
+
         // Handle old format where insight field is used instead of highlight
         if (data.insight && !data.highlight) {
           data.highlight = data.insight;
@@ -264,7 +264,7 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
     }
     
     fetchInsights();
-    
+
     return () => {
       console.log("[AiveryInsights] Cleanup: aborting any pending fetch");
       if (abortControllerRef.current) {
@@ -464,14 +464,58 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                       <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
                         <p className="text-sm text-destructive">⚠️ {insight.error.message}</p>
                       </div>
-                    ) : insight?.highlight ? (
+                    ) : insight?.highlight && (
                       <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
-                        <p className="text-base text-primary/80">{insight.highlight}</p>
+                        <p className="text-base text-primary/80">
+                          {insight.highlight.split('. ').map((sentence, index) => {
+                            // Skip empty sentences
+                            if (!sentence.trim()) return null;
+                            
+                            // More precise detection for actual PRs, not just any positive content
+                            const containsPR = 
+                              // Use stricter matching patterns for actual PRs
+                              /\bnew pr\b|\bset a pr\b|\bpersonal record\b|\bnew personal best\b|\bbeat.*previous best\b|\bpr in\b/i.test(sentence) || 
+                              // Check for specific patterns like "X kg PR" or "PR of X km"
+                              /\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps).*\b(pr|record)\b/i.test(sentence) ||
+                              /\b(pr|record)\b.*\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps)/i.test(sentence);
+                            
+                            return (
+                              <span key={index} className={cn(
+                                containsPR ? "font-bold text-amber-600 dark:text-amber-400" : ""
+                              )}>
+                                {containsPR ? '🏆 ' : ''}
+                                {sentence}{index < (insight.highlight?.split('. ').length || 0) - 1 ? '. ' : ''}
+                              </span>
+                            );
+                          })}
+                        </p>
                       </div>
-                    ) : null}
+                    )}
                     
                     {!error && !insight?.error && insight?.positiveTrends && insight.positiveTrends.length > 0 && (
-                      <div><strong>Positive Trends:</strong><ul>{insight.positiveTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>
+                      <div>
+                        <strong>Positive Trends:</strong>
+                        <ul>
+                          {insight.positiveTrends.map((trend, i) => {
+                            // More precise detection for actual PRs
+                            const containsPR = 
+                              // Use stricter matching patterns for actual PRs
+                              /\bnew pr\b|\bset a pr\b|\bpersonal record\b|\bnew personal best\b|\bbeat.*previous best\b|\bpr in\b/i.test(trend) || 
+                              // Check for specific patterns like "X kg PR" or "PR of X km"
+                              /\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps).*\b(pr|record)\b/i.test(trend) ||
+                              /\b(pr|record)\b.*\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps)/i.test(trend);
+
+                            return (
+                              <li key={i} className={cn(
+                                containsPR ? "font-bold text-amber-600 dark:text-amber-400" : ""
+                              )}>
+                                {containsPR ? '🏆 ' : '- '}
+                                {trend}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
                     )}
                     {!error && !insight?.error && insight?.negativeTrends && insight.negativeTrends.length > 0 && (
                       <div><strong>Areas to Watch:</strong><ul>{insight.negativeTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>

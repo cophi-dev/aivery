@@ -134,6 +134,22 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
                 
                 if (prValue) {
                     showPR(prType, prValue);
+                    
+                    // Also add a record with the explicit PR format for insights to pick up
+                    if (workout.records && !workout.records.some(r => 
+                        r.type === 'explicit_pr' && 
+                        r.exerciseName === record.exerciseName &&
+                        r.value === (record.value || record.reps || 0)
+                    )) {
+                        workout.records.push({
+                            type: 'explicit_pr',
+                            exerciseName: record.exerciseName || prType,
+                            value: record.value || record.reps || 0,
+                            unit: record.unit || (prValue.includes('reps') ? 'reps' : ''),
+                            date: new Date(),
+                            createdAt: new Date()
+                        });
+                    }
                 }
             });
         }
@@ -296,7 +312,7 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                 const recordDate = record.createdAt || record.date || new Date();
                 const recordTime = new Date(recordDate).getTime();
                 const now = Date.now();
-                const isNew = now - recordTime < 24 * 60 * 60 * 1000; // Within 24 hours
+                const isNew = now - recordTime < 7 * 24 * 60 * 60 * 1000; // Changed from 24 hours to 7 days
                 
                 return isNew;
             });
@@ -312,21 +328,49 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                     prValue = `${tons.toFixed(2)} tons`;
                 } else if (prType === 'maxWeight' && record.value) {
                     prValue = `${record.value}kg`;
+                } else if (prType === 'maxReps' && record.value) {
+                    // Handle max reps PRs for bodyweight exercises
+                    prValue = `${record.value} reps`;
+                    if (record.exerciseName) {
+                        prType = `New PR in ${record.exerciseName}`;
+                    }
                 } else if (prType.includes('max') && record.value) {
                     // Handle other numeric PRs
                     prValue = record.value.toString();
                 } else if (record.exerciseName) {
                     // Exercise-specific PR
-                    prType = `PR in ${record.exerciseName}`;
-                    if (record.value) {
-                        prValue = record.value.toString();
+                    prType = `New PR in ${record.exerciseName}`;
+                    if (record.value && record.unit === 'reps') {
+                        // Explicitly handle bodyweight exercises with rep-based PRs
+                        prValue = `${record.value} reps`;
+                    } else if (record.value) {
+                        prValue = `${record.value} ${record.unit || ''}`;
                     } else if (record.weight) {
                         prValue = `${record.weight}kg`;
+                    } else if (record.reps) {
+                        // Fallback for reps-only records
+                        prValue = `${record.reps} reps`;
                     }
                 }
                 
                 if (prValue) {
                     showPR(prType, prValue);
+                    
+                    // Also add a record with the explicit PR format for insights to pick up
+                    if (workout.records && !workout.records.some(r => 
+                        r.type === 'explicit_pr' && 
+                        r.exerciseName === record.exerciseName &&
+                        r.value === (record.value || record.reps || 0)
+                    )) {
+                        workout.records.push({
+                            type: 'explicit_pr',
+                            exerciseName: record.exerciseName || prType,
+                            value: record.value || record.reps || 0,
+                            unit: record.unit || (prValue.includes('reps') ? 'reps' : ''),
+                            date: new Date(),
+                            createdAt: new Date()
+                        });
+                    }
                 }
             });
         }
@@ -339,12 +383,12 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
         acc + (ex.sets?.reduce((setAcc, set) => setAcc + (set.reps || 0), 0) || 0), 0) || 0;
     const totalExercises = workout.workoutExercises?.length || 0;
     
-    // Check for newly set strength PRs (within last 24 hours)
+    // Check for newly set strength PRs (within last 7 days instead of 24 hours)
     const hasNewStrengthPRs = workout.records?.some(r => {
         const recordDate = r.createdAt || r.date || new Date();
         const recordTime = new Date(recordDate).getTime();
         const now = Date.now();
-        return now - recordTime < 24 * 60 * 60 * 1000; // Within 24 hours
+        return now - recordTime < 7 * 24 * 60 * 60 * 1000; // Changed from 24 hours to 7 days
     });
 
     return (
@@ -408,11 +452,11 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                                                 <span className="font-medium">{exercise.exerciseId.name}</span>
                                                 {hasPR && (
                                                     <PRBadge size="sm" isNew={
-                                                        // Check if this exercise has a new PR
+                                                        // Check if this exercise has a new PR (changed from 24 hours to 7 days)
                                                         workout.records?.some(record => 
                                                             record.exerciseId === exercise.exerciseId._id.toString() && 
                                                             record.createdAt && 
-                                                            new Date(record.createdAt).getTime() > Date.now() - 24 * 60 * 60 * 1000
+                                                            new Date(record.createdAt).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000
                                                         )
                                                     } />
                                                 )}

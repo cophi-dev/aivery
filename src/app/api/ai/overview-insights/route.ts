@@ -6,6 +6,7 @@ import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { ObjectId } from 'mongodb';
 import { startOfDay, endOfDay, parseISO, subWeeks, subMonths, differenceInDays, isFuture, isToday, format as formatDate } from 'date-fns';
 import ActivityInsightModel, { IActivityInsight } from '@/lib/db/models/activityInsight';
+import ExercisePRModel from '@/lib/db/models/exercisePR';
 
 // Add global type declaration
 declare global {
@@ -20,6 +21,25 @@ if (!global.insightLocks) {
 if (!global.lastRequestTimestamps) {
     global.lastRequestTimestamps = new Map<string, number>();
 }
+
+// Update the existing type definition for PR records to include all possible fields
+type WorkoutRecord = {
+  type?: string;
+  value?: number;
+  exerciseName?: string;
+  weight?: number;
+  reps?: number;
+  unit?: string;
+  date?: Date;
+  createdAt?: Date;
+  // Add other potential fields
+};
+
+type PRRecord = {
+  description: string;
+  date: Date;
+  workoutName: string;
+};
 
 // Helper function to get previous period dates
 function getPreviousPeriodDates(startDate: Date, endDate: Date, periodType: 'daily' | 'weekly' | 'monthly'): [Date, Date] {
@@ -70,8 +90,15 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
     .sort({ date: -1 }) 
     .lean<IWorkout[]>();
 
-    // DEBUG: Log the found workouts
+    // Also fetch exercise PRs for this period
+    const exercisePRs = await ExercisePRModel.find({
+        userId: new ObjectId(userId),
+        date: { $gte: expandedStartDate, $lte: expandedEndDate }
+    }).lean();
+
+    // DEBUG: Log the found workouts and PRs
     console.log(`[overview-insights] Found ${workouts.length} workouts in expanded period`);
+    console.log(`[overview-insights] Found ${exercisePRs.length} exercise PRs in expanded period`);
     if (workouts.length > 0) {
         console.log('[overview-insights] First workout date:', workouts[0].date);
         console.log('[overview-insights] All workout dates:', workouts.map(w => w.date));
@@ -93,8 +120,17 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
                                            workoutDate.getUTCHours(), workoutDate.getUTCMinutes(), workoutDate.getUTCSeconds()));
         return workoutUtc >= startUtc && workoutUtc <= endUtc;
     });
+
+    // Filter PRs to the actual requested period
+    const filteredPRs = exercisePRs.filter(pr => {
+        const prDate = new Date(pr.date);
+        const prUtc = new Date(Date.UTC(prDate.getUTCFullYear(), prDate.getUTCMonth(), prDate.getUTCDate(),
+                                      prDate.getUTCHours(), prDate.getUTCMinutes(), prDate.getUTCSeconds()));
+        return prUtc >= startUtc && prUtc <= endUtc;
+    });
     
     console.log(`[overview-insights] After filtering: ${filteredWorkouts.length} workouts in actual period`);
+    console.log(`[overview-insights] After filtering: ${filteredPRs.length} PRs in actual period`);
     if (filteredWorkouts.length > 0) {
         console.log('[overview-insights] First filtered workout date:', filteredWorkouts[0].date);
         console.log('[overview-insights] All filtered workout dates:', filteredWorkouts.map(w => w.date));
@@ -108,7 +144,9 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
     const latestWorkoutDate: Date | null = filteredWorkouts.length > 0 ? filteredWorkouts[0].date : null;
 
     const workoutSummaries: { type: string, date: Date, durationSeconds?: number, distanceMeters?: number, volumeKg?: number }[] = [];
+    const recentPRs: PRRecord[] = [];
 
+    // Process workouts
     filteredWorkouts.forEach(w => {
         const durationSec = w.duration || 0;
         const volumeKg = w.calculatedVolume || 0;
@@ -132,6 +170,50 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
             distanceMeters: distanceMeters > 0 ? distanceMeters : undefined,
             volumeKg: volumeKg > 0 ? volumeKg: undefined
         });
+
+        // Process workout records
+        if (w.records && w.records.length > 0) {
+            const typedRecords = w.records as WorkoutRecord[];
+            typedRecords.forEach(record => {
+                let prDescription = '';
+                if (record.type === 'longestRun' && record.value) {
+                    prDescription = `Longest Run: ${record.value.toFixed(2)} km`;
+                } else if (record.type === 'fastest5kPace' && record.value) {
+                    const paceMinutes = Math.floor(record.value / 60);
+                    const paceSeconds = Math.round(record.value % 60);
+                    prDescription = `Fastest 5K Pace: ${paceMinutes}:${paceSeconds.toString().padStart(2, '0')}/km`;
+                } else if (record.type === 'maxStrengthVolume' && record.value) {
+                    const tons = record.value / 1000;
+                    prDescription = `Max Strength Volume: ${tons.toFixed(2)} tons`;
+                }
+
+                if (prDescription) {
+                    recentPRs.push({
+                        description: prDescription,
+                        date: w.date,
+                        workoutName: w.name || 'Workout'
+                    });
+                }
+            });
+        }
+    });
+
+    // Process exercise PRs
+    filteredPRs.forEach(pr => {
+        let prDescription = '';
+        if (pr.unit === 'reps') {
+            prDescription = `New PR in ${pr.exerciseName}: ${pr.value} reps`;
+        } else if (pr.unit === 'kg') {
+            prDescription = `New PR in ${pr.exerciseName}: ${pr.value}kg`;
+        }
+
+        if (prDescription) {
+            recentPRs.push({
+                description: prDescription,
+                date: pr.date,
+                workoutName: 'Strength Training' // Default name since we might not have the workout reference
+            });
+        }
     });
 
     return {
@@ -141,7 +223,8 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
         totalVolumeKg: totalVolume,
         types: Array.from(workoutTypes),
         latestWorkoutDate: latestWorkoutDate,
-        workouts: workoutSummaries 
+        workouts: workoutSummaries,
+        recentPRs: recentPRs
     };
 }
 
@@ -330,17 +413,28 @@ export async function GET(request: NextRequest) {
             console.log('[overview-insights-TRACE] Constructing system prompt for Grok.');
             let systemPrompt = `You are Aivery, a motivating and insightful AI fitness coach integrated into a fitness tracking app.
 
-The user, ${session.user.nickname || session.user.name || 'there'}, is viewing their daily activity overview for ${formattedStartDate} to understand their progress and receive specific, personalized feedback.
+The user, ${session.user.nickname || session.user.name || 'there'}, is viewing their ${periodType} activity overview for ${formattedStartDate} to understand their progress and receive specific, personalized feedback.
 
-${isOngoingPeriod ? 'The day is ongoing - insights should reflect activity so far and what was done earlier this week.' : 'The day is complete - reflect on today\'s activity and place it in the weekly context.'}
+${isOngoingPeriod ? 'The period is ongoing - insights should reflect activity so far and what was done earlier this week.' : 'The period is complete - reflect on the complete activity for this timeframe.'}
 
 Your job is to generate a structured insight that:
-- Reflects what the user has done today and earlier this week
+- Reflects what the user has done during this period
 - Offers constructive observations or praise based on real metrics
+- Highlights any Personal Records (PRs) that were set during this period
+- Emphasizes achievements and progress
 - Avoids generic motivational filler
-- Provides useful perspective, especially if today is a rest day
+- Provides useful perspective, especially for rest days
 
-Data for Today (${formattedStartDate}):
+IMPORTANT PERSONAL RECORD FORMATTING INSTRUCTIONS:
+If any Personal Records (PRs) were achieved:
+- Use the exact phrase "new PR" or "Personal Record" in the text when referring to them
+- Format them as "PR in [exercise]: [value] [unit]" or "New PR: [value] [unit] in [exercise]"
+- Include specific numbers and units when mentioning PRs
+- Look for "New PR in" text in the recentPRs section and ALWAYS highlight these as the user's greatest achievements
+- Example proper formats: "New PR in Bench Press: 100 kg" or "5K pace PR: 5:30 min/km"
+- FOR BODYWEIGHT EXERCISES: Especially mention PRs involving reps, such as "New PR in Pull-up: 14 reps"
+
+Data for ${formattedStartDate}:
 ${currentPeriodJSON}
 
 INSTRUCTIONS:

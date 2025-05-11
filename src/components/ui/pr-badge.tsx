@@ -19,7 +19,7 @@ export function PRBadge({ className, size = "default", isNew = false }: PRBadgeP
     if (isNew) {
       const timer = setTimeout(() => {
         setShowAnimation(false);
-      }, 10000);
+      }, 30000);
       
       return () => clearTimeout(timer);
     }
