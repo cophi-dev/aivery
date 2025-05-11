@@ -53,6 +53,7 @@ type LeanExercisePR = Omit<IExercisePR, keyof Document | '__v'> & {
   workoutId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+  type: 'weight' | 'reps' | 'daily_reps' | 'volume'; // Add the required type field
 };
 
 export async function GET(request: Request) {
@@ -99,11 +100,11 @@ export async function GET(request: Request) {
         exerciseName: pr.exerciseName as string,
         value: pr.value as number,
         unit: pr.unit as string,
+        type: pr.type as 'weight' | 'reps' | 'daily_reps' | 'volume', // Add the required type field
         date: pr.date as Date,
         workoutId: pr.workoutId as Types.ObjectId | undefined,
         createdAt: pr.createdAt as Date,
         updatedAt: pr.updatedAt as Date,
-        // Add any other fields expected by LeanExercisePR if necessary
       }));
       
       const exercisePRMap = exercisePRs.reduce((map, pr) => {
