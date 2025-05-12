@@ -125,59 +125,54 @@ export function SpotlightCards() {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-6 h-full">
         {/* Concept Spotlight Card - Now triggers modal */}
         {spotlightKeyword && (
-          <Card 
-            className="hover:bg-muted/50 transition-colors rounded-xl shadow-sm cursor-pointer" 
-            onClick={() => handleConceptClick(spotlightKeyword)} 
+          <Card
+            className="hover:bg-muted/60 transition-colors rounded-xl shadow-sm border border-border cursor-pointer focus-within:ring-2 focus-within:ring-primary flex-1 flex"
+            onClick={() => handleConceptClick(spotlightKeyword)}
             title={`Learn about ${spotlightKeyword}`}
-            role="button" // Improve accessibility
-            tabIndex={0} // Make it focusable
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleConceptClick(spotlightKeyword)} // Keyboard accessible
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleConceptClick(spotlightKeyword)}
           >
-            <div className="p-4"> {/* Inner div for padding, Link removed */}
-              <div className="flex items-center gap-3">
-                <Lightbulb className="h-5 w-5 text-primary flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Concept Spotlight</p>
-                  <p className="text-base font-medium text-foreground">
-                    What is {spotlightKeyword}?
-                  </p>
-                </div>
+            <div className="p-4 flex items-center gap-3 w-full">
+              <Lightbulb className="h-6 w-6 text-primary" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground mb-0.5">Concept Spotlight</p>
+                <p className="text-base font-semibold text-foreground">What is <span className="font-bold">{spotlightKeyword}</span>?</p>
               </div>
+              <span className="text-xs text-primary underline ml-2">Learn more</span>
             </div>
           </Card>
         )}
 
-        {/* Data Insights Card (remains a Link) */}
+        {/* Data Insights Card */}
         {dataInsightQuestion && (
-          <Card className="hover:bg-muted/50 transition-colors rounded-xl shadow-sm">
-             {/* Keep this as a direct link for now */}
-            <a 
-              href={`/chat?dataQuery=${encodeURIComponent(dataInsightQuestion)}`} 
-              className="block p-4"
+          <Card className="hover:bg-muted/60 transition-colors rounded-xl shadow-sm border border-border flex-1 flex">
+            <a
+              href={`/chat?dataQuery=${encodeURIComponent(dataInsightQuestion)}`}
+              className="block p-4 focus:outline-none focus:ring-2 focus:ring-primary w-full h-full"
               title={`Ask: ${dataInsightQuestion}`}
             >
-              <div className="flex items-center gap-3">
-                <Search className="h-5 w-5 text-primary flex-shrink-0" />
+              <div className="flex items-center gap-3 w-full">
+                <Search className="h-6 w-6 text-primary" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Explore Your Data</p>
-                  <p className="text-base font-medium text-foreground">
-                    {dataInsightQuestion}
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground mb-0.5">Explore Your Data</p>
+                  <p className="text-base font-semibold text-foreground">{dataInsightQuestion}</p>
                 </div>
+                <span className="text-xs text-primary underline ml-2">Ask now</span>
               </div>
             </a>
           </Card>
         )}
+        {/* Quick Actions will be stacked below here in the dashboard layout */}
       </div>
 
       {/* Render the Slideshow Modal */}
       {showSlideshow && slideshowKeyword && (
         <ConceptSlideshow
           keyword={slideshowKeyword}
-          // Pass loading/error message or fetched content
           markdownContent={isLoadingContent ? "Loading..." : contentError ? `Error: ${contentError}` : slideshowContent || "No content available."}
           isOpen={showSlideshow}
           onClose={handleCloseSlideshow}

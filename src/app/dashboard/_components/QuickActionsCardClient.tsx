@@ -127,23 +127,27 @@ After the sections, conclude *only* with an engaging question asking for my feed
 
     return (
         <>
-            <Card className="rounded-xl shadow-sm">
-                <CardHeader>
-                    <CardTitle>Quick Actions</CardTitle>
+            <Card className="rounded-xl shadow-sm border border-border bg-card">
+                <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+                        Quick Actions
+                    </CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col space-y-3">
+                <CardContent className="flex flex-col gap-3 pt-0">
                     <Button
                         variant="secondary"
                         onClick={handleGeneratePlan}
+                        className="w-full"
                     >
-                        <CalendarPlus className="mr-2 h-4 w-4" />
+                        <CalendarPlus className="h-5 w-5 mr-2" />
                         Create Next Week's Plan
                     </Button>
                     <Button
                         variant="secondary"
                         onClick={handleReviewWeek}
+                        className="w-full"
                     >
-                        <ClipboardCheck className="mr-2 h-4 w-4" />
+                        <ClipboardCheck className="h-5 w-5 mr-2" />
                         {reviewButtonText}
                     </Button>
                 </CardContent>

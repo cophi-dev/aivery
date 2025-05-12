@@ -1,3 +1,5 @@
+import { LucideDumbbell, LucideFootprints, LucideWaves, LucideBike, LucideHeartPulse } from "lucide-react";
+
 <main className="container max-w-2xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
   <div className="space-y-2 sm:space-y-4">
     <div className="flex items-center justify-between">

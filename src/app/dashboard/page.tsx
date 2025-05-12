@@ -262,7 +262,7 @@ export default function DashboardPage() {
                                 bikingDistancePrevious={metrics.bikingDistancePrevious7Days}
                             />
                             {/* Add Personal Records and Spotlight cards in a grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
                                 <PersonalRecordsCard 
                                     exercisePRs={metrics.exercisePRs || []}
                                     overallPRs={{
@@ -280,10 +280,13 @@ export default function DashboardPage() {
                                         } : undefined
                                     }}
                                 />
-                                <SpotlightCards />
+                                <div className="flex flex-col h-full min-h-0 gap-4">
+                                  <div className="flex-1 flex flex-col gap-4">
+                                    <SpotlightCards />
+                                    <QuickActionsCard sendAiMessage={handleSendAiMessage} />
+                                  </div>
+                                </div>
                             </div>
-                            {/* Quick Actions Card - Correct prop name */}
-                            <QuickActionsCard sendAiMessage={handleSendAiMessage} />
                         </>
                         // --- End Regular Metrics Cards ---
                     ) : (
