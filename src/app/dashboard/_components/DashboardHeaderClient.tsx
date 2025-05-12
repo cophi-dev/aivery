@@ -18,6 +18,9 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
   const [quote, setQuote] = useState("Loading quote...");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [insight, setInsight] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchQuoteData = useCallback(async (forceFresh = false) => {
     try {
@@ -50,6 +53,24 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [fetchQuoteData]);
+
+  useEffect(() => {
+    async function fetchInsight() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/daily-insight');
+        if (!response.ok) throw new Error('Failed to fetch daily insight');
+        const data = await response.json();
+        setInsight(data.insight || '');
+      } catch (err: any) {
+        setError('Could not load daily insight.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchInsight();
+  }, []);
 
   // Animation variants
   const containerVariants = {
@@ -151,7 +172,7 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
             className="text-sm md:text-base text-slate-600 dark:text-[#c0daff] mt-2 italic font-light"
             variants={quoteVariants}
           >
-            {quote}
+            {loading ? 'Loading your daily insight...' : error ? error : insight}
           </motion.p> 
         </div>
       </div>

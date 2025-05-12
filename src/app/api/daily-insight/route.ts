@@ -7,6 +7,7 @@ import { findLatestInsightForUserAndDate, createOrUpdateInsight } from '@/lib/db
 import type { WorkoutData, DailyInsightData } from '@/types/db'; // Import WorkoutData type
 import { getUserById } from '@/lib/db/repositories/userRepository';
 import { getToken } from "next-auth/jwt";
+import { startOfWeek, endOfWeek, subWeeks } from 'date-fns';
 
 // Ensure the route is always dynamic and not cached
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ const getStartOfDayUTC = (date: Date): Date => {
 
 function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: Date, description: string } {
   const today = new Date();
-  const endDate = new Date(today); // Default end date is today
+  let endDate = new Date(today); // Default end date is today
   let startDate = new Date(today);
   let description = ""; // Description of the date range
   
@@ -36,9 +37,12 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
   // Calculate different start dates based on day
   switch(dayName) {
     case 'Monday':
-      // Start of current week
-      startDate.setDate(today.getDate() - today.getDay() + 1); // Go to Monday of current week
-      description = "this week so far";
+      // Use date-fns to get last week's Monday and Sunday
+      const lastWeekStart = startOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
+      const lastWeekEnd = endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
+      startDate = lastWeekStart;
+      endDate = lastWeekEnd;
+      description = "last week (Mon-Sun)";
       break;
     case 'Tuesday':
     case 'Wednesday':
@@ -77,7 +81,7 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
 // --- End Date Range Calculation Helper ---
 
 // Helper to format workouts for the prompt
-function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userPersonalRecords?: any): string {
+function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userPersonalRecords?: any, periodStart?: Date, periodEnd?: Date): string {
   if (!workouts || workouts.length === 0) {
     return "No workouts recorded in this period.";
   }
@@ -142,38 +146,55 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
   }
   
   // Add Personal Records section if data is available
-  if (userPersonalRecords) {
-    finalString += "\nPersonal Records:\n";
-    
+  if (userPersonalRecords && periodStart && periodEnd) {
+    // Only include PRs from userPersonalRecords if their date is within the period
+    let hasPeriodPR = false;
+    finalString += "\nPersonal Records (this period):\n";
     // Max Strength Volume PR
-    if (userPersonalRecords.maxStrengthVolume?.value > 0) {
+    if (
+      userPersonalRecords.maxStrengthVolume?.value > 0 &&
+      userPersonalRecords.maxStrengthVolume.date &&
+      new Date(userPersonalRecords.maxStrengthVolume.date) >= periodStart &&
+      new Date(userPersonalRecords.maxStrengthVolume.date) <= periodEnd
+    ) {
+      hasPeriodPR = true;
       const maxVolume = userPersonalRecords.maxStrengthVolume.value;
       const maxVolumeDate = new Date(userPersonalRecords.maxStrengthVolume.date);
       finalString += `  - Max Strength Volume: ${Math.round(maxVolume).toLocaleString()} kg`;
-      
-      // Add volume in tons for better readability if more than 1000kg
       if (maxVolume >= 1000) {
         const tons = maxVolume / 1000;
         finalString += ` (${tons.toFixed(2)} tons)`;
       }
-      
       finalString += ` on ${maxVolumeDate.toLocaleDateString()}\n`;
     }
-    
     // Longest Run PR
-    if (userPersonalRecords.longestRun?.value > 0) {
+    if (
+      userPersonalRecords.longestRun?.value > 0 &&
+      userPersonalRecords.longestRun.date &&
+      new Date(userPersonalRecords.longestRun.date) >= periodStart &&
+      new Date(userPersonalRecords.longestRun.date) <= periodEnd
+    ) {
+      hasPeriodPR = true;
       const longestRun = userPersonalRecords.longestRun.value;
       const longestRunDate = new Date(userPersonalRecords.longestRun.date);
       finalString += `  - Longest Run: ${longestRun.toFixed(2)} km on ${longestRunDate.toLocaleDateString()}\n`;
     }
-    
     // Fastest 5k Pace PR
-    if (userPersonalRecords.fastest5kPace?.value > 0) {
+    if (
+      userPersonalRecords.fastest5kPace?.value > 0 &&
+      userPersonalRecords.fastest5kPace.date &&
+      new Date(userPersonalRecords.fastest5kPace.date) >= periodStart &&
+      new Date(userPersonalRecords.fastest5kPace.date) <= periodEnd
+    ) {
+      hasPeriodPR = true;
       const paceSecs = userPersonalRecords.fastest5kPace.value;
       const paceMinutes = Math.floor(paceSecs / 60);
       const paceSeconds = Math.round(paceSecs % 60);
       const paceDate = new Date(userPersonalRecords.fastest5kPace.date);
       finalString += `  - Fastest 5K Pace: ${paceMinutes}:${paceSeconds.toString().padStart(2, '0')}/km on ${paceDate.toLocaleDateString()}\n`;
+    }
+    if (!hasPeriodPR) {
+      finalString += "  - No new PRs set during this period.\n";
     }
   }
 
@@ -184,21 +205,15 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
     workoutName: string;
   };
 
-  // Then use this type for the recentPRs array
-  // Add a special section for new PRs in the workout data
-  const recentPRs: PRRecord[] = [];
-  if (workouts && workouts.length > 0) {
+  // Add a special section for PRs in the workout data that are within the period
+  const periodPRs: PRRecord[] = [];
+  if (workouts && workouts.length > 0 && periodStart && periodEnd) {
     workouts.forEach(workout => {
       if (workout.records && workout.records.length > 0) {
         workout.records.forEach(record => {
-          // Check if the record is recent (within 7 days)
-          const recordDate = record.createdAt || record.date || workout.date;
-          const recordTime = new Date(recordDate).getTime();
-          const now = Date.now();
-          const isRecent = now - recordTime < 7 * 24 * 60 * 60 * 1000; // Within 7 days
-          
-          if (isRecent) {
-            // Create a user-friendly description
+          const recordDate = new Date(record.createdAt || record.date || workout.date);
+          if (recordDate >= periodStart && recordDate <= periodEnd) {
+            // Create a user-friendly description (same as before)
             let prDescription = '';
             if (record.type === 'longestRun' && record.value) {
               prDescription = `Longest Run: ${record.value.toFixed(2)} km`;
@@ -210,7 +225,6 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
               const tons = record.value / 1000;
               prDescription = `Max Strength Volume: ${tons.toFixed(2)} tons`;
             } else if (record.type === 'explicit_pr' && record.exerciseName) {
-              // Handle explicit PRs added by our enhanced logic in workout-daily-view.tsx
               if (record.unit === 'reps') {
                 prDescription = `New PR in ${record.exerciseName}: ${record.value} reps`;
               } else if (record.unit) {
@@ -226,15 +240,13 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
               } else if (record.value) {
                 prDescription = `New PR in ${record.exerciseName}: ${record.value} ${record.unit || ''}`;
               } else if (record.reps) {
-                // Support for reps-only records in bodyweight exercises
                 prDescription = `New PR in ${record.exerciseName}: ${record.reps} reps`;
               }
             }
-            
             if (prDescription) {
-              recentPRs.push({
+              periodPRs.push({
                 description: prDescription,
-                date: new Date(recordDate),
+                date: recordDate,
                 workoutName: workout.name || 'Workout'
               });
             }
@@ -244,14 +256,13 @@ function formatWorkoutsForPrompt(workouts: WorkoutData[], todayDate: Date, userP
     });
   }
 
-  // Add the recent PRs to the summary
-  if (recentPRs.length > 0) {
-    finalString += "\nRECENT PERSONAL RECORDS (last 7 days):\n";
-    recentPRs.forEach(pr => {
+  // Add the period PRs to the summary
+  if (periodPRs.length > 0) {
+    finalString += `\nPERSONAL RECORDS (this period):\n`;
+    periodPRs.forEach(pr => {
       finalString += `  - ${pr.description} set on ${pr.date.toLocaleDateString()} during "${pr.workoutName}"\n`;
     });
-    
-    finalString += "\nPlease highlight these recent PRs prominently in your response!";
+    finalString += "\nPlease highlight these PRs prominently in your response!";
   }
 
   return finalString.trim();
@@ -397,7 +408,7 @@ export async function GET(req: Request) {
     } else {
         try {
             // Pass today's date to the formatting function
-            const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords);
+            const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords, startDate, endDate);
             const systemPrompt = `\
 You are Aivery, a friendly and insightful AI fitness coach providing a daily insight for ${displayName}.
 

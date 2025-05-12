@@ -20,6 +20,9 @@ config({
   override: false 
 });
 
+// Add this after loading env
+const userId = process.env.INSIGHT_USER_ID; // Set this in your .env.local if you want to filter by user
+
 // Define models inline since we can't import them directly in ESM
 const ActivityInsightSchema = new mongoose.Schema({
   userId: mongoose.Schema.Types.ObjectId,
@@ -56,9 +59,29 @@ async function clearInsightCache() {
     const activityResult = await ActivityInsightModel.deleteMany({});
     console.log(`Deleted ${activityResult.deletedCount} activity insights`);
 
-    console.log('Clearing DailyInsight cache...');
-    const dailyResult = await DailyInsightModel.deleteMany({});
-    console.log(`Deleted ${dailyResult.deletedCount} daily insights`);
+    // Print all collections in the database
+    const collections = await mongoose.connection.db.listCollections().toArray();
+    console.log('Collections in DB:', collections.map(c => c.name));
+
+    // Print count before deletion
+    const countBefore = await DailyInsightModel.countDocuments({});
+    console.log('DailyInsight count before:', countBefore);
+
+    // Try deleting with Mongoose
+    const resultMongoose = await DailyInsightModel.deleteMany({});
+    console.log('Deleted (Mongoose):', resultMongoose.deletedCount);
+
+    // Print count after Mongoose deletion
+    const countAfterMongoose = await DailyInsightModel.countDocuments({});
+    console.log('DailyInsight count after Mongoose delete:', countAfterMongoose);
+
+    // Try deleting with raw driver as fallback
+    const resultRaw = await mongoose.connection.db.collection('dailyInsights').deleteMany({});
+    console.log('Deleted (raw):', resultRaw.deletedCount);
+
+    // Print count after raw driver deletion
+    const countAfterRaw = await DailyInsightModel.countDocuments({});
+    console.log('DailyInsight count after raw delete:', countAfterRaw);
 
     console.log('\nSuccessfully cleared insight cache!');
     await mongoose.disconnect();

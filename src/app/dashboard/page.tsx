@@ -19,8 +19,7 @@ import { PersonalRecordsCard } from "./_components/PersonalRecordsCardClient";
 import { QuickActionsCard } from "./_components/QuickActionsCardClient";
 import { LoadingIndicator } from "@/components/ui/loading-indicator"; // Assuming a loading indicator component
 // Replace DailyInsightCard with AiveryInsights
-import AiveryInsights from "@/components/dashboard/AiveryInsights"; // <-- Updated import
-import TodaysSummaryCard from "@/components/dashboard/TodaysSummaryCard"; // Import the new card
+// import AiveryInsights from "@/components/dashboard/AiveryInsights"; // <-- Updated import
 // Import the type for exercise PRs and IUser for overall PRs
 import type { DashboardPREntry } from "@/lib/workout-actions";
 import type { IUser } from '@/lib/db/models/user';
@@ -172,16 +171,6 @@ export default function DashboardPage() {
                     <LogWorkoutButton />
                     <SubscriptionStatus />
                     
-                    {/* Grid for Insights and Today's Summary */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 lg:gap-8">
-                      <div className="md:transform md:transition-all md:duration-300 md:hover:translate-y-[-4px]">
-                        <AiveryInsights />
-                      </div>
-                      <div className="md:transform md:transition-all md:duration-300 md:hover:translate-y-[-4px]">
-                        <TodaysSummaryCard />
-                      </div>
-                    </div>
-
                     {/* AI Preferences Card */}
                     {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
                         <Card className="border-secondary/70 dark:border-secondary/80 bg-secondary/50 dark:bg-secondary/30 shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl">

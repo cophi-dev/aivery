@@ -19,18 +19,7 @@ export const dailyContentConfig: DailyContent[] = [
     description: 'Daily progress and goals',
     icon: Zap,
     prompt: 
-`Analyze today's activities and context:
-1. What workouts or activities were completed today?
-2. How do they align with the user's typical training style?
-3. What was the intensity and focus of these activities?
-
-Provide a focused daily insight:
-- Acknowledge specific achievements or efforts made today
-- Note any interesting patterns in exercise selection or intensity
-- If no workouts today, provide context about rest and recovery
-- Highlight any milestone reached today (volume, consistency, etc.)
-
-Keep the response encouraging and focused on today's context (2-4 sentences).`,
+`Reflect on the user's achievements and progress from last week, highlighting any standout moments, improvements, or personal records. Encourage the user with excitement and positivity for the new week ahead, focusing on momentum and fresh opportunities. Your response must be exactly two concise sentences.`,
   },
   {
     day: 'Tuesday',
@@ -49,7 +38,7 @@ Provide a focused daily insight:
 - If no workouts today, contextualize the rest day
 - Mention any technique improvements or intensity management
 
-Keep the response specific to today's efforts (2-3 sentences).`,
+Keep the response specific to today's efforts. Your response must be exactly two concise sentences.`,
   },
   {
     day: 'Wednesday',
@@ -68,7 +57,7 @@ Provide a focused daily insight:
 - If no workouts today, discuss the role of recovery
 - Highlight any particular challenges tackled
 
-Keep the response centered on today's training context (2-4 sentences).`,
+Keep the response centered on today's training context. Your response must be exactly two concise sentences.`,
   },
   {
     day: 'Thursday',
@@ -87,7 +76,7 @@ Provide a focused daily insight:
 - If no workouts today, contextualize the recovery
 - Highlight any technique or intensity achievements
 
-Keep the response specific to today's accomplishments (2-4 sentences).`,
+Keep the response specific to today's accomplishments. Your response must be exactly two concise sentences.`,
   },
   {
     day: 'Friday',
@@ -106,7 +95,7 @@ Provide a focused daily insight:
 - If no workouts today, discuss the recovery context
 - Mention any milestone or progress markers
 
-Keep the response focused on today's efforts (2-3 sentences).`,
+Keep the response focused on today's efforts. Your response must be exactly two concise sentences.`,
   },
   {
     day: 'Saturday',
@@ -129,7 +118,7 @@ Provide a focused daily insight that:
 - Keep the tone energetic and opportunity-focused
 - Emphasize that today's choices are open
 
-Keep the response specific to today's context (2-3 sentences).`,
+Keep the response specific to today's context. Your response must be exactly two concise sentences.`,
   },
   {
     day: 'Sunday',
@@ -164,6 +153,6 @@ Keep the tone reflective but forward-looking, celebrating progress while encoura
 Focus on patterns and achievements that can inspire next week's journey.
 If today had a workout, acknowledge it within the weekly context.
 
-Response should be 4-6 sentences, balancing reflection and motivation.`,
+Your response must be exactly two concise sentences.`,
   }
 ]; 
