@@ -271,20 +271,20 @@ function NumberSlider({
   };
   
   return (
-    <div className={`flex flex-col space-y-2 ${className}`}>
+    <div className={`flex flex-col space-y-2 ${className}`}> {/* Removed responsive width */}
       <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={decrement}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
+          className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
         >
-          <LucideMinus className="h-4 w-4" />
+          <LucideMinus className="h-3 w-3 sm:h-4 sm:w-4" />
           <span className="sr-only">Decrease</span>
         </button>
         
-        <div className="flex items-center justify-center rounded-lg bg-muted/50 px-4 py-2 min-w-[100px]">
+        <div className="flex items-center justify-center rounded-lg bg-muted/50 px-2 sm:px-4 py-1.5 sm:py-2 min-w-[80px] sm:min-w-[100px]">
           <div className="flex items-baseline">
-            <div className="text-2xl font-medium tabular-nums tracking-tighter w-20 text-right h-8 flex items-center justify-end">
+            <div className="text-lg sm:text-2xl font-medium tabular-nums tracking-tighter w-16 sm:w-20 text-right h-6 sm:h-8 flex items-center justify-end">
               {isDecimal ? (
                 <>
                   <SlidingNumber value={Math.floor(displayValue / 10)} />
@@ -295,16 +295,16 @@ function NumberSlider({
                 <SlidingNumber value={numValue} />
               )}
             </div>
-            {unit && <span className="ml-1 text-sm text-muted-foreground min-w-10">{unit}</span>}
+            {unit && <span className="ml-1 text-xs sm:text-sm text-muted-foreground min-w-8 sm:min-w-10">{unit}</span>}
           </div>
         </div>
         
         <button
           type="button"
           onClick={increment}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
+          className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
         >
-          <LucidePlus className="h-4 w-4" />
+          <LucidePlus className="h-3 w-3 sm:h-4 sm:w-4" />
           <span className="sr-only">Increase</span>
         </button>
       </div>
@@ -1380,9 +1380,9 @@ export default function NewWorkoutPage() {
   const exerciseBodyStyle = "px-6 pb-6 space-y-6"
   const exerciseStatsStyle = "flex items-center gap-2 text-sm text-muted-foreground"
   const exerciseStatBadgeStyle = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20"
-  const setRowStyle = "group relative grid grid-cols-[2rem_1fr_1fr_auto] gap-6 rounded-xl p-5 bg-card shadow-sm border border-border/30 mb-4"
-  const inputGroupStyle = "flex flex-col items-start space-y-2 w-full"
-  const inputLabelStyle = "text-xs font-medium text-muted-foreground/80 tracking-wide uppercase"
+  const setRowStyle = "group relative grid gap-4 sm:gap-6 rounded-xl p-3 sm:p-5 bg-card shadow-sm border border-border/30 mb-4 grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_1fr_1fr_auto] justify-items-center" // Modified base grid
+  const inputGroupStyle = "flex flex-col items-center space-y-2 w-full max-w-[250px] mx-auto" // Changed items-start to items-center
+  const inputLabelStyle = "text-xs font-semibold text-center text-muted-foreground/80 tracking-wide uppercase" // Added font-semibold and text-center
   const numberControlStyle = "flex items-center justify-center gap-2 w-full max-w-[160px]"
 
   // Add these style constants at the top with other styles
@@ -1931,7 +1931,7 @@ export default function NewWorkoutPage() {
                                 transition={{ duration: 0.2 }}
                                 className={cn(
                                   setRowStyle,
-                                  isBodyweightExercise(canonicalExercise) && "grid-cols-[2rem_1fr_auto] justify-items-center"
+                                  isBodyweightExercise(canonicalExercise) && "sm:grid-cols-[2rem_1fr_auto] justify-items-center" // Added sm: prefix
                                 )}
                               >
                                 {/* Set Number */}
@@ -1943,38 +1943,41 @@ export default function NewWorkoutPage() {
                                   </div>
                                 </div>
                                 
-                                {/* Weight Input - Hide for bodyweight exercises */}
-                                {!isBodyweightExercise(canonicalExercise) && (
-                                  <div className={inputGroupStyle}>
-                                    <Label className={inputLabelStyle}>WEIGHT</Label>
+                                {/* NEW Wrapper for Weight/Reps */} 
+                                <div className="flex flex-col gap-4 w-full col-span-1"> {/* This div takes the second grid column */}
+                                  {/* Weight Input - Hide for bodyweight exercises */}
+                                  {!isBodyweightExercise(canonicalExercise) && (
+                                    <div className={inputGroupStyle}>
+                                      <Label className={inputLabelStyle}>WEIGHT</Label>
+                                      <NumberSlider
+                                        value={set.weight || '0'}
+                                        onChange={(value) => updateSetField(exercise.id, set.id, 'weight', value)}
+                                        min={0}
+                                        max={200}
+                                        step={0.5}
+                                        unit="kg"
+                                        className="mb-1"
+                                        isDecimal={true}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* Reps Input */}
+                                  <div className={cn(
+                                    inputGroupStyle,
+                                    isBodyweightExercise(canonicalExercise) && "w-full max-w-[250px] mx-auto" // Center if bodyweight
+                                  )}>
+                                    <Label className={inputLabelStyle}>REPS</Label>
                                     <NumberSlider
-                                      value={set.weight || '0'}
-                                      onChange={(value) => updateSetField(exercise.id, set.id, 'weight', value)}
+                                      value={set.reps || '0'}
+                                      onChange={(value) => updateSetField(exercise.id, set.id, 'reps', value)}
                                       min={0}
-                                      max={200}
-                                      step={0.5}
-                                      unit="kg"
+                                      max={100}
+                                      step={1}
+                                      unit="reps"
                                       className="mb-1"
-                                      isDecimal={true}
                                     />
                                   </div>
-                                )}
-
-                                {/* Reps Input */}
-                                <div className={cn(
-                                  inputGroupStyle,
-                                  isBodyweightExercise(canonicalExercise) && "w-full max-w-[250px] mx-auto"
-                                )}>
-                                  <Label className={inputLabelStyle}>REPS</Label>
-                                  <NumberSlider
-                                    value={set.reps || '0'}
-                                    onChange={(value) => updateSetField(exercise.id, set.id, 'reps', value)}
-                                    min={0}
-                                    max={100}
-                                    step={1}
-                                    unit="reps"
-                                    className="mb-1"
-                                  />
                                 </div>
 
                                 {/* Remove Set Button */}

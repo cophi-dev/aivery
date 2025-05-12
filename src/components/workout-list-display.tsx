@@ -32,30 +32,30 @@ export function WorkoutListDisplay({ workouts }: WorkoutListDisplayProps) {
           key={workout.id}
           className="block p-3 bg-card border rounded-lg shadow-sm hover:bg-muted/80 transition-colors"
         >
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-1">
-            <span className="font-semibold text-sm text-card-foreground break-words max-w-full">
+          <div className="flex justify-between items-center mb-1">
+            <span className="font-semibold text-sm text-card-foreground">
               {new Date(workout.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}: {workout.name || workout.type}
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize mt-1 sm:mt-0">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
               {workout.type}
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-muted-foreground">
-            <div className="flex justify-between sm:block">
+          <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+            <div>
               <span className="font-medium">Duration:</span>{' '}
-              <span className="ml-1">{workout.duration ? formatDuration(workout.duration) : 'N/A'}</span>
+              {workout.duration ? formatDuration(workout.duration) : 'N/A'}
             </div>
-            <div className="flex justify-between sm:block">
+            <div>
               <span className="font-medium">Distance:</span>{' '}
-              <span className="ml-1">{workout.distance ? formatDistance(workout.distance) : 'N/A'}</span>
+              {workout.distance ? formatDistance(workout.distance) : 'N/A'} {/* Pass raw distance (expected meters) to formatter */}
             </div>
-            <div className="flex justify-between sm:block">
+            <div>
               <span className="font-medium">Calories:</span>{' '}
-              <span className="ml-1">{workout.calories ? `${Math.round(workout.calories)} kcal` : 'N/A'}</span>
+              {workout.calories ? `${Math.round(workout.calories)} kcal` : 'N/A'}
             </div>
           </div>
           {workout.notes && (
-            <p className="mt-1 text-xs text-muted-foreground italic break-words">
+            <p className="mt-1 text-xs text-muted-foreground italic">
               Notes: {workout.notes}
             </p>
           )}

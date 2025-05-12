@@ -396,46 +396,46 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Dumbbell className="h-5 w-5 text-[#fa9f7b]" />
-                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                        <Dumbbell className="h-4 w-4 sm:h-5 sm:w-5 text-[#fa9f7b]" />
+                        <CardTitle className="text-base sm:text-lg font-medium">{workout.name}</CardTitle>
                     </div>
                     <div className="flex items-center gap-2">
                         {workout.records && workout.records.length > 0 && (
-                            <PRBadge isNew={hasNewStrengthPRs} />
+                            <PRBadge />
                         )}
                         <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#fa9f7b]/5">
-                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            {isExpanded ? <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4" /> : <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />}
                         </Button>
                     </div>
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Clock className="h-5 w-5 mb-2 text-[#fa9f7b]" />
-                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
-                        <span className="text-xs text-muted-foreground">Duration</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Clock className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
+                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{formatDuration(workout.duration)}</span>
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">Duration</span>
                     </div>
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Weight className="h-5 w-5 mb-2 text-[#fa9f7b]" />
-                        <span className="text-base font-medium mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
-                        <span className="text-xs text-muted-foreground">Volume</span>
+                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Weight className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
+                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">Volume</span>
                     </div>
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Activity className="h-5 w-5 mb-2 text-[#fa9f7b]" />
-                        <span className="text-base font-medium mb-1">{totalReps}</span>
-                        <span className="text-xs text-muted-foreground">Total Reps</span>
+                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Activity className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
+                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{totalReps}</span>
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">Total Reps</span>
                     </div>
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Dumbbell className="h-5 w-5 mb-2 text-[#fa9f7b]" />
-                        <span className="text-base font-medium mb-1">{totalSets}</span>
-                        <span className="text-xs text-muted-foreground">Sets</span>
+                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                        <Dumbbell className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
+                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{totalSets}</span>
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">Sets</span>
                     </div>
                 </div>
 
                 {isExpanded && (
                     <>
-                        <div className="space-y-4 mt-6">
+                        <div className="space-y-3 sm:space-y-4 mt-4 sm:mt-6">
                             {workout.workoutExercises?.map((exercise) => {
                                 const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
                                 const exerciseVolume = exercise.sets?.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0) || 0;
@@ -446,30 +446,21 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                                 );
                                 
                                 return (
-                                    <div key={exercise._id} className="p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
+                                    <div key={exercise._id} className="p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-medium">{exercise.exerciseId.name}</span>
-                                                {hasPR && (
-                                                    <PRBadge size="sm" isNew={
-                                                        // Check if this exercise has a new PR (changed from 24 hours to 7 days)
-                                                        workout.records?.some(record => 
-                                                            record.exerciseId === exercise.exerciseId._id.toString() && 
-                                                            record.createdAt && 
-                                                            new Date(record.createdAt).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000
-                                                        )
-                                                    } />
-                                                )}
+                                                <span className="text-sm sm:text-base font-medium">{exercise.exerciseId.name}</span>
+                                                {hasPR && <PRBadge size="sm" />}
                                             </div>
-                                            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                            <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-muted-foreground">
                                                 <span>{exerciseReps} reps</span>
                                                 <span>•</span>
                                                 <span>{(exerciseVolume / 1000).toFixed(1)}t</span>
                                             </div>
                                         </div>
-                                        <div className="space-y-2">
+                                        <div className="space-y-1 sm:space-y-2">
                                             {exercise.sets?.map((set, index) => (
-                                                <div key={index} className="flex items-center justify-between text-sm">
+                                                <div key={index} className="flex items-center justify-between text-xs sm:text-sm">
                                                     <span className="text-muted-foreground">Set {index + 1}</span>
                                                     <span>{set.weight}kg × {set.reps}</span>
                                                 </div>
@@ -478,25 +469,6 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                                     </div>
                                 );
                             })}
-                        </div>
-                        {workout.notes && (
-                            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
-                                <p className="text-sm text-muted-foreground">{workout.notes}</p>
-                            </div>
-                        )}
-                        {workout.aiHighlight && (
-                            <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
-                                <p className="text-sm text-[#fa9f7b]/90">{workout.aiHighlight}</p>
-                            </div>
-                        )}
-                        <div className="mt-6 flex justify-end">
-                            <Button 
-                                variant="outline" 
-                                className="border-[#fa9f7b]/20 text-[#fa9f7b] hover:bg-[#fa9f7b]/5"
-                                onClick={() => router.push(`/workouts/${workout._id}`)}
-                            >
-                                View Details
-                            </Button>
                         </div>
                     </>
                 )}
