@@ -5,6 +5,10 @@ import dbConnect from "@/lib/db/mongoose";
 import Exercise from "@/lib/db/models/exercise";
 import { FilterQuery } from "mongoose";
 import { IExercise } from "@/lib/db/models/exercise";
+import ExercisePR from "@/lib/db/models/exercisePR";
+import WorkoutExercise from "@/lib/db/models/workoutExercise";
+import ActivityInsight from "@/lib/db/models/activityInsight";
+import { ObjectId } from "mongoose";
 
 export const dynamic = 'force-dynamic';
 
