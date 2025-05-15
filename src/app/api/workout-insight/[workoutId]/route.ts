@@ -7,6 +7,7 @@ import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { ObjectId } from 'mongodb';
 import { formatDistance as formatDistanceUtil } from "@/lib/utils"; // Use existing formatter
+import { estimateBodyweightForExercise } from '@/lib/utils/estimateBodyweightForExercise';
 
 // --- Fun Analogy Helpers ---
 
@@ -140,9 +141,16 @@ export async function GET(
             
             // Calculate volume from workout exercises
             calculatedVolume = workoutExercises.reduce((totalVol, ex) => {
-                // Ensure sets exists and is an array before reducing
                 const exerciseSets = Array.isArray(ex.sets) ? ex.sets : [];
-                const exerciseVol = exerciseSets.reduce((setVol, set) => setVol + ((set.weight ?? 0) * (set.reps ?? 0)), 0);
+                const exerciseName = ex.exerciseId?.name || '';
+                const isBodyweight = estimateBodyweightForExercise(exerciseName) > 0;
+                const exerciseVol = exerciseSets.reduce((setVol, set) => {
+                    let weight = set.weight ?? 0;
+                    if (isBodyweight && (!weight || weight === 0)) {
+                        weight = estimateBodyweightForExercise(exerciseName);
+                    }
+                    return setVol + (weight * (set.reps ?? 0));
+                }, 0);
                 return totalVol + exerciseVol;
             }, 0);
         } catch (error) {

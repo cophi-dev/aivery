@@ -7,6 +7,7 @@ import WorkoutExerciseModel from '../models/workoutExercise'
 import mongoose, { Document, FlattenMaps } from 'mongoose'
 import ExerciseModel from "../models/exercise"
 import { Types } from 'mongoose'
+import { estimateBodyweightForExercise } from '@/lib/utils/estimateBodyweightForExercise'
 
 type LeanDocument<T> = {
   [P in keyof T]: T[P] extends Document ? LeanDocument<T[P]> : T[P]
@@ -148,6 +149,9 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
     // 5. Map workouts with their exercises
     return workoutDocs.map((doc: any) => {
       const workoutId = doc._id.toString();
+      const exercises = (exercisesByWorkout[workoutId] || []);
+      // Calculate total volume for this workout
+      const totalVolume = exercises.reduce((sum, ex) => sum + calculateExerciseVolume(ex), 0);
       return {
         _id: workoutId,
         userId: doc.userId.toString(),
@@ -158,6 +162,7 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
         distance: doc.distance || 0,
         intensity: doc.intensity || '',
         type: doc.type || '',
+        totalVolume,
         calculatedVolume: doc.calculatedVolume,
         cardioDetails: doc.cardioDetails,
         notes: doc.notes || '',
@@ -170,7 +175,7 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
                   (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
         updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : 
                   (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
-        workoutExercises: (exercisesByWorkout[workoutId] || []).map(exercise => ({
+        workoutExercises: exercises.map(exercise => ({
           _id: exercise._id ? exercise._id.toString() : '',
           workoutId: exercise.workoutId ? exercise.workoutId.toString() : '',
           exerciseId: exercise.exerciseId ? {
@@ -178,11 +183,11 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
             name: exercise.exerciseId.name || 'Unknown Exercise',
             category: exercise.exerciseId.category || ''
           } : {
-            _id: '', // Default _id if exercise.exerciseId is null/undefined
+            _id: '',
             name: 'Unknown Exercise',
             category: ''
           },
-          sets: (exercise.sets || []).map((set: any) => ({ // Added :any for set to address linter warning
+          sets: (exercise.sets || []).map((set: any) => ({
             weight: set.weight || 0,
             reps: set.reps || 0,
             duration: set.duration,
@@ -207,12 +212,14 @@ export async function getWorkoutsByUserId(userId: string, limit = 1000, skip = 0
 
 // Helper function defined or imported here if needed
 function calculateExerciseVolume(exercise: any): number {
-  // Placeholder - Actual implementation needed
-  // This function should calculate volume based on sets (weight * reps)
-  // Similar logic might exist in workout-details-client.tsx or utils.ts
   if (!exercise || !exercise.sets) return 0;
+  const exerciseName = exercise.exerciseId?.name || '';
+  const isBodyweight = estimateBodyweightForExercise(exerciseName) > 0;
   return exercise.sets.reduce((sum: number, set: any) => {
-    const weight = set.weight || 0;
+    let weight = set.weight || 0;
+    if (isBodyweight && (!weight || weight === 0)) {
+      weight = estimateBodyweightForExercise(exerciseName);
+    }
     const reps = set.reps || 0;
     return sum + (weight * reps);
   }, 0);
@@ -251,9 +258,11 @@ export async function getWorkoutById(id: string): Promise<WorkoutData | null> {
 
     // 3. Combine the workout doc with the fetched exercises
     // Create a new object to avoid modifying the lean workoutDoc directly if needed elsewhere
+    const totalVolume = workoutExercises.reduce((sum, ex) => sum + calculateExerciseVolume(ex), 0);
     const combinedDoc = {
       ...(workoutDoc as any), // Cast workoutDoc to any before spreading
-      workoutExercises: workoutExercises // Attach the fetched and populated exercises
+      workoutExercises: workoutExercises,
+      totalVolume // <-- add this field
     };
 
     // Use the serialization helper function

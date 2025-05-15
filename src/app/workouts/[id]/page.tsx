@@ -264,16 +264,23 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
   // Render the standard workout details page (including the AI highlight card)
   return (
     <>
-      {/* --- Section 1: Full-Screen AI Highlight (Fun Fact) - Use workout.aiHighlight --- */}
-      {workout && workout.aiHighlight && (
+      {/* --- Section 1: Full-Screen AI Highlight (Fun Fact) - Use aiHighlight from state --- */}
+      {(isLoadingHighlight || aiHighlight) && (
         <div
           className="relative flex flex-col items-center justify-center h-[calc(100vh-3.5rem)] text-center p-6 md:p-8 text-primary-dark-bg"
           style={{ backgroundColor: 'hsl(var(--background))' }}
         >
           <div className="text-2xl md:text-4xl lg:text-5xl font-bold leading-normal text-primary-dark-bg break-words px-4 prose prose-lg dark:prose-invert max-w-prose mx-auto">
-            <ReactMarkdown>
-              {workout.aiHighlight}
-            </ReactMarkdown>
+            {isLoadingHighlight ? (
+              <div className="flex items-center justify-center text-lg text-muted-foreground">
+                <Loader2 className="h-6 w-6 mr-2 animate-spin" />
+                Generating your Aivery statement...
+              </div>
+            ) : (
+              <ReactMarkdown>
+                {aiHighlight || ''}
+              </ReactMarkdown>
+            )}
           </div>
           <a href="#details" className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
             <Button variant="ghost" size="icon" className="rounded-full text-secondary-dark-bg/70 hover:bg-secondary/10 hover:text-secondary-dark-bg">

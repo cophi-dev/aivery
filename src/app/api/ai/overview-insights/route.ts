@@ -506,7 +506,7 @@ Output Format: Respond ONLY with a valid JSON object matching the structure abov
                     'Authorization': `Bearer ${grokApiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'grok-3-mini-latest',
+                    model: 'grok-3-mini',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: "Generate the overview insights based on the data provided in the system prompt, adhering strictly to the requested JSON format." }

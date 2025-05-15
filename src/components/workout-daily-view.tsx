@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, Activity, Dumbbell, Ruler, Clock, Route, Weight, ChevronDown, ChevronUp, Heart, Zap } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData, SetData } from '@/types/db';
-import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
+import { formatDuration, formatDistance, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
 import { MetricContent } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -35,6 +35,8 @@ interface WorkoutWithExercises extends WorkoutData {
     workoutExercises?: WorkoutExerciseData[];
     aiHighlight?: string;
     isExpanded?: boolean;
+    totalVolume?: number;
+    startTime?: string;
 }
 
 // Function to get metrics for date
@@ -197,7 +199,10 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
 
     return (
         <Card className="mb-6 overflow-hidden bg-[#58a3ff]/[0.02] hover:bg-[#58a3ff]/[0.04] transition-all duration-300 border-0 shadow-none">
-            <CardHeader className="pb-2">
+            <CardHeader 
+                className="pb-2 cursor-pointer"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Activity className="h-5 w-5 text-[#58a3ff]" />
@@ -207,9 +212,9 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
                         {workout.records && workout.records.length > 0 && (
                             <PRBadge isNew={hasNewDistancePR || hasNewPacePR} />
                         )}
-                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#58a3ff]/5">
+                        <div className="h-8 w-8 rounded-md flex items-center justify-center transition-colors hover:bg-[#58a3ff]/5">
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        </Button>
+                        </div>
                     </div>
                 </div>
             </CardHeader>
@@ -377,7 +382,7 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
     }, [workout.records, showPR]);
     
     // Calculate total volume and stats
-    const totalVolume = workout.calculatedVolume || 0;
+    const totalVolume = workout.totalVolume || 0;
     const totalSets = workout.workoutExercises?.reduce((acc, ex) => acc + (ex.sets?.length || 0), 0) || 0;
     const totalReps = workout.workoutExercises?.reduce((acc, ex) => 
         acc + (ex.sets?.reduce((setAcc, set) => setAcc + (set.reps || 0), 0) || 0), 0) || 0;
@@ -391,9 +396,19 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
         return now - recordTime < 7 * 24 * 60 * 60 * 1000; // Changed from 24 hours to 7 days
     });
 
+    // Add a helper to format volume as tons or kg
+    const formatVolume = (kg: number | undefined | null): string => {
+        if (kg === undefined || kg === null || isNaN(kg)) return '--';
+        if (kg >= 1000) return `${(kg / 1000).toFixed(2)}t`;
+        return `${kg.toLocaleString()}kg`;
+    };
+
     return (
         <Card className="mb-6 overflow-hidden bg-[#fa9f7b]/[0.02] hover:bg-[#fa9f7b]/[0.04] transition-all duration-300 border-0 shadow-none">
-            <CardHeader className="pb-2">
+            <CardHeader 
+                className="pb-2 cursor-pointer"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Dumbbell className="h-4 w-4 sm:h-5 sm:w-5 text-[#fa9f7b]" />
@@ -403,9 +418,9 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                         {workout.records && workout.records.length > 0 && (
                             <PRBadge />
                         )}
-                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)} className="hover:bg-[#fa9f7b]/5">
+                        <div className="h-8 w-8 rounded-md flex items-center justify-center transition-colors hover:bg-[#fa9f7b]/5">
                             {isExpanded ? <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4" /> : <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />}
-                        </Button>
+                        </div>
                     </div>
                 </div>
             </CardHeader>
@@ -418,7 +433,7 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                     </div>
                     <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                         <Weight className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
-                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
+                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{formatVolume(totalVolume)}</span>
                         <span className="text-[10px] sm:text-xs text-muted-foreground">Volume</span>
                     </div>
                     <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
@@ -438,7 +453,16 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                         <div className="space-y-3 sm:space-y-4 mt-4 sm:mt-6">
                             {workout.workoutExercises?.map((exercise) => {
                                 const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
-                                const exerciseVolume = exercise.sets?.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0) || 0;
+                                // Calculate volume for bodyweight and weighted exercises
+                                const isBodyweight = estimateBodyweightForExercise(exercise.exerciseId.name) > 0;
+                                const exerciseVolume = exercise.sets?.reduce((acc, set) => {
+                                    if (isBodyweight) {
+                                        const bw = estimateBodyweightForExercise(exercise.exerciseId.name);
+                                        return acc + (bw * (set.reps || 0));
+                                    } else {
+                                        return acc + ((set.weight || 0) * (set.reps || 0));
+                                    }
+                                }, 0) || 0;
                                 
                                 // Check if this exercise has a PR
                                 const hasPR = workout.records?.some(record => 
@@ -455,22 +479,185 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                                             <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-muted-foreground">
                                                 <span>{exerciseReps} reps</span>
                                                 <span>•</span>
-                                                <span>{(exerciseVolume / 1000).toFixed(1)}t</span>
+                                                <span>{formatVolume(exerciseVolume)}</span>
                                             </div>
                                         </div>
                                         <div className="space-y-1 sm:space-y-2">
-                                            {exercise.sets?.map((set, index) => (
-                                                <div key={index} className="flex items-center justify-between text-xs sm:text-sm">
-                                                    <span className="text-muted-foreground">Set {index + 1}</span>
-                                                    <span>{set.weight}kg × {set.reps}</span>
-                                                </div>
-                                            ))}
+                                            {exercise.sets?.map((set: SetData, index) => {
+                                                const isBodyweight = estimateBodyweightForExercise(exercise.exerciseId.name) > 0;
+                                                return (
+                                                    <div key={index} className="text-xs text-muted-foreground flex items-center space-x-3">
+                                                        {isBodyweight ? (
+                                                            <span>{set.reps} reps</span>
+                                                        ) : (
+                                                            <>
+                                                                <span>{set.weight}kg</span>
+                                                                <span>×</span>
+                                                                <span>{set.reps} reps</span>
+                                                            </>
+                                                        )}
+                                                        {set.notes && <span className="text-primary/60">• {set.notes}</span>}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
+                        <div className="mt-6 flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                className="border-[#fa9f7b]/20 text-[#fa9f7b] hover:bg-[#fa9f7b]/5"
+                                onClick={() => router.push(`/workouts/${workout._id}`)}
+                            >
+                                View Details
+                            </Button>
+                        </div>
                     </>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
+// Add this new component before the WorkoutDailyView component
+const WorkoutGroup = ({ type, workouts }: { type: string, workouts: WorkoutWithExercises[] }) => {
+    const { colorClasses } = getWorkoutTypeStyle(type);
+    const baseColor = colorClasses.includes('text-[#58a3ff]') ? '#58a3ff' : 
+                     colorClasses.includes('text-[#fa9f7b]') ? '#fa9f7b' : 
+                     '#94a3b8';
+
+    return (
+        <div className="relative mb-8 last:mb-0">
+            {/* Group Header */}
+            <div className="sticky top-[7.5rem] z-[5] mb-4 flex items-center gap-2 bg-background/80 backdrop-blur-lg py-2">
+                <div className={cn(
+                    "text-sm font-medium capitalize flex items-center gap-2",
+                    colorClasses
+                )}>
+                    <div className={cn(
+                        "h-2 w-2 rounded-full",
+                        colorClasses.replace('text-', 'bg-')
+                    )} />
+                    {type}
+                    <span className="text-muted-foreground font-normal">
+                        ({workouts.length} {workouts.length === 1 ? 'workout' : 'workouts'})
+                    </span>
+                </div>
+            </div>
+
+            {/* Workouts Grid */}
+            <div className="space-y-4">
+                {workouts.map((workout, index) => (
+                    <div 
+                        key={workout._id} 
+                        className={cn(
+                            "relative rounded-xl overflow-hidden",
+                            "before:absolute before:inset-0 before:pointer-events-none",
+                            `before:border-l-[4px] before:border-[${baseColor}]`,
+                            "transition-all duration-300"
+                        )}
+                    >
+                        {workout.type === 'running' ? (
+                            <RunningWorkoutCard workout={workout} />
+                        ) : workout.type === 'strength' ? (
+                            <StrengthWorkoutCard workout={workout} />
+                        ) : (
+                            <DefaultWorkoutCard workout={workout} />
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// Update the DefaultWorkoutCard component to match the new style
+const DefaultWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
+    const router = useRouter();
+    const [isExpanded, setIsExpanded] = useState(false);
+    const { colorClasses } = getWorkoutTypeStyle(workout.type);
+    const baseColor = colorClasses.includes('text-[#58a3ff]') ? '#58a3ff' : 
+                     colorClasses.includes('text-[#fa9f7b]') ? '#fa9f7b' : 
+                     '#94a3b8';
+
+    return (
+        <Card className={cn(
+            "overflow-hidden transition-all duration-300",
+            "border-0 shadow-none",
+            `bg-[${baseColor}]/[0.02]`,
+            `hover:bg-[${baseColor}]/[0.04]`,
+            "relative"
+        )}>
+            <CardHeader 
+                className="pb-2 cursor-pointer"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Activity className={cn("h-5 w-5", colorClasses)} />
+                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                    </div>
+                    <div className={cn(
+                        "h-8 w-8 rounded-md flex items-center justify-center transition-colors",
+                        `hover:bg-[${baseColor}]/5`
+                    )}>
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className={cn(
+                        "flex flex-col items-center p-6 rounded-2xl",
+                        "bg-white dark:bg-black border",
+                        `border-[${baseColor}]/[0.08]`
+                    )}>
+                        <Clock className={cn("h-5 w-5 mb-2", colorClasses)} />
+                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
+                        <span className="text-xs text-muted-foreground">Duration</span>
+                    </div>
+                    {workout.distance && (
+                        <div className={cn(
+                            "flex flex-col items-center p-6 rounded-2xl",
+                            "bg-white dark:bg-black border",
+                            `border-[${baseColor}]/[0.08]`
+                        )}>
+                            <Route className={cn("h-5 w-5 mb-2", colorClasses)} />
+                            <span className="text-base font-medium mb-1">
+                                {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">Distance</span>
+                        </div>
+                    )}
+                </div>
+
+                {isExpanded && workout.notes && (
+                    <div className={cn(
+                        "mt-6 p-4 rounded-xl border",
+                        `bg-[${baseColor}]/[0.05]`,
+                        `border-[${baseColor}]/[0.1]`
+                    )}>
+                        <p className="text-sm text-muted-foreground">{workout.notes}</p>
+                    </div>
+                )}
+
+                {isExpanded && (
+                    <div className="mt-6 flex justify-end">
+                        <Button 
+                            variant="outline" 
+                            className={cn(
+                                "border-opacity-20 hover:bg-opacity-5",
+                                colorClasses,
+                                `border-[${baseColor}]`,
+                                `hover:bg-[${baseColor}]`
+                            )}
+                            onClick={() => router.push(`/workouts/${workout._id}`)}
+                        >
+                            View Details
+                        </Button>
+                    </div>
                 )}
             </CardContent>
         </Card>
@@ -810,122 +997,29 @@ export default function WorkoutDailyView() {
                 )}
             </section>
 
-            {/* Workouts List - Should use workoutsForDisplay (derived from dailyMetrics.workouts) */}
-            {!metricsLoading && workoutsForDisplay.map(workout => {
-                const { icon, colorClasses } = getWorkoutTypeStyle(workout.type);
-                const isExpanded = expandedWorkouts[workout._id];
+            {/* Workouts List - Grouped by type */}
+            {!metricsLoading && (() => {
+                // Group workouts by type
+                const workoutsByType = workoutsForDisplay.reduce((acc, workout) => {
+                    const type = workout.type || 'other';
+                    if (!acc[type]) acc[type] = [];
+                    acc[type].push(workout as WorkoutWithExercises);
+                    return acc;
+                }, {} as Record<string, WorkoutWithExercises[]>);
 
-                return (
-                    <div key={workout._id}>
-                        {workout.type === 'running' ? (
-                            <RunningWorkoutCard workout={workout as WorkoutWithExercises} />
-                        ) : workout.type === 'strength' ? (
-                            <StrengthWorkoutCard workout={workout as WorkoutWithExercises} />
-                        ) : (
-                            <Collapsible
-                                open={isExpanded}
-                                onOpenChange={() => toggleWorkoutExpansion(workout._id)}
-                            >
-                                <Card className="overflow-hidden border border-border/50 transition-colors hover:bg-muted/5">
-                                    <div 
-                                        className="cursor-pointer"
-                                        onClick={() => handleWorkoutClick(workout._id)}
-                                    >
-                                        <CardHeader className="pb-2">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Badge variant="outline" className={`flex items-center px-2 py-0.5 ${colorClasses}`}>
-                                                        {icon}
-                                                        <span className="ml-1.5 text-xs capitalize">{workout.type}</span>
-                                                    </Badge>
-                                                    <h3 className="font-semibold">{workout.name || 'Unnamed Workout'}</h3>
-                                                </div>
-                                                <CollapsibleTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                                    </Button>
-                                                </CollapsibleTrigger>
-                                            </div>
-                                        </CardHeader>
-                                        
-                                        <CardContent className="pb-3">
-                                            {/* Workout Metrics */}
-                                            <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                                                <span className="flex items-center">
-                                                    <Clock className="h-4 w-4 mr-1.5" />
-                                                    {formatDuration(workout.duration || 0)}
-                                                </span>
-                                                {workout.distance && (
-                                                    <span className="flex items-center">
-                                                        <Route className="h-4 w-4 mr-1.5" />
-                                                        {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
-                                                    </span>
-                                                )}
-                                                {workout.calculatedVolume && (
-                                                    <span className="flex items-center">
-                                                        <Weight className="h-4 w-4 mr-1.5" />
-                                                        {(workout.calculatedVolume / 1000).toFixed(1)}t
-                                                    </span>
-                                                )}
-                                                {workout.cardioDetails?.heartRate?.average && (
-                                                    <span className="flex items-center">
-                                                        <Heart className="h-4 w-4 mr-1.5" />
-                                                        {workout.cardioDetails.heartRate.average} bpm
-                                                    </span>
-                                                )}
-                                            </div>
+                // Sort workouts within each group by startTime
+                Object.values(workoutsByType).forEach(workouts => {
+                    workouts.sort((a, b) => {
+                        const timeA = a.startTime ? new Date(a.startTime).getTime() : 0;
+                        const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
+                        return timeA - timeB;
+                    });
+                });
 
-                                            {/* AI Highlight - if available */}
-                                            {workout.aiHighlight && (
-                                                <div className="mt-3 flex items-start space-x-2 text-sm bg-primary/5 rounded-lg p-3">
-                                                    <Zap className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-                                                    <p className="text-muted-foreground">{workout.aiHighlight}</p>
-                                                </div>
-                                            )}
-                                        </CardContent>
-                                    </div>
-
-                                    {/* Collapsible Exercise Details */}
-                                    <CollapsibleContent>
-                                        <div className="border-t">
-                                            <div className="p-4 space-y-3">
-                                                <h4 className="text-sm font-medium">Exercises</h4>
-                                                {workout.workoutExercises?.map((exercise, idx) => (
-                                                    <div key={exercise._id} className="pl-4 border-l-2 border-primary/20">
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="text-sm font-medium">{exercise.exerciseId.name}</span>
-                                                            {exercise.sets && (
-                                                                <span className="text-xs text-muted-foreground">
-                                                                    {exercise.sets.length} {exercise.sets.length === 1 ? 'set' : 'sets'}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {exercise.sets && (
-                                                            <div className="mt-1 space-y-1">
-                                                                {exercise.sets.map((set: SetData, setIdx) => (
-                                                                    <div key={setIdx} className="text-xs text-muted-foreground flex items-center space-x-3">
-                                                                        <span>{set.weight}kg</span>
-                                                                        <span>×</span>
-                                                                        <span>{set.reps} reps</span>
-                                                                        {set.notes && <span className="text-primary/60">• {set.notes}</span>}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                {(!workout.workoutExercises || workout.workoutExercises.length === 0) && (
-                                                    <p className="text-sm text-muted-foreground italic">No exercises recorded for this workout.</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </CollapsibleContent>
-                                </Card>
-                            </Collapsible>
-                        )}
-                    </div>
-                );
-            })}
+                return Object.entries(workoutsByType).map(([type, workouts]) => (
+                    <WorkoutGroup key={type} type={type} workouts={workouts} />
+                ));
+            })()}
 
             {!metricsLoading && workoutsForDisplay.length === 0 && !dailyMetrics?.workoutCount && (
                 <div className="text-center py-8">

@@ -123,4 +123,48 @@ export async function PATCH(
     }
     return new NextResponse(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
   }
+}
+
+export async function DELETE(
+  req: Request,
+  context: z.infer<typeof routeContextSchema>
+) {
+  try {
+    const { params } = routeContextSchema.parse(context);
+    const workoutId = params.id;
+    
+    console.log(`[API DELETE /api/workouts/${workoutId}] Fetching session...`);
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      console.error(`[API DELETE /api/workouts/${workoutId}] Unauthorized - Session or User ID missing`);
+      return new NextResponse(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    
+    console.log(`[API DELETE /api/workouts/${workoutId}] Fetching workout...`);
+    const workout = await getWorkoutById(workoutId);
+
+    if (!workout) {
+      console.warn(`[API DELETE /api/workouts/${workoutId}] Workout not found.`);
+      return new NextResponse(JSON.stringify({ error: "Workout not found" }), { status: 404 });
+    }
+    
+    if (workout.userId?.toString() !== session.user.id) {
+      console.warn(`[API DELETE /api/workouts/${workoutId}] Forbidden - User ID mismatch.`);
+      return new NextResponse(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+    }
+
+    // Delete the workout
+    await WorkoutModel.findByIdAndDelete(workoutId);
+    
+    console.log(`[API DELETE /api/workouts/${workoutId}] Successfully deleted workout`);
+    return new NextResponse(null, { status: 204 });
+    
+  } catch (error) {
+    console.error('[API DELETE /api/workouts] Error:', error);
+    if (error instanceof z.ZodError) {
+      return new NextResponse(JSON.stringify({ error: "Invalid request parameters" }), { status: 400 });
+    }
+    return new NextResponse(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
+  }
 } 

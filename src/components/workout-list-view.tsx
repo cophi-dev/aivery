@@ -25,7 +25,10 @@ import {
   TrendingUp,
   Trophy,
   History,
-  Route
+  Route,
+  Pencil,
+  Trash2,
+  Loader2
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { WorkoutData } from "@/types/db"
@@ -153,6 +156,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   const [dashboardPRs, setDashboardPRs] = useState<DashboardPREntry[]>([]);
   const [loadingPRs, setLoadingPRs] = useState(true);
+  const [isDeletingWorkout, setIsDeletingWorkout] = useState<string | null>(null);
   
   // --- Add useEffect to update state if initialWorkouts prop changes ---
   useEffect(() => {
@@ -476,6 +480,33 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
   }
   // --- End Loading State --- 
 
+  // Handle workout deletion
+  const handleDeleteWorkout = async (workoutId: string) => {
+    if (!confirm("Are you sure you want to delete this workout? This action cannot be undone.")) {
+      return;
+    }
+
+    setIsDeletingWorkout(workoutId);
+    try {
+      const response = await fetch(`/api/workouts/${workoutId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete workout');
+      }
+
+      // Remove the workout from both workouts and filtered workouts
+      setWorkouts(prev => prev.filter(w => w._id !== workoutId));
+      setFilteredWorkouts(prev => prev.filter(w => w._id !== workoutId));
+    } catch (err: any) {
+      console.error('Error deleting workout:', err);
+      setError('Failed to delete workout. Please try again.');
+    } finally {
+      setIsDeletingWorkout(null);
+    }
+  };
+
   // Main return
   return (
     <WorkoutListErrorBoundary>
@@ -562,8 +593,7 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
               const typeStyle = getWorkoutTypeStyle(workout.type);
               const volume = getWorkoutVolume(workout);
               return (
-                <Link 
-                  href={`/workouts/${workout._id}`} 
+                <div 
                   key={workout._id} 
                   className="block group p-4 border-b border-border/50 last:border-b-0 hover:bg-muted/50 transition-colors rounded-md"
                 >
@@ -577,14 +607,16 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
                            </span>
                          </span>
                       </Badge>
-                      <div>
-                        <div className="font-medium text-sm group-hover:text-primary transition-colors">
-                           {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
+                      <Link href={`/workouts/${workout._id}`}>
+                        <div>
+                          <div className="font-medium text-sm group-hover:text-primary transition-colors">
+                             {workout.name || `${workout.type.charAt(0).toUpperCase() + workout.type.slice(1)} Workout`}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                             {formatDate(new Date(workout.date))}
+                          </div>
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                           {formatDate(new Date(workout.date))}
-                        </div>
-                      </div>
+                      </Link>
                     </div>
                     
                     <div className="flex items-center gap-3"> 
@@ -598,11 +630,34 @@ export default function WorkoutListView({ initialWorkouts }: WorkoutListViewProp
                               {volume.unit === 'km' ? <Route className="h-3 w-3 text-muted-foreground"/> : <Dumbbell className="h-3 w-3 text-muted-foreground" />}
                               {volume.value.toFixed(volume.unit === 'km' ? 1 : 0)} {volume.unit}
                            </div>
-                         )}
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/workouts/${workout._id}/edit`}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleDeleteWorkout(workout._id);
+                          }}
+                          disabled={isDeletingWorkout === workout._id}
+                        >
+                          {isDeletingWorkout === workout._id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })
           ) : (

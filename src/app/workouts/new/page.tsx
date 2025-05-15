@@ -53,6 +53,7 @@ type SetState = {
   duration?: string; // In seconds
   distance?: string; // In preferred unit (e.g., meters)
   notes?: string;
+  intensity?: number; // Changed from string to number
 }
 
 // Type for individual exercise state in the form
@@ -326,6 +327,7 @@ export default function NewWorkoutPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { data: session } = useSession()
+  const userWeight = session?.user?.weight && typeof session.user.weight === 'number' && session.user.weight > 0 ? session.user.weight : 75;
   
   const editingWorkoutId = searchParams?.get("id");
   const duplicateWorkoutId = searchParams?.get("duplicate");
@@ -526,6 +528,7 @@ export default function NewWorkoutPage() {
           weight: parsedSet.weight || "",
           reps: parsedSet.reps || "",
           notes: parsedSet.notes || "",
+          intensity: parsedSet.intensity !== undefined ? Number(parsedSet.intensity) : 0.7, // Ensure number
         }));
         return {
           id: exerciseTempId,
@@ -735,6 +738,7 @@ export default function NewWorkoutPage() {
                   duration: set.duration?.toString() || "",
                   distance: set.distance?.toString() || "",
                   notes: set.notes || undefined,
+                  intensity: set.intensity || "0.7", // Added intensity field
                 })) : [], // Empty sets for cardio exercises mapped here
                 // Include duration/distance ONLY if it IS a cardio exercise being mapped
                 // Convert seconds/meters from DB to minutes/km for form state
@@ -814,7 +818,7 @@ export default function NewWorkoutPage() {
     const newExercise: ExerciseState = {
       id: `ex-temp-${Date.now()}-${Math.random()}`, // Unique temp ID
       name: "", // Start with empty name, user will select
-      sets: [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }], // Start with one empty set
+      sets: [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "", intensity: 0.7 }], // Start with one empty set and intensity
     };
     setExercises([...exercises, newExercise]);
   };
@@ -845,7 +849,7 @@ export default function NewWorkoutPage() {
             updatedState.duration = "";
             updatedState.distance = "";
           } else if (updatedState.sets.length === 0 && !matchedDbExercise?.category) {
-            updatedState.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }];
+            updatedState.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "", intensity: 0.7 }];
             updatedState.duration = undefined;
             updatedState.distance = undefined;
           }
@@ -886,12 +890,14 @@ export default function NewWorkoutPage() {
   // --- Need new functions for Sets ---
   const addSet = (exerciseId: number | string) => {
     setError(null);
-    const newSetId = `set-temp-${Date.now()}-${Math.random()}`;
     setExercises(exercises.map(ex => {
       if (ex.id === exerciseId) {
-        return { 
-          ...ex, 
-          sets: [...ex.sets, { id: newSetId, weight: "", reps: "" }] // Add a new empty set
+        return {
+          ...ex,
+          sets: [
+            ...ex.sets,
+            { id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "", intensity: 0.7 },
+          ],
         };
       }
       return ex;
@@ -902,9 +908,9 @@ export default function NewWorkoutPage() {
     setError(null);
     setExercises(exercises.map(ex => {
       if (ex.id === exerciseId) {
-        return { 
-          ...ex, 
-          sets: ex.sets.map(set => set.id === setId ? { ...set, [field]: value } : set)
+        return {
+          ...ex,
+          sets: ex.sets.map(set => set.id === setId ? { ...set, [field]: field === 'intensity' ? Number(value) : value } : set)
         };
       }
       return ex;
@@ -959,23 +965,32 @@ export default function NewWorkoutPage() {
       validExercises.forEach((exercise) => {
         let exerciseHasValidSets = false;
         exercise.sets.forEach(set => {
-            const reps = Number.parseInt(set.reps || '0') || 0;
-            const weight = Number.parseFloat(set.weight || '0') || 0; 
-            if (reps > 0) {
-                const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(exercise.name!);
-                totalVolume += estimatedWeight * reps;
-                totalReps += reps;
-                exerciseHasValidSets = true;
+          const reps = Number.parseInt(set.reps || '0') || 0;
+          const weight = Number.parseFloat(set.weight || '0') || 0;
+          let effectiveWeight = 0;
+          if (reps > 0) {
+            if (exercise.name === 'Bodyweight Row' && 'intensity' in set && set.intensity) {
+              effectiveWeight = userWeight * parseFloat(set.intensity as string);
+            } else if (exercise.name.toLowerCase().includes('pushup') || exercise.name.toLowerCase().includes('push-up')) {
+              effectiveWeight = userWeight * 0.65;
+            } else if (exercise.name.toLowerCase().includes('air squat') || exercise.name.toLowerCase().includes('bodyweight squat')) {
+              effectiveWeight = userWeight * 0.9;
+            } else if (weight > 0) {
+              effectiveWeight = weight;
+            } else {
+              effectiveWeight = estimateBodyweightForExercise(exercise.name!, userWeight);
             }
+            totalVolume += effectiveWeight * reps;
+            totalReps += reps;
+            exerciseHasValidSets = true;
+          }
         });
         if (exerciseHasValidSets) {
           validExerciseCount++;
         }
       });
-
       if (validExerciseCount === 0) return null;
-
-      return { totalVolume: Math.round(totalVolume), totalReps }; 
+      return { totalVolume: Math.round(totalVolume), totalReps };
     } else if (["running", "swimming", "cycling", "walking", "other"].includes(workoutType)) { // Use WorkoutTypeOption check
       const dist = Number.parseFloat(distance) || 0;
       const dur = Number.parseFloat(duration) || 0;
@@ -985,7 +1000,7 @@ export default function NewWorkoutPage() {
       }
     }
     return null;
-  }, [workoutType, validExercises, distance, duration]); // Keep dependencies
+  }, [workoutType, validExercises, distance, duration, userWeight]); // Keep dependencies
 
   // Update summary text generation
    const getSummaryText = () => {
@@ -1032,7 +1047,7 @@ export default function NewWorkoutPage() {
             updatedEx.sets = [];
           } else if (updatedEx.sets.length === 0) {
             // If non-cardio and sets were empty (e.g., from previous cardio selection), add default set
-            updatedEx.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "" }];
+            updatedEx.sets = [{ id: `set-temp-${Date.now()}-${Math.random()}`, weight: "", reps: "", intensity: 0.7 }];
           }
 
           return updatedEx;
@@ -1203,7 +1218,8 @@ export default function NewWorkoutPage() {
                                 duration: setDuration,
                                 distance: setDistance,
                                 notes: setState.notes || undefined,
-                                order: setIndex
+                                order: setIndex,
+                                intensity: setState.intensity || "0.7", // Added intensity field
                             };
                         }
                         return null;
@@ -1264,14 +1280,24 @@ export default function NewWorkoutPage() {
         let totalVolume = 0;
         let totalReps = 0;
         exercisesPayload.forEach(ex => {
-            if (ex.sets && ex.name) { // Check ex.name exists
+            if (ex.sets && ex.name) {
                 ex.sets.forEach(set => {
                     const reps = set.reps ?? 0;
                     const weight = set.weight ?? 0;
+                    let effectiveWeight = 0;
                     if (reps > 0) {
-                        // Use bodyweight estimation if weight is 0, passing only the name
-                        const estimatedWeight = weight > 0 ? weight : estimateBodyweightForExercise(ex.name!);
-                        totalVolume += estimatedWeight * reps;
+                        if (ex.name === 'Bodyweight Row' && 'intensity' in set && set.intensity) {
+                            effectiveWeight = userWeight * parseFloat(set.intensity as string);
+                        } else if (ex.name.toLowerCase().includes('pushup') || ex.name.toLowerCase().includes('push-up')) {
+                            effectiveWeight = userWeight * 0.65;
+                        } else if (ex.name.toLowerCase().includes('air squat') || ex.name.toLowerCase().includes('bodyweight squat')) {
+                            effectiveWeight = userWeight * 0.9;
+                        } else if (weight > 0) {
+                            effectiveWeight = weight;
+                        } else {
+                            effectiveWeight = estimateBodyweightForExercise(ex.name!, userWeight);
+                        }
+                        totalVolume += effectiveWeight * reps;
                         totalReps += reps;
                     }
                 });
@@ -1530,6 +1556,13 @@ export default function NewWorkoutPage() {
     
     return recommendation;
   }
+
+  // Intensity options for Bodyweight Row
+  const bodyweightRowIntensityOptions = [
+    { label: "Horizontal (0°)", value: 0.7 },
+    { label: "30°", value: 0.6 },
+    { label: "60°", value: 0.4 },
+  ];
 
   return (
     <>
@@ -1931,7 +1964,7 @@ export default function NewWorkoutPage() {
                                 transition={{ duration: 0.2 }}
                                 className={cn(
                                   setRowStyle,
-                                  isBodyweightExercise(canonicalExercise) && "sm:grid-cols-[2rem_1fr_auto] justify-items-center" // Added sm: prefix
+                                  isBodyweightExercise(canonicalExercise) && "sm:grid-cols-[2rem_1fr_auto] justify-items-center"
                                 )}
                               >
                                 {/* Set Number */}
@@ -1942,9 +1975,8 @@ export default function NewWorkoutPage() {
                                     </span>
                                   </div>
                                 </div>
-                                
-                                {/* NEW Wrapper for Weight/Reps */} 
-                                <div className="flex flex-col gap-4 w-full col-span-1"> {/* This div takes the second grid column */}
+                                {/* NEW Wrapper for Weight/Reps/Intensity */}
+                                <div className="flex flex-col gap-4 w-full col-span-1">
                                   {/* Weight Input - Hide for bodyweight exercises */}
                                   {!isBodyweightExercise(canonicalExercise) && (
                                     <div className={inputGroupStyle}>
@@ -1961,11 +1993,42 @@ export default function NewWorkoutPage() {
                                       />
                                     </div>
                                   )}
-
+                                  {/* Intensity Selector for Bodyweight Row */}
+                                  {exercise.name === "Bodyweight Row" && (
+                                    <div className={inputGroupStyle}>
+                                      <Label className={inputLabelStyle}>INTENSITY (ANGLE)</Label>
+                                      <ToggleGroup
+                                        type="single"
+                                        value={String(set.intensity)}
+                                        onValueChange={val => updateSetField(exercise.id, set.id, 'intensity', val)}
+                                        className="w-full flex flex-col sm:flex-row justify-center items-center gap-2 sm:gap-4 mb-2"
+                                      >
+                                        {bodyweightRowIntensityOptions.map(opt => (
+                                          <ToggleGroupItem
+                                            key={opt.value}
+                                            value={String(opt.value)}
+                                            className={
+                                              cn(
+                                                "flex-1 min-w-[110px] px-4 py-2 rounded-lg border border-border text-center text-sm font-medium transition-colors duration-150 cursor-pointer",
+                                                "focus:outline-none focus:ring-2 focus:ring-primary focus:z-10",
+                                                "data-[state=on]:bg-primary/90 data-[state=on]:text-white data-[state=on]:border-primary",
+                                                "hover:bg-accent hover:text-accent-foreground"
+                                              )
+                                            }
+                                          >
+                                            {opt.label}
+                                          </ToggleGroupItem>
+                                        ))}
+                                      </ToggleGroup>
+                                      <span className="text-xs text-muted-foreground mt-2 block text-center">
+                                        Horizontal (0°) = hardest, 60° = easiest
+                                      </span>
+                                    </div>
+                                  )}
                                   {/* Reps Input */}
                                   <div className={cn(
                                     inputGroupStyle,
-                                    isBodyweightExercise(canonicalExercise) && "w-full max-w-[250px] mx-auto" // Center if bodyweight
+                                    isBodyweightExercise(canonicalExercise) && "w-full max-w-[250px] mx-auto"
                                   )}>
                                     <Label className={inputLabelStyle}>REPS</Label>
                                     <NumberSlider
@@ -1979,7 +2042,6 @@ export default function NewWorkoutPage() {
                                     />
                                   </div>
                                 </div>
-
                                 {/* Remove Set Button */}
                                 <Button
                                   variant="ghost"

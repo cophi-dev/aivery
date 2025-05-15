@@ -70,6 +70,13 @@ const formatDistance = (meters: number | undefined | null): string => {
   return `${(meters / 1000).toFixed(2)} km`;
 };
 
+// Add a helper to format volume as tons or kg
+const formatVolume = (kg: number | undefined | null): string => {
+  if (kg === undefined || kg === null || isNaN(kg)) return "--";
+  if (kg >= 1000) return `${(kg / 1000).toFixed(2)} t`;
+  return `${kg.toLocaleString()} kg`;
+};
+
 // Define the props type for the client component
 interface ExerciseDetailPageClientProps {
   initialExercise: ExerciseData | null;
@@ -132,6 +139,15 @@ export default function ExerciseDetailPageClient({
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>(initialExercise?.muscleGroups || [])
   const [selectedDateRange, setSelectedDateRange] = useState<"allTime" | "3months" | "4weeks">("allTime");
+
+  // Improved bodyweight detection
+  const bodyweightNames = [
+    'pull-up', 'pull up', 'push-up', 'push up', 'chin-up', 'chin up', 'dips', 'sit-up', 'sit up', 'crunch', 'plank', 'burpee', 'lunge', 'squat', 'jumping jack', 'mountain climber', 'bodyweight row', 'inverted row', 'leg raise', 'pushup', 'pullup', 'pushups', 'pullups', 'dips', 'situps', 'crunches', 'planks', 'lunges', 'squats', 'burpees', 'mountain climbers', 'bodyweight rows', 'inverted rows', 'leg raises'
+  ];
+  const isBodyweight = (
+    exercise?.tags?.includes('trackMaxReps') ||
+    (exercise?.name && bodyweightNames.includes(exercise.name.toLowerCase()))
+  );
 
   // Fetch insights data on mount
   useEffect(() => {
@@ -496,13 +512,92 @@ export default function ExerciseDetailPageClient({
     return new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  // Loading and error states
-  if (isLoading) return <LoadingIndicator />;
-  if (error) return <div className="container mx-auto px-4 py-8 text-center text-red-500">Error: {error}</div>;
-  if (!exercise) return <div className="container mx-auto px-4 py-8 text-center">Exercise not found.</div>;
+  // For the log: one entry per date, merge sets from all workouts on that date
+  const workoutsByDate: Record<string, any[]> = {};
+  workoutExercises.forEach(w => {
+    const date = new Date(w.createdAt).toISOString().split('T')[0];
+    if (!workoutsByDate[date]) workoutsByDate[date] = [];
+    workoutsByDate[date].push(w);
+  });
+  const uniqueWorkoutExercises = Object.entries(workoutsByDate).map(([date, group]) => {
+    // Merge all sets for this date
+    const allSets = group.flatMap((w: any) => w.sets || []);
+    // Use the latest createdAt for display
+    const latest = group.reduce((a: any, b: any) => new Date(a.createdAt) > new Date(b.createdAt) ? a : b);
+    return { ...latest, sets: allSets, createdAt: date };
+  });
+  uniqueWorkoutExercises.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const isCardioExercise = exercise.category === 'cardio';
-  const isStrengthExercise = exercise.category === 'strength';
+  // Calculate Max Reps (Single Day) for bodyweight
+  let maxRepsSingleDay = 0;
+  if (isBodyweight && workoutExercises && workoutExercises.length > 0) {
+    // Group by date, sum all reps for all sets for that date (across all workouts)
+    const repsByDay: Record<string, number> = {};
+    workoutExercises.forEach((w: any) => {
+      const date = new Date(w.createdAt).toISOString().split('T')[0];
+      if (w.sets && w.sets.length > 0) {
+        w.sets.forEach((set: any) => {
+          repsByDay[date] = (repsByDay[date] || 0) + (set.reps || 0);
+        });
+      }
+    });
+    maxRepsSingleDay = Math.max(...Object.values(repsByDay));
+  }
+
+  // Calculate Max Reps (Single Set) for bodyweight
+  let maxRepsSingleSet = 0;
+  if (isBodyweight && workoutExercises && workoutExercises.length > 0) {
+    workoutExercises.forEach((w: any) => {
+      if (w.sets && w.sets.length > 0) {
+        w.sets.forEach((set: any) => {
+          if (set.reps && set.reps > maxRepsSingleSet) {
+            maxRepsSingleSet = set.reps;
+          }
+        });
+      }
+    });
+  }
+
+  // Find the date for Max Reps (Single Set)
+  let maxRepsSingleSetDate = '';
+  if (isBodyweight && workoutExercises && workoutExercises.length > 0 && maxRepsSingleSet) {
+    for (const w of workoutExercises) {
+      if (w.sets && w.sets.length > 0) {
+        for (const set of w.sets) {
+          if (set.reps === maxRepsSingleSet) {
+            maxRepsSingleSetDate = formatDate(w.createdAt);
+            break;
+          }
+        }
+      }
+      if (maxRepsSingleSetDate) break;
+    }
+  }
+  // Find the date for Max Reps (Single Day)
+  let maxRepsSingleDayDate = '';
+  if (isBodyweight && workoutExercises && workoutExercises.length > 0 && maxRepsSingleDay) {
+    // Group by date, sum reps per day
+    const repsByDay: Record<string, number> = {};
+    workoutExercises.forEach((w: any) => {
+      const date = new Date(w.createdAt).toISOString().split('T')[0];
+      let dayReps = 0;
+      if (w.sets && w.sets.length > 0) {
+        w.sets.forEach((set: any) => {
+          dayReps += set.reps || 0;
+        });
+      }
+      repsByDay[date] = (repsByDay[date] || 0) + dayReps;
+    });
+    for (const [date, total] of Object.entries(repsByDay)) {
+      if (total === maxRepsSingleDay) {
+        maxRepsSingleDayDate = formatDate(date);
+        break;
+      }
+    }
+  }
+
+  // Add debug log for exercise
+  console.log('Exercise object:', exercise);
 
   // JSX Return
   return (
@@ -531,7 +626,7 @@ export default function ExerciseDetailPageClient({
               <DialogHeader>
                 <DialogTitle>Confirm Deletion</DialogTitle>
                 <DialogDescription>
-                  Are you sure you want to delete the exercise "{exercise.name}"? This action cannot be undone.
+                  Are you sure you want to delete the exercise "{exercise ? exercise.name : 'this exercise'}"? This action cannot be undone.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -544,47 +639,70 @@ export default function ExerciseDetailPageClient({
           </Dialog>
         </div>
       </div>
-      <h1 className="text-3xl font-bold mb-4">{exercise.name}</h1>
+      <h1 className="text-3xl font-bold mb-4">{exercise ? exercise.name : 'Exercise'}</h1>
 
       {/* PR/Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <ExercisePRTile
-          icon={<Dumbbell className="h-5 w-5 text-primary" />}
-          label="Max Weight PR"
-          value={stats?.maxWeight ? `${stats.maxWeight} kg` : '--'}
-          color="from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20"
-        />
-        <ExercisePRTile
-          icon={<Trophy className="h-5 w-5 text-amber-500" />}
-          label="Max Reps PR"
-          value={stats?.maxReps ? `${stats.maxReps} reps` : '--'}
-          color="from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20"
-        />
-        <ExercisePRTile
-          icon={<Repeat2 className="h-5 w-5 text-green-600" />}
-          label="Total Volume"
-          value={stats?.totalVolume ? `${stats.totalVolume.toLocaleString()} kg` : '--'}
-          color="from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20"
-        />
-        <ExercisePRTile
-          icon={<Hash className="h-5 w-5 text-blue-600" />}
-          label="Total Reps"
-          value={stats?.totalReps ? stats.totalReps.toLocaleString() : '--'}
-          color="from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20"
-        />
-        <ExercisePRTile
-          icon={<CalendarCheck className="h-5 w-5 text-rose-500" />}
-          label="Last Session"
-          value={stats?.lastSession ? formatDate(stats.lastSession) : '--'}
-          color="from-rose-50 to-rose-100 dark:from-rose-900/20 dark:to-rose-800/20"
-        />
-        <ExercisePRTile
-          icon={<ListChecks className="h-5 w-5 text-cyan-600" />}
-          label="Total Sessions"
-          value={stats?.totalSessions ? stats.totalSessions.toString() : '--'}
-          color="from-cyan-50 to-cyan-100 dark:from-cyan-900/20 dark:to-cyan-800/20"
-        />
-      </div>
+      {exercise && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {isBodyweight ? (
+            <>
+              <ExercisePRTile
+                icon={<Trophy className="h-5 w-5 text-amber-500" />}
+                label="Max Reps (Single Set)"
+                value={maxRepsSingleSet ? `${maxRepsSingleSet} reps` : '--'}
+                color="from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20"
+                date={maxRepsSingleSetDate}
+              />
+              <ExercisePRTile
+                icon={<Repeat2 className="h-5 w-5 text-green-600" />}
+                label="Max Reps (Single Day)"
+                value={maxRepsSingleDay ? `${maxRepsSingleDay} reps` : '--'}
+                color="from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20"
+                date={maxRepsSingleDayDate}
+              />
+              <ExercisePRTile
+                icon={<Dumbbell className="h-5 w-5 text-primary" />}
+                label="Total Volume"
+                value={formatVolume(totalVolume)}
+                color="from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20"
+              />
+            </>
+          ) : (
+            <>
+              <ExercisePRTile
+                icon={<Dumbbell className="h-5 w-5 text-primary" />}
+                label="Max Weight PR"
+                value={stats?.maxWeight ? `${stats.maxWeight} kg` : '--'}
+                color="from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20"
+              />
+              <ExercisePRTile
+                icon={<Repeat2 className="h-5 w-5 text-green-600" />}
+                label="Total Volume"
+                value={stats?.totalVolume ? formatVolume(stats.totalVolume) : '--'}
+                color="from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20"
+              />
+            </>
+          )}
+          <ExercisePRTile
+            icon={<Hash className="h-5 w-5 text-blue-600" />}
+            label="Total Reps"
+            value={stats?.totalReps ? stats.totalReps.toLocaleString() : '--'}
+            color="from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20"
+          />
+          <ExercisePRTile
+            icon={<CalendarCheck className="h-5 w-5 text-rose-500" />}
+            label="Last Session"
+            value={stats?.lastSession ? formatDate(stats.lastSession) : '--'}
+            color="from-rose-50 to-rose-100 dark:from-rose-900/20 dark:to-rose-800/20"
+          />
+          <ExercisePRTile
+            icon={<ListChecks className="h-5 w-5 text-cyan-600" />}
+            label="Total Sessions"
+            value={stats?.totalSessions ? stats.totalSessions.toString() : '--'}
+            color="from-cyan-50 to-cyan-100 dark:from-cyan-900/20 dark:to-cyan-800/20"
+          />
+        </div>
+      )}
 
       {/* Progression Graph */}
       <Card>
@@ -630,106 +748,93 @@ export default function ExerciseDetailPageClient({
           <CardTitle>Workout Log</CardTitle>
         </CardHeader>
         <CardContent>
-          {workoutExercises.length > 0 ? (
+          {uniqueWorkoutExercises.length > 0 ? (
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              {workoutExercises.map((workout) => (
-                <Link key={workout.workoutId} href={`/workout/${workout.workoutId}`} className="block p-3 border rounded-lg hover:bg-accent transition-colors">
+              {uniqueWorkoutExercises.map((workout) => (
+                <div key={workout.createdAt} className="block p-3 border rounded-lg hover:bg-accent transition-colors">
                   <div className="flex justify-between items-center mb-1">
                     <p className="font-medium">{formatDate(workout.createdAt)}</p>
                   </div>
                   {workout.sets && workout.sets.length > 0 && (
-                    <div className="text-xs text-muted-foreground space-x-2">
-                      <span>Sets: {workout.sets.length}</span>
-                      <span>Max: {Math.max(...workout.sets.map((s: any) => (s.weight || 0) * (s.reps || 0)))} kg*reps</span>
-                    </div>
+                    <>
+                      <div className="text-xs text-muted-foreground space-x-2">
+                        <span>Sets: {workout.sets.length}</span>
+                        {isBodyweight ? (
+                          <>
+                            <span>
+                              Total reps: {workout.sets.reduce((sum: number, s: any) => sum + (s.reps || 0), 0)}
+                            </span>
+                            <span>
+                              •
+                            </span>
+                            <span>
+                              Total volume: {formatVolume(workout.sets.reduce((acc: number, set: any) => acc + (estimateBodyweightForExercise(exercise?.name || '') * (set.reps || 0)), 0))}
+                            </span>
+                          </>
+                        ) : (
+                          <span>
+                            Max: {Math.max(...workout.sets.map((s: any) => (s.weight || 0) * (s.reps || 0)))} kg*reps
+                          </span>
+                        )}
+                      </div>
+                      {/* Per-set display */}
+                      <div className="space-y-1 mt-1">
+                        {workout.sets.map((set: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Set {idx + 1}</span>
+                            {isBodyweight ? (
+                              <span>{set.reps} reps</span>
+                            ) : (
+                              <span>{set.weight}kg × {set.reps}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
-                </Link>
+                </div>
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground text-center py-4">No training history recorded for this exercise yet.</p>
+            <p className="text-muted-foreground text-center py-10">No workout history found.</p>
           )}
         </CardContent>
       </Card>
 
-      {/* Insights Section (optional) */}
-      {recentInsights && recentInsights.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Insights</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc pl-5 space-y-2">
-              {recentInsights.map((insight: any, idx: number) => (
-                <li key={idx} className="text-muted-foreground">{insight.insightData?.highlight || JSON.stringify(insight.insightData)}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Edit Exercise Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Edit Exercise: {exercise.name}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">Name</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" required />
-            </div>
-            <div className="grid grid-cols-4 items-start gap-4">
-              <Label htmlFor="description" className="text-right pt-2">Description</Label>
-              <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} className="col-span-3" rows={3}/>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="category" className="text-right">Category</Label>
-              <Select value={category} onValueChange={(value) => setCategory(value as any)}>
-                <SelectTrigger className="col-span-3"> <SelectValue placeholder="Select category" /> </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="strength">Strength</SelectItem>
-                  <SelectItem value="cardio">Cardio</SelectItem>
-                  <SelectItem value="flexibility">Flexibility</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {/* TODO: Add fields for Equipment, Instructions, Muscle Groups - similar structure */}
-            {/* Example for Muscle Groups */}
-            <div className="grid grid-cols-4 items-start gap-4">
-              <Label className="text-right pt-2">Muscle Groups</Label>
-              <div className="col-span-3 space-y-2">
-                <div className="flex gap-2">
-                  <Input 
-                    value={muscleGroup} 
-                    onChange={(e) => setMuscleGroup(e.target.value)} 
-                    placeholder="Add muscle group..."
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addMuscleGroup(); }}}
-                  />
-                  <Button type="button" variant="outline" size="icon" onClick={addMuscleGroup}><PlusCircle className="h-4 w-4"/></Button>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {muscleGroups.map((group: any) => (
-                    <Badge key={group} variant="secondary" className="capitalize">
-                      {group}
-                      <button type="button" onClick={() => removeMuscleGroup(group)} className="ml-1.5 text-muted-foreground hover:text-foreground">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
+      {/* Debug Table: Raw workoutExercises data */}
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle>Debug: Raw workoutExercises Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {workoutExercises && workoutExercises.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs border">
+                <thead>
+                  <tr>
+                    <th className="border px-2 py-1">_id</th>
+                    <th className="border px-2 py-1">workoutId</th>
+                    <th className="border px-2 py-1">createdAt</th>
+                    <th className="border px-2 py-1">sets.length</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workoutExercises.map((w: any) => (
+                    <tr key={w._id}>
+                      <td className="border px-2 py-1">{w._id}</td>
+                      <td className="border px-2 py-1">{w.workoutId}</td>
+                      <td className="border px-2 py-1">{w.createdAt}</td>
+                      <td className="border px-2 py-1">{w.sets ? w.sets.length : 0}</td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
-
-            {error && <p className="text-red-500 text-sm text-center col-span-4">{error}</p>}
-            
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-              <Button type="submit"> <LucideSave className="mr-2 h-4 w-4" /> Save Changes</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          ) : (
+            <p className="text-muted-foreground">No workoutExercises data found.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
-} 
+}

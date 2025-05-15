@@ -201,6 +201,10 @@ export const authOptions: NextAuthOptions = {
                delete session.user.nickname;
             }
           }
+
+          if (typeof userDoc.weight === 'number') {
+            session.user.weight = userDoc.weight;
+          }
         }
         // Return the final session object
         return session;
@@ -254,6 +258,7 @@ declare module "next-auth" {
       email?: string | null
       image?: string | null
       nickname?: string | null
+      weight?: number | null
     }
   }
 }

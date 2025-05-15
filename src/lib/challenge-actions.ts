@@ -163,11 +163,16 @@ async function generateChallengeData(
 
           console.log(`[Challenge Data Gen] Checking ${recentWorkouts.length} recent workouts for 5k pace.`);
           recentWorkouts.forEach(w => { // Use function parameter
+              // --- PATCH: Handle distance in km or meters ---
+              let distanceMeters = w.distance;
+              if (distanceMeters && distanceMeters < 1000) distanceMeters = distanceMeters * 1000; // Assume km if < 1000
               if ((w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run') && 
-                  w.distance && w.distance >= 5000 && 
+                  distanceMeters && distanceMeters >= 5000 && 
                   w.duration && w.duration > 0) 
               {
-                  const paceSm = w.duration / w.distance; // seconds per meter
+                  const paceSm = w.duration / distanceMeters; // seconds per meter
+                  // DEBUG LOG: Print all candidate runs for pace challenge
+                  console.log(`[PACE DEBUG] Candidate run: date=${w.date}, distanceMeters=${distanceMeters}, duration=${w.duration}, paceSm=${paceSm}`);
                   if (paceSm < bestRecentPaceSm) {
                       bestRecentPaceSm = paceSm;
                       bestRecentPaceDate = w.date; // Keep track of the date of the best pace
@@ -213,7 +218,11 @@ async function generateChallengeData(
       // --- Monthly Running Distance ---
       try {
           const runningWorkouts = recentWorkouts.filter(w => w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run'); // Use function parameter
-          const distancesMeters = runningWorkouts.map(w => w.distance ?? 0); 
+          const distancesMeters = runningWorkouts.map(w => {
+            let d = w.distance ?? 0;
+            if (d < 1000) d = d * 1000; // Assume km if < 1000
+            return d;
+          }); 
           const totalDistanceMetersLast90d = distancesMeters.reduce((sum, dist) => sum + dist, 0);
           const avgMonthlyDistanceMeters = totalDistanceMetersLast90d / 3;
           // Corrected: Define goal in KM directly
@@ -435,8 +444,10 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
             
             // Accumulate distance, handling potential unit inconsistency (m vs km)
             if ((workout.type === 'running' || workout.type === 'run') && workout.distance && workout.distance > 0) { 
-                // Heuristic: If distance is large (>1000?), assume meters, else assume km.
-                const distanceKm = workout.distance > 1000 ? workout.distance / 1000 : workout.distance;
+                // PATCH: If distance < 1000, treat as km and convert to meters
+                let distanceMeters = workout.distance;
+                if (distanceMeters < 1000) distanceMeters = distanceMeters * 1000;
+                const distanceKm = distanceMeters / 1000;
                 // Add logging for clarity
                 console.log(`[DBG Dist Check Month] Workout ID: ${workout._id}, Original Dist: ${workout.distance}, Calculated DistKm: ${distanceKm}`);
                 initialMonthlyDistanceKm += distanceKm; 
@@ -456,12 +467,14 @@ async function generateAndSaveChallenges(userId: string, currentYear: number, cu
         // --- Calculate Pace Benchmark (90d before this month) --- 
         const startOfMonthDate = new Date(currentYear, currentMonth - 1, 1);
         recentWorkoutsPrisma.forEach(w => {
+            let distanceMeters = w.distance;
+            if (distanceMeters && distanceMeters < 1000) distanceMeters = distanceMeters * 1000;
             if (w.date < startOfMonthDate && // <<< Only consider workouts BEFORE this month
                 (w.type?.toLowerCase() === 'running' || w.type?.toLowerCase() === 'run') && 
-                w.distance && w.distance >= 5000 && 
+                distanceMeters && distanceMeters >= 5000 && 
                 w.duration && w.duration > 0) 
             {
-                const paceSm = w.duration / w.distance; 
+                const paceSm = w.duration / distanceMeters; 
                 if (paceSm < paceBenchmarkSm) {
                     paceBenchmarkSm = paceSm;
                     paceBenchmarkDate = w.date; // <<< Store date of benchmark
@@ -680,16 +693,18 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
 
         workoutsThisMonth.forEach((workout: any) => {
             // <<< DETAILED LOGGING for Pace Calculation >>>
-            console.log(`[DBG Pace Check Month Refresh] Workout ID: ${workout._id}, Date: ${workout.date}, Type: ${workout.type}, Dist: ${workout.distance}, Dur: ${workout.duration}`);
+            console.log(`[DBG Pace Check Month] Workout ID: ${workout._id}, Date: ${workout.date}, Type: ${workout.type}, Dist: ${workout.distance}, Dur: ${workout.duration}`);
             // <<< END LOGGING >>>
             initialMonthlyDays.add(new Date(workout.date).toISOString().split('T')[0]);
             
             // Accumulate distance, handling potential unit inconsistency (m vs km)
             if ((workout.type === 'running' || workout.type === 'run') && workout.distance && workout.distance > 0) { 
-                // Heuristic: If distance is large (>1000?), assume meters, else assume km.
-                const distanceKm = workout.distance > 1000 ? workout.distance / 1000 : workout.distance;
-                 // Add logging for clarity
-                console.log(`[DBG Dist Check Month Refresh] Workout ID: ${workout._id}, Original Dist: ${workout.distance}, Calculated DistKm: ${distanceKm}`);
+                // PATCH: If distance < 1000, treat as km and convert to meters
+                let distanceMeters = workout.distance;
+                if (distanceMeters < 1000) distanceMeters = distanceMeters * 1000;
+                const distanceKm = distanceMeters / 1000;
+                // Add logging for clarity
+                console.log(`[DBG Dist Check Month] Workout ID: ${workout._id}, Original Dist: ${workout.distance}, Calculated DistKm: ${distanceKm}`);
                 initialMonthlyDistanceKm += distanceKm; 
                 initialMonthlyMaxRunKm = Math.max(initialMonthlyMaxRunKm, distanceKm);
             }
@@ -700,7 +715,7 @@ export async function refreshChallengesAction(): Promise<{ success: boolean; mes
             if (paceSm < bestPaceThisMonthSm) {
                 bestPaceThisMonthSm = paceSm;
                  // <<< LOG when pace is updated >>>
-                console.log(`[DBG Pace Check Month Refresh] New best pace found: ${paceSm.toFixed(3)}s/m from Workout ID: ${workout._id}`);
+                console.log(`[DBG Pace Check Month] New best pace found: ${paceSm.toFixed(3)}s/m from Workout ID: ${workout._id}`);
             }
         });
 
@@ -1078,10 +1093,13 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
             challenge.metric === ChallengeMetric.Pace && 
             challenge.unit === 's/m' &&
             (workoutData.type === 'running' || workoutData.type === 'run') &&
-            workoutData.distance && workoutData.distance >= 5000 && // Ensure it's a qualifying run (e.g., 5k+)
+            workoutData.distance && (() => { let d = workoutData.distance; if (d < 1000) d = d * 1000; return d; })() >= 5000 && // Ensure it's a qualifying run (e.g., 5k+)
             workoutData.duration && workoutData.duration > 0) 
         { 
-            const workoutPaceSm = workoutData.duration / workoutData.distance; // seconds per meter
+            // PATCH: Normalize distance to meters
+            let distanceMeters = workoutData.distance;
+            if (distanceMeters < 1000) distanceMeters = distanceMeters * 1000;
+            const workoutPaceSm = workoutData.duration / distanceMeters; // seconds per meter
             const currentBestPaceSm = challenge.currentValue ?? Infinity; // Default to Infinity if no current value
 
             console.log(`[updateChallengesAfterWorkout] Checking DistancePace challenge. Workout Pace: ${workoutPaceSm.toFixed(3)} s/m. Current Best: ${currentBestPaceSm.toFixed(3)} s/m. Goal: ${challenge.goalValue.toFixed(3)} s/m.`);

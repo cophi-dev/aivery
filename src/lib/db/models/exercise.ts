@@ -22,6 +22,7 @@ export interface IExercise extends Document {
   updatedAt: Date
   trackMaxReps?: boolean
   userId?: mongoose.Types.ObjectId
+  intensityOptions?: { label: string; factor: number }[]
 }
 
 const ExerciseSchema: Schema<IExercise> = new Schema(
@@ -50,6 +51,7 @@ const ExerciseSchema: Schema<IExercise> = new Schema(
     tags: { type: [String], default: [] },
     trackMaxReps: { type: Boolean, default: false },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
+    intensityOptions: { type: [{ label: String, factor: Number }], required: false },
   },
   { timestamps: true },
 )

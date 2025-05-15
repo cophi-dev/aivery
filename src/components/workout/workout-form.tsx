@@ -29,6 +29,12 @@ const activityTypes = [
   },
 ];
 
+const intensityOptions = [
+  { label: "Horizontal (0°)", value: 0.7 },
+  { label: "30°", value: 0.6 },
+  { label: "60°", value: 0.4 },
+];
+
 function cn(...classes: (string | false | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
@@ -36,13 +42,16 @@ function cn(...classes: (string | false | undefined)[]) {
 export default function WorkoutForm() {
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
   const [exercises, setExercises] = useState([
-    { id: 1, name: "", sets: 3, reps: 10, weight: 0 },
+    { id: 1, name: "", sets: 3, reps: 10, weight: 0, intensity: 0.7 },
   ]);
 
   const handleExerciseChange = (index: number, field: string, value: any) => {
     setExercises((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
+      if (field === "name" && value === "Bodyweight Row") {
+        updated[index].intensity = 0.7;
+      }
       return updated;
     });
   };
@@ -50,7 +59,7 @@ export default function WorkoutForm() {
   const addExercise = () => {
     setExercises((prev) => [
       ...prev,
-      { id: Date.now(), name: "", sets: 3, reps: 10, weight: 0 },
+      { id: Date.now(), name: "", sets: 3, reps: 10, weight: 0, intensity: 0.7 },
     ]);
   };
 
@@ -105,6 +114,7 @@ export default function WorkoutForm() {
                     <option value="Bench Press">Bench Press</option>
                     <option value="Squat">Squat</option>
                     <option value="Deadlift">Deadlift</option>
+                    <option value="Bodyweight Row">Bodyweight Row</option>
                   </select>
                 </div>
                 <button
@@ -138,17 +148,34 @@ export default function WorkoutForm() {
                     className="flex h-8 sm:h-9 w-full sm:w-1/2 md:w-20 rounded-md border border-input bg-background px-2 sm:px-3 py-1 text-xs sm:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </div>
-                <div className="space-y-1 sm:space-y-1.5">
-                  <label className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    Weight (kg)
-                  </label>
-                  <input
-                    type="number"
-                    value={exercise.weight}
-                    onChange={(e) => handleExerciseChange(index, "weight", parseFloat(e.target.value))}
-                    className="flex h-8 sm:h-9 w-full rounded-md border border-input bg-background px-2 sm:px-3 py-1 text-xs sm:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                </div>
+                {exercise.name === "Bodyweight Row" ? (
+                  <div className="space-y-1 sm:space-y-1.5">
+                    <label className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Intensity (Angle)
+                    </label>
+                    <select
+                      value={exercise.intensity}
+                      onChange={(e) => handleExerciseChange(index, "intensity", parseFloat(e.target.value))}
+                      className="flex h-8 sm:h-9 w-full rounded-md border border-input bg-background px-2 sm:px-3 py-1 text-xs sm:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {intensityOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-1 sm:space-y-1.5">
+                    <label className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Weight (kg)
+                    </label>
+                    <input
+                      type="number"
+                      value={exercise.weight}
+                      onChange={(e) => handleExerciseChange(index, "weight", parseFloat(e.target.value))}
+                      className="flex h-8 sm:h-9 w-full rounded-md border border-input bg-background px-2 sm:px-3 py-1 text-xs sm:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -16,7 +16,7 @@ import { PRBadge } from "@/components/ui/pr-badge";
 // Import recharts components
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, ReferenceLine, Label as RechartsLabel } from 'recharts'; // Renamed Label import
 // Import helpers from utils and the new MetricCard location
-import { formatDuration, formatDistance, calculatePercentageChange } from '@/lib/utils';
+import { formatDuration, formatDistance, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
 // Import the content component, and Card 
 import { MetricContent } from '@/components/ui/metric-card'; // Adjusted import name
 // Remove MetricCard import, Add DoubleMetricCard import
@@ -312,6 +312,13 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
         acc + (ex.sets?.reduce((setAcc, set) => setAcc + (set.reps || 0), 0) || 0), 0) || 0;
     const totalExercises = workout.workoutExercises?.length || 0;
 
+    // Add a helper to format volume as tons or kg
+    const formatVolume = (kg: number | undefined | null): string => {
+        if (kg === undefined || kg === null || isNaN(kg)) return '--';
+        if (kg >= 1000) return `${(kg / 1000).toFixed(2)}t`;
+        return `${kg.toLocaleString()}kg`;
+    };
+
     return (
         <Card className="mb-6 overflow-hidden bg-[#fa9f7b]/[0.02] hover:bg-[#fa9f7b]/[0.04] transition-all duration-300 border-0 shadow-none">
             <CardHeader className="pb-2">
@@ -339,7 +346,7 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
                     </div>
                     <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                         <Weight className="h-5 w-5 mb-2 text-[#fa9f7b]" />
-                        <span className="text-base font-medium mb-1">{(totalVolume / 1000).toFixed(1)}t</span>
+                        <span className="text-base font-medium mb-1">{formatVolume(totalVolume)}</span>
                         <span className="text-xs text-muted-foreground">Volume</span>
                     </div>
                     <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
@@ -359,13 +366,22 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
                         <div className="space-y-4 mt-6">
                             {workout.workoutExercises?.map((exercise) => {
                                 const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
-                                const exerciseVolume = exercise.sets?.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0) || 0;
+                                // Calculate volume for bodyweight and weighted exercises
+                                const isBodyweight = estimateBodyweightForExercise(exercise.exerciseId.name) > 0;
+                                const exerciseVolume = exercise.sets?.reduce((acc, set) => {
+                                    if (isBodyweight) {
+                                        const bw = estimateBodyweightForExercise(exercise.exerciseId.name);
+                                        return acc + (bw * (set.reps || 0));
+                                    } else {
+                                        return acc + ((set.weight || 0) * (set.reps || 0));
+                                    }
+                                }, 0) || 0;
                                 
                                 // Check if this exercise has a PR
                                 const hasPR = workout.records?.some(record => 
                                     record.exerciseId === exercise.exerciseId._id.toString()
                                 );
-                                
+
                                 return (
                                     <div key={exercise._id} className="p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
                                         <div className="flex items-center justify-between mb-2">
@@ -376,16 +392,23 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
                                             <div className="flex items-center gap-3 text-sm text-muted-foreground">
                                                 <span>{exerciseReps} reps</span>
                                                 <span>•</span>
-                                                <span>{(exerciseVolume / 1000).toFixed(1)}t</span>
+                                                <span>{formatVolume(exerciseVolume)}</span>
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            {exercise.sets?.map((set, index) => (
-                                                <div key={index} className="flex items-center justify-between text-sm">
-                                                    <span className="text-muted-foreground">Set {index + 1}</span>
-                                                    <span>{set.weight}kg × {set.reps}</span>
-                                                </div>
-                                            ))}
+                                            {exercise.sets?.map((set, index) => {
+                                                const isBodyweight = estimateBodyweightForExercise(exercise.exerciseId.name) > 0;
+                                                return (
+                                                    <div key={index} className="flex items-center justify-between text-sm">
+                                                        <span className="text-muted-foreground">Set {index + 1}</span>
+                                                        {isBodyweight ? (
+                                                            <span>{set.reps} reps</span>
+                                                        ) : (
+                                                            <span>{set.weight}kg × {set.reps}</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 );

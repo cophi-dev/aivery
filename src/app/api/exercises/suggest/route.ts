@@ -128,7 +128,7 @@ OUTPUT ONLY THE FOLLOWING JSON STRUCTURE, NOTHING ELSE:
         'Authorization': `Bearer ${grokApiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-3-mini-latest',
+        model: 'grok-3-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }

@@ -175,7 +175,7 @@ EXPECTED JSON OUTPUT 3:
         'Authorization': `Bearer ${grokApiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-3-mini-latest',
+        model: 'grok-3-mini',
         messages: [
             { role: 'system', content: systemPrompt },
             // Pass the raw log text as the user message for parsing

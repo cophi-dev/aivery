@@ -121,6 +121,7 @@ export interface InputSetData {
     distance?: number;
     notes?: string;
     order?: number;
+    intensity?: number; // Added for bodyweight row and similar
 }
 
 // Define the expected shape after lean + populate
@@ -917,6 +918,7 @@ export async function createWorkout(workoutData: Partial<WorkoutData> & {
                 duration: set.duration,
                 distance: set.distance,
                 notes: set.notes,
+                intensity: set.intensity,
               };
               Object.keys(setData).forEach(key => setData[key as keyof typeof setData] === undefined && delete setData[key as keyof typeof setData]);
               return setData;

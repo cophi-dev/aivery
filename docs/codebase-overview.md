@@ -1,4 +1,52 @@
-# Codebase Overview
+# Aivery Codebase Overview
+
+## What is Aivery?
+Aivery is an AI-powered fitness platform that helps users track workouts, sync data from Strava and other sources, and receive personalized insights and plans. The system leverages LLMs (configurable via environment variable) for workout summaries, motivational quotes, and coaching, and stores all user and workout data in MongoDB.
+
+---
+
+## Folder Structure (Key Areas)
+
+- **/src/app/api/** – All API endpoints (REST/Next.js API routes). Includes:
+  - `/ai/` (AI prompts, insights, chat)
+  - `/strava/` (Strava integration, sync, webhooks)
+  - `/workouts/`, `/exercises/`, `/user/` (core data endpoints)
+- **/src/lib/** – Core business logic, data access, and integrations:
+  - `/db/` (MongoDB models, repositories, connection, seeders)
+  - `/services/` (Strava, file parsing, integrations)
+  - `/strava/` (Strava-specific helpers)
+  - Utility modules for AI, actions, and more
+- **/src/components/** – React UI components:
+  - `/dashboard/` (dashboard widgets, insights)
+  - `/exercises/`, `/exercise/` (exercise display, PRs)
+  - `/ui/` (shared UI primitives: buttons, cards, dialogs, etc.)
+  - `/features/` (feature-specific modals, slideshows)
+  - `/forms/`, `/calendar/`, `/landing/`, `/providers/` (specialized UI)
+- **/docs/** – Documentation:
+  - `database-schema.md` (MongoDB schema, relationships)
+  - `prompts.md` (AI prompt catalog)
+  - `weekly-checklist.md` (maintenance checklist)
+  - `features/` (feature-specific docs)
+
+---
+
+## Data Flow: Strava → API → Mongo → AI → UI
+
+1. **User connects Strava** (or logs a workout manually)
+2. **API** endpoints in `/src/app/api/strava/` handle OAuth, sync, and webhooks
+3. **Workout data** is stored in MongoDB via `/src/lib/db/` repositories
+4. **AI endpoints** (e.g., `/src/app/api/ai/`) generate insights, summaries, and plans using LLMs (model is environment-configurable)
+5. **UI components** in `/src/components/` display data, insights, and feedback to the user
+
+---
+
+## Key Docs
+- [Database Schema](./database-schema.md)
+- [AI Prompts](./prompts.md)
+
+---
+
+# Codebase Inventory
 
 Generated on: 5/5/2025, 10:11:10 PM
 

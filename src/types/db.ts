@@ -7,6 +7,7 @@ export interface Set {
   duration?: number;
   distance?: number;
   notes?: string;
+  intensity?: number;
 }
 
 export interface SetData {
@@ -18,6 +19,7 @@ export interface SetData {
   duration?: number;
   distance?: number;
   notes?: string;
+  intensity?: number;
 }
 
 export interface WorkoutData {
