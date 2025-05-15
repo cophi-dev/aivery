@@ -87,6 +87,7 @@ type ParsedWorkoutData = {
       weight?: string;
       reps?: string;
       notes?: string;
+      intensity?: string; // <-- Add this line to match usage
     }>;
   }>;
   // NEW: Align with backend type - Add cardioDetails
@@ -738,7 +739,7 @@ export default function NewWorkoutPage() {
                   duration: set.duration?.toString() || "",
                   distance: set.distance?.toString() || "",
                   notes: set.notes || undefined,
-                  intensity: set.intensity || "0.7", // Added intensity field
+                  intensity: set.intensity !== undefined ? Number(set.intensity) : 0.7, // Always number
                 })) : [], // Empty sets for cardio exercises mapped here
                 // Include duration/distance ONLY if it IS a cardio exercise being mapped
                 // Convert seconds/meters from DB to minutes/km for form state
@@ -754,11 +755,11 @@ export default function NewWorkoutPage() {
           // If it's a strength workout and duration is missing or zero, estimate it
           if (data.type === 'strength' && (!data.duration || data.duration === 0)) {
             const estimatedDuration = estimateWorkoutDuration(mappedExercises);
-            setDuration((estimatedDuration / 60).toString()); // Estimate in seconds, set state in minutes
+            setDuration((estimatedDuration !== undefined && estimatedDuration !== null) ? `${estimatedDuration / 60}` : ""); // Estimate in seconds, set state in minutes
           } else {
             // Convert fetched duration (seconds) to minutes for the form
             const durationInMinutes = data.duration ? Math.round(data.duration / 60) : "";
-            setDuration(durationInMinutes.toString()); 
+            setDuration(durationInMinutes !== "" ? `${durationInMinutes}` : ""); 
           }
           
           console.log("Loaded workout data for edit/duplicate:", data);
@@ -1219,7 +1220,7 @@ export default function NewWorkoutPage() {
                                 distance: setDistance,
                                 notes: setState.notes || undefined,
                                 order: setIndex,
-                                intensity: setState.intensity || "0.7", // Added intensity field
+                                intensity: setState.intensity !== undefined ? Number(setState.intensity) : 0.7, // Added intensity field
                             };
                         }
                         return null;

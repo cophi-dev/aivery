@@ -1023,13 +1023,17 @@ export default function WorkoutDailyView() {
 
             {!metricsLoading && workoutsForDisplay.length === 0 && !dailyMetrics?.workoutCount && (
                 <div className="text-center py-8">
-                    <p className="text-muted-foreground">No workouts recorded for this day.</p>
+                    <p className="text-muted-foreground">
+                        {isSameDay(selectedDate, today) 
+                            ? "No workouts logged yet today. Ready to get started?" 
+                            : "No workouts recorded for this day."}
+                    </p>
                     <Button 
                         variant="outline" 
                         className="mt-4"
                         onClick={() => router.push('/workouts/new')}
                     >
-                        Log a Workout
+                        {isSameDay(selectedDate, today) ? "Log Today's Workout" : "Log a Workout"}
                     </Button>
                 </div>
             )}
