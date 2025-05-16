@@ -462,3 +462,5 @@ interfac... | dbConnect (default) | ✅ |
 | src/app/activity/running/new/page.tsx | No description available | NewRunningActivityPage (default) | ✅ |
 | src/app/activity/swimming/new/page.tsx | No description available | NewSwimmingActivityPage (default) | ✅ |
 | src/app/activity/cycling/new/page.tsx | No description available | NewCyclingActivityPage (default) | ✅ |
+
+Both `/api/chat` and `/api/ai/coach` endpoints now enforce that vague queries (intent: 'unknown') with user context result in a concrete, actionable suggestion. If the LLM response is too generic, the system retries with a more forceful prompt. See `docs/prompts.md` (Proactive Fallback for Vague Queries) for details.

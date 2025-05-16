@@ -885,7 +885,7 @@ export default function SettingsPage() {
     setIsOptimizing(prev => ({ ...prev, [field]: true }))
     
     try {
-      const response = await fetch('/api/ai/optimize', {
+      const response = await fetch('/api/optimize-text', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1515,6 +1515,26 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </CardContent>
+              {/* Save Button for AI Personalization */}
+              <div className="flex items-center justify-end gap-4 mt-6">
+                {saveError && (
+                  <p className="text-sm text-destructive">{saveError}</p>
+                )}
+                <Button
+                  onClick={handleSave}
+                  disabled={!hasChanges || isSaving}
+                  className="w-full sm:w-auto"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </div>
             </Card>
           </div>
         </TabsContent>

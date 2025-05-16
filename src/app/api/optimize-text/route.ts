@@ -48,58 +48,31 @@ export async function POST(request: Request) {
       `Optimizing ${field} for user ${session.user.email || session.user.id}`,
     );
 
-    // Determine the appropriate prompt based on field
+    // --- Refactored: Concise Prompt Construction ---
     let systemPrompt =
-      "You are an expert fitness coach and AI assistant helping optimize user input.";
+      "You are an expert fitness coach. Rewrite the user's input as a clear, first-person, conversational paragraph. Only use details the user provided. Do not invent, add, or repeat context. Be concise. No generic advice or motivational statements.";
 
+    // Add a field-specific instruction if needed
     if (field === "trainingPreferences") {
-      systemPrompt += `
-Your task is to enhance and structure the user's training preferences into a natural conversational paragraph.
-- Write from the user's first-person perspective
-- ONLY use details the user has explicitly mentioned - DO NOT invent or add new information
-- Focus on making their actual preferences more clear and structured
-- Keep it personal and conversational in tone
-- Be concise and clear
-- DO NOT add generic motivational statements at the end
-- DO NOT repeat context information (age, location, weight, etc.) that's already provided separately in the context
-- Format as a clean, simple statement without unnecessary embellishment`;
+      systemPrompt += " Focus on training style, frequency, and environment.";
     } else if (field === "fitnessGoals") {
-      systemPrompt += `
-Your task is to enhance and structure the user's fitness goals into a natural conversational paragraph.
-- Write from the user's first-person perspective
-- ONLY use goals the user has explicitly mentioned - DO NOT invent or add new goals
-- Make existing goals more specific and measureable if possible
-- If they mention dates or timeframes, preserve those exactly
-- Keep it personal and conversational in tone
-- Be concise and clear
-- DO NOT add generic motivational statements at the end
-- DO NOT repeat context information (age, location, weight, etc.) that's already provided separately in the context
-- Format as a clean, simple statement without unnecessary embellishment`;
+      systemPrompt += " Focus on making goals specific and measurable if possible.";
     } else if (field === "dietaryPreferences") {
-      systemPrompt += `
-Your task is to enhance and structure the user's dietary preferences into a natural conversational paragraph.
-- Write from the user's first-person perspective
-- ONLY use preferences the user has explicitly mentioned - DO NOT invent or add new dietary habits
-- Keep it personal and conversational in tone
-- Be concise and clear
-- DO NOT add generic health statements at the end
-- DO NOT repeat context information (age, location, weight, etc.) that's already provided separately in the context
-- Format as a clean, simple statement without unnecessary embellishment`;
+      systemPrompt += " Focus on dietary restrictions, preferences, or nutrition goals.";
     }
 
-    // Add context information if available
-    let userPrompt = `Optimize this ${field} information: "${text}"`;
-
-    if (context) {
-      userPrompt += `\n\nRelevant user context:`;
-      if (context.height) userPrompt += `\n- Height: ${context.height}cm`;
-      if (context.weight) userPrompt += `\n- Weight: ${context.weight}kg`;
-      if (context.age) userPrompt += `\n- Age: ${context.age}`;
-      if (context.gender) userPrompt += `\n- Gender: ${context.gender}`;
-      if (context.activityLevel)
-        userPrompt += `\n- Activity level: ${context.activityLevel}`;
-      if (context.location) userPrompt += `\n- Location: ${context.location}`;
-      if (context.units) userPrompt += `\n- Preferred units: ${context.units}`;
+    // User prompt: just the raw text
+    let userPrompt = text;
+    // Optionally, add context if available and not empty
+    if (context && Object.keys(context).length > 0) {
+      userPrompt += "\n\nContext:";
+      if (context.height) userPrompt += ` Height: ${context.height}cm.`;
+      if (context.weight) userPrompt += ` Weight: ${context.weight}kg.`;
+      if (context.age) userPrompt += ` Age: ${context.age}.`;
+      if (context.gender) userPrompt += ` Gender: ${context.gender}.`;
+      if (context.activityLevel) userPrompt += ` Activity level: ${context.activityLevel}.`;
+      if (context.location) userPrompt += ` Location: ${context.location}.`;
+      if (context.units) userPrompt += ` Units: ${context.units}.`;
     }
 
     // Call Grok API
@@ -123,7 +96,7 @@ Your task is to enhance and structure the user's dietary preferences into a natu
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 500,
+        max_tokens: 400, // Lowered to further reduce risk of hitting limit
         temperature: 0.7,
         stream: false,
       })
@@ -142,10 +115,17 @@ Your task is to enhance and structure the user's dietary preferences into a natu
     // Extract and return the optimized text
     // const optimizedText = getTextFromResponse(response.content) || text; // REMOVED
     let optimizedText = text; // Default to original text
-    if (apiResponseData.choices && apiResponseData.choices[0] && apiResponseData.choices[0].message && apiResponseData.choices[0].message.content) {
+    if (
+      apiResponseData.choices &&
+      apiResponseData.choices[0] &&
+      apiResponseData.choices[0].message &&
+      apiResponseData.choices[0].message.content &&
+      apiResponseData.choices[0].message.content.trim().length > 0
+    ) {
       optimizedText = apiResponseData.choices[0].message.content.trim();
     } else {
-      console.warn("[optimize-text] Unexpected Grok response structure:", apiResponseData);
+      console.warn("[optimize-text] No completion returned from Grok:", apiResponseData);
+      return NextResponse.json({ error: "AI did not return an optimized result. Please try again or rephrase your input." }, { status: 502 });
     }
 
     // Clean up any introductory text patterns that shouldn't be shown to the user

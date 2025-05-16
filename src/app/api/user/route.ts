@@ -53,7 +53,8 @@ export const GET = withApiAuth(async (request: NextRequest, session: any) => {
         name: typedUser.name,
         email: typedUser.email,
         image: typedUser.image,
-        tier: typedUser.tier || 'Free' // Default to 'Free' if tier is missing
+        tier: typedUser.tier || 'Free', // Default to 'Free' if tier is missing
+        aiPreferences: typedUser.aiPreferences || null
         // Add other fields here ONLY if explicitly needed by the client
     };
 

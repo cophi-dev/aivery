@@ -93,21 +93,21 @@ const ValidPeriods = z.enum([
 ]);
 
 // Define the schema for the structured AI analysis output
-const QueryAnalysisSchema = z.object({
+export const QueryAnalysisSchema = z.object({
   intent: ValidIntents,
   entities: z.object({
     metric: ValidMetrics.optional(),
     workout_type: ValidWorkoutTypes.optional(),
-    period: ValidPeriods.optional(), // Use the updated ValidPeriods enum
+    period: ValidPeriods.optional(),
     explicit_start_date: z.union([
-      z.string().datetime(), // Keep original datetime check
-      z.string().regex(/^\d{4}-\d{2}-\d{2}$/) // Add YYYY-MM-DD check
+      z.string().datetime(),
+      z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
     ]).optional(),
     explicit_end_date: z.union([
-      z.string().datetime(), // Keep original datetime check
-      z.string().regex(/^\d{4}-\d{2}-\d{2}$/) // Add YYYY-MM-DD check
+      z.string().datetime(),
+      z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
     ]).optional(),
-    comparison_period: ValidPeriods.optional(), // comparison_period can also now potentially be next_week if needed later
+    comparison_period: ValidPeriods.optional(),
     record_qualifier: z.string().optional(),
     workout_identifier: z.string().optional(),
     limit: z.number().int().positive().optional(),
@@ -115,7 +115,7 @@ const QueryAnalysisSchema = z.object({
   response_suggestion: z.string().optional(),
 });
 
-type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
+export type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
 
 // Initialize Anthropic client
 // const anthropic = new Anthropic({
@@ -904,7 +904,7 @@ async function getDirectTextResponse(query: string, userId: string, userName: st
 
 **User Context:**
 - **Name:** ${userName}
-- **Stated Fitness Goals:** ${userGoals}
+- **Stated Fitness Goals:** ${userGoals} 
 - **Stated Training Preferences:** ${userPrefs}
 - **Recent PR Summary:** ${prSummary}
 
@@ -1045,21 +1045,20 @@ async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: 
 }
 
 // Renaming for clarity, but same function as generateWorkoutAnalysisResponse
-async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string): Promise<string> { // <-- Added userId
-  // This is essentially the same implementation as generateWorkoutAnalysisResponse
-  // We can potentially merge them later if the parameters (temp, max_tokens) are the same.
+async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string, model?: string): Promise<string> { // <-- Added userId
   const grokApiKey = process.env.GROK_API_KEY;
   if (!grokApiKey) {
     console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
     return `Sorry ${userName}, the AI coach is currently unavailable for this request due to configuration issues.`;
   }
   try {
-    console.log("[generateResponseFromSystemPrompt] Sending custom system prompt to Grok (using Mini model)...");
+    const modelToUse = model || process.env.GROK_MODEL_PLAN || 'grok-3-beta';
+    console.log(`[generateResponseFromSystemPrompt] Sending custom system prompt to Grok (model: ${modelToUse})...`);
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${grokApiKey}` },
       body: JSON.stringify({
-        model: 'grok-3-mini-fast-beta', // <-- Changed to fast-beta model
+        model: modelToUse,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userQuery }
@@ -1208,8 +1207,15 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         // **** SPECIAL HANDLING FOR PLAN GENERATION REQUEST **** 
         // Note: The client now only sends requestType = 'generate_plan' and the userQuery.
         // The backend constructs the full system prompt including history and goals.
-        if (context?.requestType === 'generate_plan') { 
-            console.log(`[API /coach] Detected plan generation request.`);
+        // --- Plan modification detection: If history contains a plan, treat as plan update ---
+        const hasHistory = history && Array.isArray(history) && history.length > 0;
+        let lastPlan = null;
+        if (hasHistory) {
+          // Find the last assistant message that looks like a plan
+          lastPlan = [...history].reverse().find(msg => msg.role === 'assistant' && /monday|day 1|week/i.test(msg.content));
+        }
+        if ((context?.requestType === 'generate_plan') || lastPlan) { 
+            console.log(`[API /coach] Detected plan generation or modification request.`);
             try {
                 // 1. Fetch user goals AND summaries AND FORMAT PRs
                 console.log(`[API /coach] Fetching user data (goals, summaries) for user: ${userId}`);
@@ -1222,8 +1228,6 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 }
 
                 const goals = user.aiPreferences?.fitnessGoals || "No specific goals provided.";
-                // const summaries = user.performanceSummary || {}; // No longer needed for prompt
-                // const overallPRs = user.personalRecords || {}; // No longer needed for prompt
 
                 // --- Format Exercise PRs for Prompt (Limit to 5) --- 
                 let exercisePRsString = "No specific exercise PRs recorded recently.";
@@ -1235,47 +1239,74 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 }
                 // --- Format Exercise PRs for Prompt --- END
 
-                // --- Remove Overall Summaries/PRs formatting --- START
-                /* 
-                let overallSummaryString = "Overall Performance Summary:\n";
-                overallSummaryString += `- Total Workouts: ${summaries.overallTotals?.count ?? 'N/A'}\n`;
-                overallSummaryString += `- Total Duration: ${summaries.overallTotals?.duration ? formatDuration(summaries.overallTotals.duration) : 'N/A'}\n`;
-                overallSummaryString += `- Total Volume (Strength): ${summaries.overallTotals?.volume ? Math.round(summaries.overallTotals.volume) + 'kg' : 'N/A'}\n`;
-                overallSummaryString += `- Total Distance (Cardio): ${summaries.overallTotals?.distance ? formatDistance(summaries.overallTotals.distance) : 'N/A'}\n`;
-                overallSummaryString += `- Last Workout: ${summaries.lastWorkoutDate ? format(new Date(summaries.lastWorkoutDate), 'yyyy-MM-dd') : 'N/A'}\n`;
-                overallSummaryString += "Overall Personal Records:\n";
-                overallSummaryString += `- Longest Run: ${overallPRs.longestRun ? formatDistance(overallPRs.longestRun.value) + ' on ' + format(new Date(overallPRs.longestRun.date), 'yyyy-MM-dd') : 'N/A'}\n`;
-                overallSummaryString += `- Fastest 5k Pace: ${overallPRs.fastest5kPace ? formatPace(overallPRs.fastest5kPace.value) + ' on ' + format(new Date(overallPRs.fastest5kPace.date), 'yyyy-MM-dd') : 'N/A'}\n`; // Assuming value is sec/meter
-                overallSummaryString += `- Max Strength Workout Volume: ${overallPRs.maxStrengthVolume ? Math.round(overallPRs.maxStrengthVolume.value) + 'kg on ' + format(new Date(overallPRs.maxStrengthVolume.date), 'yyyy-MM-dd') : 'N/A'}\n`;
-                */
-                // --- Remove Overall Summaries/PRs formatting --- END
-
                 // Fetch recent workout history (Limit to 5)
                 console.log(`[API /coach] Fetching recent workout history (limit 5) for user: ${userId}`);
-                // Fetch only the last 5 workouts
                 const recentWorkouts = await getRecentWorkouts(userId, 5); 
                 let historyString = "No recent workout history available.";
                 if (recentWorkouts && recentWorkouts.length > 0) {
-                    historyString = "Recent Workout History (Last 5):\n"; // Update title
+                    historyString = "Recent Workout History (Last 5):\n";
                     historyString += recentWorkouts.map(w => 
                         `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.name || w.type} (${formatDuration(w.duration || 0)}${w.distance ? ', ' + formatDistance(w.distance) : ''}${w.calories ? ', ~' + w.calories + 'kcal' : ''})`
                     ).join('\n');
                 }
 
-                // 2. Construct the system prompt (REMOVING overallSummaryString)
-                const systemPrompt = `\\nYou are Aivery, an expert fitness coach generating a 1-week workout plan for ${userName}.\\n\\nUser Goal:\\n${goals}\\n\\n${exercisePRsString}\\n\\n${historyString}\\n\\nBased ONLY on the information above (goal, exercise PRs, recent history), generate a concise, actionable 1-week workout plan. Align with the goal and consider recent activity/performance. Avoid questions; generate the best plan possible. Focus on the PLAN.`;
+                // --- Detect progression/multi-aspect requests ---
+                const lowerQuery = query.toLowerCase();
+                const progressionKeywords = ["increase", "progress", "more", "improve", "build up"];
+                const aspectKeywords = ["cardio", "distance", "run", "bike", "cycling", "weight", "strength", "volume", "lift"];
+                const isProgressionRequest = progressionKeywords.some(k => lowerQuery.includes(k));
+                // Count how many aspects are mentioned
+                const aspectsMentioned = aspectKeywords.filter(k => lowerQuery.includes(k));
+                const isMultiAspect = aspectsMentioned.length >= 2;
 
-                console.log("[API /coach] Sending plan generation prompt to Grok...");
-                // 3. Call the AI model
-                // Pass userId to the generation function
-                const planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId); 
+                // --- Model selection ---
+                const planModel = process.env.GROK_MODEL_PLAN || 'grok-3-beta';
+
+                // 2. Construct the system prompt
+                let systemPrompt = `\nYou are Aivery, an expert fitness coach generating a 1-week workout plan for ${userName}.
+
+User Goal:
+${goals}
+
+${exercisePRsString}
+
+${historyString}
+
+Based ONLY on the information above (goal, exercise PRs, recent history), generate a concise, actionable 1-week workout plan. Align with the goal and consider recent activity/performance. Avoid questions; generate the best plan possible. Focus on the PLAN.`;
+
+                // If progression/multi-aspect request, add stricter instructions
+                if (isProgressionRequest && isMultiAspect) {
+                  systemPrompt += `\n\nIMPORTANT: The user wants to increase/progress in multiple areas (${aspectsMentioned.join(", ")}). You MUST provide a detailed, progressive 1-week plan that increases ALL of these aspects. Do NOT give a single-day suggestion. Be specific for each day. Each day should clearly show progression for the requested aspects.`;
+                }
+
+                // --- Follow-up logic: If chat history contains a plan, treat as plan modification ---
+                if (lastPlan) {
+                  const planText = lastPlan.content;
+                  systemPrompt = `You are Aivery, an expert fitness coach. The user has already received a 1-week workout plan (see below). They now want to adjust it: \"${query}\"\n\nPREVIOUS PLAN:\n${planText}\n\nUser Goal:\n${goals}\n\n${exercisePRsString}\n\n${historyString}\n\nPlease update the plan accordingly, keeping the structure and progression, and highlight the changes. The new plan should be more concise, but still cover all 7 days. Do NOT just suggest a single session. Output only the updated 1-week plan in markdown format.`;
+                }
+
+                console.log(`[API /coach] Sending plan generation prompt to Grok (model: ${planModel})...`);
+                // 3. Call the AI model (use selected model)
+                let planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId, planModel);
+
+                // --- Fallback/Retry Logic ---
+                if (isProgressionRequest && isMultiAspect) {
+                  // Check if the response is only for a single day or does not mention all aspects
+                  const isSingleDay = /for today|^day 1:|monday:/i.test(planResponse) && !/day 2:|tuesday:|wednesday:|thursday:|friday:|saturday:|sunday:/i.test(planResponse);
+                  const missingAspects = aspectsMentioned.filter(a => !planResponse.toLowerCase().includes(a));
+                  if (isSingleDay || missingAspects.length > 0) {
+                    // Retry with a more forceful prompt
+                    systemPrompt += `\n\nRETRY: Your previous response was not sufficient. You MUST provide a detailed, progressive 1-week plan that increases ALL of these aspects: ${aspectsMentioned.join(", ")}. Do NOT give a single-day suggestion. Each day must be specific and show progression for all requested aspects.`;
+                    planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId, planModel);
+                  }
+                }
+                // --- End Fallback/Retry Logic ---
 
                 // 4. Return the generated plan
                 console.log("[API /coach] Plan generation successful.");
                 const endTime = Date.now();
                 console.log(`--- [AI Coach Request Completed - Plan] Latency: ${endTime - startTime}ms ---`);
                 return NextResponse.json({ response: planResponse });
-
             } catch (planError: any) {
               // ... error handling ...
             }
@@ -1350,6 +1381,9 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         // --- Default query processing if not handled by special request types ---
         console.log("[API /coach] Proceeding with normal query analysis..."); 
 
+        // Fetch recent workouts for fallback context
+        const recentWorkouts = await getRecentWorkouts(userId, 5);
+
         // Analyze the query if it wasn't a plan or review request
         const analysis = await analyzeUserQuery(query, history, userId);
         console.log("Query Analysis Result:", analysis);
@@ -1361,11 +1395,74 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
             return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
         }
 
-        const { intent, entities, response_suggestion } = validation.data;
+        // Allow 'unknown' as a valid intent type for fallback
+        const { intent, entities, response_suggestion } = validation.data as { intent: string, entities: any, response_suggestion: string };
 
         // Use suggestion if provided and intent is simple or unknown
-        if (response_suggestion && (intent === 'unknown' /*|| intent === 'simple_greeting' etc.*/ )) {
+        if (intent === 'unknown') {
+          // Check for user context: recent workouts, PRs, or goals
+          const hasContext = (recentWorkouts && recentWorkouts.length > 0) || (exercisePRs && exercisePRs.length > 0) || (userPreferences && (userPreferences.fitnessGoals || userPreferences.trainingPreferences));
+          if (hasContext) {
+            // Proactive suggestion using user context
+            const last3WorkoutsString = recentWorkouts && recentWorkouts.length > 0
+              ? recentWorkouts.slice(0, 3).map(w => `- ${w.date ? new Date(w.date).toLocaleDateString() : 'Unknown date'}: ${w.name || w.type} (${w.duration ? Math.round(w.duration/60) + ' min' : ''}${w.distance ? ', ' + w.distance + ' km' : ''})`).join('\n')
+              : 'No recent workouts found.';
+            const prString = (exercisePRs && exercisePRs.length > 0)
+              ? exercisePRs.slice(0, 3).map(pr => `- ${pr.exerciseName || pr.exerciseId || 'Exercise'}: ${pr.value} ${pr.unit || ''} (${pr.date ? new Date(pr.date).toLocaleDateString() : ''})`).join('\n')
+              : 'No recent PRs found.';
+            const goalsString = (userPreferences && userPreferences.fitnessGoals)
+              ? userPreferences.fitnessGoals
+              : 'No goals specified.';
+            // --- STRICT CONTEXT-ONLY SUGGESTION PROMPT ---
+            let proactivePrompt = `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userDisplayName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Recent PRs:\n${prString}\n- Current Goals/Targets:\n${goalsString}\n\nThe user asked: \"${query}\"\n\nIMPORTANT RULES:\n- You MUST ONLY reference exercises, PRs, and activities that are actually present in the USER CONTEXT above.\n- Do NOT invent or mention any exercise, PR, or activity that is not listed in the context.\n- If suggesting a PR-based progression, use only the PRs listed above, by name and value.\n- If the context does not include a certain exercise or PR, do not mention it.\n- Be concise, positive, and tailor the suggestion to their context.\n- Do not ask for clarification.\n- DO NOT say 'Here\'s a suggestion...' or 'Based on your recent activity...'. Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'`;
+            const grokApiKey = process.env.GROK_API_KEY;
+            if (!grokApiKey) {
+              return NextResponse.json({ error: "AI service is unavailable due to configuration issues." }, { status: 503 });
+            }
+            let aiResponse: string = '';
+            let attempt = 0;
+            let lastPrompt = proactivePrompt;
+            while (attempt < 2) {
+              const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${grokApiKey}`
+                },
+                body: JSON.stringify({
+                  model: 'grok-3-mini-latest',
+                  messages: [
+                      { role: 'system', content: lastPrompt },
+                      { role: 'user', content: query }
+                  ],
+                  max_tokens: 2048,
+                  temperature: 0.7,
+                  stream: false,
+                })
+              });
+              if (!fetchResponse.ok) {
+                const errorBody = await fetchResponse.text();
+                return NextResponse.json({ error: "Sorry, there was an error communicating with the AI." }, { status: 502 });
+              }
+              const data = await fetchResponse.json();
+              if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+                aiResponse = data.choices[0].message.content.trim();
+                // If too generic, retry with a more forceful prompt
+                if ((/here\'?s a suggestion|based on your recent activity/i.test(aiResponse) || aiResponse.length < 40) && attempt === 0) {
+                  lastPrompt += "\n\nYou must provide a concrete, actionable workout or activity. Do NOT repeat generic phrases. Give a specific session or activity.";
+                  attempt++;
+                  continue;
+                }
+              }
+              break;
+            }
+            return NextResponse.json({ response: aiResponse || "Here's a suggestion based on your recent activity and goals." });
+          }
+          // If no context, fallback to existing suggestion or clarification
+          if (response_suggestion) {
             return NextResponse.json({ response: response_suggestion });
+          }
+          return NextResponse.json({ response: "Could you clarify your question or tell me more about your fitness goals?" });
         }
 
         // Initialize variables for the response generation

@@ -18,6 +18,8 @@ import {
 } from "date-fns"; // Import date-fns functions
 import { getServerSession } from "next-auth"; // RE-ADD import
 import mongoose from 'mongoose'; // Import mongoose
+import { analyzeUserQuery, QueryAnalysisSchema } from "@/app/api/ai/coach/route";
+import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository";
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
@@ -112,22 +114,20 @@ export async function POST(req: Request) {
   let session;
   let userId: string | undefined;
   let userName: string | undefined = "User";
-  let dataContext = "No specific data provided for this query.";
-  let grokUsageData: any = null; // To store usage from Grok response
+  let grokUsageData: any = null;
 
   try {
     session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      console.error("[CHAT] User not authenticated");
       return new Response("Authentication required", { status: 401 });
     }
     userId = session.user.id;
     userName = session.user.name || "User";
+    await dbConnect();
     
     // --- Rate Limit Check ---
     // REMINDER: Apply this pre-check pattern (fetch usage, check limit, handle reset)
     //           before *any* new Grok API call is made in this route.
-    await dbConnect(); // Connect DB first
     let dailyUsage = 0;
     let lastReset: Date | null = null;
     let proceedWithAICall = false;
@@ -187,136 +187,103 @@ export async function POST(req: Request) {
 
     console.log("[CHAT] API Key Loaded:", !!process.env.GROK_API_KEY);
 
+    // Fetch user details and context
+    const user = await User.findById(userId).lean<IUser>();
+    const recentWorkouts = await getRecentWorkouts(userId, 3);
+    const last3WorkoutsString = recentWorkouts.length
+      ? recentWorkouts.map(w => 
+          `- ${w.date ? new Date(w.date).toLocaleDateString() : 'Unknown date'}: ${w.name || w.type} (${w.duration ? Math.round(w.duration/60) + ' min' : ''}${w.distance ? ', ' + w.distance + ' km' : ''})`
+        ).join('\n')
+      : 'No recent workouts found.';
+    const prs = user?.personalRecords || {};
+    const personalRecordsString = [
+      prs.longestRun ? `Longest Run: ${prs.longestRun.value} km on ${prs.longestRun.date ? new Date(prs.longestRun.date).toLocaleDateString() : ''}` : null,
+      prs.fastest5kPace ? `Fastest 5K Pace: ${prs.fastest5kPace.value} sec/m on ${prs.fastest5kPace.date ? new Date(prs.fastest5kPace.date).toLocaleDateString() : ''}` : null,
+      prs.maxStrengthVolume ? `Max Strength Volume: ${prs.maxStrengthVolume.value} kg on ${prs.maxStrengthVolume.date ? new Date(prs.maxStrengthVolume.date).toLocaleDateString() : ''}` : null,
+    ].filter(Boolean).join('\n') || 'No personal records found.';
+    const goalsString = user?.aiPreferences?.fitnessGoals
+      || (user?.goals && user.goals.length ? user.goals.join(', ') : 'No goals specified.');
+
+    // Parse request
     const body = await req.json();
     const currentQuery = body.query;
     const messageHistory = body.history || [];
-
     if (!currentQuery) {
       return new Response("Query is required", { status: 400 });
     }
 
-    console.log(
-      `[CHAT] Received query from user ${userId} (${userName}):`,
-      currentQuery
-    );
-
-    // --- Check for General Fitness Questions ---
-    const queryLower = currentQuery.toLowerCase();
-    const generalKeywords = ['what is', 'explain', 'define', 'benefits of', 'how does', 'compare', 'difference between'];
-    const fitnessConcepts = ['lactate threshold', 'vo2 max', 'hiit', 'macros', 'progressive overload', 'heart rate zones', 'hydration', 'protein synthesis', 'muscle hypertrophy']; // Add more concepts
-
-    let isGeneralQuestion = generalKeywords.some(keyword => queryLower.startsWith(keyword)) ||
-                            fitnessConcepts.some(concept => queryLower.includes(concept));
-
-    if (isGeneralQuestion) {
-      console.log("[CHAT] Detected general fitness question.");
-      dataContext = "User is asking a general fitness question. Please answer using your base knowledge.";
-      // Skip specific data fetching logic below
-    } else {
-      // --- Attempt to fetch data based on query (Existing Logic) ---
-      // Simple check for distance-related queries
-      if (queryLower.includes("distance") || (queryLower.includes("how far") && (queryLower.includes("run") || queryLower.includes("cycle") || queryLower.includes("swim") )) ) {
-        console.log("[CHAT] Detected potential distance query.");
-        const workoutType = getWorkoutTypeFromQuery(queryLower);
-        const timeframeMatch = queryLower.match(/(?:in|last|this|during|for)\s+([a-zA-Z0-9\s]+)/); // Basic timeframe extraction
-        const timeframe = timeframeMatch ? timeframeMatch[1].trim() : "this month"; // Default to this month if not found
-
-        console.log(`[CHAT] Extracted type: ${workoutType}, timeframe: ${timeframe}`);
-
-        if (workoutType) {
-          const dateRange = getDateRangeFromTimeframe(timeframe);
-          if (dateRange) {
-            console.log(`[CHAT] Fetching ${workoutType} distance for range:`, dateRange);
-            if (userId) {
-              try {
-                await dbConnect(); // Ensure DB connection
-                // Call the repository function - it returns a number or throws an error
-                const totalDistance: number = await getWorkoutDistanceForDateRange(
-                  userId,
-                  workoutType,
-                  dateRange.start,
-                  dateRange.end
-                );
-                console.log("[CHAT] Total distance fetched:", totalDistance);
-                
-                // Check if totalDistance is a valid number and greater than 0
-                if (typeof totalDistance === 'number' && totalDistance > 0) {
-                   // Note: We don't get the count from this specific function
-                   dataContext = `Data for ${userName}: Total ${workoutType} distance for timeframe '${timeframe}' was ${totalDistance.toFixed(1)} km. Use this data to answer.`;
-                } else {
-                   // Handle case where distance is 0 (or potentially NaN/undefined, though caught by check)
-                   dataContext = `Data for ${userName}: No ${workoutType} workouts with distance were found for timeframe '${timeframe}'. Inform the user.`;
-                }
-              } catch (dbError) {
-                 console.error("[CHAT] Database error fetching distance:", dbError);
-                 dataContext = `Error fetching workout data for ${timeframe}. Inform the user an error occurred.`;
-              }
-            } else {
-                console.error("[CHAT] Cannot fetch distance, userId is undefined after authentication check.");
-                // Optionally set context indicating user ID issue, or keep default
-            }
-          } else {
-              console.log("[CHAT] Could not determine date range from timeframe:", timeframe);
-              dataContext = `Could not determine the date range for timeframe '${timeframe}'. Ask the user to clarify the period.`;
-          }
-        } else {
-           console.log("[CHAT] Could not determine workout type for distance query.");
-           // Keep default dataContext
-        }
-      } else {
-          console.log("[CHAT] Query not identified as a distance query or general question. Skipping data fetch.");
-          // Keep default dataContext: "No specific data provided for this query."
-      }
-      // --- End Data Fetching Logic ---
+    // Intent/entity extraction
+    const analysis = await analyzeUserQuery(currentQuery, messageHistory, userId);
+    const validation = QueryAnalysisSchema.safeParse(analysis);
+    if (!validation.success) {
+      return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
     }
-    // --- End Check for General Fitness Questions ---
+    const { intent, entities, response_suggestion } = validation.data;
 
-    const validHistory = messageHistory.filter(
-      (msg: { role: string }) => msg.role === "user" || msg.role === "assistant"
-    );
+    // Build system prompt
+    const systemPrompt = `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Personal Records:\n${personalRecordsString}\n- Current Goals/Targets:\n${goalsString}\n\nRESPONSE GUIDELINES:\n- Use the USER CONTEXT above to personalize your answer.\n- If user data is missing or unclear, provide a general, actionable suggestion based on best fitness coaching practices. Only ask for clarification if essential.\n- Be concise, actionable, and supportive. Use markdown formatting.`;
 
-    const messagesWithIds = [
-      ...validHistory,
-      { role: "user" as const, content: currentQuery, id: `temp-user-${Date.now()}` },
-    ];
+    // Proactive fallback for vague/unclear queries
+    if (intent === 'unknown') {
+      const hasContext = (recentWorkouts && recentWorkouts.length > 0) || (prs && Object.keys(prs).length > 0 && Object.values(prs).some(Boolean)) || (goalsString && goalsString !== 'No goals specified.');
+      if (hasContext) {
+        // Proactive suggestion using user context
+        let proactivePrompt = `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Personal Records:\n${personalRecordsString}\n- Current Goals/Targets:\n${goalsString}\n\nThe user asked: \"${currentQuery}\"\n\nBased on the user's recent activity and goals, suggest a specific, actionable workout or fitness activity for today. Be concise, positive, and tailor the suggestion to their context. Do not ask for clarification.\n\nDO NOT say 'Here’s a suggestion...' or 'Based on your recent activity...'. Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'`;
+        const grokApiKey = process.env.GROK_API_KEY;
+        if (!grokApiKey) {
+          return new Response("AI service is unavailable due to configuration issues.", { status: 503 });
+        }
+        let aiResponse: string | null = null;
+        let attempt = 0;
+        let lastPrompt = proactivePrompt;
+        while (attempt < 2) {
+          const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${grokApiKey}`
+            },
+            body: JSON.stringify({
+              model: 'grok-3-mini-latest',
+              messages: [
+                  { role: 'system', content: lastPrompt },
+                  { role: 'user', content: currentQuery }
+              ],
+              max_tokens: 256,
+              temperature: 0.7,
+              stream: false,
+            })
+          });
+          if (!fetchResponse.ok) {
+            const errorBody = await fetchResponse.text();
+            return new Response("Sorry, there was an error communicating with the AI.", { status: 502 });
+          }
+          const data = await fetchResponse.json();
+          if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+            aiResponse = data.choices[0].message.content.trim();
+            // If too generic, retry with a more forceful prompt
+            if ((/here\'?s a suggestion|based on your recent activity/i.test(aiResponse) || aiResponse.length < 40) && attempt === 0) {
+              lastPrompt += "\n\nYou must provide a concrete, actionable workout or activity. Do NOT repeat generic phrases. Give a specific session or activity.";
+              attempt++;
+              continue;
+            }
+          }
+          break;
+        }
+        return new Response(JSON.stringify({ response: aiResponse || "Here's a suggestion based on your recent activity and goals." }), { status: 200 });
+      }
+      // If no context, fallback to existing suggestion or clarification
+      if (response_suggestion) {
+        return new Response(JSON.stringify({ response: response_suggestion }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ response: "Could you clarify your question or tell me more about your fitness goals?" }), { status: 200 });
+    }
 
-    const messagesForAnthropicApi = messagesWithIds.map(({ role, content }) => ({
-      role: role as "user" | "assistant",
-      content,
-    }));
-
-    // System prompt now includes the fetched data context
-    const systemPrompt = `Act as Aivery, a friendly and encouraging AI fitness coach.
-The user's name is ${userName}.
-Keep responses concise and helpful, focusing on fitness, health, and wellness.
-
-DATABASE SCHEMA OVERVIEW (Key Fields):
-- UserData: _id, email, name, image, aiPreferences { location, fitnessGoals, trainingPreferences, ... }, height, weight, age, gender, ...
-- WorkoutData: _id, userId, type (strength, run, cycle, swim, ...), name, date, duration, distance, calories, notes, intensity, workoutExercises[], cardioDetails { pace, speed, heartRate, laps, ... }, source, records[] { timestamp, heart_rate, speed, ... }, calculatedVolume, ...
-- ExerciseData: _id, name, description, muscleGroups, category (strength, cardio, flexibility), equipment, instructions
-- WorkoutExerciseData: _id, workoutId, exerciseId { _id, name, category }, sets[], notes, order, duration, distance
-- Set: _id, weight, reps, duration, distance, notes
-- ChatMessage: _id, userId, content, role, workoutId
-
-CONTEXT: ${dataContext}
-
-RESPONSE GUIDELINES:
-- If CONTEXT provides specific data (like distance or count), **use that data directly** in your answer.
-- If CONTEXT indicates no data was found or an error occurred, inform the user accordingly.
-- If CONTEXT indicates the timeframe was unclear, ask the user to clarify.
-- If CONTEXT is the default 'No specific data provided...', answer generally based on the user's query and your knowledge.
-- Refer to the DATABASE SCHEMA OVERVIEW to understand the types of data that *can* be tracked, even if not present in the current CONTEXT. If the user asks about data that *could* exist according to the schema but isn't in the CONTEXT, you can mention that the data point exists but wasn't provided for this specific query (or offer to look it up if appropriate actions are available).
-- Do not invent data. Only state what is in the CONTEXT or generally known based on the schema.
-- Use markdown formatting (bold, italics, lists).`;
-
-    console.log("[CHAT] Calling Grok API with system prompt:", systemPrompt); // Log the prompt
-    
+    // For now, just pass the prompt and query to the LLM (extend with more intent/entity-based routing as needed)
     const grokApiKey = process.env.GROK_API_KEY;
     if (!grokApiKey) {
-        console.error("[CHAT] GROK_API_KEY not configured.");
-        return new Response("AI service is unavailable due to configuration issues.", { status: 503 });
+      return new Response("AI service is unavailable due to configuration issues.", { status: 503 });
     }
-
     const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -327,20 +294,17 @@ RESPONSE GUIDELINES:
         model: 'grok-3-mini-latest',
         messages: [
             { role: 'system', content: systemPrompt },
-            ...messagesForAnthropicApi
+            { role: 'user', content: currentQuery }
         ],
         max_tokens: 1024,
         temperature: 0.7,
         stream: false,
       })
     });
-
     if (!fetchResponse.ok) {
       const errorBody = await fetchResponse.text();
-      console.error(`[CHAT] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
       return new Response("Sorry, there was an error communicating with the AI.", { status: 502 });
     }
-
     const data = await fetchResponse.json();
     grokUsageData = data.usage; // Capture usage data
     console.log("[CHAT] Grok Raw Response:", data);

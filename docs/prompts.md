@@ -156,12 +156,35 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Model Used:** `grok-3-mini-latest`
 - **Input:**
   - User name
-  - Database schema overview
-  - Context (data fetched based on query)
+  - Recent workouts (last 3)
+  - Personal records (e.g. best 5K, longest run)
+  - Current goals or targets
   - User conversation history
 - **Expected Output:**
   - Markdown text with formatting
+- **System Prompt (Current):**
+
+  ```
+  You are Aivery, a friendly and insightful AI fitness coach.
+
+  USER CONTEXT:
+  - Name: {userName}
+  - Last 3 Workouts:
+  {last3WorkoutsString}
+  - Personal Records:
+  {personalRecordsString}
+  - Current Goals/Targets:
+  {goalsString}
+
+  RESPONSE GUIDELINES:
+  - Use the USER CONTEXT above to personalize your answer.
+  - If user data is missing or unclear, provide a general, actionable suggestion based on best fitness coaching practices. Only ask for clarification if essential.
+  - Be concise, actionable, and supportive. Use markdown formatting.
+  ```
+
 - **Notes:**
+  - The system prompt now always includes the user's last 3 workouts, personal records, and current goals/targets if available.
+  - If user data is missing or unclear, the AI provides a general, actionable suggestion based on best fitness coaching practices (fallback rule), and only asks for clarification if essential.
 
 ### Training Preferences Optimization
 - **Prompt ID:** `training-preferences-optimization-v1`
@@ -188,3 +211,67 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Expected Output:**
   - Plain text paragraph
 - **Notes:**
+
+## Proactive Fallback for Vague Queries
+
+When `analyzeUserQuery` returns `intent: 'unknown'` **and** the user has recent workouts, PRs, or goals, the system:
+
+- **Skips clarification.**
+- **Returns a proactive, actionable suggestion** using the system prompt and available user context.
+- The system prompt now explicitly instructs:
+  - DO NOT say 'Here's a suggestion...' or 'Based on your recent activity...'.
+  - Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'
+- If the LLM response is too generic (e.g., matches those phrases or is under 40 characters), the system retries with a more forceful prompt requiring a specific session or activity.
+
+**Example:**
+
+> User: What should I do today?
+>
+> AI: Based on your recent runs and your 10K goal, a 20–30 minute tempo run today would be a great fit.
+
+If no user context is available, the system falls back to the previous behavior (clarification or a general suggestion).
+
+## Proactive Fallback for Vague or Insufficient Plan Responses
+
+When a user requests a workout plan and their query includes progression/increase for multiple aspects (e.g., "increase my cardio distance and weight volume"), the system enforces:
+
+- The LLM must generate a detailed, progressive 1-week plan covering all requested aspects (e.g., both cardio and strength/weight).
+- If the LLM response is only for a single day or does not address all requested aspects, the system retries with a stricter prompt requiring a multi-day, progressive plan.
+- The plan must be actionable, specific for each day, and show clear progression for each aspect mentioned in the user query.
+
+This fallback logic ensures that vague or insufficient responses are automatically retried until a concrete, actionable weekly plan is produced.
+
+## Fallback Logic for Vague or Open-Ended Queries
+
+When the user asks a vague or open-ended question (e.g., "What should I do today?"), the system will:
+
+- Gather user context: last 3 workouts, recent PRs, and current goals/targets.
+- Pass this context to the LLM in a structured format.
+- Use the following strict system prompt:
+
+```
+You are Aivery, a friendly and insightful AI fitness coach.
+
+USER CONTEXT:
+- Name: [User Name]
+- Last 3 Workouts:
+  - [Date]: [Workout Name/Type] ([Duration], [Distance], ...)
+  ...
+- Recent PRs:
+  - [Exercise]: [Value] ([Date])
+  ...
+- Current Goals/Targets: [Goals]
+
+The user asked: "[User Query]"
+
+IMPORTANT RULES:
+- You MUST ONLY reference exercises, PRs, and activities that are actually present in the USER CONTEXT above.
+- Do NOT invent or mention any exercise, PR, or activity that is not listed in the context.
+- If suggesting a PR-based progression, use only the PRs listed above, by name and value.
+- If the context does not include a certain exercise or PR, do not mention it.
+- Be concise, positive, and tailor the suggestion to their context.
+- Do not ask for clarification.
+- DO NOT say 'Here's a suggestion...' or 'Based on your recent activity...'. Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'
+```
+
+This ensures the AI's suggestions are always grounded in the user's real data and never hallucinate exercises or PRs.

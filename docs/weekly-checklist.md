@@ -73,3 +73,5 @@
 
 - [ ] What did I improve this week?
 - [ ] Anything worth sharing visually (AI output, dashboard tweak, refactor win)?
+
+- [ ] Fallback for vague queries (intent: 'unknown') with user context returns a concrete, actionable suggestion (not a generic message); retry logic triggers if needed. See prompts.md for details.
