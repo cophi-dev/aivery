@@ -98,7 +98,7 @@ const ValidPeriods = z.enum([
 ]);
 
 // Define the schema for the structured AI analysis output
-export const QueryAnalysisSchema = z.object({
+const QueryAnalysisSchema = z.object({
   intent: ValidIntents,
   entities: z.object({
     metric: ValidMetrics.optional(),
@@ -120,7 +120,7 @@ export const QueryAnalysisSchema = z.object({
   response_suggestion: z.string().optional(),
 });
 
-export type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
+type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
 
 // Initialize Anthropic client
 // const anthropic = new Anthropic({
@@ -1125,7 +1125,9 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         let lastPlan = null;
         if (hasHistory) {
           // Find the last assistant message that looks like a plan
-          lastPlan = [...history].reverse().find(msg => msg.role === 'assistant' && /monday|day 1|week/i.test(msg.content));
+          // More robust: match 'monday', 'tuesday', ..., 'sunday', 'day 1', 'week', or 'plan' (case-insensitive)
+          const planRegex = /monday|tuesday|wednesday|thursday|friday|saturday|sunday|day \d+|week|plan/i;
+          lastPlan = [...history].reverse().find(msg => msg.role === 'assistant' && planRegex.test(msg.content));
         }
 
         // Analyze the query early if not already done (for intent detection)
@@ -1133,6 +1135,25 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         if (!context?.requestType && !lastPlan) {
           analysis = await analyzeUserQuery(query, history, userId);
         }
+
+        // --- DEBUG LOGGING FOR PLAN PATCH ---
+        console.log('[DEBUG] lastPlan:', lastPlan);
+        // --- Extract follow-up instructions from history since last plan ---
+        let followUpInstructions = '';
+        if (history && Array.isArray(history) && history.length > 0) {
+          // Find the last assistant message that looks like a plan
+          const planRegex = /monday|tuesday|wednesday|thursday|friday|saturday|sunday|day \d+|week|plan/i;
+          const lastPlanIdx = [...history].reverse().findIndex(msg => msg.role === 'assistant' && planRegex.test(msg.content));
+          let sinceIdx = lastPlanIdx === -1 ? 0 : history.length - lastPlanIdx;
+          // Get all user messages since then
+          const followUps = history.slice(sinceIdx).filter(m => m.role === 'user').map(m => m.content.trim()).filter(Boolean);
+          if (followUps.length > 0) {
+            followUpInstructions = followUps.join(' ');
+            console.log('[PLAN] Extracted follow-up instructions:', followUpInstructions);
+          }
+        }
+        console.log('[DEBUG] followUpInstructions:', followUpInstructions);
+        console.log('[DEBUG] history:', history);
 
         if ((context?.requestType === 'generate_plan') || lastPlan || (analysis && analysis.intent === 'generate_plan')) { 
             console.log(`[API /coach] Detected plan generation or modification request.`);
@@ -1227,23 +1248,12 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                   }
                 }
 
-                // --- Extract follow-up instructions from history since last plan ---
-                let followUpInstructions = '';
-                if (history && Array.isArray(history) && history.length > 0) {
-                  // Find the last assistant message that looks like a plan
-                  const lastPlanIdx = [...history].reverse().findIndex(msg => msg.role === 'assistant' && /monday|day 1|week/i.test(msg.content));
-                  let sinceIdx = lastPlanIdx === -1 ? 0 : history.length - lastPlanIdx;
-                  // Get all user messages since then
-                  const followUps = history.slice(sinceIdx).filter(m => m.role === 'user').map(m => m.content.trim()).filter(Boolean);
-                  if (followUps.length > 0) {
-                    followUpInstructions = followUps.join(' ');
-                    console.log('[PLAN] Extracted follow-up instructions:', followUpInstructions);
-                  }
-                }
-
                 // 2. Construct the system prompt
                 let systemPrompt = `IMPORTANT: If you mention only the most recent run, your answer will be rejected. You MUST use ALL of the following: (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) the last 5 running workouts.\n\nRUNNING HISTORY SUMMARY:\n- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km\n- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km\n- Fastest pace (last 4 weeks): ${fastestPaceStr}\n\nRecent Running Workouts (Last 5):\n${last5Runs}\n\nUser Goal:\n${goals}\n\n${exercisePRsString}\n\nBased ONLY on the information above (goal, exercise PRs, running history), generate a concise, actionable ${planWeeks}-week running plan. Avoid questions; generate the best plan possible. Focus on the PLAN.\n\nChecklist: Did you use (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) last 5 runs? If not, revise your answer.`;
-                if (followUpInstructions) {
+                // --- PATCH: If this is a follow-up, include the previous plan and explicit update instructions ---
+                if (lastPlan && followUpInstructions) {
+                  systemPrompt = `Here is the current ${planWeeks}-week running plan:\n${lastPlan.content}\n\nThe user asked: \"${followUpInstructions}\"\n\nUpdate the plan above to include the user's request, keeping all previous running sessions. Only modify what's needed. Output the full updated plan.\n\n` + systemPrompt;
+                } else if (followUpInstructions) {
                   systemPrompt += `\n\nUSER FOLLOW-UP INSTRUCTIONS:\n${followUpInstructions}`;
                 }
 
