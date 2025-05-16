@@ -18,8 +18,8 @@ import {
 } from "date-fns"; // Import date-fns functions
 import { getServerSession } from "next-auth"; // RE-ADD import
 import mongoose from 'mongoose'; // Import mongoose
-import { analyzeUserQuery, QueryAnalysisSchema } from "@/app/api/ai/coach/route";
 import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository";
+import { callLLM, LLMProvider } from '@/lib/services/llm';
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
@@ -212,121 +212,35 @@ export async function POST(req: Request) {
       return new Response("Query is required", { status: 400 });
     }
 
-    // Intent/entity extraction
-    const analysis = await analyzeUserQuery(currentQuery, messageHistory, userId);
-    const validation = QueryAnalysisSchema.safeParse(analysis);
-    if (!validation.success) {
-      return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
-    }
-    const { intent, entities, response_suggestion } = validation.data;
-
-    // Build system prompt
-    const systemPrompt = `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Personal Records:\n${personalRecordsString}\n- Current Goals/Targets:\n${goalsString}\n\nRESPONSE GUIDELINES:\n- Use the USER CONTEXT above to personalize your answer.\n- If user data is missing or unclear, provide a general, actionable suggestion based on best fitness coaching practices. Only ask for clarification if essential.\n- Be concise, actionable, and supportive. Use markdown formatting.`;
-
-    // Proactive fallback for vague/unclear queries
-    if (intent === 'unknown') {
-      const hasContext = (recentWorkouts && recentWorkouts.length > 0) || (prs && Object.keys(prs).length > 0 && Object.values(prs).some(Boolean)) || (goalsString && goalsString !== 'No goals specified.');
-      if (hasContext) {
-        // Proactive suggestion using user context
-        let proactivePrompt = `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Personal Records:\n${personalRecordsString}\n- Current Goals/Targets:\n${goalsString}\n\nThe user asked: \"${currentQuery}\"\n\nBased on the user's recent activity and goals, suggest a specific, actionable workout or fitness activity for today. Be concise, positive, and tailor the suggestion to their context. Do not ask for clarification.\n\nDO NOT say 'Here’s a suggestion...' or 'Based on your recent activity...'. Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'`;
-        const grokApiKey = process.env.GROK_API_KEY;
-        if (!grokApiKey) {
-          return new Response("AI service is unavailable due to configuration issues.", { status: 503 });
-        }
-        let aiResponse: string | null = null;
-        let attempt = 0;
-        let lastPrompt = proactivePrompt;
-        while (attempt < 2) {
-          const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${grokApiKey}`
-            },
-            body: JSON.stringify({
-              model: 'grok-3-mini-latest',
-              messages: [
-                  { role: 'system', content: lastPrompt },
-                  { role: 'user', content: currentQuery }
-              ],
-              max_tokens: 256,
-              temperature: 0.7,
-              stream: false,
-            })
-          });
-          if (!fetchResponse.ok) {
-            const errorBody = await fetchResponse.text();
-            return new Response("Sorry, there was an error communicating with the AI.", { status: 502 });
-          }
-          const data = await fetchResponse.json();
-          if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-            aiResponse = data.choices[0].message.content.trim();
-            // If too generic, retry with a more forceful prompt
-            if ((/here\'?s a suggestion|based on your recent activity/i.test(aiResponse) || aiResponse.length < 40) && attempt === 0) {
-              lastPrompt += "\n\nYou must provide a concrete, actionable workout or activity. Do NOT repeat generic phrases. Give a specific session or activity.";
-              attempt++;
-              continue;
-            }
-          }
-          break;
-        }
-        return new Response(JSON.stringify({ response: aiResponse || "Here's a suggestion based on your recent activity and goals." }), { status: 200 });
-      }
-      // If no context, fallback to existing suggestion or clarification
-      if (response_suggestion) {
-        return new Response(JSON.stringify({ response: response_suggestion }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ response: "Could you clarify your question or tell me more about your fitness goals?" }), { status: 200 });
-    }
-
-    // For now, just pass the prompt and query to the LLM (extend with more intent/entity-based routing as needed)
-    const grokApiKey = process.env.GROK_API_KEY;
-    if (!grokApiKey) {
-      return new Response("AI service is unavailable due to configuration issues.", { status: 503 });
-    }
-    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini-latest',
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: currentQuery }
-        ],
-        max_tokens: 1024,
-        temperature: 0.7,
-        stream: false,
-      })
+    // Main chat LLM call
+    const provider = (process.env.LLM_PROVIDER_CHAT as LLMProvider) || 'grok';
+    const model = process.env.LLM_MODEL_CHAT || 'grok-3-mini-latest';
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Personal Records:\n${personalRecordsString}\n- Current Goals/Targets:\n${goalsString}\n\nRESPONSE GUIDELINES:\n- Use the USER CONTEXT above to personalize your answer.\n- If user data is missing or unclear, provide a general, actionable suggestion based on best fitness coaching practices. Only ask for clarification if essential.\n- Be concise, actionable, and supportive. Use markdown formatting.` },
+        ...(Array.isArray(messageHistory) ? messageHistory.filter(m => m && m.role && m.content) : []),
+        { role: 'user', content: currentQuery }
+      ],
+      max_tokens: 1024,
+      temperature: 0.7,
+      stream: false,
     });
-    if (!fetchResponse.ok) {
-      const errorBody = await fetchResponse.text();
-      return new Response("Sorry, there was an error communicating with the AI.", { status: 502 });
-    }
-    const data = await fetchResponse.json();
-    grokUsageData = data.usage; // Capture usage data
-    console.log("[CHAT] Grok Raw Response:", data);
-
-    let aiResponse: string | null = null;
+    grokUsageData = data.usage;
+    let aiResponse = '';
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-        aiResponse = data.choices[0].message.content.trim();
+      aiResponse = data.choices[0].message.content.trim();
     } else {
-        console.warn("[CHAT] Unexpected Grok response structure:", data);
+      aiResponse = "Sorry, I couldn't generate a response.";
     }
-
-    console.log("[CHAT] AI Response generated.");
-
     // --- Update Token Usage ---
-    // REMINDER: Apply this post-update pattern (get tokens used, increment DB count)
-    //           after *any* Grok API call successfully returns usage data.
     if (userId && grokUsageData) {
       const tokensUsed = grokUsageData.total_tokens || (
-                         (grokUsageData.prompt_tokens || 0) + 
-                         (grokUsageData.completion_tokens || 0) + 
-                         (grokUsageData.completion_tokens_details?.reasoning_tokens || 0)
-                       );
+        (grokUsageData.prompt_tokens || 0) +
+        (grokUsageData.completion_tokens || 0) +
+        (grokUsageData.completion_tokens_details?.reasoning_tokens || 0)
+      );
       if (tokensUsed > 0) {
         console.log(`[CHAT_RATE_LIMIT] Updating usage for user ${userId}. Adding ${tokensUsed} tokens.`);
         User.updateOne({ _id: userId }, { $inc: { dailyGrokTokenUsage: tokensUsed } })
@@ -334,8 +248,7 @@ export async function POST(req: Request) {
       }
     }
     // --- End Update Token Usage ---
-
-    return NextResponse.json({ response: aiResponse || "Sorry, I couldn't generate a response." });
+    return NextResponse.json({ response: aiResponse });
   } catch (error: any) {
     console.error("Chat API Error:", error);
 

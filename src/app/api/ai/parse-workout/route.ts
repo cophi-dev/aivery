@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { type NextRequest } from 'next/server';
+import { callLLM, LLMProvider } from '@/lib/services/llm';
 
 // Placeholder type for the structured data we expect from the AI
 // TODO: Refine this based on the actual AI output format and form state needs
@@ -168,39 +169,28 @@ EXPECTED JSON OUTPUT 3:
     console.log('[AI Parse Workout] Cleaned log text for AI:', cleanedLogText);
     // --- END NEW ---
 
-    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini',
-        messages: [
-            { role: 'system', content: systemPrompt },
-            // Pass the raw log text as the user message for parsing
-            { role: 'user', content: cleanedLogText }
-        ],
-        max_tokens: 2048, // Increased to accommodate potentially large JSON output
-        temperature: 0.1, // Low temperature for deterministic JSON parsing
-        stream: false,
-        // Attempt to enforce JSON output - check if Grok supports this
-        // response_format: { type: "json_object" }, 
-      })
+    // Use env vars for provider/model
+    const provider = (process.env.LLM_PROVIDER_PARSE as LLMProvider) || 'grok';
+    const model = process.env.LLM_MODEL_PARSE || 'grok-3-mini';
+    console.log(`[AI Parse Workout] Using provider: ${provider}, model: ${model}`);
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: cleanedLogText }
+      ],
+      max_tokens: 2048,
+      temperature: 0.1,
+      stream: false,
     });
+    console.log('[AI Parse Workout] LLM Raw Response:', data);
 
-    if (!fetchResponse.ok) {
-      const errorBody = await fetchResponse.text();
-      console.error(`[AI Parse Workout] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
+    // Replace fetchResponse error handling with data error handling if needed
+    if (!data || !data.choices) {
+      console.error(`[AI Parse Workout] LLM response missing choices or is invalid`, data);
       return NextResponse.json({ error: "Sorry, there was an error communicating with the AI." }, { status: 502 });
     }
-
-    const data = await fetchResponse.json();
-    console.log("[AI Parse Workout] Grok Raw Response:", data);
-
-    // TODO: Add token usage update logic here, similar to other API routes?
-    // const usage = data.usage;
-    // await updateTokenUsage(userId, usage); // Need userId if implementing rate limiting/tracking
 
     let parsedJsonString: string | null = null;
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {

@@ -70,19 +70,30 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Notes:**
 
 ### Workout Plan Generation
-- **Prompt ID:** `workout-plan-generation-v1`
-- **Description:** Produces a concise, actionable 1-week workout plan based on user goals, PRs, and recent history.
+- **Prompt ID:** `workout-plan-generation-v2`
+- **Description:** Produces a concise, actionable 1-week running plan based on user goals, PRs, and recent running history.
 - **Where Used:**
   - `src/app/api/ai/coach/route.ts` (plan generation logic)
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `grok-3-mini-latest` (or as set by env)
 - **Input:**
   - User name
   - User goal
   - Exercise PRs
-  - Recent workout history
+  - **Average weekly running distance (last 4 weeks)**
+  - **Longest run (last 4 weeks)**
+  - **Fastest pace (last 4 weeks)**
+  - **Last 5 running workouts (date, distance, duration)**
+- **Prompt Structure:**
+  - The system prompt now *explicitly* instructs the LLM: "You MUST base the plan on the average weekly distance, longest run, fastest pace, and the last 5 running workouts provided. Do NOT base the plan only on the most recent run."
+  - Includes a summary line: 'User averages X km/week running over the last 4 weeks. Longest run: Y km. Fastest pace: Z min/km.'
+  - Lists the last 5 running workouts.
+  - Instructs the LLM to generate a plan based on this context.
 - **Expected Output:**
   - Markdown text (structured plan)
 - **Notes:**
+  - Only running workouts are used for running plan context.
+  - Distance is normalized from both top-level and cardioDetails fields.
+  - If the LLM response is vague or only references the most recent run, fallback logic retries with a stricter prompt until a concrete, actionable weekly plan is produced.
 
 ### Weekly Performance Review
 - **Prompt ID:** `weekly-performance-review-v1`
@@ -214,14 +225,15 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 
 ## Proactive Fallback for Vague Queries
 
-When `analyzeUserQuery` returns `intent: 'unknown'` **and** the user has recent workouts, PRs, or goals, the system:
+When `analyzeUserQuery` returns `intent: 'unknown'` **and** the user has recent running workouts, PRs, or goals, the system:
 
 - **Skips clarification.**
-- **Returns a proactive, actionable suggestion** using the system prompt and available user context.
+- **Returns a proactive, actionable suggestion** using the system prompt and available user context, prioritizing running context if available.
 - The system prompt now explicitly instructs:
   - DO NOT say 'Here's a suggestion...' or 'Based on your recent activity...'.
   - Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'
 - If the LLM response is too generic (e.g., matches those phrases or is under 40 characters), the system retries with a more forceful prompt requiring a specific session or activity.
+- **Note:** The fallback context now includes average weekly running distance and recent running workouts if available.
 
 **Example:**
 
@@ -275,3 +287,10 @@ IMPORTANT RULES:
 ```
 
 This ensures the AI's suggestions are always grounded in the user's real data and never hallucinate exercises or PRs.
+
+## Prompt Structure and Handling (2024)
+
+- **Centralized Prompt Construction:** All prompts for LLMs are constructed in the API layer and passed to the `callLLM` helper in `src/lib/services/llm.ts`.
+- **Follow-Up Instructions:** If a follow-up instruction is present, it is appended to the system prompt before sending to the LLM.
+- **Prompt Fallback/Retry:** If the LLM response is vague or generic, the API endpoint retries with a more forceful or explicit prompt. Each retry and the final prompt are logged for traceability.
+- **No UI/Legacy Prompt Construction:** Prompt construction is no longer performed in UI components or legacy fetch code; all logic is centralized in the API.

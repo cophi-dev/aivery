@@ -92,6 +92,8 @@ This document outlines the MongoDB collections used in the Aivery application, i
 
 **Description**: Stores all workout data for users.
 
+**NOTE:** Running plan generation and fallback logic for AI now use only running workouts, and the system prompt *explicitly* instructs the LLM to use average weekly running distance (last 4 weeks), longest run, fastest pace, and the last 5 running workouts for context. The prompt warns to NOT base the plan only on the most recent run. Distance is normalized from both top-level and cardioDetails fields for context.
+
 **Fields**:
 - `_id`: ObjectId (primary key)
 - `userId`: ObjectId (required, references users collection)
@@ -374,4 +376,10 @@ This document outlines the MongoDB collections used in the Aivery application, i
 
 **Used by**:
 - Weight tracking
-- Body metrics visualization 
+- Body metrics visualization
+
+## LLM-Related Data
+
+- LLM provider/model selection and prompt/follow-up handling are managed via environment variables and application logic, not persisted in the database.
+- No LLM API keys, provider names, or model names are stored in any database table.
+- If future LLM metadata (e.g., provider, model, prompt version) is to be logged or audited, add a new table or extend existing audit/log tables accordingly. 

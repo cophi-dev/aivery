@@ -1180,3 +1180,41 @@ export function findLatestTimestampInWorkouts(workouts: WorkoutData[]): Date | n
     return latestDate;
 }
 
+/**
+ * Fetches the last N running workouts for a user, normalizing distance from either top-level or cardioDetails.
+ * @param userId - The user's ID
+ * @param limit - Number of workouts to fetch
+ * @returns Array of { date, name, type, duration, distance }
+ */
+export async function getRecentRunningWorkouts(userId: string, limit = 20): Promise<Array<{ date: Date, name: string, type: string, duration: number, distance: number }>> {
+  await dbConnect();
+  const workoutDocs = await WorkoutModel.find({
+    userId: new mongoose.Types.ObjectId(userId),
+    type: { $in: ["running", "run"] },
+    deletedAt: null
+  })
+    .sort({ date: -1 })
+    .limit(limit)
+    .lean()
+    .exec();
+
+  return workoutDocs.map(doc => {
+    // Prefer top-level distance, fallback to cardioDetails.distance
+    let distance = 0;
+    if (typeof doc.distance === 'number' && doc.distance > 0) {
+      distance = doc.distance;
+    } else if (doc.cardioDetails && typeof doc.cardioDetails.distance === 'number' && doc.cardioDetails.distance > 0) {
+      distance = doc.cardioDetails.distance;
+    }
+    // Normalize to km if needed (assume stored in km, fallback to meters if > 1000)
+    if (distance > 1000 && distance < 10000) distance = distance / 1000;
+    return {
+      date: doc.date,
+      name: doc.name || '',
+      type: doc.type || 'running',
+      duration: doc.duration || (doc.cardioDetails?.duration || 0),
+      distance: distance
+    };
+  });
+}
+

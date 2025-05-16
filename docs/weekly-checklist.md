@@ -17,6 +17,7 @@
 ## 📚 2. Documentation Hygiene
 
 - [ ] Update `docs/prompts.md` if prompt logic changed or new prompts were added
+- [ ] If running plan prompt changed, verify it *explicitly* instructs the LLM to use average weekly distance, longest run, fastest pace, and last 5 running workouts (not just the most recent run). Check fallback logic for vague plan responses is enforced and documented.
 - [ ] Update `docs/database-schema.md` if:
   - New fields or collections were introduced
   - Indexes or relationships changed
@@ -75,3 +76,11 @@
 - [ ] Anything worth sharing visually (AI output, dashboard tweak, refactor win)?
 
 - [ ] Fallback for vague queries (intent: 'unknown') with user context returns a concrete, actionable suggestion (not a generic message); retry logic triggers if needed. See prompts.md for details.
+
+## LLM Integration Checklist
+
+- [ ] All LLM calls use the centralized `callLLM` helper in `src/lib/services/llm.ts`
+- [ ] Provider/model selection is via environment variables (no hardcoded values)
+- [ ] Provider/model logging is present at every LLM call site
+- [ ] Prompt fallback/retry logic and follow-up instruction handling are implemented and tested
+- [ ] No direct fetch calls or hardcoded model/provider names remain in the codebase

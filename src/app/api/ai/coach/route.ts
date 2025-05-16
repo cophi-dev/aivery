@@ -15,6 +15,10 @@ import { format, /* Other date-fns imports if needed */ } from "date-fns";
 import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository"; 
 import { fetchWorkoutForAI } from "@/lib/workout-actions"; // Re-add this import
 import { WorkoutData } from '@/types/db'; // Assuming this is the correct path
+import { getRecentRunningWorkouts } from "@/lib/db/repositories/workoutRepository";
+import { config as dotenvConfig } from 'dotenv';
+import { callLLM, LLMProvider } from '@/lib/services/llm';
+dotenvConfig();
 
 // Define the structure for the data expected by the AI coach
 interface AICoachWorkoutData extends WorkoutData {
@@ -46,6 +50,7 @@ const ValidIntents = z.enum([
   "list_workouts",
   "get_workout_details",
   "compare_metric",
+  "generate_plan",
   "unknown",
 ]);
 
@@ -128,11 +133,11 @@ function getQueryAnalysisSchemaString(): string {
   // For now, manually representing the structure
   return `
 {
-  intent: "get_total_metric" | "get_average_metric" | "get_record" | "list_workouts" | "get_workout_details" | "compare_metric" | "unknown",
+  intent: "get_total_metric" | "get_average_metric" | "get_record" | "list_workouts" | "get_workout_details" | "compare_metric" | "generate_plan" | "unknown",
   entities: {
     metric?: "distance" | "duration" | "count" | "volume" | "pace" | "speed" | "calories" | "elevation",
     workout_type?: "running" | "cycling" | "swimming" | "walking" | "hiking" | "strength" | "hiit" | "yoga" | "flexibility" | "other" | "any",
-    period?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "last_year" | "last_7_days" | "last_30_days" | "overall" | "next_week", // <-- Added next_week
+    period?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "last_year" | "last_7_days" | "last_30_days" | "overall" | "next_week",
     explicit_start_date?: string, // ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
     explicit_end_date?: string, // ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
     comparison_period?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "last_year" | "last_7_days" | "last_30_days" | "overall",
@@ -184,7 +189,7 @@ async function updateTokenUsage(userId: string | undefined, grokUsageData: any):
 /**
  * Generates an initial insightful message for a specific workout.
  */
-async function generateInitialWorkoutInsight(workoutId: string, userName: string, userId: string): Promise<string> { // <-- Added userId
+async function generateInitialWorkoutInsight(workoutId: string, userName: string, userId: string): Promise<string> {
   try {
     // Ensure Grok API key is available
     const grokApiKey = process.env.GROK_API_KEY;
@@ -228,46 +233,30 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
     const systemPrompt = `\\nYou are Aivery, a friendly and insightful fitness coach. The user, ${userName}, has just clicked on a specific workout in their history and wants to discuss it.\\n\\nWorkout Data Overview:\\n${JSON.stringify(promptData, null, 2)}\\n\\nYour task is to generate a welcoming and insightful opening message (1-2 sentences) based ONLY on the provided Workout Data Overview. Briefly highlight something interesting (e.g., a key stat, a comparison like duration/distance change if progressMetrics exist, a potential PR) and then ask an open-ended question to guide the conversation, like \"What aspect of this workout would you like to focus on?\" or \"How did this workout feel compared to your last session?\". Be encouraging and conversational. Focus on the MOST RECENT workout data provided.`;
 
     console.log("[generateInitialWorkoutInsight] Sending prompt to Grok for initial insight...");
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini-latest',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: "Generate the initial insightful message based on the workout data provided in the system prompt." }
-        ],
-        max_tokens: 150, // Keep response concise
-        temperature: 0, // Keep deterministic for this use case
-        stream: false,
-      })
+    const provider = process.env.LLM_PROVIDER_INSIGHT as LLMProvider;
+    const model = process.env.LLM_MODEL_INSIGHT;
+    if (!provider || !model) throw new Error('LLM provider/model for INSIGHT not set');
+    console.log(`[LLM] Using provider: ${provider}, model: ${model}`);
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: "Generate the initial insightful message based on the workout data provided in the system prompt." }
+      ],
+      max_tokens: 150,
+      temperature: 0,
+      stream: false,
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`[generateInitialWorkoutInsight] Grok API error: ${response.status} ${response.statusText}`, errorBody);
-      throw new Error(`Grok API request failed with status ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log("[generateInitialWorkoutInsight] Grok Raw Response:", data);
-
-    // <<< UPDATE TOKEN USAGE >>>
     await updateTokenUsage(userId, data.usage);
-
-    let insightText = "Okay, let's look at that workout. What stands out to you?"; // Fallback
+    let insightText = "Okay, let's look at that workout. What stands out to you?";
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-        insightText = data.choices[0].message.content.trim();
+      insightText = data.choices[0].message.content.trim();
     } else {
-        console.warn("[generateInitialWorkoutInsight] Unexpected Grok response structure:", data);
+      console.warn("[generateInitialWorkoutInsight] Unexpected LLM response structure:", data);
     }
-
-    console.log(`[generateInitialWorkoutInsight] Generated insight: \"${insightText}\"`);
+    console.log(`[generateInitialWorkoutInsight] Generated insight: "${insightText}"`);
     return insightText;
-
   } catch (error) {
     console.error(`[generateInitialWorkoutInsight] Error generating initial insight for workout ${workoutId}:`, error);
     return `Sorry ${userName}, I had trouble loading the full details for that workout right now. What would you like to discuss about it generally?`;
@@ -279,22 +268,14 @@ async function generateInitialWorkoutInsight(workoutId: string, userName: string
  */
 async function analyzeUserQuery(query: string, history: HistoryMessage[], userId: string): Promise<QueryAnalysis> { // <-- Added userId
   const schemaString = getQueryAnalysisSchemaString();
-  const grokApiKey = process.env.GROK_API_KEY;
-
-  if (!grokApiKey) {
-    console.error("[analyzeUserQuery] GROK_API_KEY not configured.");
-    return {
-      intent: "unknown",
-      response_suggestion: "The AI analysis service is currently unavailable due to configuration issues."
-    };
-  }
 
   // Format history for the prompt
   const historyString = history
     .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
     .join('\n');
 
-  const systemPrompt = `\\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.\\n\\nCONVERSATION HISTORY:\\n${historyString}\\n\\nLATEST USER QUERY: \"${query}\"\\n\\nYour goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.\\n\\nAVAILABLE DATA TYPES OVERVIEW:\\n- User: name, goals, preferences, location, age, weight, height, ...\\n- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...\\n- Exercises (Library): name, description, muscles, category, equipment, ...\\n\\nSCHEMA:\\n\\\`\\\`\\\`json\\n${schemaString}\\n\\\`\\\`\\\`\\n\\nRULES:\\n- Analyze the LATEST USER QUERY: \"${query}\".\\n- Use the CONVERSATION HISTORY to understand context (e.g., what \"these\" refers to).\\n- Identify the primary intent of the LATEST QUERY.\\n- Extract all relevant entities mentioned or implied in the LATEST QUERY. Use context from history if needed (e.g., if the user says \"show me those\", infer the period/type from the previous message).\\n+\n- **WORKOUT TYPE EXTRACTION (VERY IMPORTANT):** When extracting \\\`workout_type\\\`, prioritize types explicitly mentioned in the LATEST QUERY (e.g., "running workout", "strength session"). If the query refers to a specific workout by ID or reference (like \"it\", \"that workout\") and the type isn't explicitly mentioned in the *latest query*, look at the CONVERSATION HISTORY or any provided CONTEXT (like a workoutSummary) to determine the correct type associated with that specific workout. Avoid defaulting to \\\`other\\\` if a more specific type can be reliably determined from the query or context.\\n \n- **IMPORTANT CONTEXT RULE:** If the LATEST QUERY is a direct follow-up asking to list items mentioned previously (like \"show me those\", \"list them\"), **you MUST inherit the period, explicit_start_date, explicit_end_date, and workout_type entities from the context of the previous turn** unless the LATEST QUERY explicitly specifies a *new* period or type.\\n \n- **NEW FOLLOW-UP RULE:** If the LATEST QUERY is a simple follow-up asking about a *different time period* (e.g., \"how about last week?\", \"and yesterday?\", \"compare that to last month\") AND the *previous assistant message* provided a summary or list of metrics (like distance, duration, count), you MUST infer the user wants the *same metrics* for the *new period* mentioned in the LATEST QUERY. Extract the relevant \\\`metric\\\` entities based on the previous assistant turn.\\n- **PRONOUN/REFERENCE RESOLUTION (VERY IMPORTANT):** When the LATEST QUERY uses pronouns (\"it\", \"this\", \"that\") or vague references (\"this workout\", \"that session\") to refer to a workout discussed previously in the CONVERSATION HISTORY or provided in initial context, you MUST extract the specific **workout ID (ObjectId, e.g., '68060b1ec02d568dab4d8262')** if it's available in the recent history/context, and place it in the \\\`workout_identifier\\\` entity. Do **NOT** use the date as the identifier if the ObjectId is available. This is crucial for intents like \\\`get_workout_details\\\` and \\\`compare_metric\\\` (workout-vs-previous comparison mode).\\n-\n- Use the current date ONLY for resolving relative time periods like 'today', 'last week', etc. The backend will handle the precise date calculations.\\n- If the LATEST QUERY is too vague, even with history context, set intent to \"unknown\" and optionally provide a suggestion for clarification in response_suggestion.\\n- For comparison intents, try to extract both the main period and the comparison period.\\n- If the user asks for a specific workout (e.g., 'my run yesterday', 'workout ID 123'), capture this in workout_identifier.\\n- Only return the JSON object adhering strictly to the schema.\\n- Do NOT add any explanations or commentary outside the JSON structure.\\n\\nCURRENT DATE for context: ${new Date().toISOString().split('T')[0]}. Use this for resolving relative periods if necessary (although the backend primarily handles period->date calculation).\\n`;
+  // ENHANCED SYSTEM PROMPT: Instruct LLM to extract plan durations from natural language
+  const systemPrompt = `\nYou are an expert system trained to analyze the LATEST user query in a conversation about fitness data and extract structured information. Use the conversation HISTORY for context if needed, especially for pronouns or references to previous turns.\n\nCONVERSATION HISTORY:\n${historyString}\n\nLATEST USER QUERY: "${query}"\n\nYour goal is to identify the user's **intent** and extract relevant **entities** from the LATEST QUERY based on the provided query and the target JSON schema. Refer to the history only to resolve ambiguities in the latest query.\n\nAVAILABLE DATA TYPES OVERVIEW:\n- User: name, goals, preferences, location, age, weight, height, ...\n- Workouts: type (run, cycle, strength, ...), date, duration, distance, pace, speed, calories, volume, exercises, sets, notes, heart rate, elevation, power, ...\n- Exercises (Library): name, description, muscles, category, equipment, ...\n\nSCHEMA:\n\u001b[json\n${schemaString}\n\u001b\n\nRULES:\n- Analyze the LATEST USER QUERY: "${query}".\n- Use the CONVERSATION HISTORY to understand context (e.g., what "these" refers to).\n- Identify the primary intent of the LATEST QUERY.\n- If the user requests a plan for a specific duration (e.g., 'four week', '4-week', 'month', '30 days', 'two months', '90 days', etc.), extract this as either:\n  - explicit_start_date and explicit_end_date (if dates are given or can be inferred), OR\n  - a 'limit' field representing the number of weeks (e.g., 'four week' => limit: 4, 'month' => limit: 4, '90 days' => limit: 13).\n- If the user says 'next month', 'next 4 weeks', 'for 30 days', etc., map these to the correct number of weeks in the 'limit' field.\n- If the user says 'half marathon in 6 weeks', infer the plan should be for 6 weeks.\n- If the user says 'plan for September', infer the start and end dates for September.\n- Always extract durations from natural language, not just explicit dates.\n- If no duration is specified, default to 1 week.\n\nEXAMPLES:\n- 'Please create a four week running plan.' => limit: 4\n- 'I want a 12-week marathon plan.' => limit: 12\n- 'Give me a plan for the next month.' => limit: 4\n- 'I have a half marathon in 6 weeks.' => limit: 6\n- 'Plan for September.' => explicit_start_date: '2024-09-01', explicit_end_date: '2024-09-30'\n- 'Plan for 90 days.' => limit: 13\n- 'Plan for 30 days.' => limit: 4\n- 'Plan for 2 months.' => limit: 8\n\nReturn the result as a JSON object matching the schema.\n`;
 
   const defaultUnknownResponse: QueryAnalysis = {
     intent: "unknown",
@@ -302,72 +283,54 @@ async function analyzeUserQuery(query: string, history: HistoryMessage[], userId
   };
 
   try {
-    console.log(`Sending query to Grok: \\"${query}\\"`);
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini-latest',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `LATEST USER QUERY: "${query}"` } // Pass the query explicitly as per prompt structure
-        ],
-        max_tokens: 2048, // <<< Increased max_tokens from 1024 to 2048
-        temperature: 0, // Keep deterministic for analysis
-        stream: false,
-        // Add response_format if Grok supports it for enforcing JSON
-        // response_format: { type: "json_object" }, // <-- Check Grok docs if this is supported
-      })
+    // Model/provider selection (env-driven)
+    const provider = process.env.LLM_PROVIDER_ANALYSIS as LLMProvider;
+    const model = process.env.LLM_MODEL_ANALYSIS;
+    if (!provider || !model) throw new Error('LLM provider/model for ANALYSIS not set');
+    console.log(`[LLM] Using provider: ${provider}, model: ${model}`);
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `LATEST USER QUERY: "${query}"` }
+      ],
+      max_tokens: 2048,
+      temperature: 0,
+      stream: false,
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`[analyzeUserQuery] Grok API error: ${response.status} ${response.statusText}`, errorBody);
-      return { ...defaultUnknownResponse, response_suggestion: `AI analysis failed (HTTP ${response.status}). Please try rephrasing.` };
-    }
-
-    const data = await response.json();
-    console.log("Grok Raw Response:", data);
-
-    // <<< UPDATE TOKEN USAGE >>>
     await updateTokenUsage(userId, data.usage);
-
-    let analysisJsonString = "";
+    let analysisJsonString = '';
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-        analysisJsonString = data.choices[0].message.content.trim();
+      analysisJsonString = data.choices[0].message.content.trim();
     } else {
-        console.error("Grok response content is empty or not as expected", data);
-        return defaultUnknownResponse;
+      console.error('LLM response content is empty or not as expected', data);
+      return defaultUnknownResponse;
     }
-
     // Post-processing: Extract JSON from potential markdown code blocks if needed
-    const jsonMatch = analysisJsonString.match(/```(?:json)?\\n([\s\S]*?)\\n```/);
+    const jsonMatch = analysisJsonString.match(/```(?:json)?\n([\s\S]*?)\n```/);
     if (jsonMatch && jsonMatch[1]) {
       analysisJsonString = jsonMatch[1];
     }
-
     try {
       const parsedAnalysis = JSON.parse(analysisJsonString);
       // Validate the parsed JSON against the schema
       const validationResult = QueryAnalysisSchema.safeParse(parsedAnalysis);
       if (validationResult.success) {
-        console.log("Validated Grok Analysis:", validationResult.data);
+        console.log('Validated LLM Analysis:', validationResult.data);
         return validationResult.data;
       } else {
-        console.error("Failed to validate JSON response from Grok:", validationResult.error);
-        console.error("Invalid JSON received:", analysisJsonString);
-        return { ...defaultUnknownResponse, response_suggestion: "AI analysis returned an unexpected format. Please try again." };
+        console.error('Failed to validate JSON response from LLM:', validationResult.error);
+        console.error('Invalid JSON received:', analysisJsonString);
+        return { ...defaultUnknownResponse, response_suggestion: 'AI analysis returned an unexpected format. Please try again.' };
       }
     } catch (parseError) {
-      console.error("Failed to parse JSON response from Grok:", parseError);
-      console.error("Raw response string:", analysisJsonString); // Log the raw string that failed parsing
-      return { ...defaultUnknownResponse, response_suggestion: "AI analysis returned invalid data. Please try again." };
+      console.error('Failed to parse JSON response from LLM:', parseError);
+      console.error('Raw response string:', analysisJsonString);
+      return { ...defaultUnknownResponse, response_suggestion: 'AI analysis returned invalid data. Please try again.' };
     }
   } catch (error) {
-    console.error("Error calling Grok API:", error);
+    console.error('Error calling LLM API:', error);
     return defaultUnknownResponse;
   }
 }
@@ -885,8 +848,9 @@ async function compareMetricBetweenPeriods(
 
 // --- Helper Function to Get Direct AI Text Response --- V4 (Concise Slideshow Content)
 async function getDirectTextResponse(query: string, userId: string, userName: string, userContext: { preferences?: IUser['aiPreferences'] | null, exercisePRs?: IExercisePR[] | null }): Promise<string | null> { 
-    const grokApiKey = process.env.GROK_API_KEY;
-    if (!grokApiKey) {
+    const provider = (process.env.LLM_PROVIDER_DIRECT as LLMProvider) || 'grok';
+    const model = process.env.LLM_MODEL_DIRECT || 'gpt-4.1-mini';
+    if (!process.env.GROK_API_KEY && provider === 'grok') {
         console.error("[getDirectTextResponse] GROK_API_KEY not configured.");
         return "Sorry, the AI is unavailable right now.";
     }
@@ -931,54 +895,37 @@ Do NOT write long, continuous text. Structure the output clearly with the specif
     const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
 
     try {
-        console.log(`[getDirectTextResponse] Sending direct query to Grok: \"${query}\"`);
-        const response = await fetch('https://api.x.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${grokApiKey}`
-          },
-          signal: controller.signal, // Pass the AbortSignal to fetch
-          body: JSON.stringify({
-            model: 'grok-3-mini-latest', // Consider a larger model if explanations are consistently too short
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: query } // The user query contains the specific concept to explain
-            ],
-            max_tokens: 2048, // Increased max_tokens again for even longer explanations
-            temperature: 0.6, // Slightly adjusted temperature for informative but engaging tone
-            stream: false,
-          })
+        console.log(`[getDirectTextResponse] Using provider: ${provider}, model: ${model}`);
+        const data = await callLLM({
+          provider,
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: query } // The user query contains the specific concept to explain
+          ],
+          max_tokens: 2048, // Increased max_tokens again for even longer explanations
+          temperature: 0.6, // Slightly adjusted temperature for informative but engaging tone
+          stream: false,
         });
 
         clearTimeout(timeoutId); // Clear the timeout if fetch completes
 
-        if (!response.ok) {
-          const errorBody = await response.text();
-          console.error(`[getDirectTextResponse] Grok API error: ${response.status} ${response.statusText}`, errorBody);
-          throw new Error(`Grok API request failed with status ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log("Direct Grok Raw Response:", data);
-
-        // <<< UPDATE TOKEN USAGE >>>
         await updateTokenUsage(userId, data.usage);
 
         if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
             return data.choices[0].message.content.trim();
         } else {
-            console.error("Direct Grok response content is empty or not as expected", data);
+            console.error("Direct LLM response content is empty or not as expected", data);
             return null;
         }
 
     } catch (error) {
         clearTimeout(timeoutId); // Ensure timeout is cleared on error too
         if (error instanceof Error && error.name === 'AbortError') {
-             console.error("[getDirectTextResponse] Grok API call timed out after 45 seconds.");
+             console.error("[getDirectTextResponse] LLM API call timed out after 45 seconds.");
              return "Sorry, the request to the AI timed out. It might be taking longer than usual to respond. Please try again shortly.";
         }
-        console.error("Error calling Grok API for direct response:", error);
+        console.error("Error calling LLM for direct response:", error);
         return null; // Return null on timeout or other fetch errors
     }
 }
@@ -987,57 +934,32 @@ Do NOT write long, continuous text. Structure the output clearly with the specif
  * Calls the AI model to generate a detailed workout analysis based on a system prompt and user query.
  */
 async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: string, userName: string, userId: string): Promise<string> { // <-- Added userId
-  const grokApiKey = process.env.GROK_API_KEY;
-  if (!grokApiKey) {
-    console.error("[generateWorkoutAnalysisResponse] GROK_API_KEY not configured.");
-    return `Sorry ${userName}, the AI coach is currently unavailable for detailed analysis due to configuration issues.`;
-  }
-
+  const provider = process.env.LLM_PROVIDER_ANALYSIS as LLMProvider;
+  const model = process.env.LLM_MODEL_ANALYSIS;
+  if (!provider || !model) throw new Error('LLM provider/model for ANALYSIS not set');
+  console.log(`[LLM] Using provider: ${provider}, model: ${model}`);
   try {
-    console.log("[generateWorkoutAnalysisResponse] Sending analysis prompt to Grok...");
-    // console.log("System Prompt:", systemPrompt); // Optional: Log system prompt for debugging
-    // console.log("User Query:", userQuery); // Optional: Log user query
-
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini-latest', // Or your preferred model
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userQuery } // Send the original user analysis request
-        ],
-        max_tokens: 1024, // Allow for a longer, detailed response
-        temperature: 0.7, // Allow some creativity for analysis
-        stream: false,
-      })
+    console.log(`[generateWorkoutAnalysisResponse] Using provider: ${provider}, model: ${model}`);
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userQuery } // Send the original user analysis request
+      ],
+      max_tokens: 1024, // Allow for a longer, detailed response
+      temperature: 0.7, // Allow some creativity for analysis
+      stream: false,
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`[generateWorkoutAnalysisResponse] Grok API error: ${response.status} ${response.statusText}`, errorBody);
-      throw new Error(`Grok API request failed with status ${response.status}`);
-    }
-
-    const data = await response.json();
-    // console.log("[generateWorkoutAnalysisResponse] Grok Raw Response:", data); // Optional: Log raw response
-
-    // <<< UPDATE TOKEN USAGE >>>
     await updateTokenUsage(userId, data.usage);
-
     let analysisText = `Sorry ${userName}, I couldn't generate the analysis properly.`; // Fallback
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
       analysisText = data.choices[0].message.content.trim();
     } else {
-      console.warn("[generateWorkoutAnalysisResponse] Unexpected Grok response structure:", data);
+      console.warn("[generateWorkoutAnalysisResponse] Unexpected LLM response structure:", data);
     }
-
     console.log(`[generateWorkoutAnalysisResponse] Generated analysis length: ${analysisText.length} chars`);
     return analysisText;
-
   } catch (error) {
     console.error(`[generateWorkoutAnalysisResponse] Error generating analysis:`, error);
     return `Sorry ${userName}, I encountered an error while trying to analyze your workout. Please try again later.`;
@@ -1045,44 +967,32 @@ async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: 
 }
 
 // Renaming for clarity, but same function as generateWorkoutAnalysisResponse
-async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string, model?: string): Promise<string> { // <-- Added userId
-  const grokApiKey = process.env.GROK_API_KEY;
-  if (!grokApiKey) {
+async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string, modelOverride?: string): Promise<string> { // <-- Added userId
+  const provider = (process.env.LLM_PROVIDER_PLAN as LLMProvider) || 'grok';
+  const model = modelOverride || process.env.LLM_MODEL_PLAN || 'gpt-4.1-mini';
+  if (!process.env.GROK_API_KEY && provider === 'grok') {
     console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
     return `Sorry ${userName}, the AI coach is currently unavailable for this request due to configuration issues.`;
   }
   try {
-    const modelToUse = model || process.env.GROK_MODEL_PLAN || 'grok-3-beta';
-    console.log(`[generateResponseFromSystemPrompt] Sending custom system prompt to Grok (model: ${modelToUse})...`);
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${grokApiKey}` },
-      body: JSON.stringify({
-        model: modelToUse,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userQuery }
-        ],
-        max_tokens: 2048, 
-        temperature: 0.7, 
-        stream: false,
-      })
+    console.log(`[generateResponseFromSystemPrompt] Using provider: ${provider}, model: ${model}`);
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userQuery }
+      ],
+      max_tokens: 2048, 
+      temperature: 0.7, 
+      stream: false,
     });
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`[generateResponseFromSystemPrompt] Grok API error: ${response.status} ${response.statusText}`, errorBody);
-      throw new Error(`Grok API request failed with status ${response.status}`);
-    }
-    const data = await response.json();
-
-    // <<< UPDATE TOKEN USAGE >>>
     await updateTokenUsage(userId, data.usage);
-
-    let generatedText = `Sorry ${userName}, I couldn\'t generate the response properly.`; 
+    let generatedText = `Sorry ${userName}, I couldn't generate the response properly.`; 
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
       generatedText = data.choices[0].message.content.trim();
     } else {
-      console.warn("[generateResponseFromSystemPrompt] Unexpected Grok response structure:", data);
+      console.warn("[generateResponseFromSystemPrompt] Unexpected LLM response structure:", data);
     }
     console.log(`[generateResponseFromSystemPrompt] Generated response length: ${generatedText.length} chars`);
     return generatedText;
@@ -1150,8 +1060,13 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         // 2. Request Body Parsing and Variable Initialization
         console.log("[POST] Parsing request body...");
         const body = await req.json();
-        const { query, history = [], context } = body;
+        let { query, history = [], context } = body;
         console.log(`[POST] Parsed - Query: "${query}" | History Len: ${history.length} | Context:`, context);
+
+        // --- Summarize history if long ---
+        if (history.length >= SUMMARIZE_HISTORY_MIN_LENGTH && userId) {
+          history = await summarizeHistory(history, userId);
+        }
 
         // Validate query
         if (!query || typeof query !== 'string') {
@@ -1205,16 +1120,21 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         await dbConnect(); // Ensure DB connection
 
         // **** SPECIAL HANDLING FOR PLAN GENERATION REQUEST **** 
-        // Note: The client now only sends requestType = 'generate_plan' and the userQuery.
-        // The backend constructs the full system prompt including history and goals.
-        // --- Plan modification detection: If history contains a plan, treat as plan update ---
+        // Now also triggers if NLP/LLM analysis returns intent === 'generate_plan'
         const hasHistory = history && Array.isArray(history) && history.length > 0;
         let lastPlan = null;
         if (hasHistory) {
           // Find the last assistant message that looks like a plan
           lastPlan = [...history].reverse().find(msg => msg.role === 'assistant' && /monday|day 1|week/i.test(msg.content));
         }
-        if ((context?.requestType === 'generate_plan') || lastPlan) { 
+
+        // Analyze the query early if not already done (for intent detection)
+        let analysis: QueryAnalysis | undefined = undefined;
+        if (!context?.requestType && !lastPlan) {
+          analysis = await analyzeUserQuery(query, history, userId);
+        }
+
+        if ((context?.requestType === 'generate_plan') || lastPlan || (analysis && analysis.intent === 'generate_plan')) { 
             console.log(`[API /coach] Detected plan generation or modification request.`);
             try {
                 // 1. Fetch user goals AND summaries AND FORMAT PRs
@@ -1241,7 +1161,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
 
                 // Fetch recent workout history (Limit to 5)
                 console.log(`[API /coach] Fetching recent workout history (limit 5) for user: ${userId}`);
-                const recentWorkouts = await getRecentWorkouts(userId, 5); 
+                const recentWorkouts = await getRecentWorkouts(userId, 5);
                 let historyString = "No recent workout history available.";
                 if (recentWorkouts && recentWorkouts.length > 0) {
                     historyString = "Recent Workout History (Last 5):\n";
@@ -1260,34 +1180,110 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 const isMultiAspect = aspectsMentioned.length >= 2;
 
                 // --- Model selection ---
-                const planModel = process.env.GROK_MODEL_PLAN || 'grok-3-beta';
+                const planModel = process.env.GROK_MODEL_PLAN || 'gpt-4.1-mini';
+
+                // Fetch last 20 running workouts
+                const runningWorkouts = await getRecentRunningWorkouts(userId, 20);
+                const now = new Date();
+                const weekMs = 7 * 24 * 60 * 60 * 1000;
+                const weekBuckets: number[] = [0, 0, 0, 0];
+                let longestRun = 0;
+                let fastestPace = Infinity;
+                let fastestPaceStr = 'N/A';
+                runningWorkouts.forEach(w => {
+                  const daysAgo = (now.getTime() - new Date(w.date).getTime()) / (1000 * 60 * 60 * 24);
+                  const weekIndex = Math.floor(daysAgo / 7);
+                  if (weekIndex < 4) {
+                    weekBuckets[weekIndex] += w.distance || 0;
+                    if (w.distance > longestRun) longestRun = w.distance;
+                    if (w.distance > 0 && w.duration > 0) {
+                      const pace = w.duration / (w.distance * 1000); // sec/m
+                      if (pace < fastestPace) fastestPace = pace;
+                    }
+                  }
+                });
+                const weeksWithData = weekBuckets.filter(d => d > 0).length || 1;
+                const avgWeeklyDistance = weekBuckets.reduce((a, b) => a + b, 0) / weeksWithData;
+                if (fastestPace !== Infinity) {
+                  const paceMinPerKm = (fastestPace * 1000) / 60;
+                  const min = Math.floor(paceMinPerKm);
+                  const sec = Math.round((paceMinPerKm - min) * 60);
+                  fastestPaceStr = `${min}:${sec.toString().padStart(2, '0')} /km`;
+                }
+                const runningSummary = `User averages ${avgWeeklyDistance.toFixed(2)} km/week running over the last 4 weeks. Longest run: ${longestRun.toFixed(2)} km. Fastest pace: ${fastestPaceStr}.`;
+                const last5Runs = runningWorkouts.slice(0, 5).map(w => `- ${format(new Date(w.date), 'yyyy-MM-dd')}: ${w.distance.toFixed(2)} km, ${formatDuration(w.duration)}`).join('\n');
+
+                // --- Detect requested plan duration (weeks) ---
+                let planWeeks = 1;
+                if (analysis && analysis.entities) {
+                  if (typeof analysis.entities.limit === 'number' && analysis.entities.limit > 1 && analysis.entities.limit <= 52) {
+                    planWeeks = analysis.entities.limit;
+                  } else if (analysis.entities.explicit_start_date && analysis.entities.explicit_end_date) {
+                    const start = new Date(analysis.entities.explicit_start_date);
+                    const end = new Date(analysis.entities.explicit_end_date);
+                    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+                    const weeks = Math.round((end.getTime() - start.getTime()) / msPerWeek);
+                    if (weeks > 1 && weeks <= 52) planWeeks = weeks;
+                  }
+                }
+
+                // --- Extract follow-up instructions from history since last plan ---
+                let followUpInstructions = '';
+                if (history && Array.isArray(history) && history.length > 0) {
+                  // Find the last assistant message that looks like a plan
+                  const lastPlanIdx = [...history].reverse().findIndex(msg => msg.role === 'assistant' && /monday|day 1|week/i.test(msg.content));
+                  let sinceIdx = lastPlanIdx === -1 ? 0 : history.length - lastPlanIdx;
+                  // Get all user messages since then
+                  const followUps = history.slice(sinceIdx).filter(m => m.role === 'user').map(m => m.content.trim()).filter(Boolean);
+                  if (followUps.length > 0) {
+                    followUpInstructions = followUps.join(' ');
+                    console.log('[PLAN] Extracted follow-up instructions:', followUpInstructions);
+                  }
+                }
 
                 // 2. Construct the system prompt
-                let systemPrompt = `\nYou are Aivery, an expert fitness coach generating a 1-week workout plan for ${userName}.
-
-User Goal:
-${goals}
-
-${exercisePRsString}
-
-${historyString}
-
-Based ONLY on the information above (goal, exercise PRs, recent history), generate a concise, actionable 1-week workout plan. Align with the goal and consider recent activity/performance. Avoid questions; generate the best plan possible. Focus on the PLAN.`;
-
-                // If progression/multi-aspect request, add stricter instructions
-                if (isProgressionRequest && isMultiAspect) {
-                  systemPrompt += `\n\nIMPORTANT: The user wants to increase/progress in multiple areas (${aspectsMentioned.join(", ")}). You MUST provide a detailed, progressive 1-week plan that increases ALL of these aspects. Do NOT give a single-day suggestion. Be specific for each day. Each day should clearly show progression for the requested aspects.`;
+                let systemPrompt = `IMPORTANT: If you mention only the most recent run, your answer will be rejected. You MUST use ALL of the following: (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) the last 5 running workouts.\n\nRUNNING HISTORY SUMMARY:\n- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km\n- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km\n- Fastest pace (last 4 weeks): ${fastestPaceStr}\n\nRecent Running Workouts (Last 5):\n${last5Runs}\n\nUser Goal:\n${goals}\n\n${exercisePRsString}\n\nBased ONLY on the information above (goal, exercise PRs, running history), generate a concise, actionable ${planWeeks}-week running plan. Avoid questions; generate the best plan possible. Focus on the PLAN.\n\nChecklist: Did you use (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) last 5 runs? If not, revise your answer.`;
+                if (followUpInstructions) {
+                  systemPrompt += `\n\nUSER FOLLOW-UP INSTRUCTIONS:\n${followUpInstructions}`;
                 }
 
-                // --- Follow-up logic: If chat history contains a plan, treat as plan modification ---
-                if (lastPlan) {
-                  const planText = lastPlan.content;
-                  systemPrompt = `You are Aivery, an expert fitness coach. The user has already received a 1-week workout plan (see below). They now want to adjust it: \"${query}\"\n\nPREVIOUS PLAN:\n${planText}\n\nUser Goal:\n${goals}\n\n${exercisePRsString}\n\n${historyString}\n\nPlease update the plan accordingly, keeping the structure and progression, and highlight the changes. The new plan should be more concise, but still cover all 7 days. Do NOT just suggest a single session. Output only the updated 1-week plan in markdown format.`;
-                }
+                // DEBUG LOGS
+                console.log('[PLAN DEBUG] System prompt for LLM:', systemPrompt);
+                console.log('[PLAN DEBUG] runningWorkouts:', JSON.stringify(runningWorkouts, null, 2));
 
-                console.log(`[API /coach] Sending plan generation prompt to Grok (model: ${planModel})...`);
-                // 3. Call the AI model (use selected model)
-                let planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId, planModel);
+                // --- LLM Provider Switch for Plan Generation ---
+                let planResponse: string;
+                const llmProvider = process.env.LLM_PROVIDER || 'grok';
+                if (llmProvider === 'openai') {
+                  // Use OpenAI GPT-4.1-mini for plan generation
+                  const openaiApiKey = process.env.OPENAI_API_KEY;
+                  if (!openaiApiKey) throw new Error('OPENAI_API_KEY not set');
+                  const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${openaiApiKey}`
+                    },
+                    body: JSON.stringify({
+                      model: 'gpt-4o',
+                      messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: query }
+                      ],
+                      max_tokens: 2048,
+                      temperature: 0.7
+                    })
+                  });
+                  if (!openaiRes.ok) {
+                    const err = await openaiRes.text();
+                    throw new Error(`OpenAI API error: ${openaiRes.status} ${err}`);
+                  }
+                  const openaiData = await openaiRes.json();
+                  planResponse = openaiData.choices?.[0]?.message?.content?.trim() || 'Sorry, no plan generated.';
+                } else {
+                  // Default: use Grok as before
+                  planResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId, planModel);
+                }
 
                 // --- Fallback/Retry Logic ---
                 if (isProgressionRequest && isMultiAspect) {
@@ -1385,7 +1381,9 @@ Based ONLY on the information above (goal, exercise PRs, recent history), genera
         const recentWorkouts = await getRecentWorkouts(userId, 5);
 
         // Analyze the query if it wasn't a plan or review request
-        const analysis = await analyzeUserQuery(query, history, userId);
+        if (!analysis) {
+          analysis = await analyzeUserQuery(query, history, userId);
+        }
         console.log("Query Analysis Result:", analysis);
 
         // Validate analysis result
@@ -1430,7 +1428,7 @@ Based ONLY on the information above (goal, exercise PRs, recent history), genera
                   'Authorization': `Bearer ${grokApiKey}`
                 },
                 body: JSON.stringify({
-                  model: 'grok-3-mini-latest',
+                  model: 'gpt-4.1-mini',
                   messages: [
                       { role: 'system', content: lastPrompt },
                       { role: 'user', content: query }
@@ -2201,4 +2199,53 @@ INSTRUCTIONS:
         }
         response += "\n(Note: This comparison logic is still under development and might need refinement, especially for pace/speed averages.)";
         return response;
+    }
+
+    // --- Summarize Chat History Helper ---
+    /**
+     * Summarizes earlier chat history using the LLM, keeping only the last N messages verbatim.
+     * Uses the model specified by env (Grok/Gemini) and wraps for easy model switching.
+     * Returns a new history array: [summary system message, ...last N messages]
+     */
+    const SUMMARIZE_HISTORY_KEEP_LAST = 3;
+    const SUMMARIZE_HISTORY_MIN_LENGTH = 8;
+
+    async function summarizeHistory(history: HistoryMessage[], userId: string): Promise<HistoryMessage[]> {
+      if (!history || history.length < SUMMARIZE_HISTORY_MIN_LENGTH) return history;
+      const earlier = history.slice(0, -SUMMARIZE_HISTORY_KEEP_LAST);
+      const recent = history.slice(-SUMMARIZE_HISTORY_KEEP_LAST);
+      const summaryPrompt = `Summarize the following fitness chat history in 5-7 bullet points, preserving all key user requests, AI suggestions, and any plan details. Be concise but specific.\n\nCHAT HISTORY TO SUMMARIZE:\n${earlier.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')}`;
+
+      // Model/provider selection (env-driven)
+      const provider = (process.env.LLM_PROVIDER_SUMMARY as LLMProvider) || 'grok';
+      const model = process.env.LLM_MODEL_SUMMARY || 'grok-3-mini-latest';
+      try {
+        const data = await callLLM({
+          provider,
+          model,
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant that summarizes fitness chat history for another AI.' },
+            { role: 'user', content: summaryPrompt }
+          ],
+          max_tokens: 256,
+          temperature: 0.2,
+          stream: false,
+        });
+        let summary = '';
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+          summary = data.choices[0].message.content.trim();
+        } else {
+          summary = '[Summary unavailable]';
+        }
+        // Prepend as a system message
+        return [
+          { role: 'assistant', content: `Summary of earlier chat:\n${summary}` },
+          ...recent
+        ];
+      } catch (err) {
+        console.error('[summarizeHistory] Error summarizing history:', err);
+        return recent;
+      }
+      // Defensive: fallback return
+      return history;
     }

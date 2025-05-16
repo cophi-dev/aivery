@@ -9,6 +9,7 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
 
 - **/src/app/api/** – All API endpoints (REST/Next.js API routes). Includes:
   - `/ai/` (AI prompts, insights, chat)
+    - **NOTE:** Running plan generation now uses only running workouts, and the system prompt *explicitly* instructs the LLM to use average weekly running distance (last 4 weeks), longest run, fastest pace, and the last 5 running workouts for context. The prompt warns to NOT base the plan only on the most recent run. Fallback logic for vague queries also uses this context and retries with stricter instructions if needed.
   - `/strava/` (Strava integration, sync, webhooks)
   - `/workouts/`, `/exercises/`, `/user/` (core data endpoints)
 - **/src/lib/** – Core business logic, data access, and integrations:
@@ -16,6 +17,7 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
   - `/services/` (Strava, file parsing, integrations)
   - `/strava/` (Strava-specific helpers)
   - Utility modules for AI, actions, and more
+    - **NOTE:** AI context for running plans and fallback suggestions is now based on running-only data, with weekly mileage summary, longest run, fastest pace, and distance normalization.
 - **/src/components/** – React UI components:
   - `/dashboard/` (dashboard widgets, insights)
   - `/exercises/`, `/exercise/` (exercise display, PRs)
@@ -464,3 +466,11 @@ interfac... | dbConnect (default) | ✅ |
 | src/app/activity/cycling/new/page.tsx | No description available | NewCyclingActivityPage (default) | ✅ |
 
 Both `/api/chat` and `/api/ai/coach` endpoints now enforce that vague queries (intent: 'unknown') with user context result in a concrete, actionable suggestion. If the LLM response is too generic, the system retries with a more forceful prompt. See `docs/prompts.md` (Proactive Fallback for Vague Queries) for details.
+
+## LLM Integration Architecture (2024)
+
+- **Centralized LLM Helper:** All LLM (Large Language Model) API calls are routed through `src/lib/services/llm.ts` using the `callLLM` helper function.
+- **Provider/Model Selection:** LLM provider and model are selected via environment variables (e.g., `LLM_PROVIDER_*`, `LLM_MODEL_*`). No hardcoded model names or API URLs remain in the codebase.
+- **Provider/Model Logging:** Every LLM call logs the provider and model used for traceability and debugging.
+- **Prompt Handling:** Prompt fallback, retry logic for vague queries, and follow-up instruction handling are implemented centrally for consistency and maintainability.
+- **No Direct Fetch Calls:** All previous direct fetch calls to LLM APIs have been removed or refactored.

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 // import Anthropic from "@anthropic-ai/sdk"; // REMOVED
 import { getTextFromResponse } from "@/lib/utils";
+import { callLLM, LLMProvider } from '@/lib/services/llm';
 
 // Initialize Anthropic client // REMOVED
 // const anthropic = new Anthropic({ // REMOVED
@@ -75,45 +76,24 @@ export async function POST(request: Request) {
       if (context.units) userPrompt += ` Units: ${context.units}.`;
     }
 
-    // Call Grok API
-    // const response = await anthropic.messages.create({ // REMOVED
-    //   model: "claude-3-5-haiku-20241022", // REMOVED
-    //   max_tokens: 500, // REMOVED
-    //   temperature: 0.7, // REMOVED
-    //   system: systemPrompt, // REMOVED
-    //   messages: [{ role: "user", content: userPrompt }], // REMOVED
-    // }); // REMOVED
-
-    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini-latest',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: 400, // Lowered to further reduce risk of hitting limit
-        temperature: 0.7,
-        stream: false,
-      })
+    // Use env vars for provider/model
+    const provider = (process.env.LLM_PROVIDER_OPTIMIZE as LLMProvider) || 'grok';
+    const model = process.env.LLM_MODEL_OPTIMIZE || 'grok-3-mini-latest';
+    console.log(`[optimize-text] Using provider: ${provider}, model: ${model}`);
+    const apiResponseData = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 400,
+      temperature: 0.7,
+      stream: false,
     });
-
-    if (!fetchResponse.ok) {
-      const errorBody = await fetchResponse.text();
-      console.error(`[optimize-text] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
-      // Return original text on error
-      return NextResponse.json({ optimizedText: text });
-    }
-
-    const apiResponseData = await fetchResponse.json();
-    console.log("[optimize-text] Grok Raw Response:", apiResponseData);
+    console.log("[optimize-text] LLM Raw Response:", apiResponseData);
 
     // Extract and return the optimized text
-    // const optimizedText = getTextFromResponse(response.content) || text; // REMOVED
     let optimizedText = text; // Default to original text
     if (
       apiResponseData.choices &&
@@ -124,7 +104,7 @@ export async function POST(request: Request) {
     ) {
       optimizedText = apiResponseData.choices[0].message.content.trim();
     } else {
-      console.warn("[optimize-text] No completion returned from Grok:", apiResponseData);
+      console.warn("[optimize-text] No completion returned from LLM:", apiResponseData);
       return NextResponse.json({ error: "AI did not return an optimized result. Please try again or rephrase your input." }, { status: 502 });
     }
 

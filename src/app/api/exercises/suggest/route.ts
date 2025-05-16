@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from "next/server";
+import { callLLM, LLMProvider } from '@/lib/services/llm';
 // import Anthropic from "@anthropic-ai/sdk"; // REMOVED
 
 // Helper function to safely extract text from Claude response content
@@ -86,9 +87,10 @@ const COMMON_EXERCISES: Record<string, ExerciseDetails> = {
 
 // Infer exercise details using AI (Now using Grok)
 async function inferExerciseDetails(exerciseName: string): Promise<ExerciseDetails | null> { // Adjusted return type
-  const grokApiKey = process.env.GROK_API_KEY;
-  if (!grokApiKey) {
-    console.log("[inferExerciseDetails] Grok API key not configured");
+  const provider = (process.env.LLM_PROVIDER_EXERCISE as LLMProvider) || 'grok';
+  const model = process.env.LLM_MODEL_EXERCISE || 'grok-3-mini';
+  if (!process.env.GROK_API_KEY && provider === 'grok') {
+    console.log("[inferExerciseDetails] GROK_API_KEY not configured");
     return null;
   }
 
@@ -106,55 +108,24 @@ OUTPUT ONLY THE FOLLOWING JSON STRUCTURE, NOTHING ELSE:
 
     const userPrompt = `Exercise: ${exerciseName}`;
 
-    console.log(`[inferExerciseDetails] Sending request to Grok for: "${exerciseName}"`);
-
-    // const response = await anthropic.messages.create({ // REMOVED
-    //   model: "claude-3-5-sonnet-20240620", // REMOVED
-    //   max_tokens: 150, // REMOVED
-    //   system: systemPrompt, // REMOVED
-    //   messages: [ // REMOVED
-    //     { // REMOVED
-    //       role: "user", // REMOVED
-    //       content: `Exercise: ${exerciseName}`, // REMOVED
-    //     }, // REMOVED
-    //   ], // REMOVED
-    //   temperature: 0.3, // REMOVED
-    // }); // REMOVED
-
-    const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${grokApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: 150,
-        temperature: 0.3, // Keep slight variability for descriptions
-        stream: false,
-        // response_format: { type: "json_object" }, // Attempt to enforce JSON if Grok supports it
-      })
+    console.log(`[inferExerciseDetails] Using provider: ${provider}, model: ${model} for: "${exerciseName}"`);
+    const data = await callLLM({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 150,
+      temperature: 0.3,
+      stream: false,
     });
-
-    if (!fetchResponse.ok) {
-        const errorBody = await fetchResponse.text();
-        console.error(`[inferExerciseDetails] Grok API error: ${fetchResponse.status} ${fetchResponse.statusText}`, errorBody);
-        return null;
-    }
-
-    const data = await fetchResponse.json();
-    console.log("[inferExerciseDetails] Grok Raw Response:", data);
-
-    // const result = getTextFromResponse(response.content); // REMOVED
+    console.log("[inferExerciseDetails] LLM Raw Response:", data);
     let resultText: string | null = null;
     if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
         resultText = data.choices[0].message.content.trim();
     } else {
-        console.warn("[inferExerciseDetails] Unexpected Grok response structure:", data);
+        console.warn("[inferExerciseDetails] Unexpected LLM response structure:", data);
         return null;
     }
 
@@ -167,21 +138,21 @@ OUTPUT ONLY THE FOLLOWING JSON STRUCTURE, NOTHING ELSE:
         const parsedResult: ExerciseDetails = JSON.parse(jsonToParse);
         // Basic validation
         if (parsedResult && typeof parsedResult.description === 'string' && Array.isArray(parsedResult.muscleGroups)) {
-             console.log(`[inferExerciseDetails] Successfully parsed Grok result for "${exerciseName}"`);
+             console.log(`[inferExerciseDetails] Successfully parsed LLM result for "${exerciseName}"`);
              return parsedResult;
         } else {
             console.error("[inferExerciseDetails] Parsed JSON has incorrect structure:", parsedResult);
             return null;
         }
       } catch (e) {
-        console.error(`[inferExerciseDetails] Failed to parse Grok JSON response for "${exerciseName}":`, e);
+        console.error(`[inferExerciseDetails] Failed to parse LLM JSON response for "${exerciseName}":`, e);
         console.error("[inferExerciseDetails] Raw response text:", resultText);
         return null;
       }
     }
     return null;
   } catch (error) {
-    console.error(`[inferExerciseDetails] Error calling Grok for "${exerciseName}":`, error);
+    console.error(`[inferExerciseDetails] Error calling LLM for "${exerciseName}":`, error);
     return null;
   }
 }
