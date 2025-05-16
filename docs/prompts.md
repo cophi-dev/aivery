@@ -70,8 +70,8 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Notes:**
 
 ### Workout Plan Generation
-- **Prompt ID:** `workout-plan-generation-v2`
-- **Description:** Produces a concise, actionable 1-week running plan based on user goals, PRs, and recent running history.
+- **Prompt ID:** `workout-plan-generation-v3`
+- **Description:** Produces a concise, actionable running plan (variable duration) based on user goals, PRs, and recent running history.
 - **Where Used:**
   - `src/app/api/ai/coach/route.ts` (plan generation logic)
 - **Model Used:** `grok-3-mini-latest` (or as set by env)
@@ -88,13 +88,23 @@ This document catalogs all the AI prompts and templates used throughout the Aive
   - Includes a summary line: 'User averages X km/week running over the last 4 weeks. Longest run: Y km. Fastest pace: Z min/km.'
   - Lists the last 5 running workouts.
   - Instructs the LLM to generate a plan based on this context.
+  - **NEW: Includes a "Current Performance Analysis" section** that provides a concise performance summary at the beginning of each plan, with a slightly warmer and more natural tone.
+  - **NEW: Improved requirements** for pace recommendations and progressive training structure.
+  - **NEW: Multi-week plan preservation** - When modifying an existing plan, the system now detects and preserves the original plan duration.
 - **Expected Output:**
   - Markdown text (structured plan)
+  - **NEW: Begins with a Current Performance Analysis section** that includes:
+    - Average Weekly Distance
+    - Longest Run
+    - Fastest Pace
+    - Brief assessment of running patterns/consistency
+  - Followed by the weekly workout plan
 - **Notes:**
   - Only running workouts are used for running plan context.
   - Distance is normalized from both top-level and cardioDetails fields.
   - If the LLM response is vague or only references the most recent run, fallback logic retries with a stricter prompt until a concrete, actionable weekly plan is produced.
   - **NEW: Improved Conversational Follow-ups** - When a user asks a follow-up question about a plan (rather than requesting a plan modification), the system now detects this using conversational patterns and responds in natural dialogue rather than treating it as a plan update request. This creates a more natural conversation flow after plan generation.
+  - **NEW: Duration Preservation** - The system now detects multi-week plans and preserves their duration during follow-up modifications, ensuring consistency in the training schedule.
 
 ### Weekly Performance Review
 - **Prompt ID:** `weekly-performance-review-v1`

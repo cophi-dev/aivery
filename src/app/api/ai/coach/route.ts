@@ -1152,6 +1152,25 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
             console.log('[PLAN] Extracted follow-up instructions:', followUpInstructions);
           }
         }
+
+        // --- NEW: Extract the number of weeks from the original plan if available ---
+        let originalPlanWeeks = 1; // Default to 1 week
+        if (lastPlan) {
+          // Try to detect the original plan's duration by counting week headers or looking for "X-week" mentions
+          const weekMatch = lastPlan.content.match(/(\d+)[ -]week/i);
+          if (weekMatch && weekMatch[1]) {
+            originalPlanWeeks = parseInt(weekMatch[1], 10);
+            console.log(`[PLAN] Detected original plan duration: ${originalPlanWeeks} weeks`);
+          } else {
+            // Alternative approach: count distinct week sections
+            const weekSections = lastPlan.content.match(/\*\*Week \d+:/g);
+            if (weekSections && weekSections.length > 0) {
+              originalPlanWeeks = weekSections.length;
+              console.log(`[PLAN] Counted ${originalPlanWeeks} weeks in original plan`);
+            }
+          }
+        }
+
         console.log('[DEBUG] followUpInstructions:', followUpInstructions);
         console.log('[DEBUG] history:', history);
 
@@ -1257,8 +1276,45 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                   }
                 }
 
+                // --- IMPORTANT: Use original plan weeks when modifying an existing plan ---
+                if (lastPlan && originalPlanWeeks > 1) {
+                  planWeeks = originalPlanWeeks;
+                  console.log(`[PLAN] Using original plan duration of ${planWeeks} weeks for modification`);
+                }
+
                 // 2. Construct the system prompt
-                let systemPrompt = `IMPORTANT: If you mention only the most recent run, your answer will be rejected. You MUST use ALL of the following: (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) the last 5 running workouts.\n\nRUNNING HISTORY SUMMARY:\n- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km\n- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km\n- Fastest pace (last 4 weeks): ${fastestPaceStr}\n\nRecent Running Workouts (Last 5):\n${last5Runs}\n\nUser Goal:\n${goals}\n\n${exercisePRsString}\n\nBased ONLY on the information above (goal, exercise PRs, running history), generate a concise, actionable ${planWeeks}-week running plan. Avoid questions; generate the best plan possible. Focus on the PLAN.\n\nChecklist: Did you use (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) last 5 runs? If not, revise your answer.`;
+                let systemPrompt = `IMPORTANT: If you mention only the most recent run, your answer will be rejected. You MUST use ALL of the following: (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) the last 5 running workouts.
+
+RUNNING HISTORY SUMMARY:
+- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km
+- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km
+- Fastest pace (last 4 weeks): ${fastestPaceStr}
+
+Recent Running Workouts (Last 5):
+${last5Runs}
+
+User Goal:
+${goals}
+
+${exercisePRsString}
+
+Based ONLY on the information above (goal, exercise PRs, running history), generate a concise, actionable ${planWeeks}-week running plan. Start with a "Current Performance Analysis" section that summarizes the user's performance metrics in a warm, encouraging tone. Then provide the weekly plan. Be friendly and positive but still concise and clear.
+
+Include this section at the beginning of your response:
+**Current Performance Analysis:**
+- Average Weekly Distance: ${avgWeeklyDistance.toFixed(2)} km
+- Longest Run: ${longestRun.toFixed(2)} km
+- Fastest Pace: ${fastestPaceStr}
+- Last 5 Runs: Brief assessment of the pattern/consistency
+
+IMPORTANT REQUIREMENTS:
+1. Include specific pace recommendations for each run (e.g., "easy pace: 6:00/km", "tempo pace: 5:15/km")
+2. Gradually increase distance to prepare for half marathon
+3. Include at least one longer run per week that builds up over time
+4. Ensure the plan shows proper progression from week to week
+5. Mention the specific workout type for each day (e.g., tempo run, easy run, long run, recovery)
+
+Checklist: Did you use (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) last 5 runs? If not, revise your answer.`;
                 // --- PATCH: Handle different types of follow-ups differently ---
                 if (lastPlan && followUpInstructions) {
                   if (isConversationalFollowUp) {
@@ -1278,7 +1334,24 @@ USER CONTEXT:
 - Fastest pace (last 4 weeks): ${fastestPaceStr}`;
                   } else {
                     // Handle as plan modification request (existing behavior)
-                    systemPrompt = `Here is the current ${planWeeks}-week running plan:\n${lastPlan.content}\n\nThe user asked: \"${followUpInstructions}\"\n\nUpdate the plan above to include the user's request, keeping all previous running sessions. Only modify what's needed. Output the full updated plan.\n\n` + systemPrompt;
+                    systemPrompt = `Here is the current ${planWeeks}-week running plan:
+${lastPlan.content}
+
+The user asked: "${followUpInstructions}"
+
+Update the plan above to include the user's request, while preserving the following:
+1. Keep ALL ${planWeeks} weeks of the original plan
+2. Maintain the existing structure and week divisions
+3. Only modify what's needed to incorporate the user's request
+4. Keep the same format and level of detail
+5. Keep all pace recommendations as in the original plan or improve them
+
+Output the COMPLETE updated ${planWeeks}-week plan with all weeks intact.
+
+RUNNING HISTORY SUMMARY:
+- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km
+- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km
+- Fastest pace (last 4 weeks): ${fastestPaceStr}`;
                   }
                 } else if (followUpInstructions) {
                   systemPrompt += `\n\nUSER FOLLOW-UP INSTRUCTIONS:\n${followUpInstructions}`;
