@@ -971,7 +971,7 @@ export default function NewWorkoutPage() {
           let effectiveWeight = 0;
           if (reps > 0) {
             if (exercise.name === 'Bodyweight Row' && 'intensity' in set && set.intensity) {
-              effectiveWeight = userWeight * parseFloat(set.intensity as string);
+              effectiveWeight = userWeight * set.intensity;
             } else if (exercise.name.toLowerCase().includes('pushup') || exercise.name.toLowerCase().includes('push-up')) {
               effectiveWeight = userWeight * 0.65;
             } else if (exercise.name.toLowerCase().includes('air squat') || exercise.name.toLowerCase().includes('bodyweight squat')) {
@@ -1288,7 +1288,7 @@ export default function NewWorkoutPage() {
                     let effectiveWeight = 0;
                     if (reps > 0) {
                         if (ex.name === 'Bodyweight Row' && 'intensity' in set && set.intensity) {
-                            effectiveWeight = userWeight * parseFloat(set.intensity as string);
+                            effectiveWeight = userWeight * set.intensity;
                         } else if (ex.name.toLowerCase().includes('pushup') || ex.name.toLowerCase().includes('push-up')) {
                             effectiveWeight = userWeight * 0.65;
                         } else if (ex.name.toLowerCase().includes('air squat') || ex.name.toLowerCase().includes('bodyweight squat')) {
