@@ -94,6 +94,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
   - Only running workouts are used for running plan context.
   - Distance is normalized from both top-level and cardioDetails fields.
   - If the LLM response is vague or only references the most recent run, fallback logic retries with a stricter prompt until a concrete, actionable weekly plan is produced.
+  - **NEW: Improved Conversational Follow-ups** - When a user asks a follow-up question about a plan (rather than requesting a plan modification), the system now detects this using conversational patterns and responds in natural dialogue rather than treating it as a plan update request. This creates a more natural conversation flow after plan generation.
 
 ### Weekly Performance Review
 - **Prompt ID:** `weekly-performance-review-v1`

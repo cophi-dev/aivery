@@ -1155,6 +1155,15 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         console.log('[DEBUG] followUpInstructions:', followUpInstructions);
         console.log('[DEBUG] history:', history);
 
+        // --- NEW: Detect if follow-up is a question or conversation vs plan modification ---
+        let isConversationalFollowUp = false;
+        if (followUpInstructions) {
+          // Check if the follow-up appears to be a question or conversation rather than a plan modification
+          const conversationalPatterns = /^(?:can you|what|why|how|could you|would you|when|where|explain|tell me|show me|is this|do you)/i;
+          isConversationalFollowUp = conversationalPatterns.test(followUpInstructions);
+          console.log('[PLAN] Is conversational follow-up:', isConversationalFollowUp);
+        }
+
         if ((context?.requestType === 'generate_plan') || lastPlan || (analysis && analysis.intent === 'generate_plan')) { 
             console.log(`[API /coach] Detected plan generation or modification request.`);
             try {
@@ -1250,9 +1259,27 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
 
                 // 2. Construct the system prompt
                 let systemPrompt = `IMPORTANT: If you mention only the most recent run, your answer will be rejected. You MUST use ALL of the following: (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) the last 5 running workouts.\n\nRUNNING HISTORY SUMMARY:\n- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km\n- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km\n- Fastest pace (last 4 weeks): ${fastestPaceStr}\n\nRecent Running Workouts (Last 5):\n${last5Runs}\n\nUser Goal:\n${goals}\n\n${exercisePRsString}\n\nBased ONLY on the information above (goal, exercise PRs, running history), generate a concise, actionable ${planWeeks}-week running plan. Avoid questions; generate the best plan possible. Focus on the PLAN.\n\nChecklist: Did you use (1) average weekly distance (last 4 weeks), (2) longest run (last 4 weeks), (3) fastest pace (last 4 weeks), and (4) last 5 runs? If not, revise your answer.`;
-                // --- PATCH: If this is a follow-up, include the previous plan and explicit update instructions ---
+                // --- PATCH: Handle different types of follow-ups differently ---
                 if (lastPlan && followUpInstructions) {
-                  systemPrompt = `Here is the current ${planWeeks}-week running plan:\n${lastPlan.content}\n\nThe user asked: \"${followUpInstructions}\"\n\nUpdate the plan above to include the user's request, keeping all previous running sessions. Only modify what's needed. Output the full updated plan.\n\n` + systemPrompt;
+                  if (isConversationalFollowUp) {
+                    // Handle as conversational follow-up about the plan
+                    systemPrompt = `You are Aivery, a friendly and insightful AI fitness coach talking with ${userName}.
+
+Here is the current running plan that was previously generated:
+${lastPlan.content}
+
+The user has asked a follow-up question: "${followUpInstructions}"
+
+Please respond conversationally to this question. DO NOT generate a new plan or modify the existing plan. Answer their question directly and naturally as part of an ongoing conversation.
+
+USER CONTEXT:
+- Average weekly distance (last 4 weeks): ${avgWeeklyDistance.toFixed(2)} km
+- Longest run (last 4 weeks): ${longestRun.toFixed(2)} km
+- Fastest pace (last 4 weeks): ${fastestPaceStr}`;
+                  } else {
+                    // Handle as plan modification request (existing behavior)
+                    systemPrompt = `Here is the current ${planWeeks}-week running plan:\n${lastPlan.content}\n\nThe user asked: \"${followUpInstructions}\"\n\nUpdate the plan above to include the user's request, keeping all previous running sessions. Only modify what's needed. Output the full updated plan.\n\n` + systemPrompt;
+                  }
                 } else if (followUpInstructions) {
                   systemPrompt += `\n\nUSER FOLLOW-UP INSTRUCTIONS:\n${followUpInstructions}`;
                 }
