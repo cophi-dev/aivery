@@ -67,6 +67,7 @@
 - [ ] Dashboard loads correct data
   - [ ] Personal Records display highest values, not random samples
 - [ ] AI feedback appears in workouts or dashboard
+  - [ ] Workout statements include real-world comparisons (landmarks for cardio, object weights for strength)
 - [ ] Post-workout logic (if enabled) behaves correctly
 
 ---

@@ -66,6 +66,58 @@ interface HistoricalContextPrompt {
     currentWorkoutDistance?: number | null; // Current workout distance in KM
 }
 
+// Helper function to generate volume comparisons for strength workouts
+function generateVolumeComparisonText(volumeKg: number): string | null {
+  if (!volumeKg || volumeKg <= 0) return null;
+  
+  // Objects to compare volume to
+  const comparisons = [
+    { name: "car", weight: 1500, description: "an average car" },
+    { name: "elephant", weight: 5000, description: "an adult elephant" },
+    { name: "grand piano", weight: 400, description: "a concert grand piano" },
+    { name: "refrigerator", weight: 100, description: "a typical household refrigerator" },
+    { name: "washing machine", weight: 70, description: "a washing machine" },
+    { name: "adult male lion", weight: 190, description: "an adult male lion" },
+    { name: "adult tiger", weight: 220, description: "a Bengal tiger" },
+    { name: "motorcycle", weight: 180, description: "a motorcycle" },
+    { name: "office desk", weight: 50, description: "a standard office desk" }
+  ];
+  
+  // Find the most appropriate comparison
+  let bestComparison = null;
+  let bestRatio = 0;
+  let isMultiple = false;
+  
+  for (const comp of comparisons) {
+    const ratio = volumeKg / comp.weight;
+    
+    // If we're dealing with a good-sized fraction or multiple
+    if ((ratio >= 0.1 && ratio < 1) || ratio >= 1) {
+      if (!bestComparison || Math.abs(ratio - Math.round(ratio)) < Math.abs(bestRatio - Math.round(bestRatio))) {
+        bestComparison = comp;
+        bestRatio = ratio;
+        isMultiple = ratio >= 1;
+      }
+    }
+  }
+  
+  if (!bestComparison) {
+    // Fallback for small volumes
+    return `You lifted a total volume of ${volumeKg.toLocaleString()} kg today! That's like lifting a stack of ${Math.floor(volumeKg / 20)} medium-sized car tires.`;
+  }
+  
+  // Format the comparison text
+  const formattedRatio = isMultiple ? 
+    Math.round(bestRatio) === bestRatio ? bestRatio.toString() : bestRatio.toFixed(1) : 
+    (bestRatio * 100).toFixed(0) + '%';
+  
+  if (isMultiple) {
+    return `You lifted a total volume of ${volumeKg.toLocaleString()} kg, equivalent to about ${formattedRatio} times the weight of ${bestComparison.description}!`;
+  } else {
+    return `Your total volume of ${volumeKg.toLocaleString()} kg is about ${formattedRatio} of the weight of ${bestComparison.description}!`;
+  }
+}
+
 // Updated function signature to include user, historical context, AND landmark comparison
 function createHighlightPrompt(
   userName: string,
@@ -120,7 +172,7 @@ function createHighlightPrompt(
 
   // --- Simplified Prompt ---
   const systemPrompt = `\
-You are Aivery, a friendly AI fitness companion. Generate ONE concise, positive highlight statement (around 15-25 words) for the user's workout.\n\nUser's Name: ${userName}\n\nWorkout Data:\n${workoutSummary}\n${userContextSummary}\n${historicalContextSummary}${comparisonContext}\n\nInstructions:\n1. **Output**: Single sentence highlight statement ONLY. No extra text.\n2. **Tone**: Positive and encouraging.\n3. **Personalize**: Use the user's name (${userName}).\n4. **Focus**: Mention ONE key metric (e.g., Distance, Duration, Volume). Note PBs if historicalContext shows improvement.\n5. **Use Provided Comparison**: If 'Landmark Comparison' is provided above (not empty), incorporate that specific comparison phrase into your highlight. Otherwise, do not make up a comparison.\n6. **Keep it Brief**: Aim for 15-25 words total.\n7. **Emoji**: Add one relevant emoji at the end. 🚀\n\nGenerate the highlight statement now.\
+You are Aivery, a friendly AI fitness companion. Generate ONE concise, positive highlight statement (around 15-25 words) for the user's workout.\n\nUser's Name: ${userName}\n\nWorkout Data:\n${workoutSummary}\n${userContextSummary}\n${historicalContextSummary}${comparisonContext}\n\nInstructions:\n1. **Output**: Single sentence highlight statement ONLY. No extra text.\n2. **Tone**: Positive and encouraging.\n3. **Personalize**: Use the user's name (${userName}).\n4. **Focus**: Mention ONE key metric (e.g., Distance, Duration, Volume). Note PBs if historicalContext shows improvement.\n5. **Required: Use Real-World Comparison**: ${landmarkComparison ? "YOU MUST incorporate the exact landmark comparison provided above into your highlight. Do not substitute or skip this comparison." : "Do NOT make up any distance comparisons to landmarks or real-world objects."}\n6. **Keep it Brief**: Aim for 15-25 words total.\n7. **Emoji**: Add one relevant emoji at the end. 🚀\n\nGenerate the highlight statement now.\
 `;
 
   return systemPrompt;
@@ -277,10 +329,11 @@ export async function GET(req: NextRequest) {
             // Continue without historical context
         }
 
-        // <<< START: Generate Landmark Comparison >>>
+        // <<< START: Generate Landmark or Volume Comparison >>>
         let landmarkComparison: string | null = null;
         const workoutTypeLower = validatedWorkoutData.type.toLowerCase();
-        // Use the converted KM distance for comparison generation
+
+        // For cardio workouts with distance - generate landmark comparison
         if ((workoutTypeLower === 'running' || workoutTypeLower === 'run' || workoutTypeLower === 'cycling' || workoutTypeLower === 'cycle') && workoutDistanceKm && workoutDistanceKm > 0) {
             try {
                 // Pass distance in KM to the comparison function
@@ -290,8 +343,19 @@ export async function GET(req: NextRequest) {
                 console.error(`[GET /ai/workout-highlight] Error generating landmark comparison:`, comparisonError);
                 // Continue without landmark comparison if generation fails
             }
+        } 
+        // For strength workouts with volume - generate volume comparison
+        else if ((workoutTypeLower === 'strength') && validatedWorkoutData.calculatedVolume && validatedWorkoutData.calculatedVolume > 0) {
+            try {
+                // Pass volume in KG to the comparison function
+                landmarkComparison = generateVolumeComparisonText(validatedWorkoutData.calculatedVolume);
+                console.log(`[GET /ai/workout-highlight] Generated volume comparison: \"${landmarkComparison}\"`);
+            } catch (comparisonError) {
+                console.error(`[GET /ai/workout-highlight] Error generating volume comparison:`, comparisonError);
+                // Continue without volume comparison if generation fails
+            }
         }
-        // <<< END: Generate Landmark Comparison >>>
+        // <<< END: Generate Landmark or Volume Comparison >>>
 
         // 5. Create Enhanced Prompt for AI
         // Prepare a version of workout data with distance in KM for the prompt

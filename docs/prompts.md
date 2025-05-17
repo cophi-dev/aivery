@@ -30,6 +30,8 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Notes:**
   - Emoji must be context-relevant, not generic
   - Avoid repeating metric types already in UI
+  - For cardio workouts, includes landmark distance comparisons (e.g., "You ran about the distance from Central Park to Times Square!")
+  - For strength workouts, includes volume comparisons (e.g., "You lifted the equivalent weight of 0.5 cars!")
 
 ### Dynamic Motivational Quote
 - **Prompt ID:** `motivational-quote-v1`
@@ -305,3 +307,39 @@ This ensures the AI's suggestions are always grounded in the user's real data an
 - **Follow-Up Instructions:** If a follow-up instruction is present, it is appended to the system prompt before sending to the LLM.
 - **Prompt Fallback/Retry:** If the LLM response is vague or generic, the API endpoint retries with a more forceful or explicit prompt. Each retry and the final prompt are logged for traceability.
 - **No UI/Legacy Prompt Construction:** Prompt construction is no longer performed in UI components or legacy fetch code; all logic is centralized in the API.
+
+## 🌍 Workout Insights & Comparisons
+
+### Real-World Distance Comparisons
+- **Prompt ID:** N/A (algorithmic)
+- **Description:** Maps workout distances to real-world landmarks/locations for relatable comparisons.
+- **Where Used:**
+  - `src/lib/workout-distance-comparisons.ts` (`generateDistanceComparisonText`)
+  - `src/app/api/ai/workout-highlight/route.ts` (used as input to highlight generation)
+  - `src/app/api/workout-insight/[workoutId]/route.ts` (used for fun facts)
+- **Model Used:** N/A (algorithmic)
+- **Input:**
+  - Distance in kilometers (from running/cycling workouts)
+- **Expected Output:**
+  - Natural language comparison to landmark distances (e.g., "You ran about the distance from Central Park to Times Square in New York!")
+- **Notes:**
+  - Uses fixed database of 21 landmarks across New York, London, and Tokyo
+  - Finds closest distance match and generates appropriate text
+  - Adds contextual elements based on how close the match is
+
+### Volume Comparisons for Strength Workouts
+- **Prompt ID:** N/A (algorithmic)
+- **Description:** Compares workout volumes (weight × reps) to everyday objects for intuitive understanding.
+- **Where Used:**
+  - `src/app/api/ai/workout-highlight/route.ts` (`generateVolumeComparisonText`)
+  - `src/app/api/workout-insight/[workoutId]/route.ts` (various volume comparison functions)
+- **Model Used:** N/A (algorithmic)
+- **Input:**
+  - Total volume in kilograms (from strength workouts)
+- **Expected Output:**
+  - Natural language comparison to object weights (e.g., "You lifted the equivalent of 2.5 grand pianos!")
+- **Notes:**
+  - Compares to objects like cars (1500kg), elephants (5000kg), grand pianos (400kg), etc.
+  - Selects most appropriate comparison based on volume
+  - Formats as either percentage or multiple of object weight
+  - Falls back to smaller objects for low volumes

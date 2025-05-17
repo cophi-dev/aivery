@@ -19,6 +19,16 @@ This document outlines the MongoDB collections used in the Aivery application, i
 | `weightHistory` | Tracks user weight changes over time | `users` |
 | `dailyInsights` | Stores generated daily insights | `users` |
 
+## Algorithmically Generated Data
+
+The following data are generated algorithmically and are not stored in the database:
+
+1. **Workout Distance Comparisons**: Landmark comparisons (e.g., "ran from Central Park to Times Square") are generated dynamically in `src/lib/workout-distance-comparisons.ts` using a fixed list of landmarks and distances.
+
+2. **Volume Comparisons**: Object weight comparisons (e.g., "lifted 0.5 cars") are calculated on-the-fly in both `src/app/api/ai/workout-highlight/route.ts` and `src/app/api/workout-insight/[workoutId]/route.ts` using predefined object weights.
+
+These comparisons are generated when a workout is viewed and used in workout highlights and insights.
+
 ## Collection Details
 
 ### `users`

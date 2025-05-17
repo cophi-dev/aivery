@@ -9,22 +9,24 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   LucideArrowLeft,
-  LucideClock,
-  LucideRuler,
-  LucideHeartPulse,
-  LucideActivity,
-  LucideCalendarDays,
-  LucidePencil,
-  LucideTrash,
-  LucideMapPin,
-  LucideZap,
-  LucideDumbbell,
   LucideBrainCircuit,
+  LucideCalendarDays,
   LucideChevronDown,
-  LucideBarChart,
+  LucideClock,
+  LucideHeartPulse,
+  LucideHexagon,
+  LucideMapPin,
+  LucidePencil,
+  LucideRuler,
   LucideTag,
+  LucideTrash,
   LucideGauge,
-  LucideMountain
+  LucideMountain,
+  LucideRocket,
+  LucideDumbbell,
+  LucideActivity,
+  LucideBarChart,
+  LucideZap
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
@@ -56,6 +58,8 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
   const [error, setError] = useState<string | null>(null)
   const [aiHighlight, setAiHighlight] = useState<string | null>(null)
   const [isLoadingHighlight, setIsLoadingHighlight] = useState(false)
+  const [workoutInsight, setWorkoutInsight] = useState<string | null>(null)
+  const [isLoadingInsight, setIsLoadingInsight] = useState(false)
   const [previousWorkouts, setPreviousWorkouts] = useState<any[]>([])
   const [isLoadingPrevious, setIsLoadingPrevious] = useState(false)
   
@@ -81,6 +85,8 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
       setIsLoading(true)
       setAiHighlight(null) // Reset highlight on new load
       setIsLoadingHighlight(false) // Reset highlight loading state
+      setWorkoutInsight(null) // Reset insight on new load
+      setIsLoadingInsight(false) // Reset insight loading state
       setPreviousWorkouts([]) // Reset previous workouts
       setIsLoadingPrevious(false) // Reset previous loading state
       try {
@@ -118,6 +124,30 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
              if (isMounted) setIsLoadingHighlight(false)
           }
           // --- End Fetch AI Highlight --- 
+          
+          // --- Fetch Workout Insight ---
+          console.log('>>> CLIENT-SIDE: Fetching Workout Insight...')
+          setIsLoadingInsight(true)
+          try {
+            const insightRes = await fetch(`/api/workout-insight/${id}`)
+            if (!isMounted) return // Exit if component unmounted
+
+            if (insightRes.ok) {
+              const insightData = await insightRes.json()
+              console.log('>>> CLIENT-SIDE: Workout Insight Response:', insightData)
+              setWorkoutInsight(insightData.insight || null)
+            } else {
+              console.error('>>> CLIENT-SIDE: Failed to fetch Workout Insight, status:', insightRes.status)
+              setWorkoutInsight(null)
+            }
+          } catch (insightError) {
+            if (!isMounted) return // Exit if component unmounted
+            console.error('>>> CLIENT-SIDE: Error fetching Workout Insight:', insightError)
+            setWorkoutInsight(null)
+          } finally {
+             if (isMounted) setIsLoadingInsight(false)
+          }
+          // --- End Fetch Workout Insight ---
 
           // --- Fetch Previous Workouts (REMOVED - Route doesn't exist and component doesn't need it) --- 
           // console.log('>>> CLIENT-SIDE: Fetching Previous Workouts...')
@@ -415,6 +445,26 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                         <p className="text-sm text-muted-foreground">AI highlight not available.</p>
                       )}
                   </div>
+
+                  {/* Fun Fact Section - Added to Overview tab as well */}
+                  {(workoutInsight || isLoadingInsight) && (
+                    <div className="pt-6 mt-4 border-t">
+                      <h3 className="text-lg font-semibold mb-2 flex items-center">
+                        <LucideRocket className="h-5 w-5 mr-2 text-primary" />
+                        Fun Fact
+                      </h3>
+                      {isLoadingInsight ? (
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Loading fun fact...
+                        </div>
+                      ) : (
+                        <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20">
+                          <p className="text-foreground">{workoutInsight}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Card>
             </TabsContent>
@@ -449,6 +499,26 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                       <div className="grid grid-cols-2 gap-4">
                           {/* Display formatted Pace, HR etc. if available */}
                       </div>
+                  )}
+                  
+                  {/* Fun Workout Insight Section */}
+                  {workoutInsight && (
+                    <div className="pt-6 mt-6 border-t">
+                      <h3 className="text-lg font-semibold mb-2 flex items-center">
+                        <LucideRocket className="h-5 w-5 mr-2 text-primary" />
+                        Fun Fact
+                      </h3>
+                      {isLoadingInsight ? (
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Loading fun fact...
+                        </div>
+                      ) : (
+                        <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20">
+                          <p className="text-foreground">{workoutInsight}</p>
+                        </div>
+                      )}
+                    </div>
                   )}
                </Card>
             </TabsContent>

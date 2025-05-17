@@ -12,10 +12,12 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
     - **NOTE:** Running plan generation now uses only running workouts, and the system prompt *explicitly* instructs the LLM to use average weekly running distance (last 4 weeks), longest run, fastest pace, and the last 5 running workouts for context. The prompt warns to NOT base the plan only on the most recent run. Fallback logic for vague queries also uses this context and retries with stricter instructions if needed.
   - `/strava/` (Strava integration, sync, webhooks)
   - `/workouts/`, `/exercises/`, `/user/` (core data endpoints)
+  - `/workout-insight/` (generates fun facts with real-world comparisons)
 - **/src/lib/** – Core business logic, data access, and integrations:
   - `/db/` (MongoDB models, repositories, connection, seeders)
   - `/services/` (Strava, file parsing, integrations)
   - `/strava/` (Strava-specific helpers)
+  - `/workout-distance-comparisons.ts` (landmark comparisons for cardio workouts)
   - Utility modules for AI, actions, and more
     - **NOTE:** AI context for running plans and fallback suggestions is now based on running-only data, with weekly mileage summary, longest run, fastest pace, and distance normalization.
 - **/src/components/** – React UI components:
@@ -40,6 +42,18 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
 3. **Workout data** is stored in MongoDB via `/src/lib/db/` repositories
 4. **AI endpoints** (e.g., `/src/app/api/ai/`) generate insights, summaries, and plans using LLMs (model is environment-configurable)
 5. **UI components** in `/src/components/` display data, insights, and feedback to the user
+
+---
+
+## Key Features
+
+1. **Personalized AI Highlights** - Each workout gets an AI-generated highlight statement that references:
+   - For running/cycling: Real-world landmark comparisons (e.g., "like running from Central Park to Times Square")
+   - For strength workouts: Intuitive volume comparisons (e.g., "equivalent to lifting 0.5 cars")
+
+2. **Flexible LLM Integration** - All LLM calls use a central provider-agnostic service, configurable via environment variables.
+
+3. **Strava Integration** - Seamless import of workouts from Strava with proper conversion and normalization.
 
 ---
 

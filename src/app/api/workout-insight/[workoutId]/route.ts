@@ -8,6 +8,7 @@ import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { ObjectId } from 'mongodb';
 import { formatDistance as formatDistanceUtil } from "@/lib/utils"; // Use existing formatter
 import { estimateBodyweightForExercise } from '@/lib/utils/estimateBodyweightForExercise';
+import { generateDistanceComparisonText } from '@/lib/workout-distance-comparisons'; // Import the landmark comparison function
 
 // --- Fun Analogy Helpers ---
 
@@ -43,8 +44,8 @@ function distanceToMarathonFraction(distanceKm?: number | null): number | null {
 function volumeToCars(volumeKg?: number | null): number | null {
     if (!volumeKg || volumeKg <= 0) return null;
     const weightRatio = volumeKg / 1500;
-    // Return only if it's a somewhat meaningful fraction or multiple
-    if (weightRatio < 0.05) return null; // Less than 5% of a car isn't very intuitive
+    // More lenient threshold to ensure we get comparisons
+    if (weightRatio < 0.02) return null; // Just 2% threshold
     return parseFloat(weightRatio.toFixed(2)); // Return as decimal (e.g., 0.5 cars)
 }
 
@@ -52,7 +53,7 @@ function volumeToCars(volumeKg?: number | null): number | null {
 function volumeToElephants(volumeKg?: number | null): number | null {
      if (!volumeKg || volumeKg <= 0) return null;
      const weightRatio = volumeKg / 5000;
-     if (weightRatio < 0.1) return null; // Less than 10% of an elephant
+     if (weightRatio < 0.05) return null; // Lower threshold to 5%
      return parseFloat(weightRatio.toFixed(2));
 }
 
@@ -60,8 +61,58 @@ function volumeToElephants(volumeKg?: number | null): number | null {
 function volumeToGrandPianos(volumeKg?: number | null): number | null {
     if (!volumeKg || volumeKg <= 0) return null;
     const pianos = volumeKg / 400;
-    if (pianos < 0.5) return null; // Only mention if at least half a piano
+    if (pianos < 0.25) return null; // Lower threshold to 25% of a piano
     return parseFloat(pianos.toFixed(1));
+}
+
+// Refrigerator ~ 100 kg
+function volumeToRefrigerators(volumeKg?: number | null): number | null {
+    if (!volumeKg || volumeKg <= 0) return null;
+    const fridges = volumeKg / 100;
+    if (fridges < 0.2) return null; // 20% threshold
+    return parseFloat(fridges.toFixed(1));
+}
+
+// Washing machine ~ 70 kg
+function volumeToWashingMachines(volumeKg?: number | null): number | null {
+    if (!volumeKg || volumeKg <= 0) return null;
+    const washers = volumeKg / 70;
+    if (washers < 0.2) return null; // 20% threshold
+    return parseFloat(washers.toFixed(1));
+}
+
+// Falls back to smaller objects for low volumes
+function getVolumeComparison(volumeKg?: number | null): string | null {
+    if (!volumeKg || volumeKg <= 0) return null;
+    
+    // Try all comparisons in descending order of weight
+    const elephants = volumeToElephants(volumeKg);
+    if (elephants) {
+        return `lifting ${volumeKg.toLocaleString()} kg total? That's like hoisting ${elephants} adult elephant${elephants > 1 ? 's' : ''}! 🐘 Mind=blown!`;
+    }
+    
+    const cars = volumeToCars(volumeKg);
+    if (cars) {
+        return `in total, you lifted ${volumeKg.toLocaleString()} kg. That's comparable to ${cars} small car${cars > 1 ? 's' : ''}! 🚗 Beep beep!`;
+    }
+    
+    const pianos = volumeToGrandPianos(volumeKg);
+    if (pianos) {
+        return `you moved ${volumeKg.toLocaleString()} kg today! That's like lifting ${pianos} grand piano${pianos > 1 ? 's' : ''}! 🎹`;
+    }
+    
+    const fridges = volumeToRefrigerators(volumeKg);
+    if (fridges) {
+        return `you lifted ${volumeKg.toLocaleString()} kg - equivalent to ${fridges} refrigerator${fridges > 1 ? 's' : ''}! 🧊`;
+    }
+    
+    const washers = volumeToWashingMachines(volumeKg);
+    if (washers) {
+        return `your ${volumeKg.toLocaleString()} kg workout is like lifting ${washers} washing machine${washers > 1 ? 's' : ''}! 🧺`;
+    }
+    
+    // Final fallback for very low volumes
+    return `you moved ${volumeKg.toLocaleString()} kg - that's like lifting ${Math.round(volumeKg / 15)} medium-sized dumbbells all at once! 💪`;
 }
 
 // --- API Route ---
@@ -110,20 +161,37 @@ export async function GET(
         const marathonFraction = distanceToMarathonFraction(distance);
         const formattedDist = formatDistanceUtil(distance); // Use the util function
 
-        if (laps && laps >= 1) { // Changed from > 0 to >= 1
+        // Use our landmark comparison function (best comparison)
+        if (['running', 'cycling'].includes(workout.type)) {
+            try {
+                const landmarkComparison = generateDistanceComparisonText(distance);
+                if (landmarkComparison) {
+                    // Already includes the distance value, so add to fun facts directly
+                    funFacts.push(`${userName}, ${landmarkComparison}`);
+                }
+            } catch (error) {
+                console.error("Error generating landmark comparison:", error);
+            }
+        }
+
+        // Add track laps comparison
+        if (laps && laps >= 1) {
             funFacts.push(`You covered ${formattedDist}, ${userName}! That's like running ${laps} lap${laps > 1 ? 's' : ''} around a track! 🏃`);
         }
+        
+        // Add marathon percentage comparison
         if (marathonFraction) {
             funFacts.push(`That ${formattedDist} is about ${(marathonFraction * 100).toFixed(0)}% of a full marathon, ${userName}! Making progress! 🏁`);
         }
-        // Add another distance comparison (e.g., length of Golden Gate Bridge ~ 2.7km)
-         if (distance > 2.5 && distance < 3) {
-             funFacts.push(`Covering ${formattedDist}? Nice one, ${userName}! That's roughly the length of the Golden Gate Bridge! 🌉`);
-         } else if (distance >= 5 && distance < 7) {
-              funFacts.push(`${formattedDist} is roughly a 5k distance, ${userName}! Solid run! 👍`);
-         } else if (distance >= 10 && distance < 15) {
-             funFacts.push(`Hitting the 10k mark (${formattedDist}), ${userName}! Seriously impressive! 🔥`);
-         }
+        
+        // Keep specific landmark comparisons as fallbacks
+        if (distance > 2.5 && distance < 3) {
+            funFacts.push(`Covering ${formattedDist}? Nice one, ${userName}! That's roughly the length of the Golden Gate Bridge! 🌉`);
+        } else if (distance >= 5 && distance < 7) {
+            funFacts.push(`${formattedDist} is roughly a 5k distance, ${userName}! Solid run! 👍`);
+        } else if (distance >= 10 && distance < 15) {
+            funFacts.push(`Hitting the 10k mark (${formattedDist}), ${userName}! Seriously impressive! 🔥`);
+        }
     }
 
     // 2. Volume Facts (Strength) - Fetch WorkoutExercises for this workout
@@ -156,23 +224,22 @@ export async function GET(
         } catch (error) {
             console.error("Error calculating volume from workout exercises:", error);
         }
+        
+        // If we didn't get volume from workout exercises, use the calculated volume from the workout
+        if (!calculatedVolume || calculatedVolume <= 0) {
+            calculatedVolume = workout.calculatedVolume || null;
+        }
     }
 
+    // Generate strength volume comparisons
     if (workout.type === 'strength' && calculatedVolume && calculatedVolume > 0) {
-        const cars = volumeToCars(calculatedVolume);
-        const elephants = volumeToElephants(calculatedVolume);
-        const pianos = volumeToGrandPianos(calculatedVolume);
-        const formattedVolume = calculatedVolume.toLocaleString();
-
-        if (elephants && elephants >= 0.1) {
-            funFacts.push(`Lifting ${formattedVolume} kg total? ${userName}, that's like hoisting ${elephants} adult elephant${elephants > 1 ? 's' : ''}! 🐘 Mind=blown!`);
-        } else if (cars && cars >= 0.1) {
-             funFacts.push(`In total, you lifted ${formattedVolume} kg. That's comparable to ${cars} small car${cars > 1 ? 's' : ''}, ${userName}! 🚗 Beep beep!`);
-        } else if (pianos && pianos >= 0.5) {
-             funFacts.push(`You moved ${formattedVolume} kg today, ${userName}! That's like lifting ${pianos} grand piano${pianos > 1 ? 's' : ''}! 🎹`);
+        // Get a single volume comparison that's appropriate for this volume
+        const volumeComparison = getVolumeComparison(calculatedVolume);
+        if (volumeComparison) {
+            funFacts.push(`${userName}, ${volumeComparison}`);
         } else {
-             // Fallback for smaller volumes, still personalized
-             funFacts.push(`You lifted a total volume of ${formattedVolume} kg, ${userName}! Every rep counts! Keep building! 🏋️`);
+            // Fallback with specific, personalized volume mention
+            funFacts.push(`You lifted a total volume of ${calculatedVolume.toLocaleString()} kg, ${userName}! Every rep counts! Keep building! 🏋️`);
         }
     }
 
@@ -232,18 +299,19 @@ export async function GET(
 
     // --- Combine Facts for the Final Statement ---
     if (funFacts.length > 0) {
-        // Select a random fun fact to display from the enriched pool
-        const randomIndex = Math.floor(Math.random() * funFacts.length);
-        insightStatement = funFacts[randomIndex];
-
-        // Optional: Add a second, different fact sometimes for more flair
-        // if (funFacts.length >= 2) {
-        //     let secondIndex = Math.floor(Math.random() * funFacts.length);
-        //     while (secondIndex === randomIndex) { // Ensure it's different
-        //         secondIndex = Math.floor(Math.random() * funFacts.length);
-        //     }
-        //     // Combine thoughtfully (e.g., "Also, ...") - requires more complex templating
-        // }
+        // Instead of random, prioritize real comparisons (they're more engaging)
+        // Sort the fun facts so that real comparisons come first
+        const sortedFacts = funFacts.sort((a, b) => {
+            const hasComparisonA = a.includes("like") || a.includes("equivalent") || a.includes("comparable");
+            const hasComparisonB = b.includes("like") || b.includes("equivalent") || b.includes("comparable");
+            
+            if (hasComparisonA && !hasComparisonB) return -1;
+            if (!hasComparisonA && hasComparisonB) return 1;
+            return 0;
+        });
+        
+        // Use the first fact (which should be a comparison if available)
+        insightStatement = sortedFacts[0];
     }
     // If funFacts is empty, the personalized default insightStatement remains.
 
