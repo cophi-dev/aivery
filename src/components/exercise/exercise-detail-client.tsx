@@ -139,7 +139,7 @@ export default function ExerciseDetailPageClient({
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>(initialExercise?.muscleGroups || [])
   const [selectedDateRange, setSelectedDateRange] = useState<"allTime" | "3months" | "4weeks">("allTime");
-  const [chartMetric, setChartMetric] = useState<"max" | "total">("total");
+  const [chartMetric, setChartMetric] = useState<"max" | "total" | "weight">("total");
 
   // Improved bodyweight detection
   const bodyweightNames = [
@@ -440,6 +440,9 @@ export default function ExerciseDetailPageClient({
       // Update the date entry
       if (maxReps > repsByDate[workoutDate].maxReps) {
         repsByDate[workoutDate].maxReps = maxReps;
+      }
+      // Track max weight for non-bodyweight exercises
+      if (maxWeight > repsByDate[workoutDate].weight) {
         repsByDate[workoutDate].weight = maxWeight;
       }
       repsByDate[workoutDate].totalReps += totalReps;
@@ -856,23 +859,30 @@ export default function ExerciseDetailPageClient({
           <div className="flex justify-between items-center">
             <CardTitle>Progress Over Time</CardTitle>
             <div className="flex items-center gap-4">
-              {isBodyweight && (
-                <div className="flex items-center space-x-2">
-                  <p className="text-xs text-muted-foreground">View:</p>
-                  <Select 
-                    value={chartMetric} 
-                    onValueChange={(value) => setChartMetric(value as 'max' | 'total')}
-                  >
-                    <SelectTrigger className="h-8 w-[100px]">
-                      <SelectValue placeholder="Metric" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="max">Max Reps</SelectItem>
-                      <SelectItem value="total">Total Reps</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div className="flex items-center space-x-2">
+                <p className="text-xs text-muted-foreground">View:</p>
+                <Select 
+                  value={chartMetric} 
+                  onValueChange={(value) => setChartMetric(value as 'max' | 'total' | 'weight')}
+                >
+                  <SelectTrigger className="h-8 w-[100px]">
+                    <SelectValue placeholder="Metric" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isBodyweight ? (
+                      <>
+                        <SelectItem value="max">Max Reps</SelectItem>
+                        <SelectItem value="total">Total Reps</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="weight">Max Weight</SelectItem>
+                        <SelectItem value="total">Volume</SelectItem>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
               <RadioGroup defaultValue="allTime" value={selectedDateRange} onValueChange={(value) => setSelectedDateRange(value as any)} className="flex space-x-2">
                 <div className="flex items-center space-x-1">
                   <RadioGroupItem value="4weeks" id="r1" />
@@ -897,19 +907,35 @@ export default function ExerciseDetailPageClient({
                 <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
                 <XAxis dataKey="date" fontSize={10} tickLine={false} axisLine={false} />
                 <YAxis 
-                  dataKey={isBodyweight ? (chartMetric === "max" ? "maxReps" : "totalReps") : "total"} 
-                  name={isBodyweight ? (chartMetric === "max" ? "Max Reps" : "Total Reps") : "Volume"} 
+                  dataKey={
+                    isBodyweight
+                      ? (chartMetric === "max" ? "maxReps" : "totalReps")
+                      : (chartMetric === "weight" ? "weight" : "total")
+                  } 
+                  name={
+                    isBodyweight
+                      ? (chartMetric === "max" ? "Max Reps" : "Total Reps")
+                      : (chartMetric === "weight" ? "Weight (kg)" : "Volume")
+                  } 
                   fontSize={10} 
                   strokeWidth={0} 
                 />
                 <Tooltip contentStyle={{fontSize: '12px', padding: '4px 8px'}} />
                 <Line 
                   type="monotone" 
-                  dataKey={isBodyweight ? (chartMetric === "max" ? "maxReps" : "totalReps") : "total"} 
+                  dataKey={
+                    isBodyweight
+                      ? (chartMetric === "max" ? "maxReps" : "totalReps")
+                      : (chartMetric === "weight" ? "weight" : "total")
+                  } 
                   stroke="hsl(var(--primary))" 
                   strokeWidth={2} 
                   dot={false} 
-                  name={isBodyweight ? (chartMetric === "max" ? "Max Reps" : "Total Reps") : "Volume"} 
+                  name={
+                    isBodyweight
+                      ? (chartMetric === "max" ? "Max Reps" : "Total Reps")
+                      : (chartMetric === "weight" ? "Weight (kg)" : "Volume")
+                  } 
                 />
               </LineChart>
             </ResponsiveContainer>

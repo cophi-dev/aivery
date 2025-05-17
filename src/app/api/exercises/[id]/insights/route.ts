@@ -57,7 +57,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     if (process.env.NODE_ENV === 'development') {
       console.log(`[DEBUG] Exercise ${exercise.name} is ${isBodyweight ? 'detected as bodyweight' : 'not a bodyweight exercise'}`);
       if (isBodyweight) {
-        console.log(`[DEBUG] Estimated bodyweight: ${estimateBodyweightForExercise(exercise.name || '')}`);
+        const estimatedWeight = estimateBodyweightForExercise(exercise.name || '');
+        console.log(`[DEBUG] Estimated bodyweight: ${estimatedWeight}kg for '${exercise.name}'`);
+        if (estimatedWeight === 0) {
+          console.log(`[WARNING] Zero weight estimated for '${exercise.name}'. Check estimateBodyweightForExercise implementation.`);
+        }
       }
     }
     
@@ -193,4 +197,4 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   } catch (err) {
     return NextResponse.json({ error: "Failed to fetch exercise insights", details: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
-} 
+}

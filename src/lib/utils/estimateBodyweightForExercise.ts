@@ -8,6 +8,7 @@ export const estimateBodyweightForExercise = (exerciseName: string, userWeight?:
     "dip": 0.95,
     "muscle-up": 1.0,
     "inverted row": 0.8,
+    "bodyweight row": 0.8,
     "bodyweight squat": 0.9,
     "air squat": 0.9,
     "pistol squat": 0.9,
