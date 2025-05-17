@@ -65,6 +65,7 @@
 - [ ] `npm run dev` runs cleanly
 - [ ] Strava connect and sync working
 - [ ] Dashboard loads correct data
+  - [ ] Personal Records display highest values, not random samples
 - [ ] AI feedback appears in workouts or dashboard
 - [ ] Post-workout logic (if enabled) behaves correctly
 

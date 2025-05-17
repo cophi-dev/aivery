@@ -20,6 +20,7 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
     - **NOTE:** AI context for running plans and fallback suggestions is now based on running-only data, with weekly mileage summary, longest run, fastest pace, and distance normalization.
 - **/src/components/** – React UI components:
   - `/dashboard/` (dashboard widgets, insights)
+    - PRs display shows highest values sorted by value DESC, not random samples
   - `/exercises/`, `/exercise/` (exercise display, PRs)
   - `/ui/` (shared UI primitives: buttons, cards, dialogs, etc.)
   - `/features/` (feature-specific modals, slideshows)

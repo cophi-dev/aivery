@@ -1806,11 +1806,11 @@ export type WorkoutUpdatePayload = {
 };
 
 /**
- * Fetches a *random sample* of exercise PRs for the dashboard.
+ * Fetches the highest value exercise PRs for the dashboard.
  */
 // Update default limit to 4
 export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPREntry[]> { 
-  console.log(`[fetchDashboardExercisePRs] Fetching ${limit} random PRs...`);
+  console.log(`[fetchDashboardExercisePRs] Fetching ${limit} highest value PRs...`);
   try {
     const user = await getCurrentUser();
     if (!user?.id) {
@@ -1827,7 +1827,8 @@ export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPRE
         userId: new Types.ObjectId(userId),
         type: { $in: ['weight', 'reps'] } 
       }},
-      { $sample: { size: Math.floor(limit/2) } },
+      { $sort: { value: -1 } }, // Sort by value descending instead of using $sample
+      { $limit: Math.floor(limit/2) },
       {
         $project: {
           _id: 1,
@@ -1847,7 +1848,8 @@ export async function fetchDashboardExercisePRs(limit = 4): Promise<DashboardPRE
         userId: new Types.ObjectId(userId),
         type: 'daily_reps'
       }},
-      { $sample: { size: Math.ceil(limit/2) } },
+      { $sort: { value: -1 } }, // Sort by value descending instead of using $sample
+      { $limit: Math.ceil(limit/2) },
       {
         $project: {
           _id: 1,
@@ -2233,6 +2235,59 @@ export async function fetchWorkoutForAI(id: string): Promise<AICoachWorkoutData 
   } catch (error) {
     console.error("[fetchWorkoutForAI] Error fetching workout:", error);
     throw error; // Re-throw to allow API route to handle
+  }
+}
+
+/**
+ * Fetches top exercise PRs for the dashboard display.
+ * Shows the highest value PRs sorted by value.
+ */
+export async function fetchTopExercisePRs(limit = 5): Promise<DashboardPREntry[]> {
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      console.warn("[fetchTopExercisePRs] User not authenticated.");
+      return [];
+    }
+    const userId = user.id;
+
+    await dbConnect();
+
+    // Fetch top PRs for the user
+    const topPRsPromise = ExercisePRModel.aggregate([
+      { $match: { userId: new Types.ObjectId(userId) } },
+      { $sort: { value: -1 } },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 1,
+          exerciseName: 1,
+          value: 1,
+          unit: 1,
+          type: 1,
+          date: 1,
+          workoutId: 1,
+        }
+      }
+    ]).exec();
+
+    const topPRs = await topPRsPromise;
+
+    // Convert the result to the desired format
+    const serializedPRs: DashboardPREntry[] = topPRs.map(pr => ({
+      _id: pr._id.toString(),
+      exerciseName: pr.exerciseName,
+      value: pr.value,
+      unit: pr.unit,
+      type: pr.type,
+      date: pr.date.toISOString(),
+      workoutId: pr.workoutId?.toString() ?? null,
+    }));
+
+    return serializedPRs;
+  } catch (error) {
+    console.error("[fetchTopExercisePRs] Error fetching top PRs:", error);
+    return [];
   }
 }
     
