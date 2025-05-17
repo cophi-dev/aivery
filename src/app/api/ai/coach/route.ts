@@ -969,7 +969,7 @@ async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: 
 // Renaming for clarity, but same function as generateWorkoutAnalysisResponse
 async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string, modelOverride?: string): Promise<string> { // <-- Added userId
   const provider = (process.env.LLM_PROVIDER_PLAN as LLMProvider) || 'grok';
-  const model = modelOverride || process.env.LLM_MODEL_PLAN || 'gpt-4.1-mini';
+  const model = modelOverride || process.env.LLM_MODEL_PLAN || 'gpt-4o';
   if (!process.env.GROK_API_KEY && provider === 'grok') {
     console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
     return `Sorry ${userName}, the AI coach is currently unavailable for this request due to configuration issues.`;
@@ -1506,8 +1506,123 @@ RUNNING HISTORY SUMMARY:
         // Allow 'unknown' as a valid intent type for fallback
         const { intent, entities, response_suggestion } = validation.data as { intent: string, entities: any, response_suggestion: string };
 
+        // Check if this is a follow-up to a previous workout analysis
+        const isWorkoutAnalysisFollowUp = hasHistory && followUpInstructions && 
+            history.some((msg: HistoryMessage) => msg.role === 'user' && 
+            /analyze|feedback|assess|review|volume|intensity|progress|improvement|recovery/.test(msg.content));
+
         // Use suggestion if provided and intent is simple or unknown
         if (intent === 'unknown') {
+          // Special handling for workout analysis follow-up questions
+          if (isWorkoutAnalysisFollowUp) {
+            console.log("[API /coach] Detected follow-up to workout analysis. Generating contextual response...");
+            
+            // Get the original workout analysis request and most recent workout details
+            const originalAnalysisRequest = history.find((msg: HistoryMessage) => msg.role === 'user' && 
+              /analyze|feedback|assess|review|volume|intensity|progress|improvement|recovery/.test(msg.content))?.content || '';
+            
+            // Extract workout ID if present in the original request
+            const workoutIdMatch = originalAnalysisRequest.match(/ID:\s*([a-f0-9]+)/i);
+            const workoutId = workoutIdMatch ? workoutIdMatch[1] : null;
+            
+            if (workoutId) {
+              // Fetch the workout data again for context
+              const workoutDataForAI = await fetchWorkoutForAI(workoutId);
+              
+              if (workoutDataForAI) {
+                // Check if the follow-up is casual/conversational or requesting detailed analysis
+                const isCasualFollowUp = /quick|short|simple|brief|just|before|after|felt|feeling|thanks|ok|nice|good|great|done|finished/i.test(query);
+                
+                let contextualPrompt = "";
+                
+                if (isCasualFollowUp) {
+                  // Create a lighter, more conversational prompt for casual follow-ups
+                  contextualPrompt = `You are Aivery, a fitness coach having a casual chat about a user's workout.
+
+ORIGINAL WORKOUT INFO:
+- Name: ${workoutDataForAI.name || 'Workout'}
+- Type: ${workoutDataForAI.type}
+- Duration: ${workoutDataForAI.duration ? formatDuration(workoutDataForAI.duration) : 'Unknown'}
+- Exercises: ${workoutDataForAI.workoutExercises?.length || 0} exercise(s)
+
+USER'S CASUAL COMMENT: "${query}"
+
+Respond naturally and conversationally to the user's comment. Keep your response brief (1-3 sentences max). 
+Don't analyze the workout unless specifically asked. Be friendly, supportive, and match the casual tone.`;
+                } else {
+                  // Use the comprehensive analysis prompt for detailed follow-ups
+                  contextualPrompt = `You are Aivery, a fitness coach analyzing a user's workout.
+
+ORIGINAL REQUEST: "${originalAnalysisRequest}"
+
+FOLLOW-UP COMMENT: "${query}"
+
+WORKOUT DATA:
+${JSON.stringify(workoutDataForAI, null, 2)}
+
+Based on both the original request and the follow-up comment, provide a comprehensive analysis of the workout. 
+Address all points from the original request including:
+- Exercise selection and balance
+- Volume and intensity assessment
+- Progress tracking compared to previous workouts
+- Suggestions for improvement
+- Recovery recommendations
+
+Incorporate the user's follow-up comment into your response. Be specific, actionable, and supportive.`;
+                }
+
+                const contextualResponse = await generateResponseFromSystemPrompt(
+                  contextualPrompt, 
+                  isCasualFollowUp ? "Respond casually to workout comment" : "Please analyze this workout with the follow-up context", 
+                  userName, 
+                  userId,
+                  isCasualFollowUp ? process.env.LLM_MODEL_CHAT : undefined // Use a potentially faster model for casual responses
+                );
+                return NextResponse.json({ response: contextualResponse });
+              }
+            }
+
+            // If we detect workout analysis pattern but couldn't extract specific workout ID
+            // Create a generic follow-up prompt that uses conversation history
+            // Check if the follow-up is casual/conversational or requesting detailed analysis
+            const isCasualFollowUp = /quick|short|simple|brief|just|before|after|felt|feeling|thanks|ok|nice|good|great|done|finished/i.test(query);
+            
+            let conversationHistoryPrompt = "";
+            
+            if (isCasualFollowUp) {
+              // Lighter, conversational prompt for casual follow-ups
+              conversationHistoryPrompt = `You are Aivery, a fitness coach having a casual chat with a user.
+
+CONVERSATION HISTORY SUMMARY:
+- User asked about a workout analysis
+- You provided some basic workout information
+
+USER'S CASUAL COMMENT: "${query}"
+
+Respond naturally and conversationally to the user's comment. Keep your response brief (1-3 sentences max).
+Be friendly, supportive, and match the casual tone.`;
+            } else {
+              // Regular prompt for more detailed follow-ups
+              conversationHistoryPrompt = `You are Aivery, a fitness coach helping a user analyze their workout.
+
+CONVERSATION HISTORY:
+${history.map((msg: HistoryMessage) => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')}
+
+FOLLOW-UP COMMENT: "${query}"
+
+Based on the conversation history and follow-up comment, respond helpfully to continue the conversation about workout analysis. If the user mentioned workout specifics in the follow-up, incorporate them appropriately.`;
+            }
+
+            const genericFollowUpResponse = await generateResponseFromSystemPrompt(
+              conversationHistoryPrompt, 
+              isCasualFollowUp ? "Respond casually to workout comment" : "Continue workout analysis conversation", 
+              userName, 
+              userId,
+              isCasualFollowUp ? process.env.LLM_MODEL_CHAT : undefined
+            );
+            return NextResponse.json({ response: genericFollowUpResponse });
+          }
+          
           // Check for user context: recent workouts, PRs, or goals
           const hasContext = (recentWorkouts && recentWorkouts.length > 0) || (exercisePRs && exercisePRs.length > 0) || (userPreferences && (userPreferences.fitnessGoals || userPreferences.trainingPreferences));
           if (hasContext) {
@@ -2147,7 +2262,71 @@ RUNNING HISTORY SUMMARY:
             response += `\n*   **Notes:** ${details.notes}\n`;
         }
 
-        response += `\nHow did this session feel, ${name}? Anything specific you'd like to discuss about it?`; // Add follow-up
+        // Calculate workout metrics for more detailed analysis
+        if (details.type === 'strength' && details.exercises && details.exercises.length > 0) {
+            // Calculate total volume, reps, and exercise variety
+            let totalVolume = 0;
+            let totalReps = 0;
+            const exerciseTypes = new Set<string>();
+            const muscleGroups = new Set<string>();
+            
+            details.exercises.forEach(ex => {
+                if (ex.exercise?.name) exerciseTypes.add(ex.exercise.name);
+                // Add any muscle groups if available
+                if (ex.exercise?.muscleGroups) {
+                    ex.exercise.muscleGroups.forEach(group => muscleGroups.add(group));
+                }
+                
+                if (ex.sets && ex.sets.length > 0) {
+                    ex.sets.forEach(set => {
+                        if (set.reps && set.weight) {
+                            totalVolume += set.reps * set.weight;
+                            totalReps += set.reps;
+                        }
+                    });
+                }
+            });
+            
+            const volumeLevel = totalVolume > 2000 ? 'high' : totalVolume > 1000 ? 'moderate' : 'light';
+            
+            // Add volume analysis section
+            response += `\n## Exercise Analysis\n`;
+            response += `*   **Volume Assessment:** ${totalVolume} kg total over ${totalReps} reps (${volumeLevel} intensity)`;
+            response += `\n*   **Exercise Selection:** ${exerciseTypes.size} different exercise(s) performed`;
+            if (muscleGroups.size > 0) {
+                response += `\n*   **Muscle Groups:** ${Array.from(muscleGroups).join(', ')}`;
+            }
+            
+            // Add typical progress section
+            response += `\n\n## Progress & Improvement\n`;
+            response += `*   This appears to be a ${volumeLevel} workout focused on ${details.exercises.length === 1 ? 'single exercise' : 'multiple exercises'}.`;
+            if (details.duration && totalReps > 0 && details.duration > 0) {
+                // Calculate rough pace (seconds per rep)
+                const pacePerRep = details.duration / totalReps;
+                response += `\n*   Your workout pace averaged ${pacePerRep.toFixed(1)} seconds per rep.`;
+            }
+            
+            // Add suggestions for improvement
+            response += `\n\n## Suggestions for Improvement\n`;
+            if (exerciseTypes.size === 1) {
+                response += `*   Consider adding complementary exercises to create a more balanced workout.`;
+            } else if (totalVolume < 1000) {
+                response += `*   You could increase training volume by adding more sets or weight to stimulate greater muscle growth.`;
+            } else {
+                response += `*   Track your progress on key lifts and aim to gradually increase either weight or reps each session.`;
+            }
+            
+            // Add recovery recommendations
+            response += `\n\n## Recovery Recommendations\n`;
+            response += `*   Based on this ${volumeLevel} workout, aim for 24-48 hours before training the same muscle groups again.`;
+            response += `\n*   Stay hydrated and ensure adequate protein intake to support muscle recovery.`;
+            
+            // End with open-ended question about the workout
+            response += `\n\nHow did this ${details.name || 'strength'} session feel, ${name}? Was it challenging or did you feel you had more in the tank?`;
+        } else {
+            // For non-strength workouts or if no detailed exercise data, add a more general follow-up
+            response += `\nHow did this session feel, ${name}? Anything specific you'd like to discuss about it?`;
+        }
 
         return response;
     }
