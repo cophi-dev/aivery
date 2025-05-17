@@ -983,10 +983,6 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
   // Check for API key if using grok
   if (!process.env.GROK_API_KEY && provider === 'grok') {
     console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
-  // Fix: Use a model that we know exists
-  const model = modelOverride || process.env.LLM_MODEL_PLAN || 'grok-3-mini';
-  if (!process.env.GROK_API_KEY && provider === 'grok') {
-    console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
     return `Sorry ${userName}, the AI coach is currently unavailable for this request due to configuration issues.`;
   }
   try {
