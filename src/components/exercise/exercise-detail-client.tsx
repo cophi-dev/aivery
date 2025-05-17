@@ -139,15 +139,16 @@ export default function ExerciseDetailPageClient({
   const [muscleGroup, setMuscleGroup] = useState("")
   const [muscleGroups, setMuscleGroups] = useState<string[]>(initialExercise?.muscleGroups || [])
   const [selectedDateRange, setSelectedDateRange] = useState<"allTime" | "3months" | "4weeks">("allTime");
+  const [chartMetric, setChartMetric] = useState<"max" | "total">("total");
 
   // Improved bodyweight detection
   const bodyweightNames = [
-    'pull-up', 'pull up', 'push-up', 'push up', 'chin-up', 'chin up', 'dips', 'sit-up', 'sit up', 'crunch', 'plank', 'burpee', 'lunge', 'squat', 'jumping jack', 'mountain climber', 'bodyweight row', 'inverted row', 'leg raise', 'pushup', 'pullup', 'pushups', 'pullups', 'dips', 'situps', 'crunches', 'planks', 'lunges', 'squats', 'burpees', 'mountain climbers', 'bodyweight rows', 'inverted rows', 'leg raises'
+    'pull-up', 'pull up', 'push-up', 'push up', 'chin-up', 'chin up', 'dips', 'sit-up', 'sit up', 'crunch', 'plank', 'burpee', 'lunge', 'squat', 'jumping jack', 'mountain climber', 'bodyweight row', 'inverted row', 'leg raise', 'pushup', 'pullup', 'pushups', 'pullups', 'dips', 'situps', 'crunches', 'planks', 'lunges', 'squats', 'burpees', 'mountain climbers', 'bodyweight rows', 'inverted rows', 'leg raises', 'air squat'
   ];
-  const isBodyweight = (
-    exercise?.tags?.includes('trackMaxReps') ||
-    (exercise?.name && bodyweightNames.includes(exercise.name.toLowerCase()))
-  );
+  const isBodyweight = useMemo(() => (
+    initialExercise?.tags?.includes('trackMaxReps') ||
+    (initialExercise?.name && bodyweightNames.some(name => initialExercise.name.toLowerCase().includes(name)))
+  ), [initialExercise?.tags, initialExercise?.name]);
 
   // Fetch insights data on mount
   useEffect(() => {
@@ -192,26 +193,43 @@ export default function ExerciseDetailPageClient({
     let currentMaxRepsPR = { weight: 0, reps: 0 };
     let runningTotalReps = 0;
     let runningTotalVolume = 0;
-    const isTrackMaxReps = exercise?.tags?.includes('trackMaxReps');
+    const isTrackMaxReps = initialExercise?.tags?.includes('trackMaxReps') || isBodyweight;
 
     let bestDistance = 0, bestDuration = 0, fastestPace = Infinity
     let totalDistance = 0, totalDuration = 0, validPaceCount = 0, totalPace = 0
     const workoutCount = historyData.length
 
-    const chartPoints = historyData.map(workout => {
-      let maxWeightInWorkout = 0, maxRepsInWorkout = 0, maxTotalInWorkout = 0
+    // Track total reps by date for accurate charting
+    const repsByDate: Record<string, { maxReps: number, totalReps: number, date: string, total: number }> = {};
+
+    historyData.forEach(workout => {
+      let maxWeightInWorkout = 0, maxRepsInWorkout = 0, maxTotalInWorkout = 0;
+      let totalRepsInWorkout = 0;
+      
+      const workoutDate = new Date(workout.createdAt).toISOString().split('T')[0];
+      
+      if (!repsByDate[workoutDate]) {
+        repsByDate[workoutDate] = { 
+          maxReps: 0, 
+          totalReps: 0, 
+          date: workoutDate,
+          total: 0
+        };
+      }
+      
       workout.sets?.forEach(set => {
         const weight = Number(set.weight) || 0
         const reps = Number(set.reps) || 0
         let effectiveWeight = weight;
         
         // For bodyweight exercises, use estimated weight
-        if (isTrackMaxReps && weight === 0) {
-          effectiveWeight = estimateBodyweightForExercise(exercise?.name || '');
+        if (isBodyweight && weight === 0) {
+          effectiveWeight = estimateBodyweightForExercise(initialExercise?.name || '');
         }
         
         const total = effectiveWeight * reps;
-
+        
+        totalRepsInWorkout += reps;
         runningTotalReps += reps;
         runningTotalVolume += total;
 
@@ -228,7 +246,7 @@ export default function ExerciseDetailPageClient({
         }
 
         // For chart data, track what we want to display
-        if (isTrackMaxReps) {
+        if (isBodyweight) {
           if (reps > maxRepsInWorkout) {
             maxRepsInWorkout = reps;
             maxWeightInWorkout = effectiveWeight;
@@ -243,7 +261,7 @@ export default function ExerciseDetailPageClient({
         }
 
         // Legacy 'Personal Best' calculation - update based on what we're tracking
-        if (isTrackMaxReps) {
+        if (isBodyweight) {
           if (reps > currentBestReps || (reps === currentBestReps && effectiveWeight > currentBestWeight)) {
             currentBestWeight = effectiveWeight;
             currentBestReps = reps;
@@ -257,6 +275,13 @@ export default function ExerciseDetailPageClient({
           }
         }
       })
+      
+      // Add workout data to the date entry
+      if (maxRepsInWorkout > repsByDate[workoutDate].maxReps) {
+        repsByDate[workoutDate].maxReps = maxRepsInWorkout;
+      }
+      repsByDate[workoutDate].totalReps += totalRepsInWorkout;
+      repsByDate[workoutDate].total += maxTotalInWorkout;
 
       const workoutDistance = workout.distance ? Number(workout.distance) : 0;
       const workoutDuration = workout.duration ? Number(workout.duration) : 0;
@@ -269,19 +294,14 @@ export default function ExerciseDetailPageClient({
       totalDistance += workoutDistance;
       totalDuration += workoutDuration;
       if (workoutPace !== null && workoutPace > 0) { totalPace += workoutPace; validPaceCount++; }
-
-      return {
-        date: new Date(workout.createdAt).toISOString().split('T')[0],
-        weight: maxWeightInWorkout,
-        reps: maxRepsInWorkout,
-        total: isTrackMaxReps ? maxRepsInWorkout : maxTotalInWorkout, // Use reps as the primary metric for bodyweight exercises
-        distance: workoutDistance,
-        duration: workoutDuration,
-        pace: workoutPace
-      }
     })
 
-    setChartData(chartPoints.slice().reverse()) // Reverse copy for chart
+    // Convert the repsByDate object to an array for the chart
+    const chartPoints = Object.values(repsByDate).sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    setChartData(chartPoints);
     if (currentBestTotal > 0) setPersonalBest({ weight: currentBestWeight, reps: currentBestReps }); else setPersonalBest(null); // Keep legacy PB state
     // Set new stats state
     setTotalReps(runningTotalReps);
@@ -323,7 +343,7 @@ export default function ExerciseDetailPageClient({
   const progressionDisplayData = useMemo(() => {
     const now = new Date();
     let filteredHistory = history;
-    const isTrackMaxReps = exercise?.tags?.includes('trackMaxReps');
+    const isTrackMaxReps = initialExercise?.tags?.includes('trackMaxReps');
 
     if (selectedDateRange === "3months") {
       const threeMonthsAgo = subMonths(now, 3);
@@ -360,19 +380,47 @@ export default function ExerciseDetailPageClient({
 
     filteredHistory.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    const chartPoints = filteredHistory.map((workout: WorkoutExerciseData) => {
-      let maxWeight = 0, maxReps = 0, maxTotal = 0;
+    // Group by date for consistent charting
+    const repsByDate: Record<string, { 
+      date: string, 
+      maxReps: number, 
+      totalReps: number, 
+      weight: number, 
+      total: number,
+      distance: number | undefined | null,
+      duration: number | undefined | null,
+      pace: number | undefined | null
+    }> = {};
+    
+    filteredHistory.forEach((workout: WorkoutExerciseData) => {
+      let maxWeight = 0, maxReps = 0, maxTotal = 0, totalReps = 0;
+      const workoutDate = new Date(workout.createdAt).toISOString().split('T')[0];
+      
+      if (!repsByDate[workoutDate]) {
+        repsByDate[workoutDate] = { 
+          date: workoutDate,
+          maxReps: 0, 
+          totalReps: 0, 
+          weight: 0, 
+          total: 0,
+          distance: workout.distance,
+          duration: workout.duration,
+          pace: workout.pace
+        };
+      }
+      
       workout.sets?.forEach((set: { weight?: number, reps?: number }) => {
         const weight = Number(set.weight) || 0;
         const reps = Number(set.reps) || 0;
         let effectiveWeight = weight;
         
         // For bodyweight exercises, use estimated weight
-        if (isTrackMaxReps && weight === 0) {
-          effectiveWeight = estimateBodyweightForExercise(exercise?.name || '');
+        if (isBodyweight && weight === 0) {
+          effectiveWeight = estimateBodyweightForExercise(initialExercise?.name || '');
         }
         
         const total = effectiveWeight * reps;
+        totalReps += reps;
         
         if (isTrackMaxReps) {
           if (reps > maxReps) {
@@ -388,17 +436,24 @@ export default function ExerciseDetailPageClient({
           }
         }
       });
-
-      return {
-        date: new Date(workout.createdAt).toISOString().split('T')[0],
-        weight: maxWeight,
-        reps: maxReps,
-        total: maxTotal,
-        distance: workout.distance,
-        duration: workout.duration,
-        pace: workout.pace
-      };
+      
+      // Update the date entry
+      if (maxReps > repsByDate[workoutDate].maxReps) {
+        repsByDate[workoutDate].maxReps = maxReps;
+        repsByDate[workoutDate].weight = maxWeight;
+      }
+      repsByDate[workoutDate].totalReps += totalReps;
+      repsByDate[workoutDate].total += maxTotal;
+      
+      // For cardio metrics, use the latest values
+      if (workout.distance) repsByDate[workoutDate].distance = workout.distance;
+      if (workout.duration) repsByDate[workoutDate].duration = workout.duration;
+      if (workout.pace) repsByDate[workoutDate].pace = workout.pace;
     });
+    
+    const chartPoints = Object.values(repsByDate).sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
 
     // For progression comparison, we'll compare first N vs last N workouts
     const compareN = Math.min(3, Math.floor(chartPoints.length / 3)); // Compare up to 3 workouts, or 1/3 of total workouts
@@ -413,10 +468,12 @@ export default function ExerciseDetailPageClient({
 
     // Calculate averages for first and last N workouts
     const avgFirstWeight = calcAvg(firstN, 'weight');
-    const avgFirstReps = calcAvg(firstN, 'reps');
+    const avgFirstMaxReps = calcAvg(firstN, 'maxReps');
+    const avgFirstTotalReps = calcAvg(firstN, 'totalReps');
     const avgFirstTotal = calcAvg(firstN, 'total');
     const avgLastWeight = calcAvg(lastN, 'weight');
-    const avgLastReps = calcAvg(lastN, 'reps');
+    const avgLastMaxReps = calcAvg(lastN, 'maxReps');
+    const avgLastTotalReps = calcAvg(lastN, 'totalReps');
     const avgLastTotal = calcAvg(lastN, 'total');
 
     // Calculate cardio averages
@@ -442,10 +499,13 @@ export default function ExerciseDetailPageClient({
       avgFirstWeight,
       avgLastWeight,
       weightChange: calcChange(avgFirstWeight, avgLastWeight),
-      // Reps stats (for all exercises)
-      avgFirstReps,
-      avgLastReps,
-      repsChange: calcChange(avgFirstReps, avgLastReps),
+      // Reps stats (for all exercises) - now includes both max and total
+      avgFirstReps: chartMetric === 'max' ? avgFirstMaxReps : avgFirstTotalReps,
+      avgLastReps: chartMetric === 'max' ? avgLastMaxReps : avgLastTotalReps,
+      repsChange: calcChange(
+        chartMetric === 'max' ? avgFirstMaxReps : avgFirstTotalReps,
+        chartMetric === 'max' ? avgLastMaxReps : avgLastTotalReps
+      ),
       // Volume stats (for all exercises)
       avgFirstVolume: avgFirstTotal,
       avgLastVolume: avgLastTotal,
@@ -461,7 +521,7 @@ export default function ExerciseDetailPageClient({
       avgLastPace,
       paceChange: calcChange(avgFirstPace, avgLastPace)
     };
-  }, [history, selectedDateRange, exercise?.tags]);
+  }, [history, selectedDateRange, initialExercise?.tags, isBodyweight, chartMetric]);
   
   // Handler functions (keep all existing handlers)
   const addMuscleGroup = () => {
@@ -519,14 +579,98 @@ export default function ExerciseDetailPageClient({
     if (!workoutsByDate[date]) workoutsByDate[date] = [];
     workoutsByDate[date].push(w);
   });
-  const uniqueWorkoutExercises = Object.entries(workoutsByDate).map(([date, group]) => {
-    // Merge all sets for this date
-    const allSets = group.flatMap((w: any) => w.sets || []);
-    // Use the latest createdAt for display
-    const latest = group.reduce((a: any, b: any) => new Date(a.createdAt) > new Date(b.createdAt) ? a : b);
-    return { ...latest, sets: allSets, createdAt: date };
+
+  // Debug log in development mode
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Raw workout exercises by date:', workoutsByDate);
+  }
+
+  // Identify and filter out potential duplicate workout exercises
+  // This is needed because sometimes the same workout exercise may exist multiple times in the database
+  const deduplicatedWorkoutsByDate: Record<string, any[]> = {};
+  Object.entries(workoutsByDate).forEach(([date, group]) => {
+    // Check for duplicates within the same workout by comparing sets data
+    const workoutExercisesByWorkoutId: Record<string, any[]> = {};
+    
+    group.forEach((w: any) => {
+      const workoutId = w.workoutId || 'unknown';
+      if (!workoutExercisesByWorkoutId[workoutId]) {
+        workoutExercisesByWorkoutId[workoutId] = [];
+      }
+      workoutExercisesByWorkoutId[workoutId].push(w);
+    });
+    
+    // For each workout ID, filter out duplicates
+    const deduplicatedGroup: any[] = [];
+    
+    Object.entries(workoutExercisesByWorkoutId).forEach(([workoutId, exercises]) => {
+      if (exercises.length === 1) {
+        // Only one exercise for this workout, keep it
+        deduplicatedGroup.push(exercises[0]);
+      } else {
+        // Multiple exercises for this workout - possible duplicates
+        // Group by set data signature to identify duplicates
+        const setSignatures: Record<string, any> = {};
+        
+        exercises.forEach((ex: any) => {
+          // Create a signature based on the sets data
+          const setsString = JSON.stringify(ex.sets?.map((s: any) => ({ 
+            reps: s.reps, 
+            weight: s.weight 
+          })) || []);
+          
+          if (!setSignatures[setsString] || new Date(ex.createdAt) > new Date(setSignatures[setsString].createdAt)) {
+            // Keep the newest entry for each unique set signature
+            setSignatures[setsString] = ex;
+          }
+        });
+        
+        // Add the deduplicated exercises
+        Object.values(setSignatures).forEach(ex => deduplicatedGroup.push(ex));
+      }
+    });
+    
+    deduplicatedWorkoutsByDate[date] = deduplicatedGroup;
   });
-  uniqueWorkoutExercises.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Deduplicated workout exercises:', deduplicatedWorkoutsByDate);
+  }
+
+  // Create uniqueWorkoutExercises with proper grouping by workout ID
+  const uniqueWorkoutExercises = Object.entries(deduplicatedWorkoutsByDate)
+    .flatMap(([date, group]) => {
+      // Group exercises by workoutId to prevent merging sets from different workouts
+      const byWorkoutId: Record<string, any[]> = {};
+      group.forEach((w: any) => {
+        const workoutId = w.workoutId || 'unknown';
+        if (!byWorkoutId[workoutId]) byWorkoutId[workoutId] = [];
+        byWorkoutId[workoutId].push(w);
+      });
+      
+      // For each workoutId, merge sets from the same workout
+      return Object.entries(byWorkoutId).map(([workoutId, workoutGroup]) => {
+        // Use the latest createdAt for display within this workout group
+        const latest = workoutGroup.reduce((a: any, b: any) => 
+          new Date(a.createdAt) > new Date(b.createdAt) ? a : b
+        );
+        
+        // Only combine sets within the same workout
+        const workoutSets = workoutGroup.flatMap((w: any) => w.sets || []);
+        
+        return { 
+          ...latest, 
+          sets: workoutSets, 
+          createdAt: date,
+          workoutId 
+        };
+      });
+    });
+
+  // Sort exercises by date, most recent first
+  uniqueWorkoutExercises.sort((a: any, b: any) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 
   // Calculate Max Reps (Single Day) for bodyweight
   let maxRepsSingleDay = 0;
@@ -596,8 +740,10 @@ export default function ExerciseDetailPageClient({
     }
   }
 
-  // Add debug log for exercise
-  console.log('Exercise object:', exercise);
+  // Debug logger - only in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Exercise object:', exercise);
+  }
 
   // JSX Return
   return (
@@ -709,20 +855,39 @@ export default function ExerciseDetailPageClient({
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>Progress Over Time</CardTitle>
-            <RadioGroup defaultValue="allTime" value={selectedDateRange} onValueChange={(value) => setSelectedDateRange(value as any)} className="flex space-x-2">
-              <div className="flex items-center space-x-1">
-                <RadioGroupItem value="4weeks" id="r1" />
-                <Label htmlFor="r1" className="text-xs">4W</Label>
-              </div>
-              <div className="flex items-center space-x-1">
-                <RadioGroupItem value="3months" id="r2" />
-                <Label htmlFor="r2" className="text-xs">3M</Label>
-              </div>
-              <div className="flex items-center space-x-1">
-                <RadioGroupItem value="allTime" id="r3" />
-                <Label htmlFor="r3" className="text-xs">All</Label>
-              </div>
-            </RadioGroup>
+            <div className="flex items-center gap-4">
+              {isBodyweight && (
+                <div className="flex items-center space-x-2">
+                  <p className="text-xs text-muted-foreground">View:</p>
+                  <Select 
+                    value={chartMetric} 
+                    onValueChange={(value) => setChartMetric(value as 'max' | 'total')}
+                  >
+                    <SelectTrigger className="h-8 w-[100px]">
+                      <SelectValue placeholder="Metric" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="max">Max Reps</SelectItem>
+                      <SelectItem value="total">Total Reps</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <RadioGroup defaultValue="allTime" value={selectedDateRange} onValueChange={(value) => setSelectedDateRange(value as any)} className="flex space-x-2">
+                <div className="flex items-center space-x-1">
+                  <RadioGroupItem value="4weeks" id="r1" />
+                  <Label htmlFor="r1" className="text-xs">4W</Label>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <RadioGroupItem value="3months" id="r2" />
+                  <Label htmlFor="r2" className="text-xs">3M</Label>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <RadioGroupItem value="allTime" id="r3" />
+                  <Label htmlFor="r3" className="text-xs">All</Label>
+                </div>
+              </RadioGroup>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -731,9 +896,21 @@ export default function ExerciseDetailPageClient({
               <LineChart data={progressionDisplayData.chartPoints} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
                 <XAxis dataKey="date" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis dataKey="reps" name="Max Reps" fontSize={10} strokeWidth={0} />
+                <YAxis 
+                  dataKey={isBodyweight ? (chartMetric === "max" ? "maxReps" : "totalReps") : "total"} 
+                  name={isBodyweight ? (chartMetric === "max" ? "Max Reps" : "Total Reps") : "Volume"} 
+                  fontSize={10} 
+                  strokeWidth={0} 
+                />
                 <Tooltip contentStyle={{fontSize: '12px', padding: '4px 8px'}} />
-                <Line type="monotone" dataKey="reps" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Max Reps" />
+                <Line 
+                  type="monotone" 
+                  dataKey={isBodyweight ? (chartMetric === "max" ? "maxReps" : "totalReps") : "total"} 
+                  stroke="hsl(var(--primary))" 
+                  strokeWidth={2} 
+                  dot={false} 
+                  name={isBodyweight ? (chartMetric === "max" ? "Max Reps" : "Total Reps") : "Volume"} 
+                />
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -750,88 +927,114 @@ export default function ExerciseDetailPageClient({
         <CardContent>
           {uniqueWorkoutExercises.length > 0 ? (
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              {uniqueWorkoutExercises.map((workout) => (
-                <div key={workout.createdAt} className="block p-3 border rounded-lg hover:bg-accent transition-colors">
-                  <div className="flex justify-between items-center mb-1">
-                    <p className="font-medium">{formatDate(workout.createdAt)}</p>
-                  </div>
-                  {workout.sets && workout.sets.length > 0 && (
-                    <>
-                      <div className="text-xs text-muted-foreground space-x-2">
-                        <span>Sets: {workout.sets.length}</span>
-                        {isBodyweight ? (
-                          <>
-                            <span>
-                              Total reps: {workout.sets.reduce((sum: number, s: any) => sum + (s.reps || 0), 0)}
-                            </span>
-                            <span>
-                              •
-                            </span>
-                            <span>
-                              Total volume: {formatVolume(workout.sets.reduce((acc: number, set: any) => acc + (estimateBodyweightForExercise(exercise?.name || '') * (set.reps || 0)), 0))}
-                            </span>
-                          </>
-                        ) : (
-                          <span>
-                            Max: {Math.max(...workout.sets.map((s: any) => (s.weight || 0) * (s.reps || 0)))} kg*reps
-                          </span>
+              {uniqueWorkoutExercises.map((workout) => {
+                // Extract workoutId from the source workout exercise
+                // Each workout can have entries from multiple workouts, so we prioritize the first one
+                const originalWorkoutExercises = workoutExercises.filter(w => 
+                  new Date(w.createdAt).toISOString().split('T')[0] === workout.createdAt
+                );
+                const workoutId = originalWorkoutExercises.length > 0 
+                  ? originalWorkoutExercises[0].workoutId 
+                  : null;
+                  
+                // Check if there are multiple workouts on the same day
+                const hasMultipleWorkouts = originalWorkoutExercises.length > 1 && 
+                  new Set(originalWorkoutExercises.map(w => w.workoutId)).size > 1;
+                
+                // Format the date for the workouts page URL
+                const formattedDate = new Date(workout.createdAt).toISOString().split('T')[0];
+                
+                // Create the link URL based on whether there are multiple workouts
+                const linkUrl = hasMultipleWorkouts 
+                  ? `/workouts?date=${formattedDate}` 
+                  : workoutId ? `/workouts/${workoutId}` : '#';
+                  
+                const totalReps = workout.sets?.reduce((sum: number, s: any) => sum + (s.reps || 0), 0) || 0;
+                const totalVolume = workout.sets?.reduce((acc: number, set: any) => {
+                  const weight = set.weight && Number(set.weight) > 0 
+                    ? Number(set.weight) 
+                    : estimateBodyweightForExercise(initialExercise?.name || '');
+                  return acc + (weight * (set.reps || 0));
+                }, 0) || 0;
+                
+                return (
+                  <Link 
+                    href={linkUrl} 
+                    key={workout.createdAt}
+                    className={`block p-4 border rounded-lg hover:bg-accent transition-colors cursor-pointer relative ${!workoutId && !hasMultipleWorkouts ? 'pointer-events-none opacity-80' : 'hover:shadow-md'}`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center">
+                        <h3 className="font-medium">{formatDate(workout.createdAt)}</h3>
+                        {hasMultipleWorkouts && (
+                          <Badge variant="outline" className="ml-2 text-xs">
+                            {originalWorkoutExercises.length} workouts
+                          </Badge>
+                        )}
+                        {!workoutId && !hasMultipleWorkouts && (
+                          <span className="ml-2 text-xs text-muted-foreground">(Details unavailable)</span>
                         )}
                       </div>
-                      {/* Per-set display */}
-                      <div className="space-y-1 mt-1">
-                        {workout.sets.map((set: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">Set {idx + 1}</span>
-                            {isBodyweight ? (
-                              <span>{set.reps} reps</span>
-                            ) : (
-                              <span>{set.weight}kg × {set.reps}</span>
-                            )}
+                      <Button size="sm" variant="ghost" className="px-1 h-7 absolute top-2 right-2">
+                        <LucideArrowLeft className="h-4 w-4 rotate-180" />
+                      </Button>
+                    </div>
+                    
+                    {workout.sets && workout.sets.length > 0 ? (
+                      <>
+                        <div className="flex items-center text-sm text-muted-foreground mb-3 space-x-3">
+                          <div className="flex items-center">
+                            <span className="font-medium">{workout.sets.length}</span>
+                            <span className="ml-1">sets</span>
                           </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                          
+                          {isBodyweight ? (
+                            <>
+                              <div className="flex items-center">
+                                <span className="font-medium">{totalReps}</span>
+                                <span className="ml-1">total reps</span>
+                              </div>
+                              <div className="flex items-center">
+                                <Badge variant="outline" className="px-1 py-0 text-xs">
+                                  {Math.max(...workout.sets.map((s: any) => s.reps || 0))} max
+                                </Badge>
+                              </div>
+                              <div className="flex items-center">
+                                <span className="font-medium">{formatVolume(totalVolume)}</span>
+                                <span className="ml-1">volume</span>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex items-center">
+                              <span className="font-medium">{formatVolume(totalVolume)}</span>
+                              <span className="ml-1">volume</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Per-set display */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                          {workout.sets.map((set: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between px-3 py-2 bg-muted/40 rounded text-sm">
+                              <span className="text-muted-foreground">Set {idx + 1}</span>
+                              {isBodyweight ? (
+                                <span className="font-medium">{set.reps} reps</span>
+                              ) : (
+                                <span className="font-medium">{set.weight}kg × {set.reps}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">No set data available for this workout</p>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           ) : (
             <p className="text-muted-foreground text-center py-10">No workout history found.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Debug Table: Raw workoutExercises data */}
-      <Card className="mt-8">
-        <CardHeader>
-          <CardTitle>Debug: Raw workoutExercises Data</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {workoutExercises && workoutExercises.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs border">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">_id</th>
-                    <th className="border px-2 py-1">workoutId</th>
-                    <th className="border px-2 py-1">createdAt</th>
-                    <th className="border px-2 py-1">sets.length</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workoutExercises.map((w: any) => (
-                    <tr key={w._id}>
-                      <td className="border px-2 py-1">{w._id}</td>
-                      <td className="border px-2 py-1">{w.workoutId}</td>
-                      <td className="border px-2 py-1">{w.createdAt}</td>
-                      <td className="border px-2 py-1">{w.sets ? w.sets.length : 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No workoutExercises data found.</p>
           )}
         </CardContent>
       </Card>

@@ -968,8 +968,23 @@ async function generateWorkoutAnalysisResponse(systemPrompt: string, userQuery: 
 
 // Renaming for clarity, but same function as generateWorkoutAnalysisResponse
 async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery: string, userName: string, userId: string, modelOverride?: string): Promise<string> { // <-- Added userId
+  // Get provider from env vars
   const provider = (process.env.LLM_PROVIDER_PLAN as LLMProvider) || 'grok';
-  const model = modelOverride || process.env.LLM_MODEL_PLAN || 'gpt-4o';
+  
+  // Validate and normalize model name
+  let model = modelOverride || process.env.LLM_MODEL_PLAN || 'grok-3-mini';
+  
+  // Strip any date suffixes from model names (e.g., gpt-4.1-mini-2025-04-14 -> gpt-4.1-mini)
+  if (model.includes('-202')) {
+    model = model.split('-202')[0]; 
+    console.log(`[generateResponseFromSystemPrompt] Normalized model name to: ${model}`);
+  }
+  
+  // Check for API key if using grok
+  if (!process.env.GROK_API_KEY && provider === 'grok') {
+    console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
+  // Fix: Use a model that we know exists
+  const model = modelOverride || process.env.LLM_MODEL_PLAN || 'grok-3-mini';
   if (!process.env.GROK_API_KEY && provider === 'grok') {
     console.error("[generateResponseFromSystemPrompt] GROK_API_KEY not configured.");
     return `Sorry ${userName}, the AI coach is currently unavailable for this request due to configuration issues.`;
@@ -1078,7 +1093,282 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
         let dataContext = ""; // Initialize as empty string
         let dateRangeString = ""; // Initialize as empty string
 
-        // **** ADDED: Explicit check for "What is [keyword]?" BEFORE general analysis ****
+        // Check for workout analysis request
+        const isWorkoutAnalysisRequest = /analyze|analyse|assessment|feedback|review|breakdown|evaluate/i.test(query) && 
+                                         (context?.workoutSummary || query.includes("ID:"));
+        
+        // Handle workout analysis request
+        if (isWorkoutAnalysisRequest) {
+          console.log("[POST] Detected workout analysis request");
+          
+          // Extract workout ID from context or query
+          let workoutId = context?.workoutSummary?._id;
+          if (!workoutId && query.includes("ID:")) {
+            const idMatch = query.match(/ID:\s*([a-f0-9]+)/i);
+            workoutId = idMatch ? idMatch[1] : null;
+          }
+          
+          if (!workoutId) {
+            return NextResponse.json({ 
+              response: `Sorry ${userName}, I need a specific workout ID to analyze. Please select a workout first.` 
+            });
+          }
+          
+          console.log(`[POST] Fetching workout data for analysis: ${workoutId}`);
+          const workoutData = await fetchWorkoutForAI(workoutId);
+          
+          if (!workoutData) {
+            return NextResponse.json({ 
+              response: `Sorry ${userName}, I couldn't find that workout (ID: ${workoutId}).` 
+            });
+          }
+          
+          // Create specific analysis prompt based on workout type
+          let analysisPrompt = "";
+          
+          if (workoutData.type === 'running') {
+            // Get recent running workouts for comparison
+            const recentRunningWorkouts = await getRecentRunningWorkouts(userId, 5);
+            
+            // Filter out the current workout from the results if it's included
+            // Since the returned workouts don't have _id, use date and other properties to identify
+            const workoutDate = new Date(workoutData.date);
+            const filteredRunningWorkouts = recentRunningWorkouts.filter(w => {
+              // Compare date, duration and distance to identify the same workout
+              return !(w.date.getTime() === workoutDate.getTime() && 
+                      w.duration === workoutData.duration && 
+                      w.distance === workoutData.distance);
+            });
+            
+            const runningWorkoutsData = filteredRunningWorkouts.map(w => ({
+              date: format(new Date(w.date), 'yyyy-MM-dd'),
+              duration: w.duration,
+              distance: w.distance,
+              pace: w.duration && w.distance ? (w.duration / (w.distance * 1000)) : null
+            }));
+            
+            // Calculate pace for current workout
+            const currentPace = workoutData.duration && workoutData.distance 
+              ? (workoutData.duration / (workoutData.distance * 1000)) 
+              : null;
+            
+            // Format pace for display
+            const formattedPace = currentPace 
+              ? formatPace(currentPace)
+              : "N/A";
+              
+            // Create running-specific analysis prompt
+            analysisPrompt = `You are Aivery, an expert running coach analyzing a user's run.
+
+WORKOUT DATA:
+- Type: ${workoutData.type}
+- Date: ${format(new Date(workoutData.date), 'yyyy-MM-dd')}
+- Name: ${workoutData.name || 'Running workout'}
+- Duration: ${formatDuration(workoutData.duration || 0)}
+- Distance: ${formatDistance(workoutData.distance || 0)}
+- Pace: ${formattedPace}
+- Intensity: ${workoutData.intensity || 'Not specified'}
+${workoutData.cardioDetails?.heartRate ? `- Average Heart Rate: ${workoutData.cardioDetails.heartRate} bpm` : ''}
+${workoutData.notes ? `- Notes: ${workoutData.notes}` : ''}
+
+RECENT RUNNING HISTORY:
+${JSON.stringify(runningWorkoutsData, null, 2)}
+
+USER'S REQUEST:
+"${query}"
+
+Please provide a comprehensive, personalized analysis of this running workout addressing:
+
+1. PERFORMANCE ASSESSMENT:
+   - Analyze pace, distance, and duration
+   - Compare to recent runs to identify trends or improvements
+   - Evaluate intensity level and effort
+
+2. PROGRESS TRACKING:
+   - Note any improvements in pace, endurance, or distance
+   - Identify potential PRs or milestones achieved
+   - Place this run in context of overall training progress
+
+3. SUGGESTIONS FOR IMPROVEMENT:
+   - Provide 2-3 specific, actionable training recommendations
+   - Suggest potential pace/distance goals for future runs
+   - Recommend complementary exercises or training methods
+
+4. RECOVERY RECOMMENDATIONS:
+   - Provide specific recovery advice based on run intensity and duration
+   - Suggest optimal recovery time before next hard run
+   - Recommend recovery activities or strategies
+
+Format your analysis with clear sections using markdown, be encouraging but specific, and provide data-driven insights whenever possible. Focus on metrics that matter most for running.`;
+          } else if (workoutData.type === 'strength') {
+            // Handle strength workout analysis
+            // Get the workout exercises
+            const WorkoutExerciseModel = (await import("@/lib/db/models/workoutExercise")).default;
+            const workoutExercises = await WorkoutExerciseModel.find({ 
+              workoutId: workoutId 
+            })
+            .populate('exerciseId') // Populate the canonical exercise reference
+            .lean();
+
+            // Calculate total volume, reps and sets
+            let totalVolume = 0;
+            let totalReps = 0;
+            let totalSets = 0;
+            let exerciseDetails = "";
+
+            workoutExercises.forEach(ex => {
+              exerciseDetails += `- ${ex.exerciseId?.name || 'Exercise'}: `;
+              let setDetails = "";
+              if (ex.sets && ex.sets.length > 0) {
+                totalSets += ex.sets.length;
+                ex.sets.forEach((set: { reps?: number; weight?: number }) => {
+                  if (set.reps) totalReps += set.reps;
+                  if (set.reps && set.weight) totalVolume += set.reps * set.weight;
+                  setDetails += `${set.reps || 0}x${set.weight || 0}kg, `;
+                });
+                exerciseDetails += setDetails.slice(0, -2) + "\n";
+              } else {
+                exerciseDetails += "No sets recorded\n";
+              }
+            });
+
+            analysisPrompt = `You are Aivery, an expert strength coach analyzing a user's strength workout.
+
+WORKOUT DATA:
+- Type: ${workoutData.type}
+- Date: ${format(new Date(workoutData.date), 'yyyy-MM-dd')}
+- Name: ${workoutData.name || 'Strength workout'}
+- Duration: ${formatDuration(workoutData.duration || 0)}
+- Intensity: ${workoutData.intensity || 'Not specified'}
+${workoutData.notes ? `- Notes: ${workoutData.notes}` : ''}
+
+WORKOUT EXERCISES:
+${exerciseDetails || "No specific exercises recorded"}
+
+WORKOUT METRICS:
+- Total Volume: ${totalVolume}kg
+- Total Reps: ${totalReps}
+- Total Sets: ${totalSets}
+
+USER'S REQUEST:
+"${query}"
+
+Please provide a comprehensive, personalized analysis of this strength workout addressing:
+
+1. EXERCISE SELECTION & BALANCE:
+   - Analyze the exercise selection and muscle group balance
+   - Identify any potential imbalances or gaps in the program
+   - Comment on exercise order and progression logic
+
+2. VOLUME & INTENSITY ASSESSMENT:
+   - Evaluate the overall training volume (${totalVolume}kg)
+   - Assess set and rep schemes for goals alignment
+   - Comment on rest periods and workout density if applicable
+
+3. PROGRESS TRACKING:
+   - Compare to typical strength progressions
+   - Provide context on strength development
+   - Suggest metrics to track for future sessions
+
+4. SUGGESTIONS FOR IMPROVEMENT:
+   - Recommend 2-3 specific adjustments to enhance effectiveness
+   - Suggest complementary exercises or techniques
+   - Propose progressive overload strategies
+
+5. RECOVERY RECOMMENDATIONS:
+   - Provide specific recovery guidelines based on workout intensity
+   - Suggest optimal recovery period for muscle groups trained
+   - Recommend recovery modalities and techniques
+
+Format your analysis with clear sections using markdown, be encouraging but specific, and provide science-based insights whenever possible. Focus on metrics that matter most for strength training.`;
+          } else {
+            // Generic workout analysis prompt for other workout types
+            analysisPrompt = `You are Aivery, an expert fitness coach analyzing a user's ${workoutData.type} workout.
+
+WORKOUT DATA:
+- Type: ${workoutData.type}
+- Date: ${format(new Date(workoutData.date), 'yyyy-MM-dd')}
+- Name: ${workoutData.name || `${capitalizeFirstLetter(workoutData.type)} workout`}
+- Duration: ${formatDuration(workoutData.duration || 0)}
+${workoutData.distance ? `- Distance: ${formatDistance(workoutData.distance)}` : ''}
+${workoutData.calories ? `- Calories: ${workoutData.calories} kcal` : ''}
+- Intensity: ${workoutData.intensity || 'Not specified'}
+${workoutData.cardioDetails?.heartRate ? `- Average Heart Rate: ${workoutData.cardioDetails.heartRate} bpm` : ''}
+${workoutData.notes ? `- Notes: ${workoutData.notes}` : ''}
+
+USER'S REQUEST:
+"${query}"
+
+Please provide a comprehensive, personalized analysis of this ${workoutData.type} workout addressing:
+
+1. PERFORMANCE ASSESSMENT:
+   - Analyze the key metrics for this workout type
+   - Evaluate intensity level and workout structure
+   - Assess workout duration and overall effort
+
+2. TRAINING IMPACT:
+   - Explain the physiological benefits of this workout
+   - Discuss how this workout contributes to fitness goals
+   - Highlight the strengths of the session
+
+3. SUGGESTIONS FOR IMPROVEMENT:
+   - Provide 2-3 specific, actionable recommendations
+   - Suggest potential progressions for future workouts
+   - Recommend complementary training methods
+
+4. RECOVERY RECOMMENDATIONS:
+   - Provide specific recovery advice based on workout intensity
+   - Suggest optimal recovery time before similar workouts
+   - Recommend recovery activities or strategies
+
+Format your analysis with clear sections using markdown, be encouraging but specific, and provide data-driven insights whenever possible. Focus on metrics that matter most for this workout type.`;
+          }
+          
+          // Generate the analysis
+          console.log("[POST] Generating workout analysis");
+          try {
+            const analysisResponse = await generateResponseFromSystemPrompt(
+              analysisPrompt,
+              query,
+              userName,
+              userId,
+              'gpt-4.1-mini' // Use exact model name without date suffix
+            );
+            
+            console.log("[POST] Analysis generation successful");
+            const endTime = Date.now();
+            console.log(`--- [AI Coach Request Completed - Workout Analysis] Latency: ${endTime - startTime}ms ---`);
+            
+            return NextResponse.json({ response: analysisResponse });
+          } catch (error) {
+            console.error("[POST] Error generating analysis:", error);
+            
+            // Fallback to a different model if the specified one fails
+            try {
+              console.log("[POST] Attempting fallback to grok-3-mini model...");
+              const fallbackResponse = await generateResponseFromSystemPrompt(
+                analysisPrompt,
+                query,
+                userName,
+                userId,
+                'grok-3-mini'
+              );
+              
+              console.log("[POST] Fallback analysis generation successful");
+              const endTime = Date.now();
+              console.log(`--- [AI Coach Request Completed - Fallback Analysis] Latency: ${endTime - startTime}ms ---`);
+              
+              return NextResponse.json({ response: fallbackResponse });
+            } catch (fallbackError) {
+              console.error("[POST] Fallback analysis also failed:", fallbackError);
+              return NextResponse.json({ 
+                response: `Sorry ${userName}, I couldn't generate a detailed analysis for your workout right now. Please try again later.` 
+              });
+            }
+          }
+        }
+
+        // **** SPECIAL HANDLING FOR KEYWORD EXPLANATION ****
         const keywordMatch = query.match(/^What is (.*)\?$/i); 
         if (keywordMatch && keywordMatch[1]) {
             const keyword = keywordMatch[1].trim().replace(/\?$/, '').trim();
@@ -1105,7 +1395,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                  // Fall through to normal analysis if keyword is empty
             }
         }
-        // **** END ADDED BLOCK ****
+        // **** END SPECIAL HANDLING FOR KEYWORD EXPLANATION ****
 
         // Check for initial workout context
         if (context && context.type === 'initial_workout' && context.workoutId) {
@@ -1229,7 +1519,7 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
                 const isMultiAspect = aspectsMentioned.length >= 2;
 
                 // --- Model selection ---
-                const planModel = process.env.GROK_MODEL_PLAN || 'gpt-4.1-mini';
+                const planModel = process.env.GROK_MODEL_PLAN || 'grok-3-mini';
 
                 // Fetch last 20 running workouts
                 const runningWorkouts = await getRecentRunningWorkouts(userId, 20);

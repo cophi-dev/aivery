@@ -162,28 +162,33 @@ const landmarkDistances: DistanceComparison[] = [
 // Helper function to find the comparison with the closest distance
 function findClosestComparison(targetDistance: number): DistanceComparison | null {
   if (landmarkDistances.length === 0) {
+    console.warn("No landmark distances available");
     return null;
   }
 
-  let closestMatch: DistanceComparison = landmarkDistances[0];
-  let minDiff = Math.abs(targetDistance - closestMatch.distance_km);
+  try {
+    let closestMatch: DistanceComparison = landmarkDistances[0];
+    let minDiff = Math.abs(targetDistance - closestMatch.distance_km);
 
-  for (let i = 1; i < landmarkDistances.length; i++) {
-    const currentDiff = Math.abs(targetDistance - landmarkDistances[i].distance_km);
-    if (currentDiff < minDiff) {
-      minDiff = currentDiff;
-      closestMatch = landmarkDistances[i];
+    for (let i = 1; i < landmarkDistances.length; i++) {
+      const currentDiff = Math.abs(targetDistance - landmarkDistances[i].distance_km);
+      if (currentDiff < minDiff) {
+        minDiff = currentDiff;
+        closestMatch = landmarkDistances[i];
+      }
     }
+
+    // Optional: Add a threshold to only return if the match is "close enough"
+    // const MAX_ALLOWED_DIFFERENCE_KM = 2; // Example threshold
+    // if (minDiff > MAX_ALLOWED_DIFFERENCE_KM) {
+    //   return null;
+    // }
+
+    return closestMatch;
+  } catch (error) {
+    console.error("Error in findClosestComparison:", error);
+    return null;
   }
-
-  // Optional: Add a threshold to only return if the match is "close enough"
-  // const MAX_ALLOWED_DIFFERENCE_KM = 2; // Example threshold
-  // if (minDiff > MAX_ALLOWED_DIFFERENCE_KM) {
-  //   return null;
-  // }
-
-
-  return closestMatch;
 }
 
 /**
@@ -194,37 +199,59 @@ function findClosestComparison(targetDistance: number): DistanceComparison | nul
  * @returns A descriptive string or null if no suitable comparison is found.
  */
 export function generateDistanceComparisonText(targetDistanceKm: number): string | null {
-  const closest = findClosestComparison(targetDistanceKm);
+  console.log(`Generating distance comparison for ${targetDistanceKm} km`);
+  
+  try {
+    // Validate input
+    if (typeof targetDistanceKm !== 'number') {
+      console.error(`Invalid targetDistanceKm: ${targetDistanceKm} (type: ${typeof targetDistanceKm})`);
+      return null;
+    }
+    
+    if (isNaN(targetDistanceKm) || !isFinite(targetDistanceKm) || targetDistanceKm <= 0) {
+      console.error(`Invalid targetDistanceKm value: ${targetDistanceKm}`);
+      return null;
+    }
+    
+    const closest = findClosestComparison(targetDistanceKm);
+    console.log(`Found closest comparison:`, closest);
 
-  if (!closest) {
-    return null; // Or return a default message
+    if (!closest) {
+      console.warn(`No suitable comparison found for distance: ${targetDistanceKm}km`);
+      return null; // Or return a default message
+    }
+
+    const distanceDifference = targetDistanceKm - closest.distance_km;
+    let comparisonText = `That's roughly the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km)!`;
+
+    // Add context based on the difference
+    if (Math.abs(distanceDifference) < 0.2) { // Very close match
+      comparisonText = `Nice! That's almost exactly the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km). Imagine you're running right there!`;
+    } else if (distanceDifference > 0) { // Target is longer
+      comparisonText = `You went about the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km)... plus an extra ${distanceDifference.toFixed(1)} km! Keep pushing!`;
+    } else { // Target is shorter
+      comparisonText = `You covered about the same distance as going from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km). Great pace!`;
+      // Or adjust to show how much *of* the landmark distance was covered:
+      // const percentage = (targetDistanceKm / closest.distance_km * 100).toFixed(0);
+      // comparisonText = `You covered about ${percentage}% of the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km total). Keep it up!`;
+    }
+
+    // Add more fun variations (can be expanded)
+    const funIntros = [
+      "Picture this:",
+      "Get this:",
+      "Fun fact:",
+      "Imagine:",
+    ];
+    const randomIntro = funIntros[Math.floor(Math.random() * funIntros.length)];
+
+    const result = `${randomIntro} ${comparisonText}`;
+    console.log(`Generated distance comparison text: ${result}`);
+    return result;
+  } catch (error) {
+    console.error(`Error in generateDistanceComparisonText for distance ${targetDistanceKm}km:`, error);
+    return null;
   }
-
-  const distanceDifference = targetDistanceKm - closest.distance_km;
-  let comparisonText = `That's roughly the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km)!`;
-
-  // Add context based on the difference
-  if (Math.abs(distanceDifference) < 0.2) { // Very close match
-    comparisonText = `Nice! That's almost exactly the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km). Imagine you're running right there!`;
-  } else if (distanceDifference > 0) { // Target is longer
-    comparisonText = `You went about the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km)... plus an extra ${distanceDifference.toFixed(1)} km! Keep pushing!`;
-  } else { // Target is shorter
-    comparisonText = `You covered about the same distance as going from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km). Great pace!`;
-    // Or adjust to show how much *of* the landmark distance was covered:
-    // const percentage = (targetDistanceKm / closest.distance_km * 100).toFixed(0);
-    // comparisonText = `You covered about ${percentage}% of the distance from ${closest.from} to ${closest.to} in ${closest.city} (${closest.distance_km} km total). Keep it up!`;
-  }
-
-  // Add more fun variations (can be expanded)
-  const funIntros = [
-    "Picture this:",
-    "Get this:",
-    "Fun fact:",
-    "Imagine:",
-  ];
-  const randomIntro = funIntros[Math.floor(Math.random() * funIntros.length)];
-
-  return `${randomIntro} ${comparisonText}`;
 }
 
 // Example Usage (optional, for testing)

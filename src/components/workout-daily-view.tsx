@@ -666,14 +666,16 @@ const DefaultWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
 
 export default function WorkoutDailyView() {
     const router = useRouter();
-    const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
-    const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
-    const [dailyMetrics, setDailyMetrics] = useState<DailyWorkoutMetrics | null>(null);
-    const [previousDayMetrics, setPreviousDayMetrics] = useState<DailyWorkoutMetrics | null>(null);
-    const [expandedWorkouts, setExpandedWorkouts] = useState<Record<string, boolean>>({});
+    const [workouts, setWorkouts] = useState<WorkoutWithExercises[]>([]);
     const [loading, setLoading] = useState(true);
     const [metricsLoading, setMetricsLoading] = useState(true);
-    const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+    const [expandedWorkouts, setExpandedWorkouts] = useState<Record<string, boolean>>({});
+    const [error, setError] = useState<string | null>(null);
+    const today = useMemo(() => startOfDay(new Date()), []);
+    const [selectedDate, setSelectedDate] = useState<Date>(today);
+    const [dailyMetrics, setDailyMetrics] = useState<DailyWorkoutMetrics | null>(null);
+    const [previousDayMetrics, setPreviousDayMetrics] = useState<DailyWorkoutMetrics | null>(null);
+    const [insightsLoading, setInsightsLoading] = useState(true);
 
     // Memoize dateRange for AiveryInsights with stable reference
     const aiveryDateRange = useMemo(() => {
@@ -693,9 +695,47 @@ export default function WorkoutDailyView() {
             end: endDate
         };
     }, [selectedDate]);
+
+    // Parse date from URL on initial load
+    useEffect(() => {
+        // Check if there's a date parameter in the URL
+        const searchParams = new URLSearchParams(window.location.search);
+        const dateParam = searchParams.get('date');
+        
+        if (dateParam) {
+            try {
+                // Parse the date parameter
+                const parsedDate = parseISO(dateParam);
+                if (isValid(parsedDate)) {
+                    setSelectedDate(startOfDay(parsedDate));
+                }
+            } catch (e) {
+                console.error('Invalid date parameter:', dateParam);
+            }
+        }
+    }, []);
+
+    // Update URL when selected date changes
+    useEffect(() => {
+        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const searchParams = new URLSearchParams(window.location.search);
+        
+        // Only update if the date is not today
+        if (!isSameDay(selectedDate, today)) {
+            searchParams.set('date', dateStr);
+            const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
+            window.history.replaceState({}, '', newUrl);
+        } else {
+            // If date is today, remove the date parameter
+            searchParams.delete('date');
+            const newUrl = searchParams.toString() 
+                ? `${window.location.pathname}?${searchParams.toString()}`
+                : window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+        }
+    }, [selectedDate, today]);
     
     // Track insights loading state separately
-    const [insightsLoading, setInsightsLoading] = useState(true);
     const handleInsightsLoad = useCallback(() => {
         setInsightsLoading(false);
     }, []);
@@ -703,9 +743,6 @@ export default function WorkoutDailyView() {
     const handleInsightsLoadStart = useCallback(() => {
         setInsightsLoading(true);
     }, []);
-
-    // Get today's date for comparison
-    const today = startOfDay(new Date());
 
     // Fetch all workouts on initial load
     useEffect(() => {
