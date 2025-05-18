@@ -1,22 +1,29 @@
 # Post-Workout Check-in
 
 ## Goal
-Describe the purpose and intended outcome of the post-workout check-in feature.
+Provide users with a structured way to record their subjective experience of a workout immediately after completion, including effort level, physical sensations, and psychological state.
 
 ## Scope
-- **Trigger:** When and how the check-in is initiated (e.g., after workout completion).
-- **Data:** What data is collected or used (e.g., user feedback, workout stats).
-- **Output:** What is produced or updated (e.g., insights, recommendations, logs).
+- **Trigger:** Automatically presented after a user completes and saves a workout.
+- **Data:** Collects RPE (Rate of Perceived Exertion), mood, energy levels, and optional notes.
+- **Output:** Stores data with the workout record and uses it to inform AI insights and future recommendations.
 
 ## Implementation Notes
 ### Frontend
-- UI/UX considerations, user flow, and component notes.
+- Modal dialog appears after workout completion with form inputs
+- Uses a 1-10 scale for RPE with visual indicators
+- Simple emoji selection for mood
+- Optional free text field for specific notes
 
 ### Backend/API
-- Endpoints, data handling, validation, and storage.
+- Extends the workout schema with a `postWorkoutFeedback` field
+- POST endpoint to `/api/workouts/{id}/feedback` 
+- Validation ensures RPE is 1-10 and all required fields are present
 
 ### AI Prompt
-- Any LLM prompt design, context, or integration notes.
+- Feedback data is incorporated into workout insight generation
+- System prompt includes instructions to acknowledge user's subjective experience
+- Pattern matching for common complaints to suggest recovery strategies
 
 ## Status
-Planned 
+Implemented 

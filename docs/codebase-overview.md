@@ -51,9 +51,15 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
    - For running/cycling: Real-world landmark comparisons (e.g., "like running from Central Park to Times Square")
    - For strength workouts: Intuitive volume comparisons (e.g., "equivalent to lifting 0.5 cars")
 
-2. **Flexible LLM Integration** - All LLM calls use a central provider-agnostic service, configurable via environment variables.
+2. **Muscle Group Analysis** - Advanced analysis of workout patterns to identify training imbalances:
+   - Interactive visualization of muscle group coverage categorized by body regions
+   - Identification of potentially neglected muscle groups
+   - Customizable time ranges (30 days, 90 days, 6 months)
+   - Exercise frequency tracking with performance history
 
-3. **Strava Integration** - Seamless import of workouts from Strava with proper conversion and normalization.
+3. **Flexible LLM Integration** - All LLM calls use a central provider-agnostic service, configurable via environment variables.
+
+4. **Strava Integration** - Seamless import of workouts from Strava with proper conversion and normalization.
 
 ---
 

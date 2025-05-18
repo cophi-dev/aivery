@@ -27,7 +27,9 @@ The following data are generated algorithmically and are not stored in the datab
 
 2. **Volume Comparisons**: Object weight comparisons (e.g., "lifted 0.5 cars") are calculated on-the-fly in both `src/app/api/ai/workout-highlight/route.ts` and `src/app/api/workout-insight/[workoutId]/route.ts` using predefined object weights.
 
-These comparisons are generated when a workout is viewed and used in workout highlights and insights.
+3. **Muscle Group Analysis**: Training coverage and balance insights are calculated dynamically in `src/app/api/workout-analysis/route.ts` by analyzing exercise muscle groups. The analysis normalizes muscle group terminology, weighs primary vs. secondary involvement, and identifies potentially neglected areas based on frequency thresholds.
+
+These analytical outputs are generated when requested and used for insights rather than being stored persistently.
 
 ## Collection Details
 
