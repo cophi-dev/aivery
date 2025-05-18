@@ -219,13 +219,42 @@ export async function POST(req: Request) {
       provider,
       model,
       messages: [
-        { role: 'system', content: `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Personal Records:\n${personalRecordsString}\n- Current Goals/Targets:\n${goalsString}\n\nRESPONSE GUIDELINES:\n- Use the USER CONTEXT above to personalize your answer.\n- If user data is missing or unclear, provide a general, actionable suggestion based on best fitness coaching practices. Only ask for clarification if essential.\n- Be concise, actionable, and supportive. Use markdown formatting.` },
+        { role: 'system', content: `You are Aivery, a friendly and insightful AI fitness coach.
+
+USER CONTEXT:
+- Name: ${userName}
+- Last 3 Workouts:
+${last3WorkoutsString}
+- Personal Records:
+${personalRecordsString}
+- Current Goals/Targets:
+${goalsString}
+
+RESPONSE GUIDELINES:
+- Use the USER CONTEXT above to personalize your answer.
+- If user data is missing or unclear, provide a general, actionable suggestion based on best fitness coaching practices. Only ask for clarification if essential.
+- Be concise, actionable, and supportive.
+
+FORMATTING REQUIREMENTS:
+- Use proper markdown formatting to improve readability:
+  - Use ## for main headings and ### for subheadings
+  - Use bullet lists (- item) for listing items
+  - Use numbered lists (1. step) for sequential steps
+  - Use **bold** for emphasis and *italics* for secondary emphasis
+  - Use \`code\` for measurements, exercises, or specific training terms
+  - Use > blockquotes for important tips or quotes
+  - For tables, use proper markdown table format
+
+- Structure complex answers with clear sections, using headings to separate them
+- For workout plans or exercise routines, format them clearly with proper spacing and organization
+- Ensure all formatted elements have proper spacing before and after them` },
         ...(Array.isArray(messageHistory) ? messageHistory.filter(m => m && m.role && m.content) : []),
         { role: 'user', content: currentQuery }
       ],
       max_tokens: 1024,
       temperature: 0.7,
       stream: false,
+      fallbackResponse: `I'll do my best to answer your fitness question: "${currentQuery}"`,
     });
     grokUsageData = data.usage;
     let aiResponse = '';
@@ -252,32 +281,12 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Chat API Error:", error);
 
-    let userErrorMessage = "Sorry, I encountered an error. Please try again.";
-    let statusCode = 500;
-
-    if (error.status === 400 && error?.error?.type === "invalid_request_error") {
-      userErrorMessage = `There was an issue with the request format: ${error.error.message}`;
-      statusCode = 400;
-    } else if (error.status === 401 || error.status === 403) {
-      userErrorMessage =
-        "There seems to be an authentication issue with the AI service.";
-      statusCode = error.status;
-    } else if (error.status === 429) {
-      userErrorMessage =
-        "The AI service is experiencing high traffic. Please try again shortly.";
-      statusCode = 429;
-    }
-    if (
-      userErrorMessage.includes("API key") ||
-      userErrorMessage.includes("Grok")
-    ) {
-      userErrorMessage =
-        "An unexpected error occurred while communicating with the AI service.";
-    }
-
-    return new Response(userErrorMessage, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-      status: statusCode,
+    // Instead of returning an error, return a friendly fallback message
+    const fallbackResponse = `I'll do my best to help with your question, although I'm having some technical difficulties at the moment.`;
+    
+    return NextResponse.json({ 
+      response: fallbackResponse,
+      error: error instanceof Error ? error.message : String(error) // For logging purposes only
     });
   }
 }

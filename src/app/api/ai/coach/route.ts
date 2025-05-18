@@ -849,7 +849,7 @@ async function compareMetricBetweenPeriods(
 // --- Helper Function to Get Direct AI Text Response --- V4 (Concise Slideshow Content)
 async function getDirectTextResponse(query: string, userId: string, userName: string, userContext: { preferences?: IUser['aiPreferences'] | null, exercisePRs?: IExercisePR[] | null }): Promise<string | null> { 
     const provider = (process.env.LLM_PROVIDER_DIRECT as LLMProvider) || 'grok';
-    const model = process.env.LLM_MODEL_DIRECT || 'gpt-4.1-mini';
+    const model = process.env.LLM_MODEL_DIRECT || 'gpt-4.1-mini-2025-04-14';
     if (!process.env.GROK_API_KEY && provider === 'grok') {
         console.error("[getDirectTextResponse] GROK_API_KEY not configured.");
         return "Sorry, the AI is unavailable right now.";
@@ -974,11 +974,9 @@ async function generateResponseFromSystemPrompt(systemPrompt: string, userQuery:
   // Validate and normalize model name
   let model = modelOverride || process.env.LLM_MODEL_PLAN || 'grok-3-mini';
   
-  // Strip any date suffixes from model names (e.g., gpt-4.1-mini-2025-04-14 -> gpt-4.1-mini)
-  if (model.includes('-202')) {
-    model = model.split('-202')[0]; 
-    console.log(`[generateResponseFromSystemPrompt] Normalized model name to: ${model}`);
-  }
+  // Keep full model name including date suffixes for OpenAI models
+  // Previously we were stripping date suffixes, but this causes issues with OpenAI models
+  // that require the full name including the date
   
   // Check for API key if using grok
   if (!process.env.GROK_API_KEY && provider === 'grok') {
@@ -1328,7 +1326,7 @@ Format your analysis with clear sections using markdown, be encouraging but spec
               query,
               userName,
               userId,
-              'gpt-4.1-mini' // Use exact model name without date suffix
+              'gpt-4.1-mini-2025-04-14' // Use full model name with date suffix
             );
             
             console.log("[POST] Analysis generation successful");
@@ -1651,7 +1649,7 @@ RUNNING HISTORY SUMMARY:
                 let planResponse: string;
                 const llmProvider = process.env.LLM_PROVIDER || 'grok';
                 if (llmProvider === 'openai') {
-                  // Use OpenAI GPT-4.1-mini for plan generation
+                  // Use OpenAI GPT-4.1-mini-2025-04-14 for plan generation
                   const openaiApiKey = process.env.OPENAI_API_KEY;
                   if (!openaiApiKey) throw new Error('OPENAI_API_KEY not set');
                   const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -1786,7 +1784,11 @@ RUNNING HISTORY SUMMARY:
         const validation = QueryAnalysisSchema.safeParse(analysis);
         if (!validation.success) {
             console.error("Invalid analysis structure:", validation.error);
-            return NextResponse.json({ error: "Internal error during query analysis." }, { status: 500 });
+            console.log("[API /coach] Using fallback for failed validation");
+            // Use a fallback response instead of an error
+            return NextResponse.json({ 
+                response: `I'll do my best to help with your fitness question: "${query}"` 
+            });
         }
 
         // Allow 'unknown' as a valid intent type for fallback
@@ -1923,49 +1925,91 @@ Based on the conversation history and follow-up comment, respond helpfully to co
               ? userPreferences.fitnessGoals
               : 'No goals specified.';
             // --- STRICT CONTEXT-ONLY SUGGESTION PROMPT ---
-            let proactivePrompt = `You are Aivery, a friendly and insightful AI fitness coach.\n\nUSER CONTEXT:\n- Name: ${userDisplayName}\n- Last 3 Workouts:\n${last3WorkoutsString}\n- Recent PRs:\n${prString}\n- Current Goals/Targets:\n${goalsString}\n\nThe user asked: \"${query}\"\n\nIMPORTANT RULES:\n- You MUST ONLY reference exercises, PRs, and activities that are actually present in the USER CONTEXT above.\n- Do NOT invent or mention any exercise, PR, or activity that is not listed in the context.\n- If suggesting a PR-based progression, use only the PRs listed above, by name and value.\n- If the context does not include a certain exercise or PR, do not mention it.\n- Be concise, positive, and tailor the suggestion to their context.\n- Do not ask for clarification.\n- DO NOT say 'Here\'s a suggestion...' or 'Based on your recent activity...'. Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'`;
-            const grokApiKey = process.env.GROK_API_KEY;
-            if (!grokApiKey) {
-              return NextResponse.json({ error: "AI service is unavailable due to configuration issues." }, { status: 503 });
-            }
+            let proactivePrompt = `You are Aivery, a friendly and insightful AI fitness coach.
+
+USER CONTEXT:
+- Name: ${userDisplayName}
+- Last 3 Workouts:
+${last3WorkoutsString}
+- Recent PRs:
+${prString}
+- Current Goals/Targets:
+${goalsString}
+
+The user asked: "${query}"
+
+IMPORTANT RULES:
+- You MUST ONLY reference exercises, PRs, and activities that are actually present in the USER CONTEXT above.
+- Do NOT invent or mention any exercise, PR, or activity that is not listed in the context.
+- If suggesting a PR-based progression, use only the PRs listed above, by name and value.
+- If the context does not include a certain exercise or PR, do not mention it.
+- Be concise, positive, and tailor the suggestion to their context.
+- Do not ask for clarification.
+- DO NOT say 'Here\'s a suggestion...' or 'Based on your recent activity...'. Instead, give a concrete, actionable workout or activity, e.g.: 'A 20–30 minute tempo run today would be a great fit.'
+
+FORMATTING REQUIREMENTS:
+- Use proper markdown formatting to improve readability:
+  - Use ## for main headings and ### for subheadings
+  - Use bullet lists (- item) for listing items
+  - Use numbered lists (1. step) for sequential steps
+  - Use **bold** for emphasis and *italics* for secondary emphasis
+  - Use \`code\` for measurements, exercises, or specific training terms
+  - Use > blockquotes for important tips or quotes
+  - For tables, use proper markdown table format
+
+- Structure complex answers with clear sections, using headings to separate content
+- For workout plans or exercise routines, format them clearly with proper spacing and organization
+- Ensure all formatted elements have proper spacing before and after them`;
+            
+            // Use the centralized LLM service instead of direct API calls
+            const model = process.env.LLM_MODEL_CHAT || 'gpt-4.1-mini-2025-04-14';
+            const provider = (process.env.LLM_PROVIDER_CHAT as LLMProvider) || 'openai';
+            const fallbackResponse = `I'll do my best to help with your fitness question: "${query}"`;
+            
             let aiResponse: string = '';
             let attempt = 0;
             let lastPrompt = proactivePrompt;
+            
             while (attempt < 2) {
-              const fetchResponse = await fetch('https://api.x.ai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${grokApiKey}`
-                },
-                body: JSON.stringify({
-                  model: 'gpt-4.1-mini',
+              try {
+                // Use the centralized LLM service
+                const data = await callLLM({
+                  provider,
+                  model,
                   messages: [
-                      { role: 'system', content: lastPrompt },
-                      { role: 'user', content: query }
+                    { role: 'system', content: lastPrompt },
+                    { role: 'user', content: query }
                   ],
                   max_tokens: 2048,
                   temperature: 0.7,
                   stream: false,
-                })
-              });
-              if (!fetchResponse.ok) {
-                const errorBody = await fetchResponse.text();
-                return NextResponse.json({ error: "Sorry, there was an error communicating with the AI." }, { status: 502 });
-              }
-              const data = await fetchResponse.json();
-              if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-                aiResponse = data.choices[0].message.content.trim();
-                // If too generic, retry with a more forceful prompt
-                if ((/here\'?s a suggestion|based on your recent activity/i.test(aiResponse) || aiResponse.length < 40) && attempt === 0) {
-                  lastPrompt += "\n\nYou must provide a concrete, actionable workout or activity. Do NOT repeat generic phrases. Give a specific session or activity.";
-                  attempt++;
-                  continue;
+                  fallbackResponse
+                });
+                
+                if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+                  aiResponse = data.choices[0].message.content.trim();
+                  
+                  // If too generic, retry with a more forceful prompt
+                  if ((/here\'?s a suggestion|based on your recent activity/i.test(aiResponse) || aiResponse.length < 40) && attempt === 0) {
+                    lastPrompt += "\n\nYou must provide a concrete, actionable workout or activity. Do NOT repeat generic phrases. Give a specific session or activity.";
+                    attempt++;
+                    continue;
+                  }
                 }
+                
+                break;
+              } catch (error) {
+                console.error(`[API /coach] LLM Error (attempt ${attempt + 1}):`, error);
+                // If this is the second attempt or there's a critical error, use fallback
+                if (attempt > 0) {
+                  aiResponse = fallbackResponse;
+                  break;
+                }
+                attempt++;
               }
-              break;
             }
-            return NextResponse.json({ response: aiResponse || "Here's a suggestion based on your recent activity and goals." });
+            
+            return NextResponse.json({ response: aiResponse || fallbackResponse });
           }
           // If no context, fallback to existing suggestion or clarification
           if (response_suggestion) {

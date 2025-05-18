@@ -263,23 +263,25 @@ export default function DashboardPage() {
                             />
                             {/* Add Personal Records and Spotlight cards in a grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
-                                <PersonalRecordsCard 
-                                    exercisePRs={metrics.exercisePRs || []}
-                                    overallPRs={{
-                                        longestRun: metrics.overallPRs?.longestRun ? {
-                                            ...metrics.overallPRs.longestRun,
-                                            workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
-                                        } : undefined,
-                                        fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
-                                            ...metrics.overallPRs.fastest5kPace,
-                                            workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
-                                        } : undefined,
-                                        maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
-                                            ...metrics.overallPRs.maxStrengthVolume,
-                                            workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
-                                        } : undefined
-                                    }}
-                                />
+                                <div className="flex flex-col gap-8">
+                                    <PersonalRecordsCard 
+                                        exercisePRs={metrics.exercisePRs || []}
+                                        overallPRs={{
+                                            longestRun: metrics.overallPRs?.longestRun ? {
+                                                ...metrics.overallPRs.longestRun,
+                                                workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
+                                            } : undefined,
+                                            fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
+                                                ...metrics.overallPRs.fastest5kPace,
+                                                workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
+                                            } : undefined,
+                                            maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
+                                                ...metrics.overallPRs.maxStrengthVolume,
+                                                workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
+                                            } : undefined
+                                        }}
+                                    />
+                                </div>
                                 <div className="flex flex-col h-full min-h-0 gap-4">
                                   <div className="flex-1 flex flex-col gap-4">
                                     <SpotlightCards />

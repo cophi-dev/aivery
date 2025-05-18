@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useSession } from "next-auth/react"
 import UserNicknameDisplay from "@/components/UserNicknameDisplay"
+import ReactMarkdown from 'react-markdown'
 
 type ChatMessage = {
   id: string;
@@ -219,7 +220,7 @@ export function PersistentChat() {
                     }`}
                   >
                     <div className={`${message.role === "assistant" ? "prose prose-sm dark:prose-invert" : ""}`}>
-                      <p>{message.content}</p>
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
                     </div>
                   </div>
                 </div>

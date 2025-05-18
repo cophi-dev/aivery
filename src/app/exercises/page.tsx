@@ -6,7 +6,7 @@ import {
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Search, Dumbbell } from "lucide-react"
+import { Plus, Search, Dumbbell, BarChart2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ExerciseData } from "@/types/db"
 import { redirect } from "next/navigation"
@@ -66,12 +66,20 @@ export default async function ExercisesPage({
           <h1 className="text-3xl font-bold tracking-tight">Exercises</h1>
           <p className="text-muted-foreground mt-1">Browse and manage your exercise library</p>
         </div>
-        <Link href="/exercises/new">
-          <Button className="bg-primary hover:bg-primary/90">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Exercise
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/exercises/analysis">
+            <Button variant="outline" className="flex items-center">
+              <BarChart2 className="h-4 w-4 mr-2" />
+              Muscle Group Analysis
+            </Button>
+          </Link>
+          <Link href="/exercises/new">
+            <Button className="bg-primary hover:bg-primary/90">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Exercise
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center space-x-4 bg-card p-4 rounded-lg border shadow-sm">

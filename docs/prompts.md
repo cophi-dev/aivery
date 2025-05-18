@@ -20,7 +20,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Where Used:**
   - `src/app/api/ai/workout-highlight/route.ts` (`createHighlightPrompt`)
   - Referenced in `src/app/api/ai/coach/route.ts` (legacy fallback)
-- **Model Used:** `grok-3-mini-latest` (configurable via env)
+- **Model Used:** `gpt-4.1-mini-2025-04-14` (configurable via env)
 - **Input:**
   - User name
   - Workout data (type, duration, distance, volume, notes)
@@ -39,7 +39,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Where Used:**
   - `src/app/api/quotes/route.ts`
   - `src/app/api/quotes/dynamic/route.ts` (`generateAIQuote`)
-- **Model Used:** `grok-3-mini-latest` (configurable via env)
+- **Model Used:** `gpt-4.1-mini-2025-04-14` (configurable via env)
 - **Input:**
   - User nickname
   - Workout count
@@ -61,7 +61,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Generates a welcoming, insightful opening message when a user clicks a workout in their history, highlighting a stat or trend and asking an open-ended question.
 - **Where Used:**
   - `src/app/api/ai/coach/route.ts` (`generateInitialWorkoutInsight`)
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `gpt-4.1-mini-2025-04-14`
 - **Input:**
   - User name
   - Current workout details
@@ -76,7 +76,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Produces a concise, actionable running plan (variable duration) based on user goals, PRs, and recent running history.
 - **Where Used:**
   - `src/app/api/ai/coach/route.ts` (plan generation logic)
-- **Model Used:** `grok-3-mini-latest` (or as set by env)
+- **Model Used:** `gpt-4.1-mini-2025-04-14` (or as set by env)
 - **Input:**
   - User name
   - User goal
@@ -113,7 +113,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Summarizes a user's weekly activity, trends, and provides 1–2 actionable insights.
 - **Where Used:**
   - `src/app/api/ai/coach/route.ts` (systemPrompt for review)
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `gpt-4.1-mini-2025-04-14`
 - **Input:**
   - User name
   - Period workout data
@@ -126,7 +126,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Generates a multi-slide, markdown-formatted explanation of a fitness concept, tailored to the user's context.
 - **Where Used:**
   - `src/app/api/ai/coach/route.ts` (`getDirectTextResponse`)
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `gpt-4.1-mini-2025-04-14`
 - **Input:**
   - User name
   - Query (concept to explain)
@@ -145,7 +145,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Where Used:**
   - `src/app/api/daily-insight/route.ts` (systemPrompt)
   - Consumed by dashboard components (e.g., `DailyInsightCard.tsx`)
-- **Model Used:** `grok-3-mini-latest` (configurable via env)
+- **Model Used:** `gpt-4.1-mini-2025-04-14` (configurable via env)
 - **Input:**
   - User nickname/name
   - Current day of week
@@ -177,7 +177,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Handles chat interactions, providing concise, helpful, and context-aware responses about fitness, health, and wellness.
 - **Where Used:**
   - `src/app/api/chat/route.ts` (systemPrompt)
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `gpt-4.1-mini-2025-04-14`
 - **Input:**
   - User name
   - Recent workouts (last 3)
@@ -215,7 +215,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Cleans up and structures user-entered training preferences into a clear, first-person paragraph.
 - **Where Used:**
   - `src/app/api/optimize-text/route.ts` (field === 'trainingPreferences')
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `gpt-4.1-mini-2025-04-14`
 - **Input:**
   - Raw user preference text
   - Optional: user context
@@ -228,7 +228,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
 - **Description:** Cleans up and structures user-entered fitness goals into a clear, first-person paragraph.
 - **Where Used:**
   - `src/app/api/optimize-text/route.ts` (field === 'fitnessGoals')
-- **Model Used:** `grok-3-mini-latest`
+- **Model Used:** `gpt-4.1-mini-2025-04-14`
 - **Input:**
   - Raw user goals text
   - Optional: user context

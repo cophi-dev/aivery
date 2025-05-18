@@ -9,7 +9,7 @@
 - **Frontend & Backend**: Next.js (App Router)
 - **Database**: MongoDB Atlas
 - **Authentication & Data Sync**: Strava API
-- **AI Services**: Grok
+- **AI Services**: OpenAI (gpt-4.1-mini-2025-04-14)
 - **Payments**: Stripe
 
 ---
@@ -48,3 +48,7 @@
 git clone https://github.com/yourname/aivery.git
 cd aivery
 npm install
+
+# Configure environment variables (standardize on gpt-4.1-mini-2025-04-14)
+./scripts/dev/update-llm-env.js
+# Then edit .env.local to add your OpenAI API key

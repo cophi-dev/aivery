@@ -485,7 +485,7 @@ Both `/api/chat` and `/api/ai/coach` endpoints now enforce that vague queries (i
 ## LLM Integration Architecture (2024)
 
 - **Centralized LLM Helper:** All LLM (Large Language Model) API calls are routed through `src/lib/services/llm.ts` using the `callLLM` helper function.
-- **Provider/Model Selection:** LLM provider and model are selected via environment variables (e.g., `LLM_PROVIDER_*`, `LLM_MODEL_*`). No hardcoded model names or API URLs remain in the codebase.
+- **Provider/Model Selection:** LLM provider and model are standardized to use OpenAI with `gpt-4.1-mini-2025-04-14`. All configuration is done via environment variables (e.g., `LLM_PROVIDER_*`, `LLM_MODEL_*`).
 - **Provider/Model Logging:** Every LLM call logs the provider and model used for traceability and debugging.
 - **Prompt Handling:** Prompt fallback, retry logic for vague queries, and follow-up instruction handling are implemented centrally for consistency and maintainability.
 - **No Direct Fetch Calls:** All previous direct fetch calls to LLM APIs have been removed or refactored.

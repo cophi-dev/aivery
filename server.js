@@ -3,6 +3,43 @@ const { parse } = require('url');
 const next = require('next');
 const bodyParser = require('body-parser');
 
+// Import and load the LLM standardization module
+// This needs to be loaded prior to Next.js initialization
+console.log('🔄 Loading LLM configuration...');
+try {
+  // Will be built by Next.js during development/build
+  const llmConfig = require('./src/lib/services/llm-config');
+  
+  // Standardize all LLM models to use a consistent provider/model
+  llmConfig.ensureStandardModels();
+  
+  // Validate OpenAI API key is present
+  if (!llmConfig.validateApiKeyConfig()) {
+    console.warn('\n⚠️  WARNING: OPENAI_API_KEY is not properly configured in environment variables!');
+    console.warn('   LLM features may not work correctly.');
+    
+    // Set up backup API keys if available
+    if (process.env.GROK_API_KEY) {
+      console.log('🔑 Found GROK_API_KEY, will use as fallback');
+      process.env.LLM_PROVIDER = 'grok';
+      process.env.LLM_PROVIDER_CHAT = 'grok';
+    } else if (process.env.GEMINI_API_KEY) {
+      console.log('🔑 Found GEMINI_API_KEY, will use as fallback');
+      // Note: Gemini support is currently stubbed in the llm.ts service
+      process.env.LLM_PROVIDER = 'gemini';
+      process.env.LLM_PROVIDER_CHAT = 'gemini';
+    } else {
+      console.warn('❌ No fallback API keys found. Chat functionality will use generic responses.');
+    }
+  } else {
+    console.log(`✅ LLM standardized to ${llmConfig.getStandardProvider()} (${llmConfig.getStandardModel()})`);
+  }
+} catch (error) {
+  console.error('❌ Failed to load LLM configuration:', error.message);
+  console.warn('⚠️  WARNING: LLM standardization failed! Features may use inconsistent models.');
+  console.log('🔄 Continuing server startup with default configuration...');
+}
+
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = process.env.PORT || 3000;
