@@ -228,7 +228,7 @@ export default function DashboardPage() {
                                             <h4 className="font-medium text-primary/90 dark:text-foreground">Start Fresh</h4>
                                         </div>
                                         <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Log workouts manually or connect Strava for auto-syncing new ones.</p>
-                                        <Link href="/log-workout">
+                                        <Link href="/workouts/new">
                                             <Button variant="outline" size="sm" className="w-full mb-2 bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
                                                 Log First Workout <ArrowRight className="w-4 h-4 ml-1" />
                                             </Button>

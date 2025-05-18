@@ -184,6 +184,7 @@ This document catalogs all the AI prompts and templates used throughout the Aive
   - Personal records (e.g. best 5K, longest run)
   - Current goals or targets
   - User conversation history
+  - Optional: Weekly review context (when accessed from review screens)
 - **Expected Output:**
   - Markdown text with formatting
 - **System Prompt (Current):**
@@ -206,9 +207,26 @@ This document catalogs all the AI prompts and templates used throughout the Aive
   - Be concise, actionable, and supportive. Use markdown formatting.
   ```
 
+- **Weekly Review Context (When Available):**
+
+  ```
+  You are Aivery, an AI fitness coach. The user is asking about their {reviewPeriod} workouts.
+
+  Based on the weekly review data I'm providing, answer the user's question about their workout performance.
+
+  Weekly Review Data:
+  - Period: {reviewPeriod}
+  - Title: {reviewTitle}
+  {reviewSections}
+
+  IMPORTANT: Use the above context to give a personalized response to the user's query: "{userQuery}".
+  Format using markdown for readability, and be specific in your analysis of their performance.
+  ```
+
 - **Notes:**
   - The system prompt now always includes the user's last 3 workouts, personal records, and current goals/targets if available.
   - If user data is missing or unclear, the AI provides a general, actionable suggestion based on best fitness coaching practices (fallback rule), and only asks for clarification if essential.
+  - When launched from a weekly review via the "Talk to Aivery about it" button, the chat receives additional context from the review data stored in sessionStorage, enabling more relevant follow-up conversations about the weekly performance data.
 
 ### Training Preferences Optimization
 - **Prompt ID:** `training-preferences-optimization-v1`

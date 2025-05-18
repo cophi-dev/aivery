@@ -19,6 +19,7 @@ import { VERSION, getTimestamp } from "./version"
 import { default as NextDynamic } from "next/dynamic"
 // Import Vercel Analytics
 import { Analytics } from '@vercel/analytics/react';
+import { cn } from "@/lib/utils"
 
 // Import CacheBuster with client-side only rendering
 const CacheBuster = NextDynamic(() => import("@/components/cache-buster"), { ssr: false })
@@ -70,7 +71,7 @@ export default async function RootLayout({
   const session = await getServerSession(authOptions)
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={cn('antialiased', poppins.variable, inter.variable, dmSerif.variable)}>
       <head>
         {/* Force cache busting for all resources */}
         <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -139,8 +140,15 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="120x120" href="/icons/apple-icon-120x120.png" /> 
         */}
+        {/* Custom animation styles */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes gentle-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+          }
+        `}} />
       </head>
-      <body className={`${poppins.variable} ${inter.variable} ${dmSerif.variable} font-sans antialiased`} suppressHydrationWarning>
+      <body className={cn('min-h-screen bg-background text-foreground font-sans antialiased', poppins.variable, inter.variable, dmSerif.variable)} suppressHydrationWarning>
         {/* Initial Load Splash Screen - Apply background variable directly */}
         <div
           id="splash-screen"

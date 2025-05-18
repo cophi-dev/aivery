@@ -73,6 +73,12 @@
   - [ ] Neglected muscle groups are properly identified
   - [ ] Time period filters (30/90/180 days) work correctly
 - [ ] Post-workout logic (if enabled) behaves correctly
+- [ ] Weekly review UI functions correctly
+  - [ ] "Log First Workout" button links to "/workouts/new"
+  - [ ] Close button (X) appears in review modal
+  - [ ] BlurText loading animation transitions smoothly
+  - [ ] "Talk to Aivery about it" floating button appears on all review screens
+  - [ ] Weekly review context transfers properly to chat when using the chat button
 
 ---
 

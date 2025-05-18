@@ -396,6 +396,45 @@ Keep your answer factual, evidence-based, and avoid unnecessary jargon. Format u
         inputRef.current.dataset.queryType = "";
       }
     }
+    // Handle weekly review analysis queries
+    else if (currentMessageContent.toLowerCase().includes("tell me more about my") && 
+             currentMessageContent.toLowerCase().includes("workout")) {
+      // Check if we already have context from sessionStorage
+      if (typeof window !== 'undefined') {
+        try {
+          const reviewDataString = sessionStorage.getItem('aivery_weekly_review');
+          if (reviewDataString) {
+            const reviewData = JSON.parse(reviewDataString);
+            
+            context = {
+              requestType: 'analyze_workout_review',
+              reviewData: reviewData,
+              reviewPeriod: reviewData.period,
+              systemPrompt: `
+You are Aivery, an AI fitness coach. The user is asking about their ${reviewData.period} workouts.
+
+Based on the weekly review data I'm providing, answer the user's question about their workout performance.
+
+Weekly Review Data:
+- Period: ${reviewData.period}
+- Title: ${reviewData.title}
+${reviewData.sections ? 
+  reviewData.sections.map((s: {title: string, content: string}) => `- ${s.title}: ${s.content.substring(0, 100)}...`).join('\n') 
+  : ''}
+
+IMPORTANT: Use the above context to give a personalized response to the user's query: "${currentMessageContent}".
+Format using markdown for readability, and be specific in your analysis of their performance.
+`
+            };
+            
+            // Clear sessionStorage after using it
+            sessionStorage.removeItem('aivery_weekly_review');
+          }
+        } catch (error) {
+          console.error("[Chat] Error processing review data:", error);
+        }
+      }
+    }
     // Handle workout plan requests
     else if (!workoutType && isPlanRequest) {
       // Detect workout type from the input text
@@ -542,10 +581,77 @@ Format the response using markdown with clear headings and bullet points.
   // Set up initial welcome message
   useEffect(() => {
     if (messages.length === 0) {
+      // Check for weekly review context in sessionStorage
+      if (typeof window !== 'undefined') {
+        try {
+          const chatContext = sessionStorage.getItem('aivery_chat_context');
+          if (chatContext === 'weekly_review') {
+            const reviewDataString = sessionStorage.getItem('aivery_weekly_review');
+            if (reviewDataString) {
+              const reviewData = JSON.parse(reviewDataString);
+              
+              // Create a welcome message that acknowledges the review
+              const customWelcome = `I see you want to discuss your ${reviewData.period} workouts. What would you like to know about them?`;
+              setMessages([{ id: `ai-welcome-${Date.now()}`, role: "assistant", content: customWelcome }]);
+              
+              // Clear the sessionStorage to prevent duplicate handling
+              sessionStorage.removeItem('aivery_chat_context');
+              sessionStorage.removeItem('aivery_weekly_review');
+              
+              // Set input value to trigger the user's first question
+              setTimeout(() => {
+                setInputValue(`Tell me more about my ${reviewData.period} workout performance`);
+              }, 500);
+              
+              return; // Skip the standard welcome message
+            }
+          }
+        } catch (error) {
+          console.error("[Chat] Error processing session storage data:", error);
+          // Continue with normal welcome message if there's an error
+        }
+      }
+      
+      // Default welcome message if no review context found
       const welcomeMessage = getRandomWelcomeMessage(userDisplayName);
       setMessages([{ id: `ai-welcome-${Date.now()}`, role: "assistant", content: welcomeMessage }]);
     }
   }, [messages.length, userDisplayName]);
+
+  // Handle case when user submits query about weekly review
+  useEffect(() => {
+    // This effect watches for the special query set by the first effect
+    const isReviewQuery = inputValue.toLowerCase().includes("tell me more about my") && 
+                         inputValue.toLowerCase().includes("workout performance");
+    
+    if (isReviewQuery && !isLoading && typeof window !== 'undefined') {
+      try {
+        const reviewDataString = sessionStorage.getItem('aivery_weekly_review');
+        if (reviewDataString) {
+          const reviewData = JSON.parse(reviewDataString);
+          
+          // Automatically submit this query with the review data as context
+          const context = {
+            requestType: 'analyze_workout_review',
+            reviewData: reviewData,
+            reviewPeriod: reviewData.period
+          };
+          
+          // Copy the input before clearing it
+          const query = inputValue;
+          setInputValue('');
+          
+          // Send the message with the context
+          sendMessage(query, context);
+          
+          // Clear sessionStorage after using it
+          sessionStorage.removeItem('aivery_weekly_review');
+        }
+      } catch (error) {
+        console.error("[Chat] Error processing review data:", error);
+      }
+    }
+  }, [inputValue, isLoading, sendMessage]);
 
   function getRandomWelcomeMessage(name: string): string {
     const welcomeMessages = [

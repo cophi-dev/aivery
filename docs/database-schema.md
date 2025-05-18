@@ -29,6 +29,8 @@ The following data are generated algorithmically and are not stored in the datab
 
 3. **Muscle Group Analysis**: Training coverage and balance insights are calculated dynamically in `src/app/api/workout-analysis/route.ts` by analyzing exercise muscle groups. The analysis normalizes muscle group terminology, weighs primary vs. secondary involvement, and identifies potentially neglected areas based on frequency thresholds.
 
+4. **Cross-Feature Context**: Session storage is used to temporarily preserve context between features (e.g., weekly review data when transitioning to chat). This data is not persisted in the database but maintained in the browser session until consumed or explicitly cleared.
+
 These analytical outputs are generated when requested and used for insights rather than being stored persistently.
 
 ## Collection Details

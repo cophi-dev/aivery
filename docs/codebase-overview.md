@@ -25,7 +25,9 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
     - PRs display shows highest values sorted by value DESC, not random samples
   - `/exercises/`, `/exercise/` (exercise display, PRs)
   - `/ui/` (shared UI primitives: buttons, cards, dialogs, etc.)
+    - `/BlurText` - Text animation component with blur-in effect for loading transitions
   - `/features/` (feature-specific modals, slideshows)
+    - `InfoDisplayModal.tsx` - Enhanced weekly review modal with cross-app context sharing
   - `/forms/`, `/calendar/`, `/landing/`, `/providers/` (specialized UI)
 - **/docs/** – Documentation:
   - `database-schema.md` (MongoDB schema, relationships)
@@ -60,6 +62,13 @@ Aivery is an AI-powered fitness platform that helps users track workouts, sync d
 3. **Flexible LLM Integration** - All LLM calls use a central provider-agnostic service, configurable via environment variables.
 
 4. **Strava Integration** - Seamless import of workouts from Strava with proper conversion and normalization.
+
+5. **Enhanced Weekly Review** - Improved user experience with:
+   - Persistent "Talk to Aivery about it" floating chat bubble with cross-app context sharing
+   - Smoother loading transitions with BlurText animation component
+   - Close button (X) in modals for easier navigation
+   - Fixed navigation links to match main app routes (e.g., "/workouts/new" for logging)
+   - Session storage for context preservation between review and chat features
 
 ---
 

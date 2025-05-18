@@ -14,6 +14,15 @@ module.exports = {
       screens: {
         'xs': '480px',
       },
+      keyframes: {
+        'gentle-float': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-5px)' },
+        }
+      },
+      animation: {
+        'float': 'gentle-float 6s ease-in-out infinite',
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",

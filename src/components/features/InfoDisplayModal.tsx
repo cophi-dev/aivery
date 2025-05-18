@@ -3,10 +3,10 @@
 import React, { useState, useEffect, useRef, TouchEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogOverlay } from "@/components/ui/dialog";
-import { ArrowLeft, ArrowRight, X, MessageSquare } from 'lucide-react';
+import { ArrowLeft, ArrowRight, X, MessageSquare, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { TextGenerateEffect } from '@/components/ui/text-generate-effect';
-import { SplashCursor } from "@/components/ui/splash-cursor";
+import { BlurText } from '@/components/ui/animated-blur-text';
 import { cn } from '@/lib/utils';
 
 interface InfoDisplayModalProps {
@@ -184,11 +184,18 @@ export function InfoDisplayModal({
           transform: 'none',
         }}
       >
-        {/* Header with only Title and Close button */}
+        {/* Header with Title and Close button */}
         <DialogHeader className="p-4 flex-shrink-0 flex flex-row justify-between items-center absolute top-0 left-0 right-0 bg-background/80 backdrop-blur-sm border-b border-border/50 z-20">
            <h2 className="text-lg font-semibold truncate pr-4">{title || 'Information'}</h2>
-           {/* Use Shadcn default close button */}
-           {/* Ensure Dialog primitive adds its own X */}
+           <Button 
+             variant="ghost" 
+             size="icon" 
+             className="rounded-full h-8 w-8 p-0"
+             onClick={onClose}
+           >
+             <X className="h-5 w-5" />
+             <span className="sr-only">Close</span>
+           </Button>
         </DialogHeader>
         
         {/* Main Content Area */}
@@ -203,11 +210,15 @@ export function InfoDisplayModal({
           {isLoading ? (
             // Center loading vertically
             <div className="flex flex-col justify-center items-center h-full">
-              <div className="text-center space-y-4">
-                <SplashCursor />
-                <p className="text-sm text-muted-foreground animate-pulse">
-                    {loadingText}
-                </p>
+              <div className="text-center h-12 flex items-center justify-center">
+                <BlurText
+                  text={loadingText}
+                  delay={150}
+                  animateBy="words"
+                  direction="bottom"
+                  className="text-xl font-medium text-foreground"
+                  pulseAfterLoad={true}
+                />
               </div>
             </div>
           ) : error ? ( 
@@ -216,7 +227,7 @@ export function InfoDisplayModal({
                 <p className="text-destructive text-center max-w-prose">Error: {error}</p>
              </div>
           ) : currentSection ? ( 
-            <div className="w-full max-w-prose space-y-4 text-center"> {/* Center section content */}
+            <div className="w-full max-w-prose space-y-4 text-center relative"> {/* Center section content */}
                {/* Display section title */}
                <h4 className="text-base font-semibold text-primary dark:text-primary/90">{currentSection.title}</h4>
                {/* Display section content */}
@@ -232,6 +243,40 @@ export function InfoDisplayModal({
                      {feedbackPrompt}
                   </p>
                )}
+               
+               {/* Floating chat bubble that appears on all screens */}
+               <div
+                 className="fixed bottom-20 right-6 z-50"
+                 style={{
+                   animation: 'gentle-float 6s ease-in-out infinite',
+                 }}
+               >
+                 <Link 
+                   href="/chat"
+                   passHref
+                   className="flex items-center bg-primary text-primary-foreground shadow-md hover:shadow-lg rounded-full px-4 py-2.5 hover:translate-y-[-2px] transition-all duration-300"
+                   onClick={() => {
+                     // Store review data in sessionStorage before redirecting
+                     const reviewData = {
+                       title: title,
+                       sections: parsedSections.map(s => ({
+                         title: s.title,
+                         content: s.content
+                       })),
+                       content: content,
+                       period: contextIdentifier
+                     };
+                     // Save to sessionStorage
+                     sessionStorage.setItem('aivery_weekly_review', JSON.stringify(reviewData));
+                     // Also set a flag that we're coming from a review
+                     sessionStorage.setItem('aivery_chat_context', 'weekly_review');
+                     onClose(); // Close modal when clicking
+                   }}
+                 >
+                   <MessageCircle className="h-5 w-5 mr-2" />
+                   <span className="text-sm font-medium">Talk to Aivery about it</span>
+                 </Link>
+               </div>
             </div>
           ) : (
             // Fallback if not loading, no error, but no sections parsed
@@ -261,23 +306,10 @@ export function InfoDisplayModal({
               </span>
           )}
 
-          {/* Conditional Next / Chat Button */}
+          {/* Navigation Buttons */}
           {!isLoading && parsedSections.length > 0 && (
             isLastSection ? (
-              <Link 
-                href={`/chat?contextType=performance_review&contextIdentifier=${encodeURIComponent(contextIdentifier)}&feedbackPrompt=${encodeURIComponent(feedbackPrompt || '')}`}
-                passHref
-              >
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="rounded-full h-9 w-9 p-0 text-primary hover:bg-primary/10 hover:text-primary disabled:opacity-30"
-                  onClick={onClose} // Close modal when clicking chat link
-                >
-                  <MessageSquare className="h-5 w-5" />
-                  <span className="sr-only">Discuss in Chat</span>
-                </Button>
-              </Link>
+              <div className="w-9 h-9"></div> // Empty div to maintain layout
             ) : (
               <Button 
                 variant="ghost" 
