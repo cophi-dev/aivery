@@ -270,3 +270,61 @@ html {
 .font-dm-serif {
   font-family: var(--font-dm-serif);
 }
+
+/* Animated gradient for the AI interface */
+@keyframes gradient-shift {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(90deg) scale(1.05);
+  }
+  50% {
+    transform: rotate(180deg) scale(1);
+  }
+  75% {
+    transform: rotate(270deg) scale(0.95);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.animate-gradient {
+  animation: gradient-shift 15s ease infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* Message animations */
+@keyframes message-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-animation {
+  animation: message-fade-in 0.3s ease-out forwards;
+}
+
+/* Chat input animations */
+@keyframes input-focus {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.1);
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.05);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+
+.input-focus-animation:focus {
+  animation: input-focus 1s ease-out;
+}

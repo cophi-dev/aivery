@@ -60,24 +60,26 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
          )}
        </div>
        {/* Bubble */}
-       <div className={cn('px-3 py-1.5 rounded-xl max-w-[75%] break-words', {
-         'order-1 bg-primary text-primary-foreground': isUserMessage,
-         'order-2 bg-secondary': !isUserMessage
+       <div className={cn('px-4 py-2.5 rounded-xl max-w-[75%] break-words shadow-sm', {
+         'order-1 bg-primary/90 text-primary-foreground': isUserMessage,
+         'order-2 bg-muted/80 dark:bg-secondary/90 border border-border/5': !isUserMessage,
+         'hover:bg-primary/95': isUserMessage,
+         'hover:bg-muted/90 dark:hover:bg-secondary/95': !isUserMessage
        })}>
          {showLoading ? (
-            <div className="flex items-center space-x-1">
-                <span className="h-2 w-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                <span className="h-2 w-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                <span className="h-2 w-2 bg-current rounded-full animate-bounce"></span>
+            <div className="flex items-center space-x-1.5 py-1">
+                <span className="h-2 w-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s] opacity-70"></span>
+                <span className="h-2 w-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s] opacity-80"></span>
+                <span className="h-2 w-2 bg-current rounded-full animate-bounce opacity-90"></span>
             </div>
          ) : (
             <>
-              <ReactMarkdown className="prose prose-sm dark:prose-invert">
+              <ReactMarkdown className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:bg-secondary/50">
                 {typeof message.content === 'string' ? message.content : ''}
               </ReactMarkdown>
               {/* Conditionally render WorkoutListDisplay if workouts data exists */}
               {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-dashed border-current/20">
+                <div className="mt-3 pt-3 border-t border-border/10">
                   <WorkoutListDisplay workouts={message.data.workouts} />
                 </div>
               )}
