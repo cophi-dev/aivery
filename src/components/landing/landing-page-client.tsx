@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link"
+import Image from "next/image" 
 import { Button } from "@/components/ui/button"
-import { BarChart3, Activity, LineChart, MessageSquare, Calendar, Zap, Brain, Dumbbell, AreaChart, ArrowRightCircle } from "lucide-react"
+import { BarChart3, Activity, LineChart, MessageSquare, Calendar, Zap, Brain, Dumbbell, AreaChart, ArrowRightCircle, Trophy, Check, ClipboardList } from "lucide-react"
 import { useState, useEffect, useRef } from 'react';
 import React from 'react';
 import { AiveryHero } from "../blocks/aivery-hero";
 import { ThemeSwitch } from "@/components/ui/theme-switch-button";
 import { PricingSectionBasic } from "@/components/blocks/PricingSectionBasic";
+import { SvgPatternBackground, LogoWavyBackground } from "@/components/ui/svg-pattern-background";
 import {
   Stepper,
   StepperDescription,
@@ -56,6 +58,39 @@ const howItWorks = [
   },
 ];
 
+// New feature highlights with images
+const featureHighlights = [
+  {
+    title: "Monthly Challenges",
+    description: "Personalized fitness goals dynamically generated based on your workout history. Each challenge adapts to your performance, pushing you to achieve new milestones.",
+    imageLight: "/uploads/challenges light.png",
+    imageDark: "/uploads/challenges dark.png",
+    icon: <Trophy className="h-5 w-5" />,
+    alt: "Aivery monthly challenges interface showing various workout goals"
+  },
+  {
+    title: "Weekly Performance Reviews",
+    description: "Comprehensive weekly analysis of your workouts with actionable insights. Understand your patterns, achievements, and get recommendations for improvement.",
+    image: "/uploads/weekly review.png",
+    icon: <Calendar className="h-5 w-5" />,
+    alt: "Weekly workout review showing performance stats and AI analysis"
+  },
+  {
+    title: "AI Coaching Conversations",
+    description: "Chat with Aivery about your workouts, ask questions, get personalized advice or discuss your progress - all informed by your actual workout data.",
+    image: "/uploads/chat.png",
+    icon: <MessageSquare className="h-5 w-5" />,
+    alt: "AI chat interface providing personalized workout guidance"
+  },
+  {
+    title: "Smart Workout Logging",
+    description: "Log your workouts with AI assistance. Quick logging features help you track exercises efficiently with smart suggestions based on your history.",
+    image: "/uploads/logging.png",
+    icon: <ClipboardList className="h-5 w-5" />,
+    alt: "Workout logging interface with AI-powered exercise tracking"
+  }
+];
+
 // The actual client component
 export default function LandingPageClient() {
   const logoRef = useRef<HTMLDivElement>(null);
@@ -64,6 +99,23 @@ export default function LandingPageClient() {
   const mouthRef = useRef<SVGPathElement>(null);
   const [isClient, setIsClient] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  useEffect(() => {
+    setIsClient(true);
+    // Check if we're in dark mode
+    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setTheme(isDarkMode ? 'dark' : 'light');
+
+    // Listen for theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      setTheme(e.matches ? 'dark' : 'light');
+    };
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   // --- Event Logic Helper (Refined) ---
   const updateElementPositions = (deltaX: number, deltaY: number) => {
@@ -89,8 +141,14 @@ export default function LandingPageClient() {
          <AiveryHero />
 
          {/* Value Proposition */}
-         <section className="w-full py-12 md:py-16 bg-gray-50 dark:bg-gray-900">
-           <div className="container px-4 md:px-6 max-w-4xl mx-auto">
+         <section className="w-full py-12 md:py-16 bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
+           {/* Add SVG pattern background */}
+           <SvgPatternBackground 
+             opacity={0.03} 
+             iconSize={48} 
+             color="var(--brand-accent, #0066FF)"
+           />
+           <div className="container px-4 md:px-6 max-w-4xl mx-auto relative z-10">
              <div className="text-center max-w-3xl mx-auto">
                <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium mb-6">Beyond Simple Tracking — Training Intelligence</h2>
                <p className="text-gray-700 dark:text-gray-300 text-base sm:text-lg">
@@ -100,32 +158,200 @@ export default function LandingPageClient() {
            </div>
          </section>
 
-         {/* Features Section */}
-         <section id="features" className="w-full py-16 md:py-20 relative">
-           <div className="container px-4 md:px-6 max-w-4xl mx-auto">
-             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4 text-center">Feature Highlights</h2> 
-             <p className="text-gray-600 dark:text-gray-400 text-center mb-10 md:mb-12 max-w-2xl mx-auto text-sm sm:text-base">
-               Discover how Aivery transforms your fitness experience
-             </p>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-               {features.map((feature, index) => (
-                 <div key={index} className="group flex items-start space-x-4 p-4 sm:p-6 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all duration-300 ease-out">
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900 dark:to-blue-800 flex items-center justify-center flex-shrink-0 group-hover:from-blue-200 group-hover:to-blue-400 dark:group-hover:from-blue-800 dark:group-hover:to-blue-600 transition-colors duration-300">
-                     {feature.icon && React.cloneElement(feature.icon as React.ReactElement, { className: `h-5 w-5 sm:h-6 sm:w-6 text-black dark:text-white` })}
+         {/* NEW Features Section with Images */}
+         <section id="features" className="w-full py-16 md:py-24 relative">
+           <div className="container px-4 md:px-6 mx-auto">
+             <div className="text-center max-w-3xl mx-auto mb-16">
+               <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium mb-4">Key Features</h2>
+               <p className="text-gray-600 dark:text-gray-400 text-base">
+                 Discover how Aivery transforms your fitness journey with intelligent features designed for real results
+               </p>
+             </div>
+             
+             <div className="space-y-24 md:space-y-32">
+               {/* Challenges Feature */}
+               <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+                 <div className="order-2 md:order-1">
+                   <div className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-3 py-1 text-sm font-medium text-blue-800 dark:text-blue-300 mb-4">
+                     <Trophy className="mr-1 h-4 w-4" />
+                     <span>Monthly Challenges</span>
                    </div>
-                   <div>
-                     <h3 className="font-medium text-base sm:text-lg mb-1 sm:mb-2">{feature.title}</h3>
-                     <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">{feature.description}</p>
-                   </div>
+                   <h3 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4">Personalized Fitness Challenges</h3>
+                   <p className="text-gray-600 dark:text-gray-400 mb-6">
+                     Your personalized fitness goals, dynamically generated based on your workout history and progress. Each challenge adapts to your performance, pushing you to achieve new milestones.
+                   </p>
+                   <ul className="space-y-2 mb-6">
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Adaptive difficulty based on your performance</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Mix of strength, cardio, and consistency goals</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Visual progress tracking and achievement celebration</span>
+                     </li>
+                   </ul>
                  </div>
-               ))}
+                 <div className="order-1 md:order-2 rounded-xl overflow-hidden shadow-xl">
+                   <Image 
+                     src={theme === 'dark' ? "/uploads/challenges dark.png" : "/uploads/challenges light.png"}
+                     alt="Aivery monthly challenges interface showing various workout goals"
+                     width={800}
+                     height={600}
+                     className="w-full h-auto rounded-xl shadow-lg"
+                   />
+                 </div>
+               </div>
+
+               {/* Weekly Review Feature */}
+               <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+                 <div className="order-2 md:order-2">
+                   <div className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-3 py-1 text-sm font-medium text-blue-800 dark:text-blue-300 mb-4">
+                     <Calendar className="mr-1 h-4 w-4" />
+                     <span>Weekly Review</span>
+                   </div>
+                   <h3 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4">Comprehensive Performance Reviews</h3>
+                   <p className="text-gray-600 dark:text-gray-400 mb-6">
+                     Every week, Aivery analyzes your workouts and provides insights on your progress, patterns, and areas for improvement. Get a clear picture of your fitness journey with AI-powered analysis.
+                   </p>
+                   <ul className="space-y-2 mb-6">
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Detailed workout summaries and statistics</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Personalized insights and trend analysis</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Recovery recommendations and training balance advice</span>
+                     </li>
+                   </ul>
+                 </div>
+                 <div className="order-1 md:order-1 rounded-xl overflow-hidden shadow-xl">
+                   <Image 
+                     src="/uploads/weekly review.png"
+                     alt="Weekly workout review showing performance stats and AI analysis"
+                     width={800}
+                     height={600}
+                     className="w-full h-auto rounded-xl shadow-lg"
+                   />
+                 </div>
+               </div>
+
+               {/* Chat Feature */}
+               <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+                 <div className="order-2 md:order-1">
+                   <div className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-3 py-1 text-sm font-medium text-blue-800 dark:text-blue-300 mb-4">
+                     <MessageSquare className="mr-1 h-4 w-4" />
+                     <span>AI Coaching</span>
+                   </div>
+                   <h3 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4">Intelligent Workout Conversations</h3>
+                   <p className="text-gray-600 dark:text-gray-400 mb-6">
+                     Chat with Aivery about your fitness goals, ask questions about your workouts, or get personalized advice - all informed by your actual training data and progress.
+                   </p>
+                   <ul className="space-y-2 mb-6">
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Context-aware responses based on your workout history</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Training plan suggestions and adjustments</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Exercise technique guidance and form advice</span>
+                     </li>
+                   </ul>
+                 </div>
+                 <div className="order-1 md:order-2 rounded-xl overflow-hidden shadow-xl">
+                   <Image 
+                     src="/uploads/chat.png"
+                     alt="AI chat interface providing personalized workout guidance"
+                     width={800}
+                     height={600}
+                     className="w-full h-auto rounded-xl shadow-lg"
+                   />
+                 </div>
+               </div>
+
+               {/* Workout Logging Feature */}
+               <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+                 <div className="order-2 md:order-2">
+                   <div className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-3 py-1 text-sm font-medium text-blue-800 dark:text-blue-300 mb-4">
+                     <ClipboardList className="mr-1 h-4 w-4" />
+                     <span>Smart Logging</span>
+                   </div>
+                   <h3 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4">AI-Powered Workout Tracking</h3>
+                   <p className="text-gray-600 dark:text-gray-400 mb-6">
+                     Record your workouts effortlessly with smart AI assistance. Simply paste your workout log or use the guided entry system to track exercises, sets, and reps with minimal effort.
+                   </p>
+                   <ul className="space-y-2 mb-6">
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>"Quick Log with AI" for rapid workout entry</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Smart suggestions based on your workout history</span>
+                     </li>
+                     <li className="flex items-start">
+                       <div className="mr-2 mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
+                         <Check className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                       </div>
+                       <span>Personalized exercise recommendations and PR tracking</span>
+                     </li>
+                   </ul>
+                 </div>
+                 <div className="order-1 md:order-1 rounded-xl overflow-hidden shadow-xl">
+                   <Image 
+                     src="/uploads/logging.png"
+                     alt="Workout logging interface with AI-powered exercise tracking"
+                     width={800}
+                     height={600}
+                     className="w-full h-auto rounded-xl shadow-lg"
+                   />
+                 </div>
+               </div>
              </div>
            </div>
          </section>
 
          {/* How It Works Section */}
          <section className="w-full py-20 md:py-28 bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-950 relative overflow-hidden">
-           <div className="container px-4 md:px-6 max-w-5xl mx-auto">
+           {/* Add wavy logo background */}
+           <LogoWavyBackground 
+             opacity={0.02} 
+             color="var(--brand-accent, #0066FF)"
+           />
+           <div className="container px-4 md:px-6 max-w-5xl mx-auto relative z-10">
              <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium mb-16 text-center">How It Works</h2>
              <div className="max-w-[850px] mx-auto">
                {/* Top Steps */}
@@ -200,43 +426,140 @@ export default function LandingPageClient() {
            </div>
          </section>
 
-         {/* Testimonial Section */}
+         {/* Testimonial Section - REPLACED with Aivery Icon Showcase */}
          <section className="w-full py-16 md:py-20 bg-white dark:bg-gray-950">
            <div className="container px-4 md:px-6 max-w-4xl mx-auto">
-             <div className="bg-blue-50 dark:bg-gray-900 rounded-2xl p-8 md:p-10 relative">
-               <div className="text-4xl text-blue-300 absolute top-6 left-6">"</div>
-               <div className="text-4xl text-blue-300 absolute bottom-6 right-6">"</div>
-               <blockquote className="text-center relative z-10">
-                 <p className="text-gray-700 dark:text-gray-300 text-lg md:text-xl italic mb-6">
-                   Aivery turned my workout data into meaningful insights. The AI coach feels like having a personal trainer who knows my entire fitness history.
+             <div className="bg-blue-50 dark:bg-gray-900 rounded-2xl p-8 md:p-10 relative overflow-hidden flex flex-col items-center">
+               {/* Decorative background icons */}
+               <div className="absolute inset-0 opacity-[0.03] overflow-hidden">
+                 <div className="absolute -top-10 -left-10 rotate-12">
+                   <svg width="140" height="140" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+                     <defs>
+                       <radialGradient id="logoGlowBg1" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                         <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+                         <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+                         <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                       </radialGradient>
+                     </defs>
+                     <circle cx="256" cy="256" r="200" fill="url(#logoGlowBg1)" />
+                     <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+                     <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+                     <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+                   </svg>
+                 </div>
+                 <div className="absolute -bottom-10 -right-10 rotate-45">
+                   <svg width="120" height="120" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+                     <defs>
+                       <radialGradient id="logoGlowBg2" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                         <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+                         <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+                         <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                       </radialGradient>
+                     </defs>
+                     <circle cx="256" cy="256" r="200" fill="url(#logoGlowBg2)" />
+                     <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+                     <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+                     <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+                   </svg>
+                 </div>
+               </div>
+               
+               {/* Center icon */}
+               <div className="mb-8 relative z-10">
+                 <svg width="96" height="96" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="animate-float">
+                   <defs>
+                     <radialGradient id="logoGlow" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                       <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+                       <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+                       <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                     </radialGradient>
+                   </defs>
+                   <circle cx="256" cy="256" r="200" fill="url(#logoGlow)" />
+                   <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+                   <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+                   <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+                 </svg>
+               </div>
+               
+               {/* Text content */}
+               <div className="text-center relative z-10 max-w-2xl">
+                 <h3 className="text-xl md:text-2xl font-medium text-gray-900 dark:text-gray-100 mb-4">
+                   Experience Smarter Fitness Tracking
+                 </h3>
+                 <p className="text-gray-600 dark:text-gray-400 text-base md:text-lg">
+                   Aivery combines powerful AI models with your workout data to deliver meaningful, personalized insights that help optimize your fitness journey.
                  </p>
-                 <footer className="font-medium text-gray-900 dark:text-gray-100">- Alex M.</footer>
-               </blockquote>
+                 <div className="mt-8 flex justify-center">
+                   <Button
+                     asChild
+                     className="rounded-md px-6 py-2 text-white bg-brand-accent hover:bg-brand-accent-hover shadow-md transition-colors duration-200"
+                   >
+                     <Link href="/register">Try it yourself</Link>
+                   </Button>
+                 </div>
+               </div>
              </div>
            </div>
          </section>
 
-         {/* Technical Excellence */}
-         <section className="w-full py-12 md:py-16 bg-gray-50 dark:bg-gray-900">
-           <div className="container px-4 md:px-6 max-w-4xl mx-auto">
-             <div className="text-center max-w-3xl mx-auto">
-               <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-4">Technical Excellence</h2>
-               <p className="text-gray-600 dark:text-gray-400 text-sm sm:text-base">
-                 Built with state-of-the-art AI models configurable to your preference. Your data drives personalized insights with landmark comparisons, volume analysis, and progressive training plans. Enterprise-grade database ensures your fitness journey is securely documented.
-               </p>
-             </div>
-           </div>
-         </section>
 
          {/* Pricing Section */}
          <PricingSectionBasic />
 
          {/* CTA Section */}
-         <section className="w-full py-16 md:py-20 bg-white dark:bg-gray-950">
-           <div className="container px-4 md:px-6 max-w-4xl mx-auto text-center">
+         <section className="w-full py-16 md:py-20 bg-white dark:bg-gray-950 relative overflow-hidden">
+           {/* Add small animated SVG logos in the background */}
+           <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-[0.015]">
+             <div className="aivery-floating-icon absolute top-1/4 left-1/4 animate-float-slow">
+               <svg width="40" height="40" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+                 <defs>
+                   <radialGradient id="logoGlowCta1" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                     <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+                     <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+                     <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                   </radialGradient>
+                 </defs>
+                 <circle cx="256" cy="256" r="200" fill="url(#logoGlowCta1)" />
+                 <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+                 <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+                 <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+               </svg>
+             </div>
+             <div className="aivery-floating-icon absolute top-1/3 right-1/4 animate-float-medium">
+               <svg width="60" height="60" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+                 <defs>
+                   <radialGradient id="logoGlowCta2" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                     <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+                     <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+                     <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                   </radialGradient>
+                 </defs>
+                 <circle cx="256" cy="256" r="200" fill="url(#logoGlowCta2)" />
+                 <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+                 <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+                 <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+               </svg>
+             </div>
+             <div className="aivery-floating-icon absolute bottom-1/4 right-1/3 animate-float-fast">
+               <svg width="50" height="50" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+                 <defs>
+                   <radialGradient id="logoGlowCta3" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                     <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+                     <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+                     <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+                   </radialGradient>
+                 </defs>
+                 <circle cx="256" cy="256" r="200" fill="url(#logoGlowCta3)" />
+                 <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+                 <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+                 <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+               </svg>
+             </div>
+           </div>
+           <div className="container px-4 md:px-6 max-w-4xl mx-auto text-center relative z-10">
              <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-6">Start Training Smarter Today</h2>
              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
-               Free plan available. Premium features unlock unlimited insights and advanced coaching.
+               Free trial available. Premium features unlock unlimited insights and advanced coaching.
              </p>
              <Button
                asChild
@@ -247,13 +570,6 @@ export default function LandingPageClient() {
            </div>
          </section>
        </main>
-
-       {/* Footer */}
-       <footer className="py-8 border-t border-gray-100 dark:border-gray-800">
-         <div className="container px-4 md:px-6 max-w-4xl mx-auto text-center text-gray-500 dark:text-gray-400 text-sm">
-           <p>© {new Date().getFullYear()} Aivery. All rights reserved.</p>
-         </div>
-       </footer>
     </div>
   );
 } 

@@ -222,6 +222,26 @@ export async function POST(request: NextRequest) {
 
     console.log(`[delete-workouts] Deleted ${deleteResult.deletedCount} workouts`);
 
+    // Reset challenges after deleting workouts
+    try {
+      console.log(`[delete-workouts] Calling reset-challenges API to update challenges...`);
+      const resetResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/reset-challenges`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Include the authorization header with the session cookie
+          Cookie: request.headers.get('cookie') || ''
+        },
+        // The reset-challenges endpoint doesn't need a body, it uses the session user
+      });
+      
+      const resetResult = await resetResponse.json();
+      console.log(`[delete-workouts] Reset challenges result:`, resetResult);
+    } catch (resetError) {
+      // Log the error but don't fail the whole operation
+      console.error(`[delete-workouts] Error resetting challenges:`, resetError);
+    }
+
     return NextResponse.json({
       success: true,
       deletedCount: deleteResult.deletedCount,

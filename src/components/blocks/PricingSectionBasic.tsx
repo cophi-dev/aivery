@@ -1,7 +1,8 @@
 "use client"
 
-import { Check, ChevronRight, CreditCard, Crown, ExternalLink, Heart, Shield, ShoppingCart, Stars } from "lucide-react"
-import { SinglePricingCard, type Testimonial } from "@/components/blocks/single-pricing-card"
+import { Check, CreditCard, Crown, Heart, Shield, Stars } from "lucide-react"
+import { SinglePricingCard } from "@/components/blocks/single-pricing-card"
+import React from "react"
 
 export function PricingSectionBasic() {
   const features = [
@@ -18,69 +19,6 @@ export function PricingSectionBasic() {
     "Mobile optimized dashboard",
     "Priority support",
   ].map((text) => ({ text }))
-
-  const testimonials: Testimonial[] = [
-    {
-      id: 1,
-      name: "Alex Johnson",
-      role: "Marathon Runner",
-      company: "Boston Qualifier",
-      content:
-        "Aivery helped me track my marathon training with incredible precision. The AI-generated insights showed me patterns I never would have noticed on my own. My finishing time improved by 12 minutes!",
-      rating: 5,
-      avatar: "https://randomuser.me/api/portraits/men/32.jpg",
-    },
-    {
-      id: 2,
-      name: "Sarah Miller",
-      role: "CrossFit Athlete",
-      company: "Level 2 Certified",
-      content:
-        "The muscle group analysis feature showed me I was neglecting posterior chain exercises. After following Aivery's recommendations, my performance improved dramatically across all my WODs.",
-      rating: 5,
-      avatar: "https://randomuser.me/api/portraits/women/44.jpg",
-    },
-    {
-      id: 3,
-      name: "Michael Chen",
-      role: "Powerlifter",
-      company: "State Champion",
-      content:
-        "Tracking my strength progress has never been easier. Aivery automatically identifies PRs and gives me actionable advice on how to keep progressing. The €6,90/month is easily worth it.",
-      rating: 5,
-      avatar: "https://randomuser.me/api/portraits/men/46.jpg",
-    },
-    {
-      id: 4,
-      name: "Emily Rodriguez",
-      role: "Yoga Instructor",
-      company: "Wellness Studio",
-      content:
-        "I use Aivery to track my strength training alongside my yoga practice. The weekly insights help me maintain balance in my training and have helped prevent overtraining injuries.",
-      rating: 4,
-      avatar: "https://randomuser.me/api/portraits/women/65.jpg",
-    },
-    {
-      id: 5,
-      name: "David Park",
-      role: "Triathlete",
-      company: "Ironman Finisher",
-      content:
-        "Managing training across swimming, cycling, and running used to be a nightmare. With Aivery's Strava integration and multi-sport tracking, I can focus on training instead of logging workouts.",
-      rating: 5,
-      avatar: "https://randomuser.me/api/portraits/men/22.jpg",
-    },
-    {
-      id: 6,
-      name: "Olivia Martinez",
-      role: "Recreational Runner",
-      company: "Weekend Warrior",
-      content:
-        "As someone who just runs for fun, Aivery makes fitness tracking accessible and motivating. The real-world distance comparisons make my achievements feel tangible and meaningful.",
-      rating: 5,
-      avatar: "https://randomuser.me/api/portraits/women/24.jpg",
-    },
-  ]
 
   return (
     <section className="py-24 relative overflow-hidden flex justify-center" id="pricing">
@@ -128,19 +66,38 @@ export function PricingSectionBasic() {
             icon: Stars,
             text: "All Features",
           }}
-          primaryButton={{
-            text: "Start Free Trial",
-            icon: ShoppingCart,
-            chevronIcon: ChevronRight,
-          }}
-          secondaryButton={{
-            text: "View Demo",
-            icon: ExternalLink,
-            href: "#",
-          }}
-          testimonials={testimonials}
-          testimonialRotationSpeed={5000}
         />
+      </div>
+      {/* Decorative background elements */}
+      <div className="absolute top-1/4 -left-12 opacity-[0.03] hidden lg:block">
+        <svg width="180" height="180" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="rotate-12">
+          <defs>
+            <radialGradient id="logoGlowPricingBg1" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+              <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+              <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+              <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+            </radialGradient>
+          </defs>
+          <circle cx="256" cy="256" r="200" fill="url(#logoGlowPricingBg1)" />
+          <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+          <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+          <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+        </svg>
+      </div>
+      <div className="absolute bottom-1/4 -right-12 opacity-[0.03] hidden lg:block">
+        <svg width="140" height="140" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="rotate-45">
+          <defs>
+            <radialGradient id="logoGlowPricingBg2" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+              <stop offset="0%" stopColor="#4B9EFF" stopOpacity="1"/>
+              <stop offset="70%" stopColor="#0066FF" stopOpacity="0.8"/>
+              <stop offset="100%" stopColor="#0066FF" stopOpacity="0.2"/>
+            </radialGradient>
+          </defs>
+          <circle cx="256" cy="256" r="200" fill="url(#logoGlowPricingBg2)" />
+          <circle cx="200" cy="200" r="20" fill="#FFFFFF" />
+          <circle cx="312" cy="200" r="20" fill="#FFFFFF" />
+          <path d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="10" fill="none" />
+        </svg>
       </div>
     </section>
   )

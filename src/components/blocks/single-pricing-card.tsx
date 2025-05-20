@@ -59,7 +59,7 @@ export interface SinglePricingCardProps {
   }
 
   // Buttons
-  primaryButton: {
+  primaryButton?: {
     text: string
     icon: LucideIcon
     href?: string
@@ -73,8 +73,9 @@ export interface SinglePricingCardProps {
     onClick?: () => void
   }
 
-  // Testimonials
-  testimonials: Testimonial[]
+  // Testimonials - can provide either testimonials array or a custom component
+  testimonials?: Testimonial[]
+  testimonialComponent?: React.ReactNode
   testimonialRotationSpeed?: number // in milliseconds
 
   // Animation
@@ -99,6 +100,7 @@ export function SinglePricingCard({
   primaryButton,
   secondaryButton,
   testimonials,
+  testimonialComponent,
   testimonialRotationSpeed = 5000,
   animationEnabled = true,
   className,
@@ -111,14 +113,14 @@ export function SinglePricingCard({
 
   // Auto-rotate testimonials
   useEffect(() => {
-    if (testimonials.length <= 1) return
+    if (!testimonials || testimonials.length <= 1) return
 
     const interval = setInterval(() => {
-      setCurrentTestimonialIndex((prev) => (prev + 1) % testimonials.length)
+      setCurrentTestimonialIndex((prev) => (prev + 1) % (testimonials?.length || 1))
     }, testimonialRotationSpeed)
 
     return () => clearInterval(interval)
-  }, [testimonials.length, testimonialRotationSpeed])
+  }, [testimonials?.length, testimonialRotationSpeed, testimonials])
 
   return (
     <div ref={sectionRef} className={`py-12 relative overflow-hidden ${className || ""}`}>
@@ -142,6 +144,7 @@ export function SinglePricingCard({
               primaryButton={primaryButton}
               secondaryButton={secondaryButton}
               testimonials={testimonials}
+              testimonialComponent={testimonialComponent}
               currentTestimonialIndex={currentTestimonialIndex}
               isInView={isInView}
               animationEnabled={animationEnabled}
@@ -163,6 +166,7 @@ export function SinglePricingCard({
             primaryButton={primaryButton}
             secondaryButton={secondaryButton}
             testimonials={testimonials}
+            testimonialComponent={testimonialComponent}
             currentTestimonialIndex={currentTestimonialIndex}
             isInView={isInView}
             animationEnabled={animationEnabled}
@@ -196,6 +200,7 @@ function SinglePricingCardContent({
   primaryButton,
   secondaryButton,
   testimonials,
+  testimonialComponent,
   currentTestimonialIndex,
   isInView,
   animationEnabled,
@@ -205,8 +210,8 @@ function SinglePricingCardContent({
   const BadgeIcon = badge?.icon
   const FeaturesBadgeIcon = featuresBadge?.icon
   const FeaturesIcon = featuresIcon
-  const PrimaryButtonIcon = primaryButton.icon
-  const ChevronIcon = primaryButton.chevronIcon
+  const PrimaryButtonIcon = primaryButton?.icon
+  const ChevronIcon = primaryButton?.chevronIcon
   const SecondaryButtonIcon = secondaryButton?.icon
 
   return (
@@ -264,30 +269,32 @@ function SinglePricingCardContent({
           </div>
 
           <div className="mt-auto space-y-3">
-            <Button
-              className="w-full gap-2 group"
-              size="lg"
-              onClick={primaryButton.onClick}
-              asChild={!!primaryButton.href}
-            >
-              {primaryButton.href ? (
-                <Link href={primaryButton.href}>
-                  <PrimaryButtonIcon className="h-4 w-4" />
-                  <span>{primaryButton.text}</span>
-                  {ChevronIcon && (
-                    <ChevronIcon className="h-4 w-4 ml-auto transition-transform group-hover:translate-x-1" />
-                  )}
-                </Link>
-              ) : (
-                <>
-                  <PrimaryButtonIcon className="h-4 w-4" />
-                  <span>{primaryButton.text}</span>
-                  {ChevronIcon && (
-                    <ChevronIcon className="h-4 w-4 ml-auto transition-transform group-hover:translate-x-1" />
-                  )}
-                </>
-              )}
-            </Button>
+            {primaryButton && (
+              <Button
+                className="w-full gap-2 group"
+                size="lg"
+                onClick={primaryButton.onClick}
+                asChild={!!primaryButton.href}
+              >
+                {primaryButton.href ? (
+                  <Link href={primaryButton.href}>
+                    {primaryButton.icon && <primaryButton.icon className="h-4 w-4" />}
+                    <span>{primaryButton.text}</span>
+                    {primaryButton.chevronIcon && (
+                      <primaryButton.chevronIcon className="h-4 w-4 ml-auto transition-transform group-hover:translate-x-1" />
+                    )}
+                  </Link>
+                ) : (
+                  <>
+                    {primaryButton.icon && <primaryButton.icon className="h-4 w-4" />}
+                    <span>{primaryButton.text}</span>
+                    {primaryButton.chevronIcon && (
+                      <primaryButton.chevronIcon className="h-4 w-4 ml-auto transition-transform group-hover:translate-x-1" />
+                    )}
+                  </>
+                )}
+              </Button>
+            )}
 
             {secondaryButton && (
               <Button
@@ -336,7 +343,7 @@ function SinglePricingCardContent({
             ))}
           </div>
 
-          {testimonials.length > 0 && (
+          {testimonials && testimonials.length > 0 && (
             <>
               <Separator className="my-6" />
 
@@ -395,6 +402,13 @@ function SinglePricingCardContent({
                   ))}
                 </div>
               )}
+            </>
+          )}
+
+          {testimonialComponent && (
+            <>
+              <Separator className="my-6" />
+              {testimonialComponent}
             </>
           )}
         </div>

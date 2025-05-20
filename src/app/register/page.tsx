@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
+import LegalModal from "@/components/legal/LegalModal"
 import Link from "next/link"
 
 export default function RegisterPage() {
@@ -13,11 +15,18 @@ export default function RegisterPage() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!termsAccepted) {
+      setError("You must accept the Terms and Conditions and Privacy Policy")
+      return
+    }
+    
     setLoading(true)
     setError(null)
 
@@ -102,6 +111,30 @@ export default function RegisterPage() {
             <p className="text-xs text-muted-foreground">
               Password must be at least 8 characters long
             </p>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Checkbox 
+              id="terms" 
+              checked={termsAccepted}
+              onCheckedChange={(checked) => setTermsAccepted(checked === true)}
+            />
+            <label htmlFor="terms" className="text-sm flex flex-wrap items-center">
+              I accept the {" "}
+              <LegalModal 
+                documentType="terms"
+                buttonVariant="link"
+                buttonSize="sm"
+                className="h-auto px-1 py-0 font-normal"
+              />
+              {" "} and {" "}
+              <LegalModal 
+                documentType="privacy"
+                buttonVariant="link"
+                buttonSize="sm"
+                className="h-auto px-1 py-0 font-normal"
+              />
+            </label>
           </div>
 
           <Button 

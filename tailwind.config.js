@@ -22,6 +22,24 @@ module.exports = {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-5px)' },
         },
+        'float-slow': {
+          '0%, 100%': { transform: 'translate(0, 0) rotate(0deg)' },
+          '25%': { transform: 'translate(5px, 10px) rotate(2deg)' },
+          '50%': { transform: 'translate(10px, 0) rotate(0deg)' },
+          '75%': { transform: 'translate(5px, -10px) rotate(-2deg)' },
+        },
+        'float-medium': {
+          '0%, 100%': { transform: 'translate(0, 0) rotate(0deg)' },
+          '25%': { transform: 'translate(-8px, 8px) rotate(-3deg)' },
+          '50%': { transform: 'translate(-16px, 0) rotate(0deg)' },
+          '75%': { transform: 'translate(-8px, -8px) rotate(3deg)' },
+        },
+        'float-fast': {
+          '0%, 100%': { transform: 'translate(0, 0) rotate(0deg)' },
+          '25%': { transform: 'translate(3px, 6px) rotate(3deg)' },
+          '50%': { transform: 'translate(6px, 0) rotate(0deg)' },
+          '75%': { transform: 'translate(3px, -6px) rotate(-3deg)' },
+        },
         appear: {
           "0%": { opacity: "0", transform: "translateY(10px)" },
           "100%": { opacity: "1", transform: "translateY(0)" }
@@ -33,6 +51,9 @@ module.exports = {
       },
       animation: {
         'float': 'gentle-float 6s ease-in-out infinite',
+        'float-slow': 'float-slow 18s ease-in-out infinite',
+        'float-medium': 'float-medium 12s ease-in-out infinite',
+        'float-fast': 'float-fast 8s ease-in-out infinite',
         appear: "appear 0.5s ease-out forwards",
         "appear-zoom": "appear-zoom 0.5s ease-out forwards"
       },

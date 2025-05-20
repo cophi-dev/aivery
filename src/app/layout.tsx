@@ -20,6 +20,7 @@ import { default as NextDynamic } from "next/dynamic"
 // Import Vercel Analytics
 import { Analytics } from '@vercel/analytics/react';
 import { cn } from "@/lib/utils"
+import { LegalFooter } from "@/components/legal"
 
 // Import CacheBuster with client-side only rendering
 const CacheBuster = NextDynamic(() => import("@/components/cache-buster"), { ssr: false })
@@ -181,6 +182,7 @@ export default async function RootLayout({
               {/* Wrap content with PRNotificationProvider */}
               <PRNotificationProvider>
                 <main className="min-h-screen">{children}</main>
+                <LegalFooter />
               </PRNotificationProvider>
               {/* {session?.user && <PersistentChat />} */}
               <Toaster />

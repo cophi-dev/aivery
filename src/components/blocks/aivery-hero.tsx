@@ -29,10 +29,9 @@ export function AiveryHero() {
         },
         {
           text: "Connect Strava",
-          href: "#",
+          href: "/register",
           variant: "glow",
           icon: <Icons.strava className="h-5 w-5" />,
-          onClick: handleStravaClick,
         },
       ]}
       image={{

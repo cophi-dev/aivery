@@ -1154,3 +1154,42 @@ export async function updateChallengesAfterWorkout(userId: string, workoutData: 
     // Don't throw error from here, just log it, as challenge update failure shouldn't block workout save.
   }
 } 
+
+/**
+ * Resets all challenge progress for the current month.
+ * This is useful when challenges are showing incorrect data after workouts are deleted.
+ */
+export async function resetChallengesAction(): Promise<{ success: boolean; message?: string; error?: string }> {
+  const user = await getCurrentUser();
+  if (!user?.id) {
+    console.error("[resetChallengesAction] User not authenticated.");
+    return { success: false, error: 'Unauthorized' };
+  }
+  
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/reset-challenges`, {
+      method: 'POST'
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Failed with status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Revalidate the path
+    revalidatePath('/challenges');
+    
+    return { 
+      success: true, 
+      message: `Reset ${result.resetCount} challenges. Progress has been set back to zero.` 
+    };
+  } catch (error: any) {
+    console.error('[resetChallengesAction] Error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to reset challenges. Please try again.' 
+    };
+  }
+} 
