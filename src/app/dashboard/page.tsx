@@ -205,50 +205,25 @@ export default function DashboardPage() {
                     ) : errorMetrics ? (
                          <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
                     ) : metrics && metrics.workoutCount === 0 ? (
-                        // --- Getting Started Card ---
-                        <Card className="border-dashed border-primary/50 dark:border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary-foreground dark:text-primary/90 shadow-sm rounded-xl">
+                        // --- Simple No Workouts Notice ---
+                        <Card className="bg-muted/50 shadow-sm rounded-xl">
                             <CardHeader>
-                                <CardTitle className="text-primary dark:text-primary text-xl font-semibold">🚀 Let's Get Started!</CardTitle>
-                                <CardDescription className="text-primary/80 dark:text-primary/70">Your Aivery journey begins now. How do you want to add your first workout?</CardDescription>
+                                <CardTitle className="text-lg font-medium">No workouts found</CardTitle>
+                                <CardDescription>Start by logging your first workout or connecting with Strava</CardDescription>
                             </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="flex flex-col sm:flex-row gap-5">
-                                    {/* Option 1: Import */}
-                                    <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
-                                        <div className="flex items-center mb-2">
-                                            <Upload className="w-5 h-5 mr-2 text-primary dark:text-primary" />
-                                            <h4 className="font-medium text-primary/90 dark:text-foreground">Import History</h4>
-                                        </div>
-                                        <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Got data on Strava? Bring it over to fill your timeline.</p>
-                                        <Link href="/integrations">
-                                            <Button variant="outline" size="sm" className="w-full bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
-                                                Go to Integrations <ArrowRight className="w-4 h-4 ml-1" />
-                                            </Button>
-                                        </Link>
-                                    </div>
-                                    
-                                    {/* Option 2: Manual Log / Auto-Sync */}
-                                    <div className="flex-1 p-4 border dark:border-border/50 rounded-lg bg-background/50 dark:bg-card/60 hover:bg-background/70 dark:hover:bg-card/80 transition-colors">
-                                         <div className="flex items-center mb-2">
-                                            <Edit3 className="w-5 h-5 mr-2 text-primary dark:text-primary" />
-                                            <h4 className="font-medium text-primary/90 dark:text-foreground">Start Fresh</h4>
-                                        </div>
-                                        <p className="text-sm text-primary/70 dark:text-muted-foreground mb-3">Log workouts manually or connect Strava for auto-syncing new ones.</p>
-                                        <Link href="/workouts/new">
-                                            <Button variant="outline" size="sm" className="w-full mb-2 bg-white dark:bg-background text-primary dark:text-foreground border-primary/30 dark:border-border hover:bg-primary/10 dark:hover:bg-accent">
-                                                Log First Workout <ArrowRight className="w-4 h-4 ml-1" />
-                                            </Button>
-                                        </Link>
-                                        <Link href="/integrations">
-                                            <Button variant="link" size="sm" className="text-primary/70 dark:text-muted-foreground hover:text-primary dark:hover:text-foreground w-full text-xs p-0 h-auto">
-                                                Setup Auto-Sync
-                                            </Button>
-                                        </Link>
-                                    </div>
-                                </div>
+                            <CardContent className="flex gap-4 justify-center">
+                                <Link href="/workouts/new">
+                                    <Button variant="default">
+                                        Log Workout
+                                    </Button>
+                                </Link>
+                                <Link href="/integrations">
+                                    <Button variant="outline">
+                                        Connect Strava
+                                    </Button>
+                                </Link>
                             </CardContent>
                         </Card>
-                        // --- End Getting Started Card ---
                     ) : metrics ? (
                         // --- Regular Metrics Cards ---
                         <>

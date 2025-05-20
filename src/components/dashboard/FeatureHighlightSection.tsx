@@ -3,11 +3,15 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DumbbellIcon, Timer, HeartPulseIcon, BrainIcon, TrendingUpIcon, CalendarIcon } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 type FeatureItem = {
   title: string;
   description: string;
   icon: React.ReactNode;
+  linkUrl: string;
+  linkText: string;
 };
 
 interface FeatureHighlightSectionProps {
@@ -17,66 +21,59 @@ interface FeatureHighlightSectionProps {
 export function FeatureHighlightSection({ className }: FeatureHighlightSectionProps) {
   const features: FeatureItem[] = [
     {
-      title: "AI-Powered Insights",
-      description: "Get personalized workout suggestions and performance analysis based on your training history.",
-      icon: <BrainIcon className="h-8 w-8 text-primary" />,
+      title: "AI Coach",
+      description: "Get personalized workout suggestions based on your training history.",
+      icon: <BrainIcon className="h-6 w-6 text-primary" />,
+      linkUrl: "/chat/ai",
+      linkText: "Ask AI Coach"
     },
     {
-      title: "Muscle Group Analysis",
-      description: "Visualize your training patterns and identify potentially neglected muscle groups.",
-      icon: <DumbbellIcon className="h-8 w-8 text-primary" />,
+      title: "Muscle Analysis",
+      description: "Check your muscle group coverage and identify any imbalances.",
+      icon: <DumbbellIcon className="h-6 w-6 text-primary" />,
+      linkUrl: "/analytics",
+      linkText: "View Analysis" 
     },
     {
-      title: "Real-World Comparisons",
-      description: "See how your running and cycling distances compare to real-world landmarks.",
-      icon: <Timer className="h-8 w-8 text-primary" />,
-    },
-    {
-      title: "Strava Integration",
-      description: "Seamlessly import your workouts from Strava with proper data conversion.",
-      icon: <TrendingUpIcon className="h-8 w-8 text-primary" />,
-    },
-    {
-      title: "Health Tracking",
-      description: "Monitor your key health metrics and see progress over time with intuitive visualizations.",
-      icon: <HeartPulseIcon className="h-8 w-8 text-primary" />,
-    },
-    {
-      title: "Weekly Reviews",
-      description: "Get comprehensive summaries of your training with actionable feedback to improve.",
-      icon: <CalendarIcon className="h-8 w-8 text-primary" />,
+      title: "Calendar",
+      description: "See your training schedule and plan future workouts.",
+      icon: <CalendarIcon className="h-6 w-6 text-primary" />,
+      linkUrl: "/calendar",
+      linkText: "Open Calendar"
     },
   ];
 
   return (
-    <div className={cn("w-full py-8 md:py-12", className)}>
-      <div className="container mx-auto">
-        <div className="flex flex-col gap-8">
-          <div className="flex gap-3 flex-col items-start">
-            <Badge variant="outline" className="px-3 py-1 font-medium">New Features</Badge>
-            <div className="flex gap-2 flex-col">
-              <h2 className="text-2xl md:text-3xl tracking-tight font-medium">
-                Elevate Your Fitness Journey
-              </h2>
-              <p className="text-base max-w-xl leading-relaxed text-muted-foreground">
-                Discover the latest tools and features designed to help you train smarter, track better, and achieve more.
-              </p>
-            </div>
+    <div className={cn("w-full py-4", className)}>
+      <div className="mx-auto">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">
+              Quick Access
+            </h2>
+            <Badge variant="outline" className="px-2 py-0.5 text-xs">New</Badge>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {features.map((feature, index) => (
               <div 
                 key={index} 
-                className="flex flex-col gap-3 p-5 rounded-lg border bg-card hover:shadow-md transition-shadow"
+                className="flex flex-col p-4 rounded-lg border bg-card shadow-sm"
               >
-                <div className="rounded-md p-2 w-fit bg-muted">
-                  {feature.icon}
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="rounded-md p-1.5 bg-muted">
+                    {feature.icon}
+                  </div>
+                  <h3 className="font-medium">{feature.title}</h3>
                 </div>
-                <h3 className="text-lg font-medium tracking-tight">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs text-muted-foreground mb-3">
                   {feature.description}
                 </p>
+                <Link href={feature.linkUrl} className="mt-auto">
+                  <Button size="sm" variant="outline" className="w-full">
+                    {feature.linkText}
+                  </Button>
+                </Link>
               </div>
             ))}
           </div>
