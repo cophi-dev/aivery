@@ -51,6 +51,19 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
   const { data: session } = useSession(); // Get session for user avatar
   const userDisplayName = (session?.user as any)?.nickname || session?.user?.name || 'U';
 
+  // Debug log - print every message content to see what's happening
+  console.log(`[DEBUG] Message content (${message.role}):\n`, typeof message.content, message.content ? message.content.substring(0, 100) + '...' : 'empty');
+
+  // CRITICAL ERROR LOGS - REMOVE AFTER DEBUGGING
+  if (message.role === 'assistant' && 
+     (typeof message.content === 'string' && message.content.includes('### ') || 
+      message.data?.isConceptExplanation)) {
+    console.error('🔴 CONCEPT EXPLANATION MESSAGE DETECTED 🔴');
+    console.error('DATA FLAG:', message.data?.isConceptExplanation);
+    console.error('HAS ### MARKER:', typeof message.content === 'string' && message.content.includes('### '));
+    console.error('CONTENT START:', typeof message.content === 'string' ? message.content.substring(0, 100) : 'not a string');
+  }
+
   // Define loading state appearance directly if content is empty and role is assistant
   const showLoading = message.role === 'assistant' && message.content === "";
 
@@ -84,17 +97,61 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
           </div>
         ) : (
           <>
-            <ReactMarkdown className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:bg-secondary/50">
-              {typeof message.content === 'string' ? message.content : ''}
-            </ReactMarkdown>
-            {/* Conditionally render data if it exists */}
-            {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-border/10">
-                <div className="text-sm text-muted-foreground">
-                  {message.data.workouts.length} workout(s) found
-                </div>
-              </div>
-            )}
+            {/* Special check for concept explanations to apply better styling */}
+            {(() => {
+              // Simplify concept explanation check
+              const contentHasHeaders = typeof message.content === 'string' && 
+                (message.content.includes('### ') || message.content.includes('#### '));
+              const hasExplanationFlag = message.data && message.data.isConceptExplanation;
+              const isConceptExplanation = message.role === 'assistant' && (contentHasHeaders || hasExplanationFlag);
+              
+              // Critical debugging
+              if (message.role === 'assistant') {
+                console.error('⚠️ CHECKING MESSAGE FOR CONCEPT: ', isConceptExplanation ? 'PASS' : 'FAIL');
+                console.error('- Has data flag:', hasExplanationFlag);
+                console.error('- Has headers:', contentHasHeaders);
+                if (typeof message.content === 'string') {
+                  console.error('- Content starts with:', message.content.substring(0, 60));
+                }
+              }
+              
+              if (isConceptExplanation) {
+                // Debug logging to understand what content we have
+                console.log('[ChatMessage] Rendering concept explanation');
+                console.log('[ChatMessage] First 50 chars:', message.content.substring(0, 50));
+                
+                // Use enhanced styling for concept explanations
+                return (
+                  <div className="concept-explanation w-full">
+                    <div className="p-1 mb-2 text-xs text-primary bg-primary/10 rounded text-center">
+                      Concept Explanation
+                    </div>
+                    <ReactMarkdown 
+                      className="prose prose-sm prose-headings:text-primary dark:prose-invert prose-p:leading-relaxed prose-pre:bg-secondary/50 prose-headings:font-bold prose-h3:text-xl prose-h3:mt-0 prose-h4:text-base prose-h4:text-primary/80 prose-headings:mt-3 prose-headings:mb-2 prose-strong:text-primary prose-em:text-muted-foreground max-w-none"
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
+                );
+              }
+              
+              // Standard message rendering
+              return (
+                <>
+                  <ReactMarkdown className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:bg-secondary/50 prose-headings:font-bold prose-h3:text-lg prose-h4:text-base prose-headings:mt-2 prose-headings:mb-1">
+                    {typeof message.content === 'string' ? message.content : ''}
+                  </ReactMarkdown>
+                  {/* Conditionally render data if it exists */}
+                  {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border/10">
+                      <div className="text-sm text-muted-foreground">
+                        {message.data.workouts.length} workout(s) found
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
       </div>
@@ -305,12 +362,39 @@ export function AIAssistantInterface() {
       const result = await response.json();
       const text = result.response; 
       const structuredData = result.data;
+      const isConceptExplanation = result.type === "concept_explanation";
+
+      // CRITICAL ERROR LOGS - REMOVE AFTER DEBUGGING
+      console.error('🚨 ALERT: API RESPONSE 🚨');
+      console.error('TYPE:', result.type);
+      console.error('IS CONCEPT:', isConceptExplanation);
+      console.error('RESPONSE LENGTH:', text ? text.length : 0);
+      console.error('HAS ### MARKER:', text?.includes('### '));
+      console.error('FIRST 100 CHARS:', text?.substring(0, 100));
+      
+      // Enhanced debug logging for concept explanations
+      console.log('[DEBUG-API] Full API response:', JSON.stringify(result).substring(0, 500));
+      console.log('[DEBUG-API] Response text type:', typeof text);
+      console.log('[DEBUG-API] Response text length:', text ? text.length : 0);
+      console.log('[DEBUG-API] Is concept explanation:', isConceptExplanation);
+      
+      if (typeof text === 'string') {
+        console.log('[DEBUG-API] First 150 chars:', text.substring(0, 150));
+        console.log('[DEBUG-API] Contains ### marker:', text.includes('### '));
+        console.log('[DEBUG-API] Contains #### marker:', text.includes('#### '));
+        console.log('[DEBUG-API] Contains markdown headers:', text.match(/^#+\s.+$/m) !== null);
+      }
 
       const aiMessage: Message = {
         id: `ai-${Date.now()}`,
         role: "assistant",
         content: text || "Sorry, I couldn't get a proper response.",
-        data: structuredData
+        data: structuredData ? {
+          ...structuredData,
+          isConceptExplanation: isConceptExplanation
+        } : {
+          isConceptExplanation: isConceptExplanation
+        }
       };
       
       // Replace the loading message with the actual response
@@ -396,9 +480,9 @@ Keep your answer factual, evidence-based, and avoid unnecessary jargon. Format u
         inputRef.current.dataset.queryType = "";
       }
     }
-    // Handle weekly review analysis queries
+    // Handle weekly review analysis queries - Fix condition
     else if (currentMessageContent.toLowerCase().includes("tell me more about my") && 
-             currentMessageContent.toLowerCase().includes("workout")) {
+             currentMessageContent.includes("workout")) {
       // Check if we already have context from sessionStorage
       if (typeof window !== 'undefined') {
         try {
@@ -568,14 +652,23 @@ Format the response using markdown with clear headings and bullet points.
 
   // Scroll to bottom when messages change
   useEffect(() => {
-    const rafId = requestAnimationFrame(() => {
+    const scrollToBottom = () => {
       const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
       if (viewport) {
-        viewport.scrollTop = viewport.scrollHeight;
+        // Add a slight delay to ensure content is rendered before scrolling
+        setTimeout(() => {
+          viewport.scrollTop = viewport.scrollHeight;
+        }, 100);
       }
-    });
+    };
 
-    return () => cancelAnimationFrame(rafId);
+    // Initial scroll
+    scrollToBottom();
+    
+    // Also scroll when content might still be rendering (helpful for markdown/concept explanations)
+    const timeoutId = setTimeout(scrollToBottom, 300);
+    
+    return () => clearTimeout(timeoutId);
   }, [messages]);
 
   // Set up initial welcome message

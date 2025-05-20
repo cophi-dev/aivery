@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { useSession } from "next-auth/react"
 import { Calendar, MessageSquare, History, BarChart2, List, Menu } from "lucide-react"
 import { UserNavigation } from "./user-navigation"
+import { ThemeSwitch } from "@/components/ui/theme-switch-button"
 
 export function MainHeader() {
   const pathname = usePathname()
@@ -224,7 +225,7 @@ export function MainHeader() {
       className={cn(
         "sticky top-0 z-50 w-full",
         isLandingPage
-          ? "bg-white"
+          ? "bg-background border-b border-gray-100 dark:border-transparent"
           : "border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       )}
     >
@@ -246,7 +247,7 @@ export function MainHeader() {
                  <path ref={mouthRef} d="M200 300 Q 256 320 312 300" stroke="#FFA07A" strokeWidth="15" fill="none" strokeLinecap="round" style={{ transition: 'transform 0.1s ease-out' }}/>
                </svg>
              </div>
-            <span className={cn("font-bold text-xl", isLandingPage ? "text-gray-800" : "")}>aivery</span>
+            <span className={cn("font-bold text-xl", isLandingPage ? "text-gray-800 dark:text-white" : "")}>aivery</span>
           </Link>
           {/* Desktop Navigation - shown only for logged-in users */}
           {user && (
@@ -258,8 +259,8 @@ export function MainHeader() {
                   className={cn(
                     "text-sm font-medium transition-colors",
                     link.active
-                      ? (isLandingPage ? "text-indigo-600" : "text-foreground") // Adjust active color for landing page
-                      : (isLandingPage ? "text-gray-600 hover:text-gray-900" : "text-muted-foreground hover:text-foreground/80") // Adjust default/hover for landing page
+                      ? (isLandingPage ? "text-indigo-600 dark:text-indigo-400" : "text-foreground") // Adjust active color for landing page
+                      : (isLandingPage ? "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" : "text-muted-foreground hover:text-foreground/80") // Adjust default/hover for landing page
                   )}
                 >
                   {link.label}
@@ -271,6 +272,9 @@ export function MainHeader() {
 
         {/* Right Section (User Nav / Login/Signup / Mobile Menu) */}
         <div className="flex items-center gap-3">
+          {/* Theme Switch - always visible */}
+          <ThemeSwitch />
+          
           {user ? (
             <>
               {/* Mobile Menu Trigger - only shows for logged in users on small screens */}

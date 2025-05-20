@@ -26,6 +26,7 @@ import type { IUser } from '@/lib/db/models/user';
 import { Button } from "@/components/ui/button"; // Import Button
 import UserNicknameDisplay from "@/components/UserNicknameDisplay";
 import type { ObjectId } from 'mongoose'; // Import ObjectId for type checking
+import { FeatureHighlightClient } from "./_components/FeatureHighlightClient";
 
 // Define a type for the metrics data
 interface DashboardMetrics {
@@ -166,6 +167,11 @@ export default function DashboardPage() {
                     displayName={<UserNicknameDisplay fallback={displayName} />} 
                     userImage={userImage} 
                 />
+                
+                {/* Display Feature Highlights for users with workouts */}
+                {!isLoadingMetrics && metrics && metrics.workoutCount > 0 && (
+                    <FeatureHighlightClient />
+                )}
 
                 <div className="space-y-6 md:space-y-8">
                     <LogWorkoutButton />

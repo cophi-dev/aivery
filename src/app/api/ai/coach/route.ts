@@ -848,8 +848,13 @@ async function compareMetricBetweenPeriods(
 
 // --- Helper Function to Get Direct AI Text Response --- V4 (Concise Slideshow Content)
 async function getDirectTextResponse(query: string, userId: string, userName: string, userContext: { preferences?: IUser['aiPreferences'] | null, exercisePRs?: IExercisePR[] | null }): Promise<string | null> { 
-    const provider = (process.env.LLM_PROVIDER_DIRECT as LLMProvider) || 'grok';
-    const model = process.env.LLM_MODEL_DIRECT || 'gpt-4.1-mini-2025-04-14';
+    // Use the LLM_PROVIDER_SUMMARY and LLM_MODEL_SUMMARY which are working for the weekly review
+    const provider = (process.env.LLM_PROVIDER_SUMMARY as LLMProvider) || 'grok';
+    const model = process.env.LLM_MODEL_SUMMARY || 'grok-3-mini';
+    
+    // Debug log model - add this to see what's being used
+    console.log(`[getDirectTextResponse] Using environment provider: ${process.env.LLM_PROVIDER_SUMMARY}, model: ${process.env.LLM_MODEL_SUMMARY}`);
+    
     if (!process.env.GROK_API_KEY && provider === 'grok') {
         console.error("[getDirectTextResponse] GROK_API_KEY not configured.");
         return "Sorry, the AI is unavailable right now.";
@@ -874,19 +879,34 @@ async function getDirectTextResponse(query: string, userId: string, userName: st
 
 **Your Task:** Generate concise, informative content for a slideshow explaining the fitness concept mentioned in the user query below. **Personalize the content based on the User Context.** Use clear, professional language and apply markdown formatting as specified.
 
-**Structure and Formatting Guidelines (for Parsing into Slides):**
-- **Title Slide:** Start with the concept name as a Level 3 Markdown header (### Concept Name). This will be the first slide.
-- **Definition Slide:** Provide a clear, concise definition in a short paragraph immediately following the title. **Bold** key terms.
-- **Subheading Slides:** Use Level 4 Markdown headers (#### Importance & Benefits, #### Application Strategies, #### Key Considerations) to introduce subsequent slides. 
-- **Content per Slide:** Under each subheading, provide **concise explanations (1-2 short paragraphs MAXIMUM)**. Use **bold text** for emphasis. Tailor content to the user context where appropriate (goals, preferences).
-- **Application Slide (#### Application Strategies):** Keep examples brief. Use bullet points (-) for specific steps/examples if needed, but keep the list short and focused.
-- **Considerations Slide (#### Key Considerations):** Briefly mention key points.
-- **Final Question Slide:** Conclude the *entire output* with a single, insightful, open-ended question (in *italics*) that relates to the user's context. This will be the final slide.
+**IMPORTANT: START WITH "### " FOLLOWED BY THE CONCEPT NAME**
 
-**Key Change: Brevity is essential.** Each section (Definition, Importance, Application, Considerations, Question) should correspond to a single, easily digestible slide.
+**Structure and Formatting Requirements:**
+1. Title: Start with "### " (3 hashtags + space) followed by the concept name
+2. Definition: Provide a clear definition immediately after the title
+3. Importance: Include "#### Importance & Benefits" section
+4. Application: Include "#### Application Strategies" section 
+5. Considerations: Include "#### Key Considerations" section
+6. Question: End with an italicized question related to the user's goals
 
-**Tone:** Professional, knowledgeable, informative, and supportive. Avoid overly casual slang or excessive hype.
-Do NOT write long, continuous text. Structure the output clearly with the specified headers for parsing into individual slides.
+Each section should be formatted precisely with the correct number of hashtags and spacing as shown above. Keep each section concise - 1-2 short paragraphs maximum per section.
+
+**Example Format:**
+### [Concept Name]
+[Definition paragraph]
+
+#### Importance & Benefits
+[Importance content]
+
+#### Application Strategies
+[Application content]
+
+#### Key Considerations
+[Considerations content]
+
+*[Final question]*
+
+**Tone:** Professional, knowledgeable, informative, and supportive.
 
 **User Query containing the concept:**`; // Query will be appended in the user message
 
@@ -913,20 +933,64 @@ Do NOT write long, continuous text. Structure the output clearly with the specif
         await updateTokenUsage(userId, data.usage);
 
         if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-            return data.choices[0].message.content.trim();
+            const content = data.choices[0].message.content.trim();
+            
+            // Debug log to check specifically for concept explanation headers
+            if (content) {
+                console.log("[getDirectTextResponse] Response received, chars:", content.length);
+                console.log("[getDirectTextResponse] First 150 chars:", content.substring(0, 150));
+                
+                // Check for markdown headers
+                const hasMarkdownH3 = content.includes('### ');
+                const hasMarkdownH4 = content.includes('#### ');
+                console.log("[getDirectTextResponse] Contains '### ' marker:", hasMarkdownH3);
+                console.log("[getDirectTextResponse] Contains '#### ' marker:", hasMarkdownH4);
+                
+                // Check for regex patterns
+                const headerRegex = /^#+\s.+$/m;
+                const headerMatch = content.match(headerRegex);
+                console.log("[getDirectTextResponse] Contains markdown headers:", headerMatch !== null);
+                if (headerMatch) {
+                    console.log("[getDirectTextResponse] First header:", headerMatch[0]);
+                }
+            }
+            
+            return content;
         } else {
             console.error("Direct LLM response content is empty or not as expected", data);
-            return null;
+            // Fallback to alternate model
+            throw new Error("Empty LLM response");
         }
 
     } catch (error) {
         clearTimeout(timeoutId); // Ensure timeout is cleared on error too
-        if (error instanceof Error && error.name === 'AbortError') {
-             console.error("[getDirectTextResponse] LLM API call timed out after 45 seconds.");
-             return "Sorry, the request to the AI timed out. It might be taking longer than usual to respond. Please try again shortly.";
-        }
         console.error("Error calling LLM for direct response:", error);
-        return null; // Return null on timeout or other fetch errors
+        // Fallback to a different model if the specified one fails
+        try {
+          const fallbackModel = 'grok-3-mini';
+          console.log(`[getDirectTextResponse] Attempting fallback to model: ${fallbackModel}`);
+          const data = await callLLM({
+            provider,
+            model: fallbackModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: query }
+            ],
+            max_tokens: 2048,
+            temperature: 0.6,
+            stream: false,
+          });
+          await updateTokenUsage(userId, data.usage);
+          if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+            return data.choices[0].message.content.trim();
+          } else {
+            console.error("Fallback LLM response content is empty or not as expected", data);
+            return `Sorry ${userName}, I couldn't generate a concept explanation right now. Please try again later.`;
+          }
+        } catch (fallbackError) {
+          console.error("[getDirectTextResponse] Fallback model also failed:", fallbackError);
+          return `Sorry ${userName}, I couldn't generate a concept explanation right now. Please try again later.`;
+        }
     }
 }
 
@@ -1363,7 +1427,7 @@ Format your analysis with clear sections using markdown, be encouraging but spec
         }
 
         // **** SPECIAL HANDLING FOR KEYWORD EXPLANATION ****
-        const keywordMatch = query.match(/^What is (.*)\?$/i); 
+        const keywordMatch = query.match(/^What is (.*)\?$/i) || query.match(/^What are (.*)\?$/i); 
         if (keywordMatch && keywordMatch[1]) {
             const keyword = keywordMatch[1].trim().replace(/\?$/, '').trim();
             if (keyword) {
@@ -1374,9 +1438,25 @@ Format your analysis with clear sections using markdown, be encouraging but spec
                 // Call getDirectTextResponse with the simple query and user context
                 const explanation = await getDirectTextResponse(explanationQuery, userId, userName, { preferences: userPreferences, exercisePRs: exercisePRs });
                 if (explanation) {
+                    // Add debugging to see what's in the explanation
+                    console.log(`[POST] Concept explanation for "${keyword}" successfully generated. Length: ${explanation.length} chars`);
+                    console.log(`[POST] Explanation preview: "${explanation.substring(0, 150)}..."`);
+                    console.log(`[POST] JSON stringified preview: ${JSON.stringify(explanation).substring(0, 150)}...`);
+                    
                     const endTime = Date.now();
                     console.log(`--- [AI Coach Request Completed - Keyword Explanation] Latency: ${endTime - startTime}ms ---`);
-                    return NextResponse.json({ response: explanation, data: null });
+                    
+                    // Return explanation with explicit JSON format to avoid any escaping issues
+                    return NextResponse.json({ 
+                        response: explanation, 
+                        data: null,
+                        format: "markdown",
+                        type: "concept_explanation" 
+                    }, {
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
                 } else {
                     // Handle failure
                     console.warn(`[POST] Failed to get direct explanation for keyword: ${keyword}`);

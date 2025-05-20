@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { TextGenerateEffect } from '@/components/ui/text-generate-effect';
 import { SplashCursor } from "@/components/ui/splash-cursor";
+import { BlurText } from "@/components/ui/animated-blur-text";
 
 interface Slide {
   type: 'definition' | 'subheading' | 'content' | 'question';
@@ -186,11 +187,17 @@ export function ConceptSlideshow({ keyword, markdownContent, isOpen, onClose }: 
           key={currentSlideIndex}
         >
           {isLoading ? (
-            <div className="text-center space-y-4">
-              <SplashCursor />
-              <p className="text-sm text-muted-foreground animate-pulse">
-                  Aivery is fetching insights on {keyword}...
-              </p>
+            <div className="flex flex-col justify-center items-center h-full">
+              <div className="text-center h-12 flex items-center justify-center">
+                <BlurText
+                  text={`Aivery is fetching insights on ${keyword}...`}
+                  delay={150}
+                  animateBy="words"
+                  direction="bottom"
+                  className="text-xl font-medium text-foreground"
+                  pulseAfterLoad={true}
+                />
+              </div>
             </div>
           ) : !currentSlide ? (
             <p className="text-destructive">Error: Could not load slide content.</p>
@@ -203,6 +210,35 @@ export function ConceptSlideshow({ keyword, markdownContent, isOpen, onClose }: 
           ) : (
             <p className="text-muted-foreground">Preparing content...</p>
           )}
+
+          {/* Floating chat bubble that appears on all screens */}
+          <div
+            className="fixed bottom-20 right-6 z-50"
+            style={{
+              animation: 'gentle-float 6s ease-in-out infinite',
+            }}
+          >
+            <Link 
+              href="/chat"
+              passHref
+              className="flex items-center bg-primary text-primary-foreground shadow-md hover:shadow-lg rounded-full px-4 py-2.5 hover:translate-y-[-2px] transition-all duration-300"
+              onClick={() => {
+                // Store concept highlight data in sessionStorage before redirecting
+                const conceptData = {
+                  keyword,
+                  slides,
+                  markdownContent,
+                  currentSlideIndex,
+                };
+                sessionStorage.setItem('aivery_concept_highlight', JSON.stringify(conceptData));
+                sessionStorage.setItem('aivery_chat_context', 'concept_highlight');
+                onClose(); // Close modal when clicking
+              }}
+            >
+              <MessageSquare className="h-5 w-5 mr-2" />
+              <span className="text-sm font-medium">Talk to Aivery about it</span>
+            </Link>
+          </div>
         </div>
 
         <DialogFooter className="p-3 sm:p-4 flex justify-between items-center flex-shrink-0 absolute bottom-0 left-0 right-0 bg-transparent z-20">
@@ -223,6 +259,7 @@ export function ConceptSlideshow({ keyword, markdownContent, isOpen, onClose }: 
               </span>
           )}
 
+          {/* Remove chat button from last slide; always use floating button above */}
           {!isQuestionSlide ? (
             <Button 
               variant="ghost" 
@@ -235,18 +272,7 @@ export function ConceptSlideshow({ keyword, markdownContent, isOpen, onClose }: 
               <span className="sr-only">Next</span>
             </Button>
           ) : (
-            <Link href={`/chat?keyword=${encodeURIComponent(keyword)}&context=viewed_slideshow`} passHref>
-              <Button 
-                 variant="ghost" 
-                 size="sm" 
-                  className="rounded-full h-9 w-9 p-0 text-primary hover:bg-primary/10 hover:text-primary disabled:opacity-30"
-                 onClick={onClose}
-                 disabled={isLoading}
-               >
-                 <MessageSquare className="h-5 w-5" />
-                 <span className="sr-only">Discuss in Chat</span>
-              </Button>
-            </Link>
+            <div className="w-9 h-9"></div>
           )}
         </DialogFooter>
       </DialogContent>

@@ -6,12 +6,12 @@ import LandingPageClient from "@/components/landing/landing-page-client";
 
 // --- Metadata Definition ---
 export const metadata: Metadata = {
-  title: "Aivery | Your AI-Powered Fitness Companion", // More descriptive title
-  description: "Aivery helps you understand your workouts – not just track them. Train smarter, see patterns, and improve with purpose.",
+  title: "Aivery | AI-Powered Fitness Training Intelligence",
+  description: "Aivery transforms workout data into actionable intelligence. Track, analyze, and improve with personalized AI coaching that understands your training journey.",
   // Add Open Graph metadata specifically for the landing/dashboard page
   openGraph: {
-    title: "Aivery | Your AI-Powered Fitness Companion",
-    description: "Understand your training data, see progress, and get AI coaching.",
+    title: "Aivery | AI-Powered Fitness Training Intelligence",
+    description: "Transform your workout data into actionable intelligence with personalized AI coaching and insights.",
     // TODO: Replace with your actual deployed URL base
     url: process.env.NEXT_PUBLIC_APP_URL || 'https://aivery.app', // Use env variable or default
     siteName: 'Aivery',
@@ -31,8 +31,8 @@ export const metadata: Metadata = {
   // Optional: Add Twitter specific card metadata if desired
   // twitter: {
   //   card: 'summary_large_image',
-  //   title: "Aivery | Your AI-Powered Fitness Companion",
-  //   description: "Understand your training data, see progress, and get AI coaching.",
+  //   title: "Aivery | AI-Powered Fitness Training Intelligence",
+  //   description: "Transform your workout data into actionable intelligence with personalized AI coaching and insights.",
   //   images: ['/images/og-home.png'], // Use the same image or a different one
   // },
   // Optional: Add other relevant meta tags

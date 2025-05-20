@@ -4,10 +4,51 @@ import { getToken } from 'next-auth/jwt'
 import { VERSION } from '@/app/version'
 
 // Paths that are considered public (accessible without authentication)
-const publicPaths = ['/', '/login', '/register', '/api/auth/', '/api/stripe/webhook'];
+const publicPaths = [
+  '/', 
+  '/login', 
+  '/register', 
+  '/forgot-password',
+  '/reset',
+  '/api/auth/',
+  '/api/stripe/webhook',
+  '/api/health'
+];
+
+// Paths that are explicitly protected (require authentication)
+const protectedPaths = [
+  '/dashboard',
+  '/workouts',
+  '/workout',
+  '/exercises',
+  '/exercise', // Singular form
+  '/excercises', // Common misspelling 
+  '/chat',
+  '/challenges',
+  '/calendar',
+  '/integrations',
+  '/integration', // Singular form
+  '/my-story',
+  '/plan',
+  '/planner',
+  '/settings',
+  '/analytics',
+  '/activity',
+  '/admin',
+  '/profile',
+  '/user',
+  '/debug',
+  '/health', // Health checks that require authentication
+  '/init-db', // Database initialization page
+  '/strava-admin',
+  '/fix-auth',
+  '/check-db',
+  '/debug-images',
+  '/check-mongodb',
+];
 
 // Paths that authenticated users should be redirected AWAY from
-const authProtectedPaths = ['/login', '/register'];
+const authProtectedPaths = ['/login', '/register', '/forgot-password', '/reset'];
 
 // The main dashboard path
 const dashboardPath = '/dashboard';
@@ -17,13 +58,16 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip middleware for static files and specific API routes (like webhook)
-  if (pathname.startsWith('/_next') || pathname.startsWith('/favicon.ico') || pathname.startsWith('/icons/') || pathname.startsWith('/images/') || pathname === '/api/stripe/webhook') {
+  if (pathname.startsWith('/_next') || 
+      pathname.startsWith('/favicon.ico') || 
+      pathname.startsWith('/icons/') || 
+      pathname.startsWith('/images/') || 
+      pathname === '/api/stripe/webhook') {
     return NextResponse.next();
   }
 
-  // --- DEBUGGING: Log Raw Cookie Header ---
-  const rawCookieHeader = request.headers.get('cookie') || '[No Cookie Header]';
-  console.log(`[MIDDLEWARE] Path: ${pathname} | Raw Cookie Header: ${rawCookieHeader.substring(0, 150)}...`); // Log first 150 chars
+  // --- DEBUGGING: Log Request Info ---
+  console.log(`[MIDDLEWARE] Processing request to: ${pathname}`);
   // ----------------------------------------
 
   // --- Get Token ---
@@ -42,87 +86,93 @@ export async function middleware(request: NextRequest) {
   try {
     token = await getToken({
       req: request,
-      cookieName: cookieName, // Standard name
-      secureCookie: process.env.NODE_ENV === 'production', // Helps select __Secure- prefix if applicable
+      cookieName: cookieName,
+      secureCookie: process.env.NODE_ENV === 'production',
     });
-    console.log(`[MIDDLEWARE] Path: ${pathname} | getToken Result: ${token ? `User: ${token.email || token.id}` : 'null'}`);
+    console.log(`[MIDDLEWARE] Auth Result for ${pathname}: ${token ? 'Authenticated' : 'Not Authenticated'}`);
   } catch (error: any) {
     getTokenError = error.message || 'Unknown error';
-    console.error(`[MIDDLEWARE] Path: ${pathname} | Error calling getToken:`, error);
+    console.error(`[MIDDLEWARE] Auth Error for ${pathname}:`, error);
   }
   const isAuthenticated = !!token;
   // ----------------
 
-  // Log request details (including explicit auth status)
-  if (getTokenError) {
-    console.error(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: false (due to getToken error: ${getTokenError})`);
-  } else {
-    console.log(`[MIDDLEWARE] Path: ${pathname} | Final Auth Status: ${isAuthenticated}`);
-  }
-
   // --- START ROUTING LOGIC ---
 
-  // 1. Handle root path ('/')
+  // 1. Check if path is explicitly protected - both exact matches and any subpaths
+  const isExplicitlyProtected = protectedPaths.some(path => 
+    pathname === path || pathname.startsWith(`${path}/`)
+  );
+  
+  if (isExplicitlyProtected && !isAuthenticated) {
+    console.log(`[MIDDLEWARE] Blocking access to protected path: ${pathname}`);
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    url.searchParams.set('callbackUrl', encodeURIComponent(pathname));
+    return NextResponse.redirect(url);
+  }
+
+  // 2. Handle root path ('/')
   if (pathname === '/') {
     if (isAuthenticated) {
       // If authenticated, redirect from landing page to dashboard
       const url = request.nextUrl.clone();
       url.pathname = dashboardPath;
-      console.log(`[MIDDLEWARE] Authenticated user on '/'. Redirecting to ${dashboardPath}`);
+      console.log(`[MIDDLEWARE] Redirecting authenticated user from / to ${dashboardPath}`);
       return NextResponse.redirect(url);
-    } else {
-      // If not authenticated, allow access to landing page
-      console.log(`[MIDDLEWARE] Unauthenticated user accessing '/'. Allowing.`);
-      // We still return NextResponse.next() with headers below
     }
   }
 
-  // 2. Handle authenticated users trying to access login/register
-  /* // Temporarily disabled to break redirect loop for invalid sessions
-  if (isAuthenticated && authProtectedPaths.includes(pathname)) {
+  // 3. Handle authenticated users trying to access login/register
+  if (isAuthenticated && authProtectedPaths.some(path => pathname === path)) {
     const url = request.nextUrl.clone();
     url.pathname = dashboardPath;
-    console.log(`[MIDDLEWARE] Authenticated user on '${pathname}'. Redirecting to ${dashboardPath}`);
+    console.log(`[MIDDLEWARE] Redirecting authenticated user from ${pathname} to ${dashboardPath}`);
     return NextResponse.redirect(url);
   }
-  */
 
-  // 3. Handle unauthenticated users trying to access protected paths
-  const isPublic = publicPaths.some(path => pathname.startsWith(path));
+  // 4. General protection for non-public paths
+  const isPublic = publicPaths.some(path => {
+    if (!path.endsWith('/')) {
+      return pathname === path || pathname.startsWith(`${path}/`);
+    }
+    return pathname.startsWith(path);
+  });
+
+  // Default protection for any path not explicitly public
+  // This is a catch-all to ensure any path not in the public list requires auth
   if (!isAuthenticated && !isPublic) {
-    // Special check for API routes - often return 401 instead of redirecting
+    // API routes return 401
     if (pathname.startsWith('/api/')) {
-      console.log(`[MIDDLEWARE] Unauthenticated access attempt to API route '${pathname}'. Returning 401.`);
+      console.log(`[MIDDLEWARE] Returning 401 for API route: ${pathname}`);
       return new NextResponse('Unauthorized', { status: 401 });
     }
-    // For non-API protected routes, redirect to landing page
+    
+    // Special case: allow root path (/) even if unauthenticated
+    if (pathname === '/') {
+      return NextResponse.next();
+    }
+    
+    // Non-API routes redirect to login
+    console.log(`[MIDDLEWARE] Redirecting unauthenticated user from ${pathname} to /login`);
     const url = request.nextUrl.clone();
-    url.pathname = '/';
-    console.log(`[MIDDLEWARE] Unauthenticated user on protected path '${pathname}'. Redirecting to landing page.`);
+    url.pathname = '/login';
+    url.searchParams.set('callbackUrl', encodeURIComponent(pathname));
     return NextResponse.redirect(url);
   }
 
   // --- END ROUTING LOGIC ---
 
-  // --- Common response handling (headers) ---
-  // Allow the request to proceed if none of the above conditions caused a redirect
+  // Add standard headers to response
   const response = NextResponse.next();
-
-  // Force all responses to be dynamic with strong cache-busting headers
+  
+  // Cache-busting headers
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   response.headers.set('Pragma', 'no-cache');
   response.headers.set('Expires', '0');
-  response.headers.set('Surrogate-Control', 'no-store');
-  response.headers.set('X-Accel-Expires', '0');
-  response.headers.set('X-Middleware-Bypass', 'true'); // Keep bypass header if needed
-
+  
   // Add version header
   response.headers.set('X-App-Version', VERSION);
-
-  // Add auth debugging headers (optional)
-  const cookieHeader = request.headers.get('cookie') || '';
-  const hasAuthCookie = cookieHeader.includes('next-auth.session-token') || cookieHeader.includes('__Secure-next-auth.session-token');
-  response.headers.set('X-Auth-Debug', `token:${!!token};cookie:${hasAuthCookie}`);
 
   return response;
 }
