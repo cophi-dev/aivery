@@ -4,4 +4,10 @@ node_modules
 .next
 .env.local
 .env
-**/*.log 
+**/*.log
+__deprecated__
+temp
+aivery_db
+**/node_modules
+**/coverage
+**/.DS_Store 

@@ -6,6 +6,9 @@ module.exports = {
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: [
+    'ease-[cubic-bezier(0.34,1.56,0.64,1)]'
+  ],
   theme: {
     extend: {
       fontFamily: {
