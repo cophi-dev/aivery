@@ -1894,13 +1894,17 @@ Respond to the user's follow-up question about their weekly workout review. Focu
                  }
 
                  // 2. Construct the system prompt for weekly review, adjusting for the period
-                 const systemPrompt = `\\\\nYou are Aivery, an expert fitness coach providing a weekly performance review for ${userName}.\\\\n\\\\n${periodTitle.toUpperCase()} WORKOUT DATA:\\\\n${workoutDataString}\\\\n\\\\nRESPONSE GUIDELINES:\\\\n1.  **Tone:** Friendly, encouraging, and insightful.\\\\n2.  **Analyze ${periodDescription}:** Based *only* on the provided data, summarize the user's activity from ${periodDescription} (Monday-Sunday). Calculate and mention key totals (e.g., total workouts, total duration, total distance if applicable, total strength volume if calculable).\\\\n3.  **Identify Trends/Highlights:** Point out any noticeable patterns, achievements, or areas for focus (e.g., consistency, high intensity days, longest run, PRs if inferable from data). \\\\n4.  **Provide Insights:** Offer 1-2 brief, actionable insights based on the week's activity (e.g., "Great job getting 4 sessions in!", "Mixing strength and cardio seems to be working well.", "Consider adding a rest day if intensity was high.").\\\\n5.  **Keep it Concise:** Aim for a helpful summary, not an exhaustive analysis.\\\\n6.  **No Questions (Mostly):** Generate the review directly. End with a brief encouraging closing statement or a very gentle open question like \\\"How did the week feel overall?\\\"\\\\n7.  **Handle No Data:** If 'No workouts logged ${periodDescription}', acknowledge this and offer encouragement to log workouts.\\\\n\\\\nGenerate the weekly review for ${userName} based *only* on the provided workout data for ${periodDescription}.`;
+                 const systemPrompt = `You are Aivery, a supportive, observant AI fitness companion. Generate a concise and emotionally resonant 3–4 sentence weekly review, grounded in the provided workout data.\n\nFORMAT:\n1. Opening line that captures the vibe of the week (e.g. "Solid effort across 4 sessions" or "A quiet week with focused strength work").\n2. One clear pattern or standout moment — with stat if available (e.g. "You logged 11t of strength work over 3 days.")\n3. One actionable reflection or nudge (e.g. "Keep anchoring around your mid-week routine." or "Consider mixing in a longer run again next week.")\n\nTONE:\n- Friendly, confident, compact\n- Avoid fluff, abstract metaphors, or long-winded praise\n- Optional: 1 emoji (if it helps, not mandatory)\n\nIF NO WORKOUTS:\nSay: "No workouts last week — that happens. Next week is a fresh page. 👣"\n\nDATA:\n${periodTitle} WORKOUT DATA:\n${workoutDataString}\n\nGenerate the weekly review for ${userName}, based only on the workout data above.`;
 
-                 console.log(`[API /coach] Sending ${reviewPeriod} review prompt to model...`);
                  // 3. Call the AI model
-                 const reviewResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId);
-                 
-                 // 4. Return the generated review
+                 let reviewResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId);
+                 // Truncate to first 3 sentences if reviewResponse is too long
+                 if (reviewResponse && reviewResponse.length > 500) {
+                   const sentences = reviewResponse.match(/[^.!?]+[.!?]+/g);
+                   if (sentences && sentences.length > 0) {
+                     reviewResponse = sentences.slice(0, 3).join(' ').trim();
+                   }
+                 }
                  console.log("[API /coach] Weekly review generation successful.");
                  const endTime = Date.now();
                  console.log(`--- [AI Coach Request Completed - Review] Latency: ${endTime - startTime}ms ---`);
@@ -1971,13 +1975,18 @@ Respond to the user's follow-up question about their weekly workout review. Focu
                 }
                 
                 // Construct the system prompt for weekly review, adjusting for the period
-                const systemPrompt = `\\\\nYou are Aivery, an expert fitness coach providing a weekly performance review for ${userName}.\\\\n\\\\n${periodTitle.toUpperCase()} WORKOUT DATA:\\\\n${workoutDataString}\\\\n\\\\nRESPONSE GUIDELINES:\\\\n1.  **Tone:** Friendly, encouraging, and insightful.\\\\n2.  **Analyze ${periodDescription}:** Based *only* on the provided data, summarize the user's activity from ${periodDescription} (Monday-Sunday). Calculate and mention key totals (e.g., total workouts, total duration, total distance if applicable, total strength volume if calculable).\\\\n3.  **Identify Trends/Highlights:** Point out any noticeable patterns, achievements, or areas for focus (e.g., consistency, high intensity days, longest run, PRs if inferable from data). \\\\n4.  **Provide Insights:** Offer 1-2 brief, actionable insights based on the week's activity (e.g., "Great job getting 4 sessions in!", "Mixing strength and cardio seems to be working well.", "Consider adding a rest day if intensity was high.").\\\\n5.  **Keep it Concise:** Aim for a helpful summary, not an exhaustive analysis.\\\\n6.  **No Questions (Mostly):** Generate the review directly. End with a brief encouraging closing statement or a very gentle open question like \\\"How did the week feel overall?\\\"\\\\n7.  **Handle No Data:** If 'No workouts logged ${periodDescription}', acknowledge this and offer encouragement to log workouts.\\\\n\\\\nGenerate the weekly review for ${userName} based *only* on the provided workout data for ${periodDescription}.`;
+                const systemPrompt = `You are Aivery, a supportive, observant AI fitness companion. Generate a concise and emotionally resonant 3–4 sentence weekly review, grounded in the provided workout data.\n\nFORMAT:\n1. Opening line that captures the vibe of the week (e.g. "Solid effort across 4 sessions" or "A quiet week with focused strength work").\n2. One clear pattern or standout moment — with stat if available (e.g. "You logged 11t of strength work over 3 days.")\n3. One actionable reflection or nudge (e.g. "Keep anchoring around your mid-week routine." or "Consider mixing in a longer run again next week.")\n\nTONE:\n- Friendly, confident, compact\n- Avoid fluff, abstract metaphors, or long-winded praise\n- Optional: 1 emoji (if it helps, not mandatory)\n\nIF NO WORKOUTS:\nSay: "No workouts last week — that happens. Next week is a fresh page. 👣"\n\nDATA:\n${periodTitle} WORKOUT DATA:\n${workoutDataString}\n\nGenerate the weekly review for ${userName}, based only on the workout data above.`;
 
-                console.log(`[API /coach] Sending ${reviewPeriod} review prompt to model...`);
                 // 3. Call the AI model
-                const reviewResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId);
+                let reviewResponse = await generateResponseFromSystemPrompt(systemPrompt, query, userName, userId);
+                // Truncate to first 3 sentences if reviewResponse is too long
+                if (reviewResponse && reviewResponse.length > 500) {
+                  const sentences = reviewResponse.match(/[^.!?]+[.!?]+/g);
+                  if (sentences && sentences.length > 0) {
+                    reviewResponse = sentences.slice(0, 3).join(' ').trim();
+                  }
+                }
                 
-                // 4. Return the generated review
                 console.log("[API /coach] Weekly review generation successful.");
                 const endTime = Date.now();
                 console.log(`--- [AI Coach Request Completed - Review] Latency: ${endTime - startTime}ms ---`);

@@ -136,14 +136,6 @@ After the sections, conclude *only* with an engaging question asking for my feed
                 <CardContent className="flex flex-col gap-3 pt-0">
                     <Button
                         variant="secondary"
-                        onClick={handleGeneratePlan}
-                        className="w-full"
-                    >
-                        <CalendarPlus className="h-5 w-5 mr-2" />
-                        Create Next Week's Plan
-                    </Button>
-                    <Button
-                        variant="secondary"
                         onClick={handleReviewWeek}
                         className="w-full"
                     >

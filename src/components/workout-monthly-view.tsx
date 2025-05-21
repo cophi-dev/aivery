@@ -257,7 +257,10 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
                         )}
                         {workout.aiHighlight && (
                             <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
-                                <p className="text-sm text-[#58a3ff]/90">{workout.aiHighlight}</p>
+                                <p className="text-sm font-medium italic text-[#58a3ff]/90 leading-relaxed">
+                                    <span className="block mb-1">{getHighlightIcon(workout.aiHighlight)} “{workout.aiHighlight}”</span>
+                                    <span className="text-xs not-italic text-muted-foreground">– Aivery</span>
+                                </p>
                             </div>
                         )}
                         <div className="mt-6 flex justify-end">
@@ -396,7 +399,10 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
                         )}
                         {workout.aiHighlight && (
                             <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#fa9f7b]/5 to-[#fa9f7b]/5 border border-[#fa9f7b]/10">
-                                <p className="text-sm text-[#fa9f7b]/90">{workout.aiHighlight}</p>
+                                <p className="text-sm font-medium italic text-[#fa9f7b]/90 leading-relaxed">
+                                    <span className="block mb-1">{getHighlightIcon(workout.aiHighlight)} “{workout.aiHighlight}”</span>
+                                    <span className="text-xs not-italic text-muted-foreground">– Aivery</span>
+                                </p>
                             </div>
                         )}
                         <div className="mt-6 flex justify-end">
@@ -413,6 +419,16 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
             </CardContent>
         </Card>
     );
+};
+
+// Add this helper if not present
+const getHighlightIcon = (text: string): string => {
+  if (!text) return '💬';
+  if (/record|PR|fastest|longest|personal/i.test(text)) return '🎉';
+  if (/consistency|routine|streak|momentum/i.test(text)) return '📈';
+  if (/rest|recovery|ease|light/i.test(text)) return '😌';
+  if (/hard|tough|challenging|pushed/i.test(text)) return '🔥';
+  return '💬';
 };
 
 export default function WorkoutMonthlyView() {
