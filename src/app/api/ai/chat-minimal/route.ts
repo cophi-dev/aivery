@@ -34,8 +34,10 @@ export async function POST(req: NextRequest) {
 
   // 4. Fetch recent PRs
   let exercisePRs: any[] = [];
+  let allPRs: any[] = [];
   try {
     exercisePRs = await ExercisePRModel.find({ userId }).sort({ date: -1 }).limit(5).lean();
+    allPRs = await ExercisePRModel.find({ userId }).lean();
   } catch {}
 
   // 5. Fetch recent workouts
@@ -47,7 +49,41 @@ export async function POST(req: NextRequest) {
   // 6. Build context strings
   let prSummary = "";
   if (exercisePRs.length > 0) {
-    prSummary = "Recent PRs:\n" + exercisePRs.map(pr => `- ${pr.exerciseName}: ${pr.value} ${pr.unit} (${format(new Date(pr.date), 'yyyy-MM-dd')})`).join('\n');
+    // Group PRs by exerciseName
+    const grouped: Record<string, any[]> = {};
+    for (const pr of exercisePRs) {
+      if (!grouped[pr.exerciseName]) grouped[pr.exerciseName] = [];
+      grouped[pr.exerciseName].push(pr);
+    }
+    // Group all PRs for stats
+    const allGrouped: Record<string, Record<string, any[]>> = {};
+    for (const pr of allPRs) {
+      if (!allGrouped[pr.exerciseName]) allGrouped[pr.exerciseName] = {};
+      if (!allGrouped[pr.exerciseName][pr.type]) allGrouped[pr.exerciseName][pr.type] = [];
+      allGrouped[pr.exerciseName][pr.type].push(pr);
+    }
+    prSummary = "Recent PRs (single set vs daily, with all-time/avg):\n" +
+      Object.entries(grouped).map(([name, prs]) => {
+        const lines: string[] = [];
+        for (const type of ['reps', 'daily_reps']) {
+          const label = type === 'reps' ? 'single set' : 'in a day';
+          const recent = prs.find(p => p.type === type);
+          const all = (allGrouped[name] && allGrouped[name][type]) || [];
+          if (recent) {
+            // All-time best
+            const best = all.reduce((max, p) => p.value > max.value ? p : max, all[0] || recent);
+            // Rolling avg (last 30d)
+            const cutoff = Date.now() - 30*24*60*60*1000;
+            const last30d = all.filter(p => new Date(p.date).getTime() >= cutoff);
+            const avg = last30d.length ? (last30d.reduce((sum, p) => sum + p.value, 0) / last30d.length) : null;
+            let line = `- ${name} (${label}): ${recent.value} reps (${format(new Date(recent.date), 'yyyy-MM-dd')})`;
+            if (best && best.value !== recent.value) line += ` | All-time best: ${best.value} (${format(new Date(best.date), 'yyyy-MM-dd')})`;
+            if (avg && Math.round(avg) !== recent.value) line += ` | 30d avg: ${Math.round(avg)}`;
+            lines.push(line);
+          }
+        }
+        return lines.join('\n');
+      }).filter(Boolean).join('\n');
   }
   let workoutSummary = "";
   if (recentWorkouts.length > 0) {

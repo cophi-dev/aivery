@@ -20,6 +20,8 @@ import { getServerSession } from "next-auth"; // RE-ADD import
 import mongoose from 'mongoose'; // Import mongoose
 import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository";
 import { callLLM, LLMProvider } from '@/lib/services/llm';
+import ExerciseAverageModel from '@/lib/db/models/exerciseAverage';
+import ExerciseModel from '@/lib/db/models/exercise';
 
 // Force dynamic rendering and prevent caching
 export const dynamic = "force-dynamic";
@@ -204,6 +206,36 @@ export async function POST(req: Request) {
     const goalsString = user?.aiPreferences?.fitnessGoals
       || (user?.goals && user.goals.length ? user.goals.join(', ') : 'No goals specified.');
 
+    // --- Fetch rolling averages for this user ---
+    const exerciseAverages = await ExerciseAverageModel.find({ userId }).lean();
+    // Get all unique exerciseIds
+    const exerciseIds = Array.from(new Set(exerciseAverages.map(avg => avg.exerciseId.toString())));
+    // Fetch exercise names in one query
+    const exercises = await ExerciseModel.find({ _id: { $in: exerciseIds } }).select('name').lean();
+    const exerciseIdToName: Record<string, string> = {};
+    exercises.forEach(ex => { exerciseIdToName[ex._id.toString()] = ex.name; });
+    // Group averages by exercise
+    const averagesByExercise: Record<string, { name: string; stats: { type: string; avg30d: number; avg90d: number }[] }> = {};
+    for (const avg of exerciseAverages) {
+      const exId = avg.exerciseId.toString();
+      const exName = exerciseIdToName[exId] || exId;
+      if (!averagesByExercise[exId]) averagesByExercise[exId] = { name: exName, stats: [] };
+      averagesByExercise[exId].stats.push({ type: avg.type, avg30d: avg.rollingAvg30d, avg90d: avg.rollingAvg90d });
+    }
+    // Format as markdown table
+    let rollingAveragesString = '';
+    if (Object.keys(averagesByExercise).length > 0) {
+      rollingAveragesString = '### Rolling 30/90 Day Exercise Averages\n\n';
+      rollingAveragesString += '| Exercise | Metric | 30d Avg | 90d Avg |\n|---|---|---|---|\n';
+      for (const { name, stats } of Object.values(averagesByExercise)) {
+        for (const stat of stats) {
+          rollingAveragesString += `| ${name} | ${stat.type} | ${stat.avg30d.toFixed(2)} | ${stat.avg90d.toFixed(2)} |\n`;
+        }
+      }
+    } else {
+      rollingAveragesString = 'No rolling averages available.';
+    }
+
     // Parse request
     const body = await req.json();
     const currentQuery = body.query;
@@ -229,6 +261,7 @@ ${last3WorkoutsString}
 ${personalRecordsString}
 - Current Goals/Targets:
 ${goalsString}
+${rollingAveragesString ? '\n' + rollingAveragesString : ''}
 
 RESPONSE GUIDELINES:
 - Use the USER CONTEXT above to personalize your answer.

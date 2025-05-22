@@ -59,7 +59,7 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch('/api/daily-insight');
+        const response = await fetch(`/api/daily-insight?fresh=${Math.random()}`);
         if (!response.ok) throw new Error('Failed to fetch daily insight');
         const data = await response.json();
         setInsight(data.insight || '');

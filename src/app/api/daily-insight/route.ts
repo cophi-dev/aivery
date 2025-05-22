@@ -341,44 +341,6 @@ export async function GET(req: Request) {
   // --- End Fetch User Details ---
 
   try {
-    // --- Check for Existing Insight & Staleness ---
-    const actualLatestWorkoutTimestamp = await getLatestWorkoutTimestampForUser(userId);
-    const storedInsight = await findLatestInsightForUserAndDate(userId, todayStartUTC);
-
-    if (storedInsight) {
-      // Check if storedInsight.date is valid before using it
-      if (storedInsight.date && !isNaN(new Date(storedInsight.date).getTime())) {
-        const storedDate = new Date(storedInsight.date);
-        console.log(`[Daily Insight] Found stored insight with valid date: ${storedDate.toISOString()}`);
-        
-        // Check 1: Is the stored insight actually for today's date?
-        const storedDateUTC = getStartOfDayUTC(storedDate); // Use already created Date object
-        const isForToday = storedDateUTC.getTime() === todayStartUTC.getTime();
-
-        if (isForToday) {
-          console.log(`[Daily Insight] Stored insight date matches today's date.`);
-          // Check 2: Is it stale based on workout timestamps?
-          const storedTimestamp = storedInsight.lastWorkoutTimestamp ? new Date(storedInsight.lastWorkoutTimestamp) : null;
-          const isStale = actualLatestWorkoutTimestamp && (!storedTimestamp || actualLatestWorkoutTimestamp > storedTimestamp);
-
-          if (!isStale) {
-            console.log(`[Daily Insight] Stored insight is fresh (date match & no newer workouts). Returning cached insight.`);
-            return NextResponse.json(formatInsightResponse(storedInsight));
-          } else {
-            console.log(`[Daily Insight] Stored insight is stale (Newer workout found: ${actualLatestWorkoutTimestamp?.toISOString()} vs Stored: ${storedTimestamp?.toISOString()}). Regenerating...`);
-          }
-        } else {
-           console.log(`[Daily Insight] Stored insight is for a previous date (${storedDateUTC.toISOString()} vs ${todayStartUTC.toISOString()}). Regenerating...`);
-        }
-      } else {
-        // Handle case where stored insight exists but has an invalid date
-        console.log(`[Daily Insight] Found stored insight but its date is invalid/missing: ${storedInsight.date}. Regenerating...`);
-      }
-    } else {
-      console.log(`[Daily Insight] No stored insight found for today. Generating new insight...`);
-    }
-    // --- End Check --- 
-
     // --- Calculate Date Range for Data Fetching --- 
     const { startDate, endDate, description: dateRangeDescription } = calculateDateRangeForDay(dayName);
 
@@ -387,115 +349,76 @@ export async function GET(req: Request) {
     let dataFetchError: string | null = null;
     let latestWorkoutTsInData: Date | null = null;
     try {
-      console.log(`[Daily Insight] Fetching workouts for ${displayName} (${userId}) period: ${dateRangeDescription} (${startDate.toISOString()} to ${endDate.toISOString()})`);
       fetchedWorkouts = await getUserWorkoutsByDateRange(userId, startDate, endDate);
-      latestWorkoutTsInData = findLatestTimestampInWorkouts(fetchedWorkouts); // Find the latest timestamp within the fetched data
-      console.log(`[Daily Insight] Fetched ${fetchedWorkouts.length} workouts. Latest timestamp in data: ${latestWorkoutTsInData?.toISOString()}`);
+      latestWorkoutTsInData = findLatestTimestampInWorkouts(fetchedWorkouts);
     } catch (fetchError) {
-       console.error("[Daily Insight] Error fetching workout data:", fetchError);
-       dataFetchError = fetchError instanceof Error ? fetchError.message : "Failed to load workout data.";
+      dataFetchError = fetchError instanceof Error ? fetchError.message : "Failed to load workout data.";
     }
 
-    // --- Generate Insight using AI --- 
+    // --- Always Generate Fresh Insight using AI --- 
     let generatedInsight = "";
     let aiError: string | null = null;
     const grokApiKey = process.env.GROK_API_KEY;
 
     if (!grokApiKey) {
-        console.error("[Daily Insight] GROK_API_KEY not configured.");
-        aiError = "AI service is unavailable due to configuration issues.";
-        generatedInsight = `Placeholder insight for ${dayName}. Data fetch error: ${dataFetchError || 'None'}`;
+      aiError = "AI service is unavailable due to configuration issues.";
+      generatedInsight = `Placeholder insight for ${dayName}. Data fetch error: ${dataFetchError || 'None'}`;
     } else {
-        try {
-            // Pass today's date to the formatting function
-            const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords, startDate, endDate);
-            const systemPrompt = `\
-You are Aivery, a friendly and insightful AI fitness coach providing a daily insight for ${displayName}.
+      try {
+        const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords, startDate, endDate);
+        // --- FITNESS BUDDY PROMPT ---
+        const systemPrompt = `
+You are Aivery, the user's fitness buddy—fun, supportive, and always real. Your job is to give ${displayName} a daily fitness insight that feels like it's from a friend who works out with them.
 
-Today is ${dayName}. Your task is to generate a response based *only* on the following instructions and data:
-
-**Instructions for ${dayName} (${content.title}):**
-${content.prompt}
-
-**User Data Summary (${dateRangeDescription}):**
+Today is ${dayName}. Here's what's up:
 ${workoutDataString}
-${dataFetchError ? `\n(Note: Error fetching workout data: ${dataFetchError})` : ''}
 
-Follow the instructions precisely. Address the user by name (${displayName}). Keep the response concise and aligned with the specified tone for the day.
+Instructions:
+- If the user had a rest day yesterday and today is late (after 7pm) with no workout logged, motivate them to get moving or gently tease them—like a real friend would.
+- If the user is on a streak, hype them up.
+- If the user is stagnating or missing workouts, encourage or nudge them.
+- Be playful, humble, and natural—like a friend texting after a workout.
+- Celebrate wins, laugh at struggles, and keep it light.
+- If there's a new PR, get genuinely excited (but don't brag).
+- If today's a rest day, make it feel okay—maybe joke about "earning that couch time."
+- If the week's been tough, offer encouragement and a fresh start.
+- Use emojis if it feels natural, but don't overdo it.
+- Never sound like a robot or a formal coach.
+- 2–4 sentences, but don't force it—just sound like a real person.
 
-IMPORTANT PERSONAL RECORD FORMATTING INSTRUCTIONS:
-If any Personal Records (PRs) were achieved:
-- Use the exact phrase "new PR" or "Personal Record" when referring to them
-- Format them as "PR in [exercise]: [value] [unit]" or "New PR: [value] [unit] in [exercise]"
-- Include specific numbers and units when mentioning PRs
-- Look for "New PR in" text in the RECENT PERSONAL RECORDS section and make these the central focus of your response
-- FOR BODYWEIGHT EXERCISES: Especially celebrate PRs involving reps, such as "New PR in Pull-up: 14 reps"
-- If you see rep-based PRs (like "14 reps"), emphasize the strength and endurance achievement
+Now, write today's insight for ${displayName}!
 `;
-
-            console.log("[Daily Insight] Sending request to Grok API...");
-            
-            const response = await fetch('https://api.x.ai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${grokApiKey}`
-              },
-              body: JSON.stringify({
-                model: 'grok-3-mini-latest',
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                ],
-                max_tokens: 1024, // Already increased
-                temperature: 0.7,
-                stream: false,
-              })
-            });
-
-            if (!response.ok) {
-              const errorBody = await response.text();
-              console.error(`[Daily Insight] Grok API error: ${response.status} ${response.statusText}`, errorBody);
-              throw new Error(`AI API request failed: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            console.log("[Daily Insight] Grok Raw Response:", data);
-
-            if (data.choices && data.choices[0]?.message?.content) {
-              generatedInsight = data.choices[0].message.content.trim();
-            } else {
-              throw new Error("Unexpected response structure from AI API.");
-            }
-
-        } catch (error) {
-            console.error("[Daily Insight] Error during AI insight generation:", error);
-            aiError = error instanceof Error ? error.message : "Failed to generate insight.";
-            generatedInsight = `Could not generate insight for ${dayName}. ${aiError}`; 
+        const response = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${grokApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'grok-3-mini-latest',
+            messages: [
+              { role: 'system', content: systemPrompt },
+            ],
+            max_tokens: 1024,
+            temperature: 0.7,
+            stream: false,
+          })
+        });
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(`AI API request failed: ${response.statusText} - ${errorBody}`);
         }
-    }
-
-    // --- Save the Generated Insight (if no AI error) --- 
-    if (!aiError) {
-        try {
-            const insightToSave: Omit<DailyInsightData, '_id' | 'createdAt' | 'updatedAt' | 'generatedAt'> = {
-                userId: userId,
-                date: todayStartUTC, // Use the normalized UTC date
-                title: content.title,
-                description: content.description,
-                insightText: generatedInsight,
-                lastWorkoutTimestamp: latestWorkoutTsInData, // Store timestamp of latest workout *used* for this insight
-            };
-            await createOrUpdateInsight(insightToSave);
-            console.log(`[Daily Insight] Successfully saved generated insight for ${todayStartUTC.toISOString()}`);
-        } catch (saveError) {
-            console.error("[Daily Insight] Error saving generated insight:", saveError);
-            // Log the error but don't overwrite the AI error if one already exists
-            if (!aiError) {
-                aiError = "Failed to save the generated insight.";
-            }
+        const data = await response.json();
+        if (data.choices && data.choices[0]?.message?.content) {
+          generatedInsight = data.choices[0].message.content.trim();
+        } else {
+          throw new Error("Unexpected response structure from AI API.");
         }
+      } catch (error) {
+        aiError = error instanceof Error ? error.message : "Failed to generate insight.";
+        generatedInsight = `Could not generate insight for ${dayName}. ${aiError}`; 
+      }
     }
-    // --- End Save Insight --- 
 
     // Construct the final response body
     const responseBody = formatInsightResponse(
@@ -511,9 +434,7 @@ If any Personal Records (PRs) were achieved:
     );
 
     return NextResponse.json(responseBody);
-
   } catch (error) {
-    console.error("Error processing daily insight request:", error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
     return NextResponse.json({ error: 'Failed to process daily insight request', details: errorMessage }, { status: 500 });
   }

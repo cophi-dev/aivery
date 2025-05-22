@@ -30,6 +30,7 @@ import { PrismaClient, ChallengeStatus, ChallengeType, ChallengeMetric } from '@
 import type { Challenge } from '@prisma/client';
 // --- Import the new challenge update function ---
 import { updateChallengesAfterWorkout } from './challenge-actions';
+import ExerciseAverageModel from '@/lib/db/models/exerciseAverage';
 
 const prisma = new PrismaClient(); // Instantiate PrismaClient
 
@@ -2288,6 +2289,57 @@ export async function fetchTopExercisePRs(limit = 5): Promise<DashboardPREntry[]
   } catch (error) {
     console.error("[fetchTopExercisePRs] Error fetching top PRs:", error);
     return [];
+  }
+}
+
+// --- Helper: Update rolling averages for all exercises in a workout ---
+async function updateExerciseAveragesForWorkout(userId: string, exercises: Array<{ exerciseId?: string, name: string }>) {
+  const now = new Date();
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
+  for (const ex of exercises) {
+    // Find canonical exerciseId
+    let exerciseIdStr: string | null = null;
+    if (ex.exerciseId && mongoose.Types.ObjectId.isValid(ex.exerciseId)) {
+      exerciseIdStr = ex.exerciseId;
+    } else {
+      const found = await ExerciseModel.findOne({ name: ex.name }).lean();
+      if (found) exerciseIdStr = found._id?.toString?.() ?? String(found._id);
+    }
+    if (!exerciseIdStr) continue;
+
+    // Find all WorkoutExercise docs for this user/exercise in last 90d
+    const workoutExercises = await WorkoutExerciseModel.find({
+      'exerciseId._id': new mongoose.Types.ObjectId(exerciseIdStr),
+      userId: new mongoose.Types.ObjectId(userId),
+      createdAt: { $gte: daysAgo(90) }
+    }).lean();
+    const workoutExerciseIds = workoutExercises.map(we => we._id);
+    if (!workoutExerciseIds.length) continue;
+
+    // Find all sets for these WorkoutExercises
+    const sets = await SetModel.find({
+      workoutExerciseId: { $in: workoutExerciseIds },
+      createdAt: { $gte: daysAgo(90) }
+    }).lean();
+    // Group by type (reps, weight, volume)
+    const types = ['reps', 'weight', 'volume'];
+    for (const type of types) {
+      // 30d
+      const sets30d = sets.filter(s => s[type] !== undefined && s.createdAt >= daysAgo(30));
+      const avg30d = sets30d.length ? sets30d.reduce((sum, s) => sum + (s[type] || 0), 0) / sets30d.length : 0;
+      // 90d
+      const sets90d = sets.filter(s => s[type] !== undefined);
+      const avg90d = sets90d.length ? sets90d.reduce((sum, s) => sum + (s[type] || 0), 0) / sets90d.length : 0;
+      // Always convert to ObjectId from string
+      const userIdObj = new mongoose.Types.ObjectId(String(userId));
+      const exerciseIdObj = new mongoose.Types.ObjectId(exerciseIdStr);
+      // Upsert
+      await ExerciseAverageModel.findOneAndUpdate(
+        { userId: userIdObj, exerciseId: exerciseIdObj, type },
+        { $set: { rollingAvg30d: avg30d, rollingAvg90d: avg90d, lastUpdated: now } },
+        { upsert: true }
+      );
+    }
   }
 }
     
