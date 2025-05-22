@@ -11,8 +11,8 @@ export default function ChatLayout({
   const pathname = usePathname()
   
   return (
-    <div className="flex flex-col min-h-screen">
-      <div className="pt-0">
+    <div className="flex flex-col h-full">
+      <div className="flex-1">
         {children}
       </div>
     </div>

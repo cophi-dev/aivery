@@ -11,7 +11,7 @@ interface LegalFooterProps {
 
 const LegalFooter: React.FC<LegalFooterProps> = ({ className = '' }) => {
   return (
-    <footer className={`relative py-12 md:py-16 border-t border-gray-100 dark:border-gray-800 overflow-hidden ${className}`}>
+    <footer className={`relative py-12 md:py-16 mt-8 border-t border-gray-100 dark:border-gray-800 overflow-hidden ${className}`}>
       {/* SVG Pattern Background */}
       <SvgPatternBackground 
         opacity={0.03} 

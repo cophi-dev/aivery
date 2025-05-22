@@ -655,20 +655,24 @@ Format the response using markdown with clear headings and bullet points.
     const scrollToBottom = () => {
       const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
       if (viewport) {
-        // Add a slight delay to ensure content is rendered before scrolling
-        setTimeout(() => {
-          viewport.scrollTop = viewport.scrollHeight;
-        }, 100);
+        // Force scroll to absolute bottom
+        viewport.scrollTop = viewport.scrollHeight;
       }
     };
 
-    // Initial scroll
+    // Immediate scroll
     scrollToBottom();
     
-    // Also scroll when content might still be rendering (helpful for markdown/concept explanations)
-    const timeoutId = setTimeout(scrollToBottom, 300);
+    // Delayed scroll to handle content rendering
+    const timeoutId = setTimeout(scrollToBottom, 100);
     
-    return () => clearTimeout(timeoutId);
+    // Additional scroll after images/markdown might have loaded
+    const finalTimeoutId = setTimeout(scrollToBottom, 500);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(finalTimeoutId);
+    };
   }, [messages]);
 
   // Set up initial welcome message
@@ -934,7 +938,7 @@ Format the response using markdown with clear headings and bullet points.
   };
 
   return (
-    <div className="relative flex flex-col h-[calc(100vh-65px)] md:h-screen container mx-auto px-0 md:py-0">
+    <div className="flex flex-col h-full w-full container mx-auto pt-0">
       <div className="flex items-center justify-between px-4 py-2 border-b">
         <h1 className="text-lg font-semibold">Chat with Aivery</h1>
         <Button variant="ghost" size="icon" onClick={resetChat} title="Reset Chat">
@@ -942,157 +946,161 @@ Format the response using markdown with clear headings and bullet points.
         </Button>
       </div>
 
-      {/* Card contains the scrollable area */}
-      <Card className="flex-1 flex flex-col border-0 shadow-none rounded-none">
-        <ScrollArea className="flex-1 p-4 pb-40" ref={scrollAreaRef}>
-          <div className="space-y-4">
+      {/* Main content area */}
+      <div className="flex-1 relative">
+        <ScrollArea className="h-full p-4 pb-40" ref={scrollAreaRef}>
+          <div className="space-y-4 mb-40">
             {messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}
+            {/* Extra padding div to ensure scrolling works with larger content */}
+            <div className="h-16"></div>
           </div>
         </ScrollArea>
-      </Card>
-
-      {/* Floating Input Area */}
-      <div className="fixed bottom-4 left-4 right-4 z-10 max-w-3xl mx-auto bg-background border border-border rounded-3xl shadow-lg px-4 py-3">
-        {/* Command categories */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          <CommandButton
-            icon={<BookOpen className="w-4 h-4" />}
-            label="Learn"
-            isActive={activeCommandCategory === "learn"}
-            onClick={() => toggleCommandCategory("learn")}
-          />
-          <CommandButton
-            icon={<CalendarPlus className="w-4 h-4" />}
-            label="Plan"
-            isActive={activeCommandCategory === "plan"}
-            onClick={() => toggleCommandCategory("plan")}
-          />
-          <CommandButton
-            icon={<ClipboardCheck className="w-4 h-4" />}
-            label="Track"
-            isActive={activeCommandCategory === "track"}
-            onClick={() => toggleCommandCategory("track")}
-          />
-        </div>
-
-        {/* Command suggestions */}
-        <AnimatePresence>
-          {activeCommandCategory && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-3 overflow-hidden"
-            >
-              <div className="bg-card rounded-xl border border-border overflow-hidden">
-                <div className="p-2 border-b border-border">
-                  <h3 className="text-sm font-medium text-foreground">
-                    {activeCommandCategory === "learn"
-                      ? "Learning suggestions"
-                      : activeCommandCategory === "plan"
-                      ? "Workout planning"
-                      : "Progress tracking"}
-                  </h3>
-                </div>
-                <ul className="divide-y divide-border">
-                  {commandSuggestions[
-                    activeCommandCategory as keyof typeof commandSuggestions
-                  ].map((suggestion, index) => (
-                    <motion.li
-                      key={index}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: index * 0.03 }}
-                      onClick={() => handleCommandSelect(suggestion)}
-                      className="p-2.5 hover:bg-muted cursor-pointer transition-colors duration-75"
-                    >
-                      <div className="flex items-center gap-2">
-                        {activeCommandCategory === "learn" ? (
-                          <BookOpen className="w-3.5 h-3.5 text-primary" />
-                        ) : activeCommandCategory === "plan" ? (
-                          <CalendarPlus className="w-3.5 h-3.5 text-primary" />
-                        ) : (
-                          <ClipboardCheck className="w-3.5 h-3.5 text-primary" />
-                        )}
-                        <span className="text-sm text-foreground">
-                          {suggestion}
-                        </span>
-                      </div>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Uploaded files */}
-        {uploadedFiles.length > 0 && (
-          <div className="mb-3">
-            <div className="flex flex-wrap gap-2">
-              {uploadedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 bg-muted py-1 px-2 rounded-md border border-border"
-                >
-                  <FileText className="w-3 h-3 text-primary" />
-                  <span className="text-xs text-muted-foreground">{file}</span>
-                  <button
-                    onClick={() =>
-                      setUploadedFiles((prev) =>
-                        prev.filter((_, i) => i !== index)
-                      )
-                    }
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  </button>
-                </div>
-              ))}
+      
+        {/* Input positioned at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 px-4 z-10">
+          <div className="bg-background border border-border rounded-3xl shadow-lg px-4 py-3 mx-auto max-w-3xl">
+            {/* Command categories */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <CommandButton
+                icon={<BookOpen className="w-4 h-4" />}
+                label="Learn"
+                isActive={activeCommandCategory === "learn"}
+                onClick={() => toggleCommandCategory("learn")}
+              />
+              <CommandButton
+                icon={<CalendarPlus className="w-4 h-4" />}
+                label="Plan"
+                isActive={activeCommandCategory === "plan"}
+                onClick={() => toggleCommandCategory("plan")}
+              />
+              <CommandButton
+                icon={<ClipboardCheck className="w-4 h-4" />}
+                label="Track"
+                isActive={activeCommandCategory === "track"}
+                onClick={() => toggleCommandCategory("track")}
+              />
             </div>
-          </div>
-        )}
 
-        {/* Input Form */}
-        <form onSubmit={handleSubmit} className="relative w-full flex items-center">
-          <Input
-            ref={inputRef}
-            placeholder="Ask anything about fitness..."
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={isLoading}
-            className="flex-1 h-12 rounded-full pl-4 pr-12 border-border shadow-sm bg-background"
-            autoComplete="off"
-          />
-          <Button
-            type="submit"
-            disabled={isLoading || !inputValue.trim()}
-            size="icon"
-            className="absolute right-2 top-1/2 transform -translate-y-1/2 h-9 w-9 rounded-full bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
-            title="Send message"
-          >
-            {isLoading ? (
-              <InlineSpinner size={16} className="text-current" />
-            ) : (
-              <LucideSend className="h-4 w-4 text-current" />
+            {/* Command suggestions */}
+            <AnimatePresence>
+              {activeCommandCategory && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-3 overflow-hidden"
+                >
+                  <div className="bg-card rounded-xl border border-border overflow-hidden">
+                    <div className="p-2 border-b border-border">
+                      <h3 className="text-sm font-medium text-foreground">
+                        {activeCommandCategory === "learn"
+                          ? "Learning suggestions"
+                          : activeCommandCategory === "plan"
+                          ? "Workout planning"
+                          : "Progress tracking"}
+                      </h3>
+                    </div>
+                    <ul className="divide-y divide-border">
+                      {commandSuggestions[
+                        activeCommandCategory as keyof typeof commandSuggestions
+                      ].map((suggestion, index) => (
+                        <motion.li
+                          key={index}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: index * 0.03 }}
+                          onClick={() => handleCommandSelect(suggestion)}
+                          className="p-2.5 hover:bg-muted cursor-pointer transition-colors duration-75"
+                        >
+                          <div className="flex items-center gap-2">
+                            {activeCommandCategory === "learn" ? (
+                              <BookOpen className="w-3.5 h-3.5 text-primary" />
+                            ) : activeCommandCategory === "plan" ? (
+                              <CalendarPlus className="w-3.5 h-3.5 text-primary" />
+                            ) : (
+                              <ClipboardCheck className="w-3.5 h-3.5 text-primary" />
+                            )}
+                            <span className="text-sm text-foreground">
+                              {suggestion}
+                            </span>
+                          </div>
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Uploaded files */}
+            {uploadedFiles.length > 0 && (
+              <div className="mb-3">
+                <div className="flex flex-wrap gap-2">
+                  {uploadedFiles.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 bg-muted py-1 px-2 rounded-md border border-border"
+                    >
+                      <FileText className="w-3 h-3 text-primary" />
+                      <span className="text-xs text-muted-foreground">{file}</span>
+                      <button
+                        onClick={() =>
+                          setUploadedFiles((prev) =>
+                            prev.filter((_, i) => i !== index)
+                          )
+                        }
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-          </Button>
-        </form>
+
+            {/* Input Form */}
+            <form onSubmit={handleSubmit} className="relative w-full flex items-center">
+              <Input
+                ref={inputRef}
+                placeholder="Ask anything about fitness..."
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                disabled={isLoading}
+                className="flex-1 h-12 rounded-full pl-4 pr-12 border-border shadow-sm bg-background"
+                autoComplete="off"
+              />
+              <Button
+                type="submit"
+                disabled={isLoading || !inputValue.trim()}
+                size="icon"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 h-9 w-9 rounded-full bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+                title="Send message"
+              >
+                {isLoading ? (
+                  <InlineSpinner size={16} className="text-current" />
+                ) : (
+                  <LucideSend className="h-4 w-4 text-current" />
+                )}
+              </Button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );

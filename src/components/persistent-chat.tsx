@@ -213,11 +213,12 @@ export function PersistentChat() {
                     </Avatar>
                   )}
                   <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                    className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-md font-sans text-base leading-relaxed transition-colors duration-150 ${
                       message.role === "user"
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted"
                     }`}
+                    style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
                   >
                     <div className={`${message.role === "assistant" ? "prose prose-sm dark:prose-invert" : ""}`}>
                       <ReactMarkdown>{message.content}</ReactMarkdown>
@@ -266,6 +267,13 @@ export function PersistentChat() {
               <Send className="h-4 w-4" />
             </Button>
           </form>
+          <div className="w-full px-4 pb-3 pt-1 text-xs text-muted-foreground text-center border-t bg-background/80">
+            <span>By using this chat you agree to our </span>
+            <a href="/terms" className="underline hover:text-primary">Terms</a>
+            <span> & </span>
+            <a href="/privacy" className="underline hover:text-primary">Privacy Policy</a>
+            <span>. Powered by Aivery AI.</span>
+          </div>
         </SheetContent>
       </Sheet>
     </div>
