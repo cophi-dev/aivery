@@ -193,6 +193,8 @@ function CommandButton({ icon, label, isActive, onClick }: CommandButtonProps) {
 export function AIAssistantInterface() {
   const { data: session } = useSession();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -205,6 +207,8 @@ export function AIAssistantInterface() {
   const [activeCommandCategory, setActiveCommandCategory] = useState<string | null>(null);
   const [detectedWorkoutType, setDetectedWorkoutType] = useState<string | null>(null);
   const [queryMode, setQueryMode] = useState<string | null>(null);
+  const [menuHeight, setMenuHeight] = useState(0);
+  const MENU_GAP = 24; // px gap between menu and last message
 
   // Use a ref to reliably get the latest messages for the API call
   const messagesRef = useRef<Message[]>(messages);
@@ -654,26 +658,31 @@ Format the response using markdown with clear headings and bullet points.
   useEffect(() => {
     const scrollToBottom = () => {
       const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-      if (viewport) {
-        // Force scroll to absolute bottom
-        viewport.scrollTop = viewport.scrollHeight;
+      if (viewport && messagesEndRef.current) {
+        // Scroll the end ref into view, so last message is not hidden by menu
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     };
-
-    // Immediate scroll
     scrollToBottom();
-    
-    // Delayed scroll to handle content rendering
     const timeoutId = setTimeout(scrollToBottom, 100);
-    
-    // Additional scroll after images/markdown might have loaded
     const finalTimeoutId = setTimeout(scrollToBottom, 500);
-    
     return () => {
       clearTimeout(timeoutId);
       clearTimeout(finalTimeoutId);
     };
   }, [messages]);
+
+  // --- NEW: Scroll when command menu expands/collapses ---
+  useEffect(() => {
+    if (!activeCommandCategory) return;
+    // Wait for menu animation to finish, then scroll
+    const timeout = setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }, 350); // Match menu animation duration
+    return () => clearTimeout(timeout);
+  }, [activeCommandCategory]);
 
   // Set up initial welcome message
   useEffect(() => {
@@ -937,6 +946,21 @@ Format the response using markdown with clear headings and bullet points.
     }
   };
 
+  // --- NEW: Use ResizeObserver for menu height ---
+  useEffect(() => {
+    if (!activeCommandCategory || !menuRef.current) {
+      setMenuHeight(0);
+      return;
+    }
+    const node = menuRef.current;
+    const updateHeight = () => setMenuHeight(node.offsetHeight);
+    // Use ResizeObserver for dynamic changes
+    const observer = new window.ResizeObserver(updateHeight);
+    observer.observe(node);
+    updateHeight();
+    return () => observer.disconnect();
+  }, [activeCommandCategory, messages]);
+
   return (
     <div className="flex flex-col h-full w-full container mx-auto pt-0">
       <div className="flex items-center justify-between px-4 py-2 border-b">
@@ -949,12 +973,15 @@ Format the response using markdown with clear headings and bullet points.
       {/* Main content area */}
       <div className="flex-1 relative">
         <ScrollArea className="h-full p-4 pb-40" ref={scrollAreaRef}>
-          <div className="space-y-4 mb-40">
+          <div
+            className="space-y-4 mb-40"
+            style={menuHeight ? { marginBottom: menuHeight + MENU_GAP } : undefined}
+          >
             {messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}
             {/* Extra padding div to ensure scrolling works with larger content */}
-            <div className="h-16"></div>
+            <div ref={messagesEndRef} className="h-16"></div>
           </div>
         </ScrollArea>
       
@@ -987,6 +1014,7 @@ Format the response using markdown with clear headings and bullet points.
             <AnimatePresence>
               {activeCommandCategory && (
                 <motion.div
+                  ref={menuRef}
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}

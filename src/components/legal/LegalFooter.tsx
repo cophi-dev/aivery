@@ -1,6 +1,8 @@
+"use client";
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSession } from "next-auth/react";
 import LegalModal from './LegalModal';
 import { Icons } from '@/components/ui/icons';
 import { SvgPatternBackground } from '@/components/ui/svg-pattern-background';
@@ -10,6 +12,9 @@ interface LegalFooterProps {
 }
 
 const LegalFooter: React.FC<LegalFooterProps> = ({ className = '' }) => {
+  const { data: session } = useSession();
+  const isLoggedIn = !!session?.user;
+
   return (
     <footer className={`relative py-12 md:py-16 mt-8 border-t border-gray-100 dark:border-gray-800 overflow-hidden ${className}`}>
       {/* SVG Pattern Background */}
@@ -35,12 +40,18 @@ const LegalFooter: React.FC<LegalFooterProps> = ({ className = '' }) => {
           
           {/* Main Links */}
           <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-500 dark:text-gray-400">
-            <Link href="/register" className="hover:text-brand-accent transition-colors">
-              Get Started
-            </Link>
-            <Link href="#features" className="hover:text-brand-accent transition-colors">
-              Features
-            </Link>
+            {/* Show Get Started and Features links only when not logged in */}
+            {!isLoggedIn && (
+              <>
+                <Link href="/register" className="hover:text-brand-accent transition-colors">
+                  Get Started
+                </Link>
+                <Link href="#features" className="hover:text-brand-accent transition-colors">
+                  Features
+                </Link>
+              </>
+            )}
+            
             <LegalModal 
               documentType="terms" 
               buttonVariant="link" 
