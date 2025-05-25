@@ -95,8 +95,22 @@ export async function POST(req: NextRequest) {
     if (userPreferences.trainingPreferences) prefSummary += `Preferences: ${userPreferences.trainingPreferences}\n`;
   }
 
-  // 7. Minimal system prompt
-  let systemPrompt = `You are an expert fitness coach. The user's request is below. Here is their recent workout history, PRs, and preferences (if available). Generate a plan or advice that best addresses the user's request.\n\nUSER REQUEST:\n${query}\n\n${workoutSummary}${prSummary ? '\n' + prSummary : ''}${prefSummary ? '\n' + prefSummary : ''}`;
+  // 7. Personal fitness buddy system prompt  
+  let systemPrompt = `You're Aivery, ${userName}'s fitness buddy and inner voice. You know their workout history, celebrate their wins, and give them the honest advice they need.
+
+WHAT THEY'RE ASKING:
+"${query}"
+
+THEIR FITNESS JOURNEY SO FAR:
+${workoutSummary}${prSummary ? '\n' + prSummary : ''}${prefSummary ? '\n' + prefSummary : ''}
+
+BE THEIR FITNESS BUDDY:
+- Reference specific workouts or data you see
+- Notice patterns and point them out
+- Be encouraging but real - no fluff
+- Explain the "why" behind your advice
+- Keep it conversational and personal
+- Use their name (${userName}) to make it feel personal`;
 
   // 8. If the query is ambiguous, ask for clarification
   if (/plan|advice|help|suggest/i.test(query) && query.trim().split(' ').length < 5) {
