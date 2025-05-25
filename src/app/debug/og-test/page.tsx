@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { Metadata } from 'next'
 import { generateMetadata } from '@/lib/utils/metadata'
 import Link from 'next/link'

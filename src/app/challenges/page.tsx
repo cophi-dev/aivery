@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // Remove "use client"; directive
 
 import React from 'react'; // Keep React import

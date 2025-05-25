@@ -8,6 +8,8 @@ import ExerciseModel from '@/lib/db/models/exercise';
 import ExercisePRModel from '@/lib/db/models/exercisePR';
 import { Types } from 'mongoose';
 
+export const dynamic = "force-dynamic";
+
 // Standard muscle group categories for analysis
 const MUSCLE_GROUPS = {
   // Upper body - push dominant

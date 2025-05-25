@@ -5,7 +5,7 @@ import { getDatabase } from "@/lib/db/mongodb";
 import { ObjectId } from 'mongodb'; // Import ObjectId if using it for userId
 import dbConnect from '@/lib/db/mongoose'; // Import dbConnect
 
-export const dynamic = 'force-dynamic'; // Mark as dynamic
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
     console.log("--- Strava Import Status Request Received ---");

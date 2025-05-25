@@ -6,6 +6,8 @@ import dbConnect from "@/lib/db/mongodb"
 import UserModel from '@/lib/db/models/user'
 import { withApiAuth } from "@/lib/auth-utils"
 
+export const dynamic = "force-dynamic";
+
 // Helper function to properly serialize MongoDB objects
 function serializeDocument(doc: any): any {
   if (!doc) return null;

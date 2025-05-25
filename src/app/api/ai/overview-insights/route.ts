@@ -228,6 +228,8 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
     };
 }
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
     try {
         const session = await getServerSession(authOptions);

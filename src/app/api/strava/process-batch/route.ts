@@ -23,7 +23,7 @@ import {
 
 // Keep runtime (Node.js needed for processing)
 export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 export const maxDuration = 60 // Set max duration to 60s (Hobby plan limit)
 
 const gunzipAsync = promisify(gunzip)

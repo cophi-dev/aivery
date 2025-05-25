@@ -13,7 +13,7 @@ import Workout, { IWorkout } from "@/lib/db/models/workout"; // Import Workout m
 import { generateDistanceComparisonText } from '@/lib/workout-distance-comparisons'; // <<< ADDED IMPORT
 
 // Explicitly mark this route as dynamic
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 // Remove Google Generative AI client initialization
 // const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");

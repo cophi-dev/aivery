@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { updateExercisePRs, updateUserWorkoutSummaries } from '@/lib/workout-actions';
 import { revalidatePath } from 'next/cache';
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);

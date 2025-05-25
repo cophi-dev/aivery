@@ -7,7 +7,7 @@ import os from 'os'
 
 // Use Node.js runtime
 export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 /**

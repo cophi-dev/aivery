@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth"
 import dbConnect from "@/lib/db/mongodb"
 import { getValidAccessToken, getStravaIntegration } from "@/lib/services/stravaService"
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
   // This is a diagnostic endpoint to check Strava configuration

@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { exchangeCodeForToken, STRAVA_CONFIG } from "@/lib/strava/config"
 import { connectStrava } from "@/lib/services/stravaService"
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 
 // Helper function to check for Strava configuration issues
 function checkStravaConfig() {
