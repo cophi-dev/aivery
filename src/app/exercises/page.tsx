@@ -11,27 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ExerciseData } from "@/types/db"
 import { redirect } from "next/navigation"
 import type { Metadata } from 'next'
+import { generateMetadata } from '@/lib/utils/metadata'
 import { Input } from "@/components/ui/input"
 import { ExerciseGrid } from "@/components/exercises/exercise-grid"
 
-export const metadata: Metadata = {
+export const metadata: Metadata = generateMetadata({
   title: "Exercises | Aivery",
-  description: "Browse and manage exercises",
-  openGraph: {
-    title: "Exercises | Aivery",
-    description: "Browse and manage exercises",
-    url: "https://your-aivery-app-url.com/exercises",
-    images: [
-      {
-        url: "/images/og-exercises.png",
-        width: 1200,
-        height: 630,
-        alt: "Aivery Exercises Page",
-      }
-    ],
-    type: 'website',
-  },
-}
+  description: "Browse, manage, and track your exercises. Explore our comprehensive exercise library with detailed analysis and performance history.",
+  path: "/exercises",
+  keywords: ["exercise library", "workout exercises", "fitness movements", "exercise tracking"],
+  type: "website"
+})
 
 // Revalidate this page on demand or periodically if needed
 // export const revalidate = 3600; // Example: revalidate every hour

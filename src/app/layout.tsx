@@ -52,8 +52,71 @@ const inter = Inter({
 export const runtime = 'nodejs'
 
 export const metadata: Metadata = {
-  title: "Aivery",
-  description: "Your AI-powered fitness companion.",
+  title: "Aivery | AI-Powered Fitness Training Intelligence",
+  description: "Transform your workout data into actionable intelligence with personalized AI coaching and insights. Track, analyze, and improve your fitness journey with Aivery.",
+  keywords: ["fitness", "AI", "workout tracking", "personal trainer", "fitness analytics", "Strava integration"],
+  authors: [{ name: "Aivery Team" }],
+  creator: "Aivery",
+  publisher: "Aivery",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://aivery.app'),
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: '/',
+    siteName: 'Aivery',
+    title: 'Aivery | AI-Powered Fitness Training Intelligence',
+    description: 'Transform your workout data into actionable intelligence with personalized AI coaching and insights.',
+    images: [
+      {
+        url: '/icons/aivery-og.svg',
+        width: 1200,
+        height: 630,
+        alt: 'Aivery - AI-Powered Fitness Training Intelligence',
+        type: 'image/svg+xml',
+      },
+      {
+        url: '/api/og-fallback',
+        width: 1200,
+        height: 630,
+        alt: 'Aivery - AI-Powered Fitness Training Intelligence',
+        type: 'image/svg+xml',
+      },
+      {
+        url: '/icons/aivery.svg',
+        width: 512,
+        height: 512,
+        alt: 'Aivery Logo',
+        type: 'image/svg+xml',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    site: '@aivery_app',
+    creator: '@aivery_app',
+    title: 'Aivery | AI-Powered Fitness Training Intelligence',
+    description: 'Transform your workout data into actionable intelligence with personalized AI coaching and insights.',
+    images: ['/api/og-fallback'],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  verification: {
+    // Add verification codes when available
+    // google: 'your-google-verification-code',
+    // yandex: 'your-yandex-verification-code',
+  },
   // Add cache control directive 
   other: {
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',

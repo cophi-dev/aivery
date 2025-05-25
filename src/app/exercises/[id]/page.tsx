@@ -20,25 +20,71 @@ export async function generateMetadata(
   const exercise = await fetchExercise(params.id);
   if (!exercise) {
     // Return metadata for not found page
-    return { title: "Exercise Not Found | Aivery" }
+    return { 
+      title: "Exercise Not Found | Aivery",
+      description: "The requested exercise could not be found.",
+      robots: { index: false, follow: false }
+    }
   }
 
   const blobBaseUrl = process.env.BLOB_URL;
   const screenshotFilename = `og-images_exercises_${params.id}.png`;
-  const screenshotUrl = blobBaseUrl ? `${blobBaseUrl}/${screenshotFilename}` : '/images/og-fallback.png'; 
+  const screenshotUrl = blobBaseUrl ? `${blobBaseUrl}/${screenshotFilename}` : '/api/og-fallback'; 
   const title = `${exercise.name} | Aivery Exercises`;
-  const description = exercise.description || `Details and history for the ${exercise.name} exercise.`;
-  const pageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/exercises/${params.id}`; 
+  const description = exercise.description 
+    ? `${exercise.description.slice(0, 150)}...` 
+    : `Track your ${exercise.name} performance with detailed analysis and history. Part of your personalized fitness journey with Aivery.`;
 
   return {
     title,
     description,
+    keywords: ['exercise', exercise.name, 'fitness tracking', 'workout', 'performance analysis'],
+    metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://aivery.app'),
+    alternates: {
+      canonical: `/exercises/${params.id}`,
+    },
     openGraph: {
       title,
       description,
-      url: pageUrl,
-      images: [{ url: screenshotUrl, width: 1200, height: 630, alt: `${exercise.name} Preview` }],
+      url: `/exercises/${params.id}`,
+      siteName: 'Aivery',
+      images: [
+        { 
+          url: screenshotUrl, 
+          width: 1200, 
+          height: 630, 
+          alt: `${exercise.name} - Exercise Details and Performance Analysis`,
+          type: 'image/png'
+        },
+        {
+          url: '/icons/aivery.svg',
+          width: 512,
+          height: 512,
+          alt: 'Aivery Logo',
+          type: 'image/svg+xml',
+        }
+      ],
       type: 'article',
+      locale: 'en_US',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      site: '@aivery_app',
+      creator: '@aivery_app',
+      title,
+      description,
+      images: [screenshotUrl],
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-video-preview': -1,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+      },
     },
   };
 }
