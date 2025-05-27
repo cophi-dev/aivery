@@ -30,7 +30,7 @@ import {
   LucideTrendingUp,
   LucideTarget,
   LucideAward,
-  LucideFire
+  Flame
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
@@ -618,7 +618,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                       {workout.records.map((record: any, index: number) => (
                         <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-background/50">
                           <div className="flex items-center">
-                            <LucideFire className="h-4 w-4 text-orange-500 mr-2" />
+                            <Flame className="h-4 w-4 text-orange-500 mr-2" />
                             <span className="font-medium">
                               {record.exerciseName || record.type || 'Personal Record'}
                             </span>
