@@ -472,6 +472,9 @@ export default function NewWorkoutPage() {
 
       const parsedData: ParsedWorkoutData = await response.json();
 
+      // --- DEBUG: Log the parsed data to understand what AI is returning ---
+      console.log("[AI Process] Raw parsed data from AI:", JSON.stringify(parsedData, null, 2));
+
       // --- Update State based on Parsed Data (for UI feedback) ---
       // Still update state so the user sees the form populate
       setExercises([]); // Clear existing before populating
@@ -493,7 +496,9 @@ export default function NewWorkoutPage() {
           toast.error(`AI provided an unparseable date: ${parsedData.workoutDate}. Please set manually.`);
         }
       }
+      // --- END NEW ---
 
+      // Set workout type from AI if available
       if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
         setWorkoutType(parsedData.workoutType as WorkoutTypeOption);
       } else {
@@ -524,13 +529,41 @@ export default function NewWorkoutPage() {
       const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
         const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
         const canonicalExercise = findCanonicalExercise(parsedEx.name, dbExercises, exerciseAliases);
-        const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => ({
-          id: `set-temp-${Date.now()}-${Math.random()}`,
-          weight: parsedSet.weight || "",
-          reps: parsedSet.reps || "",
-          notes: parsedSet.notes || "",
-          intensity: parsedSet.intensity !== undefined ? Number(parsedSet.intensity) : 0.7, // Ensure number
-        }));
+        
+        // --- DEBUG: Log each exercise being processed ---
+        console.log(`[AI Process] Processing exercise: ${parsedEx.name}`, parsedEx);
+        
+        const newSetsState: SetState[] = parsedEx.sets.map((parsedSet, setIndex) => {
+          // --- DEBUG: Log each set being processed ---
+          console.log(`[AI Process] Processing set ${setIndex}:`, parsedSet);
+          
+          // Better fallback handling for missing values
+          const weight = parsedSet.weight || "0";
+          const reps = parsedSet.reps || "1"; // Default to 1 rep instead of empty string to prevent validation issues
+          const notes = parsedSet.notes || "";
+          const intensity = parsedSet.intensity !== undefined ? Number(parsedSet.intensity) : 0.7;
+          
+          // --- DEBUG: Log the processed values ---
+          console.log(`[AI Process] Set ${setIndex} processed values:`, { weight, reps, notes, intensity });
+          
+          return {
+            id: `set-temp-${Date.now()}-${Math.random()}`,
+            weight,
+            reps,
+            notes,
+            intensity,
+          };
+        });
+        
+        // --- DEBUG: Log the final exercise state ---
+        console.log(`[AI Process] Final exercise state for ${parsedEx.name}:`, {
+          id: exerciseTempId,
+          exerciseId: canonicalExercise?._id,
+          name: canonicalExercise?.name || parsedEx.name,
+          notes: parsedEx.notes || "",
+          sets: newSetsState,
+        });
+        
         return {
           id: exerciseTempId,
           exerciseId: canonicalExercise?._id,
@@ -539,6 +572,10 @@ export default function NewWorkoutPage() {
           sets: newSetsState,
         };
       });
+      
+      // --- DEBUG: Log the final exercises state ---
+      console.log("[AI Process] Final exercises state:", newExercisesState);
+      
       setExercises(newExercisesState);
       toast.success("Workout populated from AI!");
       // --- End State Update ---
@@ -1207,13 +1244,15 @@ export default function NewWorkoutPage() {
                  }
             } else {
                 // Strength specific payload using exState.sets
+                console.log(`[handleSaveWorkout] Processing strength exercise: ${canonicalExercise.name}, sets:`, exState.sets);
                 const exerciseSetsPayload: InputSetData[] = exState.sets
                     .map((setState, setIndex): InputSetData | null => {
                         const reps = Number.parseInt(setState.reps || '0');
+                        console.log(`[handleSaveWorkout] Set ${setIndex}: reps="${setState.reps}" -> parsed=${reps}`);
                         if (reps > 0) {
                             const setDuration = setState.duration ? Number.parseInt(setState.duration) : undefined;
                             const setDistance = setState.distance ? Number.parseFloat(setState.distance) : undefined;
-                            return {
+                            const setData = {
                                 weight: Number.parseFloat(setState.weight || '0') || 0,
                                 reps: reps,
                                 duration: setDuration,
@@ -1222,11 +1261,16 @@ export default function NewWorkoutPage() {
                                 order: setIndex,
                                 intensity: setState.intensity !== undefined ? Number(setState.intensity) : 0.7, // Added intensity field
                             };
+                            console.log(`[handleSaveWorkout] Set ${setIndex} included:`, setData);
+                            return setData;
+                        } else {
+                            console.log(`[handleSaveWorkout] Set ${setIndex} FILTERED OUT (reps <= 0)`);
+                            return null;
                         }
-                        return null;
                     })
                     .filter(isDefined);
 
+                console.log(`[handleSaveWorkout] Final sets payload for ${canonicalExercise.name}:`, exerciseSetsPayload);
                 if (exerciseSetsPayload.length > 0) {
                     return {
                         exerciseId: canonicalExercise._id,
@@ -1235,16 +1279,21 @@ export default function NewWorkoutPage() {
                         sets: exerciseSetsPayload,
                         notes: exState.notes || undefined,
                     } as NonNullable<WorkoutUpdatePayload['exercises']>[number];
+                } else {
+                    console.log(`[handleSaveWorkout] Exercise ${canonicalExercise.name} FILTERED OUT (no valid sets)`);
+                    return null;
                 }
-                return null;
             }
         })
         .filter(isDefined);
 
     const exercisesPayload = mappedExercises;
+    console.log(`[handleSaveWorkout] Final exercisesPayload:`, exercisesPayload);
+    console.log(`[handleSaveWorkout] Workout type: ${finalWorkoutTypeForPayload}, exercises count: ${exercisesPayload.length}`);
 
     // --- Validation (on mapped payload) ---
     if (finalWorkoutTypeForPayload === 'strength' && exercisesPayload.length === 0) {
+       console.error(`[handleSaveWorkout] VALIDATION FAILED: No exercises with valid sets`);
        setError("Workout requires at least one exercise with valid sets (reps > 0).");
        setIsSubmitting(false);
        return;
