@@ -26,7 +26,11 @@ import {
   LucideDumbbell,
   LucideActivity,
   LucideBarChart,
-  LucideZap
+  LucideZap,
+  LucideTrendingUp,
+  LucideTarget,
+  LucideAward,
+  LucideFire
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
@@ -48,6 +52,64 @@ const getWorkoutIcon = (type: string) => {
     case 'cardio': return <LucideHeartPulse className="h-5 w-5 mr-2" />;
     default: return <LucideActivity className="h-5 w-5 mr-2" />;
   }
+};
+
+// Helper function to calculate workout stats
+const calculateWorkoutStats = (workout: any) => {
+  const stats = {
+    totalSets: 0,
+    totalReps: 0,
+    totalVolume: 0,
+    averageWeight: 0,
+    maxWeight: 0,
+    exerciseCount: 0,
+    personalRecords: 0,
+    intensityScore: 0
+  };
+
+  if (workout.type === 'strength' && workout.workoutExercises) {
+    stats.exerciseCount = workout.workoutExercises.length;
+    let totalWeightedReps = 0;
+    let totalWeight = 0;
+    let weightCount = 0;
+
+    workout.workoutExercises.forEach((exercise: any) => {
+      if (exercise.sets && exercise.sets.length > 0) {
+        exercise.sets.forEach((set: any) => {
+          stats.totalSets++;
+          const reps = set.reps || 0;
+          const weight = set.weight || 0;
+          
+          stats.totalReps += reps;
+          stats.totalVolume += weight * reps;
+          
+          if (weight > 0) {
+            totalWeight += weight;
+            weightCount++;
+            if (weight > stats.maxWeight) {
+              stats.maxWeight = weight;
+            }
+          }
+        });
+      }
+    });
+
+    if (weightCount > 0) {
+      stats.averageWeight = totalWeight / weightCount;
+    }
+
+    // Calculate intensity score (0-100)
+    if (stats.totalVolume > 0) {
+      stats.intensityScore = Math.min(100, Math.round((stats.totalVolume / 100) + (stats.maxWeight / 10)));
+    }
+  }
+
+  // Check for personal records
+  if (workout.records && workout.records.length > 0) {
+    stats.personalRecords = workout.records.length;
+  }
+
+  return stats;
 };
 
 export default function ActivityDetailPage({ params }: { params: { id: string } }) {
@@ -149,30 +211,6 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
           }
           // --- End Fetch Workout Insight ---
 
-          // --- Fetch Previous Workouts (REMOVED - Route doesn't exist and component doesn't need it) --- 
-          // console.log('>>> CLIENT-SIDE: Fetching Previous Workouts...')
-          // setIsLoadingPrevious(true)
-          // try {
-          //   const prevWkRes = await fetch(`/api/previous-workouts?userId=${workoutData.userId}&type=${workoutData.type}&currentDate=${workoutData.date}&currentWorkoutId=${id}&limit=5`);
-          //   if (!isMounted) return;
-            
-          //   if (prevWkRes.ok) {
-          //     const prevData = await prevWkRes.json();
-          //     console.log('>>> CLIENT-SIDE: Previous Workouts Response:', prevData)
-          //     setPreviousWorkouts(prevData.workouts || []);
-          //   } else {
-          //     console.error('>>> CLIENT-SIDE: Failed to fetch Previous Workouts, status:', prevWkRes.status)
-          //     setPreviousWorkouts([]);
-          //   }
-          // } catch (prevError) {
-          //   if (!isMounted) return // Exit if component unmounted
-          //   console.error('>>> CLIENT-SIDE: Error fetching Previous Workouts:', prevError)
-          //   setPreviousWorkouts([]);
-          // } finally {
-          //    if (isMounted) setIsLoadingPrevious(false)
-          // }
-          // --- End Fetch Previous Workouts --- 
-
         } else {
           setWorkout(null)
           setError("Workout not found. It may have been deleted or you don't have permission to view it.")
@@ -249,6 +287,9 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
       </div>
     )
   }
+
+  // Calculate workout stats
+  const workoutStats = calculateWorkoutStats(workout);
 
   // Format details for display using imported utilities
   const formattedDate = workout.date ? formatDate(workout.date) : "N/A"; // Use default format from utility
@@ -364,16 +405,16 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
           </div>
 
           {/* Tabs for Exercises/Analysis */}
-          <Tabs defaultValue="exercises">
-            <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 mb-6">
+          <Tabs defaultValue="overview">
+            <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="overview">
                   <LucideActivity className="h-4 w-4 mr-1" /> Overview
               </TabsTrigger>
+              <TabsTrigger value="stats">
+                  <LucideBarChart className="h-4 w-4 mr-1" /> Stats
+              </TabsTrigger>
               <TabsTrigger value="details">
                   <LucideDumbbell className="h-4 w-4 mr-1" /> {workoutCategory === 'strength' ? 'Exercises' : 'Metrics'}
-              </TabsTrigger>
-              <TabsTrigger value="analysis">
-                 <LucideBarChart className="h-4 w-4 mr-1" /> Analysis
               </TabsTrigger>
             </TabsList>
 
@@ -390,40 +431,48 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                     <CardDescription>{workout.notes || "No notes provided for this workout."}</CardDescription>
                   </div>
 
-                  {/* Stats Grid */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6 pt-4 border-t">
-                    {/* Stat Item: Duration */}
-                    <div className="flex flex-col">
-                        <p className="text-sm text-muted-foreground mb-1">Duration</p>
-                        <p className="text-lg font-medium flex items-center"><LucideClock className="h-4 w-4 mr-1.5 text-muted-foreground" />{formattedDuration}</p>
+                  {/* Quick Stats Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
+                    {/* Duration */}
+                    <div className="flex flex-col items-center p-4 rounded-lg bg-muted/50">
+                        <LucideClock className="h-6 w-6 text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Duration</p>
+                        <p className="text-lg font-bold">{formattedDuration}</p>
                     </div>
-                    {/* ... other stats (Distance, Volume, Type, HR, Location) - styled similarly ... */}
+                    
+                    {/* Distance (for cardio) */}
                     {formattedDistance && (
-                      <div className="flex flex-col">
-                        <p className="text-sm text-muted-foreground mb-1">Distance</p>
-                        <p className="text-lg font-medium flex items-center"><LucideRuler className="h-4 w-4 mr-1.5 text-muted-foreground" />{formattedDistance}</p>
+                      <div className="flex flex-col items-center p-4 rounded-lg bg-muted/50">
+                        <LucideRuler className="h-6 w-6 text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Distance</p>
+                        <p className="text-lg font-bold">{formattedDistance}</p>
                       </div>
                     )}
+                    
+                    {/* Volume (for strength) */}
                     {workoutCategory === 'strength' && typeof workout.calculatedVolume === 'number' && (
-                      <div className="flex flex-col">
-                        <p className="text-sm text-muted-foreground mb-1">Total Volume</p>
-                        <p className="text-lg font-medium flex items-center"><LucideZap className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.calculatedVolume.toLocaleString()} kg</p>
+                      <div className="flex flex-col items-center p-4 rounded-lg bg-muted/50">
+                        <LucideZap className="h-6 w-6 text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Volume</p>
+                        <p className="text-lg font-bold">{workout.calculatedVolume.toLocaleString()} kg</p>
                       </div>
                     )}
-                    <div className="flex flex-col">
-                        <p className="text-sm text-muted-foreground mb-1">Type</p>
-                        <p className="text-lg font-medium capitalize flex items-center"><LucideTag className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.type}</p>
-                    </div>
-                    {workout.averageHeartRate && (
-                      <div className="flex flex-col">
-                        <p className="text-sm text-muted-foreground mb-1">Avg. Heart Rate</p>
-                        <p className="text-lg font-medium flex items-center"><LucideHeartPulse className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.averageHeartRate} bpm</p>
+                    
+                    {/* Pace (for cardio) */}
+                    {formattedPace && (
+                      <div className="flex flex-col items-center p-4 rounded-lg bg-muted/50">
+                        <LucideGauge className="h-6 w-6 text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Pace</p>
+                        <p className="text-lg font-bold">{formattedPace}</p>
                       </div>
                     )}
-                    {workout.location && (
-                      <div className="flex flex-col">
-                        <p className="text-sm text-muted-foreground mb-1">Location</p>
-                        <p className="text-lg font-medium flex items-center"><LucideMapPin className="h-4 w-4 mr-1.5 text-muted-foreground" />{workout.location}</p>
+                    
+                    {/* Personal Records */}
+                    {workoutStats.personalRecords > 0 && (
+                      <div className="flex flex-col items-center p-4 rounded-lg bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20">
+                        <LucideAward className="h-6 w-6 text-yellow-600 mb-2" />
+                        <p className="text-sm text-muted-foreground">New PRs</p>
+                        <p className="text-lg font-bold text-yellow-600">{workoutStats.personalRecords}</p>
                       </div>
                     )}
                   </div>
@@ -467,6 +516,169 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                   )}
                 </div>
               </Card>
+            </TabsContent>
+
+            {/* --- NEW: Stats Tab --- */}
+            <TabsContent value="stats">
+              <div className="space-y-6">
+                {/* Workout Performance Card */}
+                <Card className="rounded-xl shadow-sm bg-card p-6">
+                  <CardTitle className="text-xl font-semibold mb-4 flex items-center">
+                    <LucideTrendingUp className="h-5 w-5 mr-2 text-primary" />
+                    Workout Performance
+                  </CardTitle>
+                  
+                  {workoutCategory === 'strength' ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{workoutStats.exerciseCount}</div>
+                        <div className="text-sm text-muted-foreground">Exercises</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{workoutStats.totalSets}</div>
+                        <div className="text-sm text-muted-foreground">Total Sets</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{workoutStats.totalReps}</div>
+                        <div className="text-sm text-muted-foreground">Total Reps</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{workoutStats.totalVolume.toLocaleString()}</div>
+                        <div className="text-sm text-muted-foreground">Volume (kg)</div>
+                      </div>
+                      {workoutStats.averageWeight > 0 && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{workoutStats.averageWeight.toFixed(1)}</div>
+                          <div className="text-sm text-muted-foreground">Avg Weight (kg)</div>
+                        </div>
+                      )}
+                      {workoutStats.maxWeight > 0 && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{workoutStats.maxWeight}</div>
+                          <div className="text-sm text-muted-foreground">Max Weight (kg)</div>
+                        </div>
+                      )}
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{workoutStats.intensityScore}</div>
+                        <div className="text-sm text-muted-foreground">Intensity Score</div>
+                      </div>
+                      {workoutStats.personalRecords > 0 && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-yellow-600">{workoutStats.personalRecords}</div>
+                          <div className="text-sm text-muted-foreground">Personal Records</div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{formattedDistance || 'N/A'}</div>
+                        <div className="text-sm text-muted-foreground">Distance</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold text-primary">{formattedDuration}</div>
+                        <div className="text-sm text-muted-foreground">Duration</div>
+                      </div>
+                      {formattedPace && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{formattedPace}</div>
+                          <div className="text-sm text-muted-foreground">Pace</div>
+                        </div>
+                      )}
+                      {workout.cardioDetails?.elevationGain && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{workout.cardioDetails.elevationGain}m</div>
+                          <div className="text-sm text-muted-foreground">Elevation Gain</div>
+                        </div>
+                      )}
+                      {workout.averageHeartRate && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{workout.averageHeartRate}</div>
+                          <div className="text-sm text-muted-foreground">Avg Heart Rate</div>
+                        </div>
+                      )}
+                      {workoutStats.personalRecords > 0 && (
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-yellow-600">{workoutStats.personalRecords}</div>
+                          <div className="text-sm text-muted-foreground">Personal Records</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+
+                {/* Personal Records Card */}
+                {workout.records && workout.records.length > 0 && (
+                  <Card className="rounded-xl shadow-sm bg-gradient-to-br from-yellow-500/5 to-orange-500/5 border border-yellow-500/20 p-6">
+                    <CardTitle className="text-xl font-semibold mb-4 flex items-center text-yellow-700 dark:text-yellow-400">
+                      <LucideAward className="h-5 w-5 mr-2" />
+                      Personal Records Set Today! 🎉
+                    </CardTitle>
+                    <div className="space-y-3">
+                      {workout.records.map((record: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-background/50">
+                          <div className="flex items-center">
+                            <LucideFire className="h-4 w-4 text-orange-500 mr-2" />
+                            <span className="font-medium">
+                              {record.exerciseName || record.type || 'Personal Record'}
+                            </span>
+                          </div>
+                          <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
+                            {record.value} {record.unit || ''}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {/* Workout Breakdown */}
+                {workoutCategory === 'strength' && workout.workoutExercises && (
+                  <Card className="rounded-xl shadow-sm bg-card p-6">
+                    <CardTitle className="text-xl font-semibold mb-4 flex items-center">
+                      <LucideTarget className="h-5 w-5 mr-2 text-primary" />
+                      Exercise Breakdown
+                    </CardTitle>
+                    <div className="space-y-4">
+                      {workout.workoutExercises.map((exercise: any, index: number) => {
+                        const exerciseSets = exercise.sets || [];
+                        const exerciseVolume = exerciseSets.reduce((total: number, set: any) => 
+                          total + ((set.weight || 0) * (set.reps || 0)), 0);
+                        const exerciseReps = exerciseSets.reduce((total: number, set: any) => 
+                          total + (set.reps || 0), 0);
+                        
+                        return (
+                          <div key={exercise._id || index} className="p-4 rounded-lg border border-border/60">
+                            <div className="flex justify-between items-start mb-3">
+                              <h4 className="font-medium text-lg">{exercise.exerciseId?.name || 'Unknown Exercise'}</h4>
+                              <div className="text-right text-sm text-muted-foreground">
+                                <div>{exerciseSets.length} sets</div>
+                                <div>{exerciseReps} reps</div>
+                                <div>{exerciseVolume.toLocaleString()} kg</div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {exerciseSets.map((set: any, setIndex: number) => (
+                                <div key={set._id || setIndex} className="flex justify-between items-center p-2 rounded bg-muted/30 text-sm">
+                                  <span>Set {setIndex + 1}</span>
+                                  <span className="font-medium">
+                                    {set.weight || 0}kg × {set.reps || 0}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            {exercise.notes && (
+                              <p className="text-xs mt-2 italic text-muted-foreground">
+                                Notes: {exercise.notes}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                )}
+              </div>
             </TabsContent>
 
             {/* --- Details Tab - Wrap content in Card --- */}
@@ -520,13 +732,6 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
                       )}
                     </div>
                   )}
-               </Card>
-            </TabsContent>
-
-            {/* --- Analysis Tab - Wrap content in Card --- */}
-            <TabsContent value="analysis">
-               <Card className="rounded-xl shadow-sm bg-card p-6">
-                  <WorkoutAnalysis workout={workout} />
                </Card>
             </TabsContent>
           </Tabs>

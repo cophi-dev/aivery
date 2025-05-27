@@ -8,111 +8,139 @@ import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { ObjectId } from 'mongodb';
 import { formatDistance as formatDistanceUtil } from "@/lib/utils"; // Use existing formatter
 import { estimateBodyweightForExercise } from '@/lib/utils/estimateBodyweightForExercise';
-import { generateDistanceComparisonText } from '@/lib/workout-distance-comparisons'; // Import the landmark comparison function
+// --- Enhanced Helper Functions ---
 
-// --- Fun Analogy Helpers ---
+// Helper function to generate distance comparison text
+function generateDistanceComparisonText(distanceKm: number): string | null {
+  // Famous landmarks and their approximate distances
+  const landmarks = [
+    { name: "Golden Gate Bridge", distance: 2.7, emoji: "🌉" },
+    { name: "Central Park loop", distance: 10.0, emoji: "🏞️" },
+    { name: "Brooklyn Bridge", distance: 1.8, emoji: "🌁" },
+    { name: "London Bridge", distance: 0.3, emoji: "🏰" },
+    { name: "Manhattan Bridge", distance: 2.0, emoji: "🌉" },
+    { name: "5K race", distance: 5.0, emoji: "🏃" },
+    { name: "10K race", distance: 10.0, emoji: "🏃‍♀️" },
+    { name: "half marathon", distance: 21.1, emoji: "🏃‍♂️" },
+    { name: "marathon", distance: 42.2, emoji: "🏃‍♀️" },
+    { name: "Empire State Building height (if vertical)", distance: 0.44, emoji: "🏢" },
+    { name: "Eiffel Tower height (if vertical)", distance: 0.33, emoji: "🗼" }
+  ];
 
-// Rough estimate: 1 banana ~ 100 kcal
-function caloriesToBananas(calories?: number | null): number | null {
-    if (!calories || calories <= 0) return null;
-    return Math.round(calories / 100);
-}
+  // Find the closest landmark
+  let closestLandmark = null;
+  let smallestDifference = Infinity;
 
-// Estimate: 1 slice of pizza ~ 300 kcal
-function caloriesToPizzaSlices(calories?: number | null): number | null {
-    if (!calories || calories <= 0) return null;
-    const slices = calories / 300;
-    if (slices < 0.5) return null; // Only mention if at least half a slice
-    return parseFloat(slices.toFixed(1));
-}
-
-// Standard track lap = 400 meters = 0.4 km
-function distanceToTrackLaps(distanceKm?: number | null): number | null {
-    if (!distanceKm || distanceKm <= 0) return null;
-    return Math.round(distanceKm / 0.4);
-}
-
-// Length of a standard marathon = 42.195 km
-function distanceToMarathonFraction(distanceKm?: number | null): number | null {
-    if (!distanceKm || distanceKm <= 0) return null;
-    const fraction = distanceKm / 42.195;
-    if (fraction < 0.1) return null; // Only mention if at least 10%
-    return parseFloat(fraction.toFixed(2));
-}
-
-// Average car ~ 1500 kg
-function volumeToCars(volumeKg?: number | null): number | null {
-    if (!volumeKg || volumeKg <= 0) return null;
-    const weightRatio = volumeKg / 1500;
-    // More lenient threshold to ensure we get comparisons
-    if (weightRatio < 0.02) return null; // Just 2% threshold
-    return parseFloat(weightRatio.toFixed(2)); // Return as decimal (e.g., 0.5 cars)
-}
-
-// Average adult African Elephant ~ 5000 kg
-function volumeToElephants(volumeKg?: number | null): number | null {
-     if (!volumeKg || volumeKg <= 0) return null;
-     const weightRatio = volumeKg / 5000;
-     if (weightRatio < 0.05) return null; // Lower threshold to 5%
-     return parseFloat(weightRatio.toFixed(2));
-}
-
-// Average grand piano ~ 400 kg
-function volumeToGrandPianos(volumeKg?: number | null): number | null {
-    if (!volumeKg || volumeKg <= 0) return null;
-    const pianos = volumeKg / 400;
-    if (pianos < 0.25) return null; // Lower threshold to 25% of a piano
-    return parseFloat(pianos.toFixed(1));
-}
-
-// Refrigerator ~ 100 kg
-function volumeToRefrigerators(volumeKg?: number | null): number | null {
-    if (!volumeKg || volumeKg <= 0) return null;
-    const fridges = volumeKg / 100;
-    if (fridges < 0.2) return null; // 20% threshold
-    return parseFloat(fridges.toFixed(1));
-}
-
-// Washing machine ~ 70 kg
-function volumeToWashingMachines(volumeKg?: number | null): number | null {
-    if (!volumeKg || volumeKg <= 0) return null;
-    const washers = volumeKg / 70;
-    if (washers < 0.2) return null; // 20% threshold
-    return parseFloat(washers.toFixed(1));
-}
-
-// Falls back to smaller objects for low volumes
-function getVolumeComparison(volumeKg?: number | null): string | null {
-    if (!volumeKg || volumeKg <= 0) return null;
-    
-    // Try all comparisons in descending order of weight
-    const elephants = volumeToElephants(volumeKg);
-    if (elephants) {
-        return `lifting ${volumeKg.toLocaleString()} kg total? That's like hoisting ${elephants} adult elephant${elephants > 1 ? 's' : ''}! 🐘 Mind=blown!`;
+  for (const landmark of landmarks) {
+    const difference = Math.abs(distanceKm - landmark.distance);
+    if (difference < smallestDifference) {
+      smallestDifference = difference;
+      closestLandmark = landmark;
     }
-    
-    const cars = volumeToCars(volumeKg);
-    if (cars) {
-        return `in total, you lifted ${volumeKg.toLocaleString()} kg. That's comparable to ${cars} small car${cars > 1 ? 's' : ''}! 🚗 Beep beep!`;
+  }
+
+  if (!closestLandmark) return null;
+
+  const percentDifference = (smallestDifference / closestLandmark.distance) * 100;
+  
+  // Only use comparison if it's reasonably close (within 30%)
+  if (percentDifference > 30) return null;
+
+  if (smallestDifference < 0.1) {
+    return `That's almost exactly the distance of ${closestLandmark.name}! ${closestLandmark.emoji}`;
+  } else if (distanceKm > closestLandmark.distance) {
+    const extra = distanceKm - closestLandmark.distance;
+    return `That's like running ${closestLandmark.name} plus an extra ${extra.toFixed(1)}km! ${closestLandmark.emoji}`;
+  } else {
+    const percentage = ((distanceKm / closestLandmark.distance) * 100).toFixed(0);
+    return `That's about ${percentage}% of ${closestLandmark.name}! ${closestLandmark.emoji}`;
+  }
+}
+
+// Enhanced volume comparison function
+function getVolumeComparison(volumeKg: number): string | null {
+  const comparisons = [
+    { threshold: 500, text: "That's like lifting a small motorcycle!" },
+    { threshold: 1000, text: "That's equivalent to lifting a small car!" },
+    { threshold: 2000, text: "That's like lifting a compact car!" },
+    { threshold: 3000, text: "That's equivalent to lifting a mid-size SUV!" },
+    { threshold: 5000, text: "That's like lifting a large truck!" },
+    { threshold: 8000, text: "That's equivalent to lifting an elephant!" },
+    { threshold: 12000, text: "That's like lifting a school bus!" },
+    { threshold: 20000, text: "That's equivalent to lifting a fire truck!" },
+    { threshold: 30000, text: "That's like lifting a semi-truck!" },
+    { threshold: 50000, text: "That's equivalent to lifting a blue whale!" }
+  ];
+
+  for (const comparison of comparisons) {
+    if (volumeKg <= comparison.threshold) {
+      return comparison.text;
     }
+  }
+
+  return "That's an incredible amount of weight moved!";
+}
+
+// Helper function to calculate workout intensity
+function calculateWorkoutIntensity(workout: IWorkout): {
+  score: number;
+  level: string;
+  description: string;
+} {
+  let score = 0;
+  
+  if (workout.type === 'strength') {
+    const volume = workout.calculatedVolume || 0;
+    const duration = workout.duration || 0;
     
-    const pianos = volumeToGrandPianos(volumeKg);
-    if (pianos) {
-        return `you moved ${volumeKg.toLocaleString()} kg today! That's like lifting ${pianos} grand piano${pianos > 1 ? 's' : ''}! 🎹`;
+    // Base score on volume and duration
+    score = Math.min(100, (volume / 100) + (duration / 60));
+    
+    // Adjust for workout density (volume per minute)
+    if (duration > 0) {
+      const density = volume / (duration / 60);
+      score += Math.min(20, density / 50);
     }
+  } else {
+    // For cardio workouts
+    const distance = workout.cardioDetails?.distance || workout.distance || 0;
+    const duration = workout.duration || 0;
     
-    const fridges = volumeToRefrigerators(volumeKg);
-    if (fridges) {
-        return `you lifted ${volumeKg.toLocaleString()} kg - equivalent to ${fridges} refrigerator${fridges > 1 ? 's' : ''}! 🧊`;
+    if (distance > 0 && duration > 0) {
+      const pace = (duration / 60) / distance; // minutes per km
+      
+      // Lower pace = higher intensity for running
+      if (workout.type === 'running') {
+        if (pace < 4) score = 90;
+        else if (pace < 5) score = 80;
+        else if (pace < 6) score = 70;
+        else if (pace < 7) score = 60;
+        else score = 50;
+      } else {
+        // For other cardio, base on duration and distance
+        score = Math.min(100, (distance * 10) + (duration / 60));
+      }
     }
-    
-    const washers = volumeToWashingMachines(volumeKg);
-    if (washers) {
-        return `your ${volumeKg.toLocaleString()} kg workout is like lifting ${washers} washing machine${washers > 1 ? 's' : ''}! 🧺`;
-    }
-    
-    // Final fallback for very low volumes
-    return `you moved ${volumeKg.toLocaleString()} kg - that's like lifting ${Math.round(volumeKg / 15)} medium-sized dumbbells all at once! 💪`;
+  }
+  
+  let level = 'Light';
+  let description = 'A gentle session to keep you moving.';
+  
+  if (score >= 80) {
+    level = 'Beast Mode';
+    description = 'You absolutely crushed it today! 🔥';
+  } else if (score >= 65) {
+    level = 'High';
+    description = 'Serious work! You pushed yourself hard.';
+  } else if (score >= 45) {
+    level = 'Moderate';
+    description = 'Solid effort with good intensity.';
+  } else if (score >= 25) {
+    level = 'Light';
+    description = 'A good active recovery session.';
+  }
+  
+  return { score: Math.round(score), level, description };
 }
 
 // --- API Route ---
@@ -129,6 +157,7 @@ export async function GET(
     const userId = session.user.id;
     // --- Get User's Display Name ---
     const userName = session.user.nickname || session.user.name || "Fitness Pro"; // Use nickname, fallback to name, then generic
+    const userWeight = session.user.weight && typeof session.user.weight === 'number' && session.user.weight > 0 ? session.user.weight : 75;
     // --- End Get User's Display Name ---
     const workoutId = params.workoutId;
 
@@ -138,184 +167,213 @@ export async function GET(
 
     await dbConnect();
 
+    // Fetch the workout with populated exercise data
     const workout = await WorkoutModel.findOne({
         _id: new ObjectId(workoutId),
         userId: new ObjectId(userId)
-    }).lean<IWorkout>();
+    }).populate({
+      path: 'workoutExercises',
+      populate: {
+        path: 'exerciseId',
+        model: 'Exercise'
+      }
+    }).lean() as any; // Use any type since we're populating additional fields
 
     if (!workout) {
         return NextResponse.json({ error: "Workout not found or not authorized" }, { status: 404 });
     }
 
-    // --- Fun Insight Generation ---
-    // Array to hold potential fun fact strings
-    const funFacts: string[] = [];
-    // Default fun fallback using the user's name
-    let insightStatement = `Great ${workout.type} session, ${userName}! Keep up the fantastic effort! 💪`;
+    // Calculate workout intensity
+    const intensity = calculateWorkoutIntensity(workout);
 
-    // 1. Distance Facts (Running, Cycling, Walking, Hiking, Swimming)
+    // Array to hold potential insights
+    const insights: string[] = [];
+    
+    // Default insight
+    let insightStatement = `Great ${workout.type} session, ${userName}! ${intensity.description}`;
+
+    // 1. Distance-based insights for cardio workouts
     if (['running', 'cycling', 'walking', 'hiking', 'swimming'].includes(workout.type) && 
         workout.cardioDetails?.distance && workout.cardioDetails.distance > 0) {
+        
         const distance = workout.cardioDetails.distance;
-        const laps = distanceToTrackLaps(distance);
-        const marathonFraction = distanceToMarathonFraction(distance);
-        const formattedDist = formatDistanceUtil(distance); // Use the util function
+        const duration = workout.duration || 0;
+        const formattedDist = formatDistanceUtil(distance);
 
-        // Use our landmark comparison function (best comparison)
-        if (['running', 'cycling'].includes(workout.type)) {
-            try {
-                const landmarkComparison = generateDistanceComparisonText(distance);
-                if (landmarkComparison) {
-                    // Already includes the distance value, so add to fun facts directly
-                    funFacts.push(`${userName}, ${landmarkComparison}`);
-                }
-            } catch (error) {
-                console.error("Error generating landmark comparison:", error);
+        // Generate landmark comparison
+        const landmarkComparison = generateDistanceComparisonText(distance);
+        if (landmarkComparison) {
+            insights.push(`${userName}, you covered ${formattedDist} - ${landmarkComparison}`);
+        }
+
+        // Pace insights
+        if (duration > 0 && workout.type === 'running') {
+            const paceMinPerKm = (duration / 60) / distance;
+            let paceInsight = '';
+            
+            if (paceMinPerKm < 4) {
+                paceInsight = `Lightning fast pace of ${paceMinPerKm.toFixed(1)} min/km! You're flying! ⚡`;
+            } else if (paceMinPerKm < 5) {
+                paceInsight = `Impressive ${paceMinPerKm.toFixed(1)} min/km pace! That's competitive running! 🏃‍♂️`;
+            } else if (paceMinPerKm < 6) {
+                paceInsight = `Strong ${paceMinPerKm.toFixed(1)} min/km pace! Great endurance work! 💪`;
+            } else if (paceMinPerKm < 7) {
+                paceInsight = `Solid ${paceMinPerKm.toFixed(1)} min/km pace! Perfect for building your base! 👍`;
+            } else {
+                paceInsight = `Steady ${paceMinPerKm.toFixed(1)} min/km pace! Consistency is key! 🎯`;
             }
+            
+            insights.push(`${userName}, ${paceInsight}`);
         }
 
-        // Add track laps comparison
-        if (laps && laps >= 1) {
-            funFacts.push(`You covered ${formattedDist}, ${userName}! That's like running ${laps} lap${laps > 1 ? 's' : ''} around a track! 🏃`);
-        }
-        
-        // Add marathon percentage comparison
-        if (marathonFraction) {
-            funFacts.push(`That ${formattedDist} is about ${(marathonFraction * 100).toFixed(0)}% of a full marathon, ${userName}! Making progress! 🏁`);
-        }
-        
-        // Keep specific landmark comparisons as fallbacks
-        if (distance > 2.5 && distance < 3) {
-            funFacts.push(`Covering ${formattedDist}? Nice one, ${userName}! That's roughly the length of the Golden Gate Bridge! 🌉`);
-        } else if (distance >= 5 && distance < 7) {
-            funFacts.push(`${formattedDist} is roughly a 5k distance, ${userName}! Solid run! 👍`);
+        // Distance milestones
+        if (distance >= 21.1 && distance < 25) {
+            insights.push(`${userName}, you just completed a half marathon distance! That's a major achievement! 🏅`);
+        } else if (distance >= 42.2) {
+            insights.push(`${userName}, you went the full marathon distance! Absolutely incredible! 🏆`);
         } else if (distance >= 10 && distance < 15) {
-            funFacts.push(`Hitting the 10k mark (${formattedDist}), ${userName}! Seriously impressive! 🔥`);
+            insights.push(`${userName}, that's a solid 10K+ distance! Your endurance is building! 🔥`);
+        } else if (distance >= 5 && distance < 7) {
+            insights.push(`${userName}, you nailed a 5K distance! Perfect for fitness building! ✨`);
         }
     }
 
-    // 2. Volume Facts (Strength) - Fetch WorkoutExercises for this workout
-    let calculatedVolume: number | null = null;
-    
+    // 2. Volume-based insights for strength workouts
     if (workout.type === 'strength') {
-        try {
-            // Import WorkoutExerciseModel
-            const WorkoutExerciseModel = (await import("@/lib/db/models/workoutExercise")).default;
-            
-            // Fetch workout exercises for this workout
-            const workoutExercises = await WorkoutExerciseModel.find({ 
-                workoutId: workout._id 
-            }).populate('exerciseId').lean();
-            
-            // Calculate volume from workout exercises
-            calculatedVolume = workoutExercises.reduce((totalVol, ex) => {
+        let calculatedVolume = workout.calculatedVolume || 0;
+        
+        // If no calculated volume, try to calculate from exercises
+        if (calculatedVolume === 0 && workout.workoutExercises) {
+            calculatedVolume = workout.workoutExercises.reduce((totalVol: number, ex: any) => {
                 const exerciseSets = Array.isArray(ex.sets) ? ex.sets : [];
                 const exerciseName = ex.exerciseId?.name || '';
-                const isBodyweight = estimateBodyweightForExercise(exerciseName) > 0;
-                const exerciseVol = exerciseSets.reduce((setVol, set) => {
+                const exerciseVol = exerciseSets.reduce((setVol: number, set: any) => {
                     let weight = set.weight ?? 0;
-                    if (isBodyweight && (!weight || weight === 0)) {
-                        weight = estimateBodyweightForExercise(exerciseName);
+                    const reps = set.reps ?? 0;
+                    
+                    // Handle bodyweight exercises
+                    if (weight === 0) {
+                        weight = estimateBodyweightForExercise(exerciseName, userWeight);
                     }
-                    return setVol + (weight * (set.reps ?? 0));
+                    
+                    return setVol + (weight * reps);
                 }, 0);
                 return totalVol + exerciseVol;
             }, 0);
-        } catch (error) {
-            console.error("Error calculating volume from workout exercises:", error);
         }
-        
-        // If we didn't get volume from workout exercises, use the calculated volume from the workout
-        if (!calculatedVolume || calculatedVolume <= 0) {
-            calculatedVolume = workout.calculatedVolume || null;
+
+        if (calculatedVolume > 0) {
+            const volumeComparison = getVolumeComparison(calculatedVolume);
+            if (volumeComparison) {
+                insights.push(`${userName}, you moved ${calculatedVolume.toLocaleString()}kg total! ${volumeComparison} 💪`);
+            }
+
+            // Volume milestones
+            if (calculatedVolume >= 10000) {
+                insights.push(`${userName}, you hit the 10-ton club! That's elite-level volume! 🏆`);
+            } else if (calculatedVolume >= 5000) {
+                insights.push(`${userName}, over 5 tons moved! You're getting seriously strong! 🔥`);
+            } else if (calculatedVolume >= 2000) {
+                insights.push(`${userName}, 2+ tons moved! Your strength is building fast! 💪`);
+            } else if (calculatedVolume >= 1000) {
+                insights.push(`${userName}, you moved over a ton! That's a solid strength session! 👍`);
+            }
+        }
+
+        // Exercise count insights
+        const exerciseCount = workout.workoutExercises?.length || 0;
+        const totalSets = workout.workoutExercises?.reduce((total: number, ex: any) => 
+            total + (ex.sets?.length || 0), 0) || 0;
+        const totalReps = workout.workoutExercises?.reduce((total: number, ex: any) => 
+            total + (ex.sets?.reduce((setTotal: number, set: any) => setTotal + (set.reps || 0), 0) || 0), 0) || 0;
+
+        if (exerciseCount >= 8) {
+            insights.push(`${userName}, ${exerciseCount} exercises! That's a comprehensive full-body session! 🎯`);
+        } else if (exerciseCount >= 5) {
+            insights.push(`${userName}, ${exerciseCount} exercises with ${totalSets} sets! Great workout variety! ✨`);
+        }
+
+        if (totalReps >= 200) {
+            insights.push(`${userName}, ${totalReps} total reps! Your work capacity is impressive! 🔥`);
+        } else if (totalReps >= 100) {
+            insights.push(`${userName}, ${totalReps} reps completed! Solid volume work! 💪`);
         }
     }
 
-    // Generate strength volume comparisons
-    if (workout.type === 'strength' && calculatedVolume && calculatedVolume > 0) {
-        // Get a single volume comparison that's appropriate for this volume
-        const volumeComparison = getVolumeComparison(calculatedVolume);
-        if (volumeComparison) {
-            funFacts.push(`${userName}, ${volumeComparison}`);
+    // 3. Duration insights
+    const durationMinutes = Math.round((workout.duration || 0) / 60);
+    if (durationMinutes >= 120) {
+        insights.push(`${userName}, ${durationMinutes} minutes! That's serious dedication and endurance! 🏆`);
+    } else if (durationMinutes >= 90) {
+        insights.push(`${userName}, ${durationMinutes} minutes of pure effort! Your commitment is inspiring! 🔥`);
+    } else if (durationMinutes >= 60) {
+        insights.push(`${userName}, a full hour of training! That's what consistency looks like! ⏰`);
+    } else if (durationMinutes >= 45) {
+        insights.push(`${userName}, ${durationMinutes} minutes well spent! Perfect session length! ✨`);
+    }
+
+    // 4. Personal Records insights
+    if (workout.records && workout.records.length > 0) {
+        const prCount = workout.records.length;
+        if (prCount === 1) {
+            insights.push(`${userName}, you set a new personal record today! Progress in action! 🏅`);
         } else {
-            // Fallback with specific, personalized volume mention
-            funFacts.push(`You lifted a total volume of ${calculatedVolume.toLocaleString()} kg, ${userName}! Every rep counts! Keep building! 🏋️`);
+            insights.push(`${userName}, ${prCount} new personal records! You're on fire! 🔥🏆`);
         }
     }
 
-    // 3. Calorie Facts (Any type with calories)
-    // For calorie data, we need to check cardioDetails for cardio workouts or set a reasonable estimate
-    let calorieEstimate: number | null = null;
-    
-    if (workout.type === 'running' || workout.type === 'cycling' || workout.type === 'swimming') {
-        // For cardio workouts, we can estimate calories based on duration and intensity
-        if (workout.duration) {
-            // Basic estimate: ~ 10 calories per minute for moderate intensity
-            const caloriesPerMinute = workout.intensity === 'High' ? 14 : 
-                                      workout.intensity === 'Medium' ? 10 : 7;
-            calorieEstimate = Math.round((workout.duration / 60) * caloriesPerMinute);
-        }
-    } else if (workout.type === 'strength') {
-        // For strength workouts, estimate based on duration
-        if (workout.duration) {
-            // Basic estimate: ~ 5-8 calories per minute
-            calorieEstimate = Math.round((workout.duration / 60) * 7);
-        }
-    }
-    
-    if (calorieEstimate && calorieEstimate > 50) { // Only if meaningful calories burned
-        const bananas = caloriesToBananas(calorieEstimate);
-        const pizzaSlices = caloriesToPizzaSlices(calorieEstimate);
-
-        if (pizzaSlices) {
-             funFacts.push(`You burned ~${calorieEstimate} calories, ${userName}! That's roughly ${pizzaSlices} slice${pizzaSlices > 1 ? 's' : ''} of pizza! 🍕 Worth it!`);
-        } else if (bananas && bananas > 0) { // Fallback to bananas if not enough for pizza
-             funFacts.push(`Torching ~${calorieEstimate} calories? Nice, ${userName}! That's the energy in about ${bananas} banana${bananas > 1 ? 's' : ''}! 🍌`);
-        }
+    // 5. Intensity-based insights
+    if (intensity.score >= 80) {
+        insights.push(`${userName}, intensity level: ${intensity.level}! You left everything on the floor today! 🔥`);
+    } else if (intensity.score >= 65) {
+        insights.push(`${userName}, high-intensity session! You pushed your limits today! 💪`);
+    } else if (intensity.score >= 45) {
+        insights.push(`${userName}, perfect moderate intensity! Building that solid foundation! 🎯`);
     }
 
-    // 4. Duration Facts (Fallback if no other specific facts generated)
-    if (funFacts.length === 0 && workout.duration && workout.duration > 600) { // Min 10 mins
-         const durationMinutes = Math.round(workout.duration / 60);
-         if (durationMinutes > 20 && durationMinutes < 40) {
-              funFacts.push(`A solid ${durationMinutes}-minute session, ${userName}! About the length of a good TV episode! 📺`);
-         } else if (durationMinutes >= 45 && durationMinutes < 75) {
-              funFacts.push(`Wow, ${userName}, you powered through for ${durationMinutes} minutes! That's some serious dedication! ⏳`);
-         } else if (durationMinutes >= 75) {
-             funFacts.push(`${durationMinutes} minutes of dedication, ${userName}! You're absolutely crushing it! 🔥`);
-         }
+    // 6. Motivational insights based on workout type
+    const motivationalInsights = {
+        strength: [
+            `${userName}, every rep builds the stronger version of you! 💪`,
+            `${userName}, iron sharpens iron - and you're getting sharper! ⚡`,
+            `${userName}, strength isn't just physical - you're building mental toughness too! 🧠`
+        ],
+        running: [
+            `${userName}, every step forward is progress! Keep moving! 🏃‍♂️`,
+            `${userName}, you're not just running - you're chasing your best self! ✨`,
+            `${userName}, the road doesn't care about your excuses - and neither do you! 🛣️`
+        ],
+        cycling: [
+            `${userName}, pedaling towards your goals one revolution at a time! 🚴‍♂️`,
+            `${userName}, the bike doesn't lie - your effort shows! 🔥`,
+            `${userName}, spinning your way to better fitness! 🌟`
+        ]
+    };
+
+    const typeInsights = motivationalInsights[workout.type as keyof typeof motivationalInsights];
+    if (typeInsights) {
+        insights.push(typeInsights[Math.floor(Math.random() * typeInsights.length)]);
     }
 
-    // --- Add Generic Encouragement Facts ---
-    // These are added regardless of specific metrics to increase variety
-    funFacts.push(`Awesome consistency, ${userName}! Keep showing up! ✨`);
-    funFacts.push(`You're building momentum, ${userName}! Great work! 🚀`);
-    if (workout.type === 'strength') {
-       funFacts.push(`Strength takes time, ${userName}. Proud of your effort today! 💪`);
-    }
-    if (['running', 'cycling', 'swimming'].includes(workout.type)) {
-       funFacts.push(`Pushing your endurance, ${userName}! Keep moving! 💨`);
-    }
-
-    // --- Combine Facts for the Final Statement ---
-    if (funFacts.length > 0) {
-        // Instead of random, prioritize real comparisons (they're more engaging)
-        // Sort the fun facts so that real comparisons come first
-        const sortedFacts = funFacts.sort((a, b) => {
-            const hasComparisonA = a.includes("like") || a.includes("equivalent") || a.includes("comparable");
-            const hasComparisonB = b.includes("like") || b.includes("equivalent") || b.includes("comparable");
-            
-            if (hasComparisonA && !hasComparisonB) return -1;
-            if (!hasComparisonA && hasComparisonB) return 1;
-            return 0;
-        });
+    // Select the best insight
+    if (insights.length > 0) {
+        // Prioritize specific achievements over generic motivation
+        const achievementInsights = insights.filter(insight => 
+            insight.includes('record') || 
+            insight.includes('ton') || 
+            insight.includes('marathon') || 
+            insight.includes('like') ||
+            insight.includes('equivalent')
+        );
         
-        // Use the first fact (which should be a comparison if available)
-        insightStatement = sortedFacts[0];
+        if (achievementInsights.length > 0) {
+            insightStatement = achievementInsights[0];
+        } else {
+            insightStatement = insights[0];
+        }
     }
-    // If funFacts is empty, the personalized default insightStatement remains.
 
-    console.log(`Generated insight for workout ${workoutId} for ${userName}: "${insightStatement}"`);
+    console.log(`Generated enhanced insight for workout ${workoutId} for ${userName}: "${insightStatement}"`);
     return NextResponse.json({ insight: insightStatement });
 
   } catch (error) {
@@ -325,7 +383,7 @@ export async function GET(
     const userName = session?.user?.nickname || session?.user?.name || "there";
     return NextResponse.json(
       // Keep a positive fallback even on error, personalized
-      { insight: `Awesome effort on that workout, ${userName}! Keep it up!` },
+      { insight: `Awesome effort on that workout, ${userName}! Every session counts towards your goals! 💪` },
       { status: 500 }
     );
   }
