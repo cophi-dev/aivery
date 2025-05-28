@@ -161,37 +161,41 @@ export const DailyInsightCard: React.FC = () => {
         ) : (
           <div className="space-y-4">
             {data.highlight && (
-              <p className="text-sm font-medium">{data.highlight}</p>
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/10">
+                <p className="text-sm font-medium text-primary">{data.highlight}</p>
+              </div>
             )}
-            <p className="text-sm text-muted-foreground">
-              {data.insight}
-            </p>
+            <div className="prose prose-sm max-w-none">
+              <p className="text-sm leading-relaxed text-foreground">
+                {data.insight}
+              </p>
+            </div>
             {data.positiveTrends && data.positiveTrends.length > 0 && (
               <div className="mt-4">
-                <h4 className="text-sm font-medium mb-2">Positive Trends</h4>
-                <ul className="list-disc list-inside text-sm text-muted-foreground">
+                <h4 className="text-sm font-semibold mb-2 text-green-700 dark:text-green-400">Performance Strengths</h4>
+                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
                   {data.positiveTrends.map((trend, i) => (
-                    <li key={i}>{trend}</li>
+                    <li key={i} className="text-green-600 dark:text-green-400">{trend}</li>
                   ))}
                 </ul>
               </div>
             )}
             {data.negativeTrends && data.negativeTrends.length > 0 && (
               <div className="mt-4">
-                <h4 className="text-sm font-medium mb-2">Areas for Improvement</h4>
-                <ul className="list-disc list-inside text-sm text-muted-foreground">
+                <h4 className="text-sm font-semibold mb-2 text-amber-700 dark:text-amber-400">Optimization Opportunities</h4>
+                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
                   {data.negativeTrends.map((trend, i) => (
-                    <li key={i}>{trend}</li>
+                    <li key={i} className="text-amber-600 dark:text-amber-400">{trend}</li>
                   ))}
                 </ul>
               </div>
             )}
             {data.milestones && data.milestones.length > 0 && (
               <div className="mt-4">
-                <h4 className="text-sm font-medium mb-2">Milestones</h4>
-                <ul className="list-disc list-inside text-sm text-muted-foreground">
+                <h4 className="text-sm font-semibold mb-2 text-blue-700 dark:text-blue-400">Key Metrics</h4>
+                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
                   {data.milestones.map((milestone, i) => (
-                    <li key={i}>{milestone}</li>
+                    <li key={i} className="text-blue-600 dark:text-blue-400">{milestone}</li>
                   ))}
                 </ul>
               </div>

@@ -436,8 +436,8 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {isDateRangedInsight
-                        ? (insight?.description || 'Your performance overview')
-                        : (insight?.description || "Your daily fitness insight")}
+                        ? (insight?.description || 'Performance analysis and optimization insights')
+                        : (insight?.description || "Data-driven training analysis")}
                     </p>
                   </motion.div>
                 </div>
@@ -494,8 +494,8 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                     
                     {!error && !insight?.error && insight?.positiveTrends && insight.positiveTrends.length > 0 && (
                       <div>
-                        <strong>Positive Trends:</strong>
-                        <ul>
+                        <strong className="text-green-700 dark:text-green-400">Performance Strengths:</strong>
+                        <ul className="mt-2 space-y-1">
                           {insight.positiveTrends.map((trend, i) => {
                             // More precise detection for actual PRs
                             const containsPR = 
@@ -507,9 +507,10 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
 
                             return (
                               <li key={i} className={cn(
-                                containsPR ? "font-bold text-amber-600 dark:text-amber-400" : ""
+                                "text-sm",
+                                containsPR ? "font-semibold text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"
                               )}>
-                                {containsPR ? '🏆 ' : '- '}
+                                {containsPR ? '🏆 ' : '• '}
                                 {trend}
                               </li>
                             );
@@ -518,21 +519,35 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                       </div>
                     )}
                     {!error && !insight?.error && insight?.negativeTrends && insight.negativeTrends.length > 0 && (
-                      <div><strong>Areas to Watch:</strong><ul>{insight.negativeTrends.map((trend, i) => <li key={i}>- {trend}</li>)}</ul></div>
+                      <div>
+                        <strong className="text-amber-700 dark:text-amber-400">Optimization Opportunities:</strong>
+                        <ul className="mt-2 space-y-1">
+                          {insight.negativeTrends.map((trend, i) => (
+                            <li key={i} className="text-sm text-amber-600 dark:text-amber-400">• {trend}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                     {!error && !insight?.error && insight?.milestones && insight.milestones.length > 0 && (
-                      <div><strong>Milestones:</strong><ul>{insight.milestones.map((stone, i) => <li key={i}>- {stone}</li>)}</ul></div>
+                      <div>
+                        <strong className="text-blue-700 dark:text-blue-400">Key Metrics:</strong>
+                        <ul className="mt-2 space-y-1">
+                          {insight.milestones.map((stone, i) => (
+                            <li key={i} className="text-sm text-blue-600 dark:text-blue-400">• {stone}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                     
                     {/* Show loading indicator only if loading is true and no error and no actual highlight */}
                     {loading && !error && !insight?.error && !insight?.highlight && (
                       <div className="space-y-4">
                         <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
-                          <p className="text-base text-primary/80">Generating insights for your selected timeframe...</p>
+                          <p className="text-base text-primary/80">Analyzing performance data for your selected timeframe...</p>
                         </div>
                         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                           <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                          <span>This may take a moment</span>
+                          <span>Processing training metrics</span>
                         </div>
                       </div>
                     )}
@@ -540,7 +555,7 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                     {/* Fallback for no data when not loading and no error */}
                     {!loading && !error && !insight?.error && !(insight?.highlight || insight?.positiveTrends?.length || insight?.negativeTrends?.length || insight?.milestones?.length) && (
                        <div className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/30">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">No insights available for this period. Try selecting a different date range or logging an activity.</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Insufficient training data for comprehensive analysis. Log more workouts to generate detailed performance insights.</p>
                       </div>
                     )}
                   </motion.div>
@@ -552,7 +567,7 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                     {loading ? (
                       <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                         <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                        <span>Loading your daily insight...</span>
+                        <span>Analyzing your training data...</span>
                       </div>
                     ) : error ? (
                       <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
@@ -563,9 +578,11 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
                         <p className="text-sm text-destructive">⚠️ {insight.error.message}</p>
                       </div>
                     ) : (
-                      <p className="text-base font-light leading-relaxed">
-                        {insight?.insight}
-                      </p>
+                      <div className="prose prose-sm max-w-none">
+                        <p className="text-base leading-relaxed text-foreground">
+                          {insight?.insight}
+                        </p>
+                      </div>
                     )}
                   </motion.div>
                 )}

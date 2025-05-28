@@ -1,162 +1,139 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarPlus, ClipboardCheck } from 'lucide-react'; // Or your preferred icons
-import { InfoDisplayModal } from '@/components/features/InfoDisplayModal';
+import { MessageCircle, TrendingUp, Calendar, Target, Sparkles } from "lucide-react";
+import { cn } from '@/lib/utils';
 
-// Define the props for the component, including the function to send messages
 interface QuickActionsCardProps {
   sendAiMessage: (query: string, context: any) => void;
 }
 
 export function QuickActionsCard({ sendAiMessage }: QuickActionsCardProps) {
+  const quickActions = [
+    {
+      id: 'weekly-review',
+      title: 'Weekly Review',
+      description: 'Get insights on your week',
+      icon: TrendingUp,
+      color: 'emerald',
+      query: "Can you analyze my weekly performance and give me insights?",
+      context: { requestType: 'weekly-review', reviewPeriod: '7days' }
+    },
+    {
+      id: 'workout-plan',
+      title: 'Workout Plan',
+      description: 'Get a custom plan',
+      icon: Target,
+      color: 'blue',
+      query: "Can you create a workout plan for me based on my recent activity?",
+      context: { requestType: 'workout-planning' }
+    },
+    {
+      id: 'progress-check',
+      title: 'Progress Check',
+      description: 'Review your gains',
+      icon: Calendar,
+      color: 'purple',
+      query: "How am I progressing towards my fitness goals?",
+      context: { requestType: 'progress-analysis' }
+    }
+  ];
 
-    // State for the review modal
-    const [showReviewModal, setShowReviewModal] = useState(false);
-    const [reviewContent, setReviewContent] = useState<string | null>(null);
-    const [isLoadingReview, setIsLoadingReview] = useState(false);
-    const [reviewError, setReviewError] = useState<string | null>(null);
-    const [reviewModalTitle, setReviewModalTitle] = useState("");
+  const handleActionClick = (action: typeof quickActions[0]) => {
+    sendAiMessage(action.query, action.context);
+  };
 
-    // Get current day of the week (0=Sunday, 1=Monday, ..., 6=Saturday)
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-
-    // Determine if we should review 'this_week' (Thursday-Sunday) or 'last_week' (Monday-Wednesday)
-    // Days: Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
-    const reviewPeriod = (dayOfWeek >= 4 || dayOfWeek === 0) ? 'this_week' : 'last_week';
-    const reviewButtonText = reviewPeriod === 'this_week' ? "Review This Week's Workouts" : "Review Last Week's Workouts";
-    // Updated query with specific structuring instructions
-    const reviewUserQuery = `Please review my performance and progress from ${reviewPeriod === 'this_week' ? 'this current week' : 'the last completed week'}. Structure your response using the following Markdown headings exactly:
-#### Overall Summary
-#### Strength Insights
-#### Cardio Insights
-#### Consistency & Volume
-
-After the sections, conclude *only* with an engaging question asking for my feedback, formatted like this: ***How does this sound to you?***`;
-
-    // Handler for generating the next week's plan
-    const handleGeneratePlan = () => {
-        console.log("Triggering plan generation...");
-        // System prompt construction is handled by the backend for this request type.
-        // Backend will fetch history and goals.
-        const context = {
-            requestType: 'generate_plan',
-            // No need to send systemPrompt from client
-        };
-        const userQuery = "Create my workout plan for next week based on my goals.";
-
-        // Check if the function is available before calling
-        if (typeof sendAiMessage === 'function') {
-            sendAiMessage(userQuery, context);
-        } else {
-            console.error('sendAiMessage function was not provided or is not a function.');
-            alert('Error: Could not trigger plan generation.');
-        }
-    };
-
-    // Function to fetch review content
-    const fetchReviewContent = useCallback(async (period: string, query: string) => {
-      setIsLoadingReview(true);
-      setReviewContent(null);
-      setReviewError(null);
-      console.log(`[QuickActions] Fetching review content for: ${period}`);
-
-      try {
-        const response = await fetch('/api/ai/coach', { 
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            query: query,
-            // Provide context expected by the backend
-            context: { 
-              requestType: 'generate_weekly_review',
-              reviewPeriod: period 
-            },
-            history: [], // Include empty history just in case
-          }),
-        });
-
-        if (!response.ok) {
-          let errorBody = "Failed to fetch review details.";
-          try { 
-            const errorData = await response.json();
-            errorBody = errorData.error || errorData.message || errorBody; 
-          } catch { /* Ignore parsing error */ }
-          throw new Error(errorBody);
-        }
-
-        const result = await response.json();
-        
-        if (result.response) {
-          console.log("[QuickActions] Review content fetched successfully.");
-          setReviewContent(result.response);
-        } else {
-          throw new Error("Received empty response from AI for review.");
-        }
-
-      } catch (error: any) {
-        console.error("[QuickActions] Error fetching review content:", error);
-        setReviewError(error.message || "An unknown error occurred while fetching the review.");
-        setReviewContent(null); 
-      } finally {
-        setIsLoadingReview(false);
+  const getColorClasses = (color: string) => {
+    const colorMap = {
+      emerald: {
+        bg: 'bg-emerald-50 dark:bg-emerald-950/30',
+        border: 'border-emerald-200 dark:border-emerald-800/50',
+        icon: 'text-emerald-600 dark:text-emerald-400',
+        iconBg: 'bg-emerald-100 dark:bg-emerald-900/50',
+        hover: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+      },
+      blue: {
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        border: 'border-blue-200 dark:border-blue-800/50',
+        icon: 'text-blue-600 dark:text-blue-400',
+        iconBg: 'bg-blue-100 dark:bg-blue-900/50',
+        hover: 'hover:bg-blue-100 dark:hover:bg-blue-900/50'
+      },
+      purple: {
+        bg: 'bg-purple-50 dark:bg-purple-950/30',
+        border: 'border-purple-200 dark:border-purple-800/50',
+        icon: 'text-purple-600 dark:text-purple-400',
+        iconBg: 'bg-purple-100 dark:bg-purple-900/50',
+        hover: 'hover:bg-purple-100 dark:hover:bg-purple-900/50'
       }
-    }, []); // Empty dependency array, function doesn't depend on component state directly
-
-    // MODIFIED handler for reviewing workouts - Opens modal
-    const handleReviewWeek = () => {
-        console.log(`Triggering weekly review modal for: ${reviewPeriod}`);
-        setReviewModalTitle(reviewButtonText); // Set title for the modal
-        setShowReviewModal(true); // Open the modal
-        fetchReviewContent(reviewPeriod, reviewUserQuery); // Fetch content
-        // --- REMOVED call to sendAiMessage --- 
     };
-    
-    // Handler to close the modal
-    const handleCloseReviewModal = () => {
-        setShowReviewModal(false);
-        // Optionally reset state on close, or let it reset on next open
-        // setReviewContent(null);
-        // setIsLoadingReview(false);
-        // setReviewError(null);
-        // setReviewModalTitle("");
-    };
+    return colorMap[color as keyof typeof colorMap] || colorMap.blue;
+  };
 
-    return (
-        <>
-            <Card className="rounded-xl shadow-sm border border-border bg-card">
-                <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-                        Quick Actions
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3 pt-0">
-                    <Button
-                        variant="secondary"
-                        onClick={handleReviewWeek}
-                        className="w-full"
-                    >
-                        <ClipboardCheck className="h-5 w-5 mr-2" />
-                        {reviewButtonText}
-                    </Button>
-                </CardContent>
-            </Card>
-
-            {/* Render the Info Display Modal */}
-            <InfoDisplayModal
-                isOpen={showReviewModal}
-                onClose={handleCloseReviewModal}
-                title={reviewModalTitle}
-                contextIdentifier={reviewButtonText}
-                content={reviewContent}
-                isLoading={isLoadingReview}
-                error={reviewError}
-                // Custom loading text based on period
-                loadingText={`Aivery is analyzing ${reviewPeriod === 'this_week' ? 'this week\'s' : 'last week\'s'} workouts...`}
-            />
-        </>
-    );
+  return (
+    <Card className="hover:shadow-md transition-shadow duration-200">
+      <CardHeader className="pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-accent/10">
+            <Sparkles className="h-5 w-5 text-accent" />
+          </div>
+          <div>
+            <CardTitle className="text-lg font-semibold">AI Coach</CardTitle>
+            <CardDescription>Get personalized insights</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent className="space-y-3">
+        {quickActions.map((action) => {
+          const colors = getColorClasses(action.color);
+          const IconComponent = action.icon;
+          
+          return (
+            <Button
+              key={action.id}
+              variant="ghost"
+              onClick={() => handleActionClick(action)}
+              className={cn(
+                "w-full justify-start h-auto p-4 rounded-lg",
+                colors.bg,
+                colors.border,
+                colors.hover,
+                "border transition-colors duration-200"
+              )}
+            >
+              <div className="flex items-center gap-3 w-full">
+                <div className={cn("p-2 rounded-lg", colors.iconBg)}>
+                  <IconComponent className={cn("h-4 w-4", colors.icon)} />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-sm text-foreground">
+                    {action.title}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {action.description}
+                  </div>
+                </div>
+                <MessageCircle className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Button>
+          );
+        })}
+        
+        {/* Chat prompt */}
+        <div className="pt-3 border-t border-border/50">
+          <Button
+            variant="outline"
+            onClick={() => sendAiMessage("Hello! I'd like to chat about my fitness progress.", { requestType: 'general-chat' })}
+            className="w-full justify-center gap-2 hover:bg-muted/50 transition-colors duration-200"
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span>Start a conversation</span>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

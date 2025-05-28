@@ -8,6 +8,7 @@ import type { WorkoutData, DailyInsightData } from '@/types/db'; // Import Worko
 import { getUserById } from '@/lib/db/repositories/userRepository';
 import { getToken } from "next-auth/jwt";
 import { startOfWeek, endOfWeek, subWeeks } from 'date-fns';
+import { callLLM, LLMProvider } from '@/lib/services/llm'; // Import centralized LLM service
 
 // Ensure the route is always dynamic and not cached
 export const dynamic = 'force-dynamic';
@@ -37,12 +38,9 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
   // Calculate different start dates based on day
   switch(dayName) {
     case 'Monday':
-      // Use date-fns to get last week's Monday and Sunday
-      const lastWeekStart = startOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
-      const lastWeekEnd = endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
-      startDate = lastWeekStart;
-      endDate = lastWeekEnd;
-      description = "last week (Mon-Sun)";
+      // Last 10 days to include weekend + some recent training context
+      startDate.setDate(today.getDate() - 10);
+      description = "last 10 days";
       break;
     case 'Tuesday':
     case 'Wednesday':
@@ -56,9 +54,9 @@ function calculateDateRangeForDay(dayName: string): { startDate: Date; endDate: 
       description = "this week (Mon-Thu)";
       break;
     case 'Friday':
-      // Last 3 weeks (including the current one)
-      startDate.setDate(today.getDate() - 21); // Go back 3 weeks
-      description = "last 3 weeks";
+      // Last 14 days instead of 3 weeks (more focused on recent training)
+      startDate.setDate(today.getDate() - 14);
+      description = "last 2 weeks";
       break;
     case 'Saturday':
       // Current week progress
@@ -358,65 +356,80 @@ export async function GET(req: Request) {
     // --- Always Generate Fresh Insight using AI --- 
     let generatedInsight = "";
     let aiError: string | null = null;
-    const grokApiKey = process.env.GROK_API_KEY;
 
-    if (!grokApiKey) {
-      aiError = "AI service is unavailable due to configuration issues.";
-      generatedInsight = `Placeholder insight for ${dayName}. Data fetch error: ${dataFetchError || 'None'}`;
-    } else {
-      try {
-        const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords, startDate, endDate);
-        // --- FITNESS BUDDY PROMPT ---
-        const systemPrompt = `
-You are Aivery, the user's fitness buddy—fun, supportive, and always real. Your job is to give ${displayName} a daily fitness insight that feels like it's from a friend who works out with them.
+    try {
+      const workoutDataString = formatWorkoutsForPrompt(fetchedWorkouts, today, personalRecords, startDate, endDate);
+      
+      // Simple, natural prompt that lets the LLM decide how to respond
+      const prompt = `You are Aivery, ${displayName}'s personal fitness coach.
 
-Today is ${dayName}. Here's what's up:
+Today is ${dayName}. Here's their recent training summary:
 ${workoutDataString}
 
-Instructions:
-- If the user had a rest day yesterday and today is late (after 7pm) with no workout logged, motivate them to get moving or gently tease them—like a real friend would.
-- If the user is on a streak, hype them up.
-- If the user is stagnating or missing workouts, encourage or nudge them.
-- Be playful, humble, and natural—like a friend texting after a workout.
-- Celebrate wins, laugh at struggles, and keep it light.
-- If there's a new PR, get genuinely excited (but don't brag).
-- If today's a rest day, make it feel okay—maybe joke about "earning that couch time."
-- If the week's been tough, offer encouragement and a fresh start.
-- Use emojis if it feels natural, but don't overdo it.
-- Never sound like a robot or a formal coach.
-- 2–4 sentences, but don't force it—just sound like a real person.
+Based on this data, give me one encouraging and insightful comment about their fitness progress or what they should focus on. Keep it conversational and supportive, like you're speaking directly to them. 1-2 sentences max.`;
 
-Now, write today's insight for ${displayName}!
-`;
-        const response = await fetch('https://api.x.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${grokApiKey}`
-          },
-          body: JSON.stringify({
-            model: 'grok-3-mini-latest',
-            messages: [
-              { role: 'system', content: systemPrompt },
-            ],
-            max_tokens: 1024,
-            temperature: 0.7,
-            stream: false,
-          })
+      // Use centralized LLM service with environment configuration
+      const provider = (process.env.LLM_PROVIDER_INSIGHT as LLMProvider) || (process.env.LLM_PROVIDER as LLMProvider) || 'openai';
+      const model = process.env.LLM_MODEL_INSIGHT || 'gpt-4.1-mini-2025-04-14';
+      
+      console.log(`[Daily Insight] Using provider: ${provider}, model: ${model}`);
+      
+      const data = await callLLM({
+        provider,
+        model,
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
+        stream: false,
+        fallbackResponse: `${dayName} is a great day to focus on your fitness goals!`
+      });
+      
+      console.log('[Daily Insight] LLM response:', JSON.stringify(data, null, 2));
+      
+      // Simple extraction - trust the LLM to provide good content
+      if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        generatedInsight = data.choices[0].message.content.trim();
+        console.log(`[Daily Insight] Generated insight: "${generatedInsight}"`);
+      } else if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.reasoning_content) {
+        // Simple Grok fallback - just try to find a complete sentence about fitness
+        const reasoning = data.choices[0].message.reasoning_content;
+        console.log(`[Daily Insight] No content field, checking reasoning for Grok...`);
+        
+        // Look for any complete sentence that mentions fitness/workout concepts
+        const sentences = reasoning.split(/[.!]+/).filter((s: string) => {
+          const clean = s.trim();
+          return clean.length > 30 && 
+                 clean.length < 150 &&
+                 (clean.toLowerCase().includes('workout') || 
+                  clean.toLowerCase().includes('training') ||
+                  clean.toLowerCase().includes('consistency') ||
+                  clean.toLowerCase().includes('progress') ||
+                  clean.toLowerCase().includes('strength') ||
+                  clean.toLowerCase().includes('running'));
         });
-        if (!response.ok) {
-          const errorBody = await response.text();
-          throw new Error(`AI API request failed: ${response.statusText} - ${errorBody}`);
-        }
-        const data = await response.json();
-        if (data.choices && data.choices[0]?.message?.content) {
-          generatedInsight = data.choices[0].message.content.trim();
+        
+        if (sentences.length > 0) {
+          generatedInsight = sentences[0].trim() + ".";
+          console.log(`[Daily Insight] Extracted from Grok reasoning: "${generatedInsight}"`);
         } else {
-          throw new Error("Unexpected response structure from AI API.");
+          throw new Error("No usable content in Grok reasoning");
         }
-      } catch (error) {
-        aiError = error instanceof Error ? error.message : "Failed to generate insight.";
-        generatedInsight = `Could not generate insight for ${dayName}. ${aiError}`; 
+      } else {
+        throw new Error("No content returned from LLM");
+      }
+      
+    } catch (error) {
+      aiError = error instanceof Error ? error.message : "Failed to generate insight.";
+      console.error('[Daily Insight] AI generation failed:', error);
+      
+      // Simple fallback based on available data
+      if (fetchedWorkouts.length > 0) {
+        const totalWorkouts = fetchedWorkouts.length;
+        generatedInsight = `${totalWorkouts} workouts logged recently. You're building great consistency!`;
+      } else {
+        generatedInsight = `${dayName} is a perfect day to get moving with your fitness routine!`;
       }
     }
 
@@ -438,4 +451,4 @@ Now, write today's insight for ${displayName}!
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
     return NextResponse.json({ error: 'Failed to process daily insight request', details: errorMessage }, { status: 500 });
   }
-} 
+}

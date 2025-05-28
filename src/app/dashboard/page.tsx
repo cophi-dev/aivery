@@ -7,7 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Import Card components
 import Link from "next/link"; // Import Link
-import { ArrowRight, Upload, Edit3, Sparkles } from "lucide-react"; // Import icons
+import { ArrowRight, Upload, Edit3, Sparkles, Activity } from "lucide-react"; // Import icons
+import { cn } from '@/lib/utils';
 
 // Import Client Components
 import { SubscriptionStatus } from "./_components/SubscriptionStatusClient"; 
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button"; // Import Button
 import UserNicknameDisplay from "@/components/UserNicknameDisplay";
 import type { ObjectId } from 'mongoose'; // Import ObjectId for type checking
 import { FeatureHighlightClient } from "./_components/FeatureHighlightClient";
+import { RecentExerciseCardClient } from './_components/RecentExerciseCardClient';
 
 // Define a type for the metrics data
 interface DashboardMetrics {
@@ -60,6 +62,27 @@ interface ChatMessage {
 // Placeholder declaration for the chat update function
 // TODO: Replace this with your actual chat context/state management hook/import
 declare function addMessageToChat(message: ChatMessage): void;
+
+// Simple animation variants
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+            delayChildren: 0.1
+        }
+    }
+};
+
+const itemVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.3, ease: "easeOut" }
+    }
+};
 
 // --- Main Dashboard Page Component (Client Component) ---
 export default function DashboardPage() {
@@ -161,72 +184,115 @@ export default function DashboardPage() {
     console.log(`[Dashboard Page] Rendering. isLoadingMetrics: ${isLoadingMetrics}, metrics: ${JSON.stringify(metrics, null, 2)}, workoutCount: ${metrics?.workoutCount}`);
 
     return (
-        <div className="container mx-auto px-4 sm:px-6 md:py-10 py-6 flex flex-col items-center bg-background">
-            <div className="w-full max-w-5xl space-y-6 md:space-y-8 lg:space-y-10">
-                <DashboardHeader 
-                    displayName={<UserNicknameDisplay fallback={displayName} />} 
-                    userImage={userImage} 
-                />
-                
-                {/* Display Feature Highlights for users with workouts */}
-                {!isLoadingMetrics && metrics && metrics.workoutCount > 0 && (
-                    <FeatureHighlightClient />
-                )}
+        <div className="min-h-screen bg-background">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10">
+                <div className="max-w-6xl mx-auto space-y-8">
+                    {/* Header */}
+                    <DashboardHeader 
+                        displayName={<UserNicknameDisplay fallback={displayName} />} 
+                        userImage={userImage} 
+                    />
 
-                <div className="space-y-6 md:space-y-8">
-                    <LogWorkoutButton />
-                    <SubscriptionStatus />
+                    {/* Feature Highlights */}
+                    {!isLoadingMetrics && metrics && metrics.workoutCount > 0 && (
+                        <FeatureHighlightClient />
+                    )}
+
+                    {/* Main Action Section */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <LogWorkoutButton />
+                        </div>
+                        <div>
+                            <SubscriptionStatus />
+                        </div>
+                    </div>
                     
-                    {/* AI Preferences Card */}
+                    {/* AI Preferences Prompt */}
                     {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
-                        <Card className="border-secondary/70 dark:border-secondary/80 bg-secondary/50 dark:bg-secondary/30 shadow-sm hover:shadow-md transition-shadow duration-200 rounded-xl">
-                             <CardHeader className="flex flex-row items-center justify-between pb-3">
-                                 <div className="space-y-1">
-                                    <CardTitle className="text-base font-semibold text-secondary-foreground dark:text-secondary-foreground flex items-center">
-                                         <Sparkles className="w-5 h-5 mr-2 text-primary dark:text-primary" />
-                                         Unlock Deeper Insights!
-                                     </CardTitle>
-                                    <CardDescription className="text-sm text-secondary-foreground/80 dark:text-secondary-foreground/80">
-                                         Tell Aivery about your goals and preferences for a truly personalized experience.
-                                     </CardDescription>
-                                 </div>
+                        <Card className="border border-primary/20 bg-primary/5">
+                            <CardHeader className="flex flex-row items-center justify-between pb-4">
+                                <div className="space-y-1">
+                                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                                        <Sparkles className="w-5 h-5 text-primary" />
+                                        Unlock Your Full Potential
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Set your fitness goals and preferences to receive personalized AI insights.
+                                    </CardDescription>
+                                </div>
                                 <Link href="/settings?tab=ai">
-                                     <Button variant="outline" size="sm" className="bg-background dark:bg-card border-border dark:border-border text-foreground dark:text-foreground hover:bg-muted dark:hover:bg-muted/50">
-                                         Set Preferences <ArrowRight className="w-4 h-4 ml-1.5" />
-                                     </Button>
-                                 </Link>
-                             </CardHeader>
+                                    <Button>
+                                        Get Started <ArrowRight className="w-4 h-4 ml-2" />
+                                    </Button>
+                                </Link>
+                            </CardHeader>
                         </Card>
                     )}
                     
-                    {/* Conditional rendering for Getting Started / Progress & Records */} 
+                    {/* Main Content */}
                     {isLoadingMetrics ? (
-                        <div className="flex justify-center items-center h-24"><LoadingIndicator /></div>
+                        <div className="flex justify-center items-center py-20">
+                            <div className="text-center space-y-4">
+                                <LoadingIndicator />
+                                <p className="text-muted-foreground">Loading your fitness insights...</p>
+                            </div>
+                        </div>
                     ) : errorMetrics ? (
-                         <p className="text-center text-destructive">Error loading metrics: {errorMetrics}</p>
+                        <Card className="border-destructive/20 bg-destructive/5">
+                            <CardContent className="text-center py-12">
+                                <p className="text-destructive font-medium">Error loading metrics: {errorMetrics}</p>
+                                <Button 
+                                    variant="outline" 
+                                    className="mt-4"
+                                    onClick={() => window.location.reload()}
+                                >
+                                    Try Again
+                                </Button>
+                            </CardContent>
+                        </Card>
                     ) : metrics && metrics.workoutCount === 0 ? (
-                        // --- Simple No Workouts Notice ---
-                        <Card className="bg-muted/50 shadow-sm rounded-xl">
-                            <CardHeader>
-                                <CardTitle className="text-lg font-medium">No workouts found</CardTitle>
-                                <CardDescription>Start by logging your first workout or connecting with Strava</CardDescription>
+                        // Getting Started Experience
+                        <Card className="border-2 border-dashed border-muted-foreground/20">
+                            <CardHeader className="text-center pb-6">
+                                <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                                    <Activity className="w-8 h-8 text-primary" />
+                                </div>
+                                <CardTitle className="text-2xl">Welcome to Your Fitness Journey</CardTitle>
+                                <CardDescription className="text-lg">
+                                    Ready to track your progress and get AI-powered insights?
+                                </CardDescription>
                             </CardHeader>
-                            <CardContent className="flex gap-4 justify-center">
-                                <Link href="/workouts/new">
-                                    <Button variant="default">
-                                        Log Workout
-                                    </Button>
-                                </Link>
-                                <Link href="/integrations">
-                                    <Button variant="outline">
-                                        Connect Strava
-                                    </Button>
-                                </Link>
+                            <CardContent>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-md mx-auto">
+                                    <Link href="/workouts/new">
+                                        <Card className="h-full border hover:border-primary/40 transition-colors duration-200 hover:shadow-sm">
+                                            <CardContent className="p-6 text-center">
+                                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                                                    <Edit3 className="w-6 h-6 text-primary" />
+                                                </div>
+                                                <h3 className="font-semibold mb-2">Log First Workout</h3>
+                                                <p className="text-sm text-muted-foreground">Manual entry for any activity</p>
+                                            </CardContent>
+                                        </Card>
+                                    </Link>
+                                    <Link href="/integrations">
+                                        <Card className="h-full border hover:border-accent/40 transition-colors duration-200 hover:shadow-sm">
+                                            <CardContent className="p-6 text-center">
+                                                <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-3">
+                                                    <Upload className="w-6 h-6 text-accent" />
+                                                </div>
+                                                <h3 className="font-semibold mb-2">Connect Strava</h3>
+                                                <p className="text-sm text-muted-foreground">Import existing activities</p>
+                                            </CardContent>
+                                        </Card>
+                                    </Link>
+                                </div>
                             </CardContent>
                         </Card>
                     ) : metrics ? (
-                        // --- Regular Metrics Cards ---
-                        <>
+                        // Metrics Dashboard
+                        <div className="space-y-8">
                             <ProgressCards 
                                 strengthVolume={metrics.strengthVolumeLast7Days}
                                 cardioDuration={metrics.cardioDurationLast7Days}
@@ -234,7 +300,6 @@ export default function DashboardPage() {
                                 strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
                                 cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
                                 cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
-                                // Add new exercise-specific values
                                 runningDistance={metrics.runningDistanceLast7Days}
                                 swimmingDistance={metrics.swimmingDistanceLast7Days}
                                 bikingDistance={metrics.bikingDistanceLast7Days}
@@ -242,9 +307,9 @@ export default function DashboardPage() {
                                 swimmingDistancePrevious={metrics.swimmingDistancePrevious7Days}
                                 bikingDistancePrevious={metrics.bikingDistancePrevious7Days}
                             />
-                            {/* Add Personal Records and Spotlight cards in a grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
-                                <div className="flex flex-col gap-8">
+
+                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                                <div className="xl:col-span-2">
                                     <PersonalRecordsCard 
                                         exercisePRs={metrics.exercisePRs || []}
                                         overallPRs={{
@@ -263,19 +328,24 @@ export default function DashboardPage() {
                                         }}
                                     />
                                 </div>
-                                <div className="flex flex-col h-full min-h-0 gap-4">
-                                  <div className="flex-1 flex flex-col gap-4">
+
+                                <div className="space-y-6">
                                     <SpotlightCards />
                                     <QuickActionsCard sendAiMessage={handleSendAiMessage} />
-                                  </div>
                                 </div>
                             </div>
-                        </>
-                        // --- End Regular Metrics Cards ---
+
+                            <div className="space-y-6">
+                                <RecentExerciseCardClient />
+                            </div>
+                        </div>
                     ) : (
-                        <p className="text-center text-muted-foreground">Metrics data not available.</p>
+                        <Card>
+                            <CardContent className="text-center py-12">
+                                <p className="text-muted-foreground">Metrics data not available.</p>
+                            </CardContent>
+                        </Card>
                     )}
-                    
                 </div>
             </div>
         </div>

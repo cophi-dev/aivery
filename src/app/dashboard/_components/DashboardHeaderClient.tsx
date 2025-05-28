@@ -5,9 +5,8 @@ import { UserAvatar } from "@/components/user-avatar";
 import { getQuote } from "@/lib/client-utils";
 import UserNicknameDisplay from "@/components/UserNicknameDisplay";
 import { type ReactNode } from 'react';
-import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { Sparkle } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 
 interface DashboardHeaderProps {
   displayName: ReactNode;
@@ -17,7 +16,6 @@ interface DashboardHeaderProps {
 export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps) {
   const [quote, setQuote] = useState("Loading quote...");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
   const [insight, setInsight] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,110 +70,86 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
     fetchInsight();
   }, []);
 
-  // Animation variants
-  const containerVariants = {
-    initial: { y: -20, opacity: 0 },
-    animate: { 
-      y: 0, 
-      opacity: 1,
-      transition: { 
-        type: "spring", 
-        stiffness: 300, 
-        damping: 20,
-        staggerChildren: 0.1,
-        delayChildren: 0.1
-      }
-    }
+  // Get current time-based greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return { text: "Good morning", icon: Sun };
+    if (hour < 17) return { text: "Good afternoon", icon: Sun };
+    return { text: "Good evening", icon: Moon };
   };
 
-  const childVariants = {
-    initial: { y: -10, opacity: 0 },
-    animate: { 
-      y: 0, 
-      opacity: 1,
-      transition: { type: "spring", stiffness: 400, damping: 20 }
-    }
-  };
-
-  const quoteVariants = {
-    initial: { opacity: 0, y: 5 },
-    animate: { 
-      opacity: 1, 
-      y: 0,
-      transition: { delay: 0.3, duration: 0.5 }
-    }
-  };
-
-  const sparkleVariants = {
-    animate: {
-      scale: [1, 1.2, 1],
-      opacity: [0.6, 1, 0.6],
-      transition: {
-        duration: 2,
-        repeat: Infinity,
-        repeatType: "reverse" as const
-      }
-    }
-  };
+  const greeting = getGreeting();
+  const GreetingIcon = greeting.icon;
 
   return (
-    <motion.section 
+    <section 
       className={cn(
-        "relative overflow-hidden p-6 md:p-8 rounded-2xl w-full",
-        "bg-white dark:bg-[#1a1a1a]",
-        "border border-[#c0daff40] dark:border-[#58a3ff30] shadow-sm",
-        "hover:border-[#58a3ff] dark:hover:border-[#58a3ff]",
-        "transition-all duration-300"
+        "p-6 md:p-8 rounded-xl w-full",
+        "bg-card border shadow-sm",
+        "hover:shadow-md transition-shadow duration-200"
       )}
-      variants={containerVariants}
-      initial="initial"
-      animate="animate"
-      onHoverStart={() => setIsHovered(true)}
-      onHoverEnd={() => setIsHovered(false)}
     >
-      {/* Extremely subtle background effect instead of gradient */}
-      <motion.div 
-        className="absolute inset-0 bg-[#58a3ff05] dark:bg-[#58a3ff08]"
-        animate={{ 
-          opacity: isHovered ? 0.8 : 0.2,
-          transition: { duration: 0.5 }
-        }}
-      />
-      
-      {/* Single subtle sparkle element */}
-      <motion.div 
-        className="absolute top-6 right-8 text-[#58a3ff30] dark:text-[#58a3ff30]" 
-        variants={sparkleVariants}
-        animate="animate"
-      >
-        <Sparkle size={20} />
-      </motion.div>
-      
-      <div className="relative z-10 flex flex-col sm:flex-row items-center gap-5 md:gap-6">
-        <motion.div variants={childVariants}>
+      <div className="flex flex-col sm:flex-row items-center gap-6">
+        {/* Avatar */}
+        <div className="relative">
           <UserAvatar 
             imageUrl={userImage}
             size="lg"
-            className="shadow-sm border-2 border-white dark:border-[#2a2a2a]"
+            className="shadow-sm"
           />
-        </motion.div>
+          {/* Simple status indicator */}
+          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-background" />
+        </div>
         
-        <div className="flex-1 text-center sm:text-left">
-          <motion.h1 
-            className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-[#333333] dark:text-white"
-            variants={childVariants}
-          >
-            Hey <span className="text-[#58a3ff] dark:text-[#58a3ff]">{displayName}</span>!
-          </motion.h1>
+        <div className="flex-1 text-center sm:text-left space-y-2">
+          {/* Time-based greeting */}
+          <div className="flex items-center justify-center sm:justify-start gap-2 text-muted-foreground">
+            <GreetingIcon className="w-4 h-4" />
+            <span className="text-sm font-medium">{greeting.text}</span>
+          </div>
           
-          <motion.p 
-            className="text-sm md:text-base text-slate-600 dark:text-[#c0daff] mt-2 italic font-light"
-            variants={quoteVariants}
-          >
-            {loading ? 'Loading your daily insight...' : error ? error : insight}
-          </motion.p> 
+          {/* Main heading */}
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+            Welcome back, <span className="text-primary">{displayName}</span>!
+          </h1>
+          
+          {/* Daily insight */}
+          <div className="pt-1">
+            {loading ? (
+              <div className="flex items-center justify-center sm:justify-start gap-1">
+                <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" />
+                <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+                <span className="text-sm text-muted-foreground ml-2">Loading your daily insight...</span>
+              </div>
+            ) : error ? (
+              <p className="text-sm text-muted-foreground italic">
+                Ready to crush your fitness goals today? 💪
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground italic leading-relaxed max-w-2xl">
+                {insight}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Date display */}
+        <div className="hidden lg:flex flex-col items-center text-center">
+          <div className="p-3 rounded-lg bg-muted/50">
+            <GreetingIcon className="w-5 h-5 text-primary" />
+          </div>
+          <div className="text-xs text-muted-foreground mt-2">
+            <div className="font-semibold">
+              {new Date().toLocaleDateString('en-US', { 
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+              })}
+            </div>
+          </div>
         </div>
       </div>
-    </motion.section>
+    </section>
   );
 } 

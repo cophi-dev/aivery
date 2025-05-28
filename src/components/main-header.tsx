@@ -7,7 +7,20 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { useSession } from "next-auth/react"
-import { Calendar, MessageSquare, History, BarChart2, List, Menu } from "lucide-react"
+import { 
+  Calendar, 
+  MessageSquare, 
+  History, 
+  BarChart2, 
+  List, 
+  Menu, 
+  Home,
+  TrendingUp,
+  Target,
+  Settings,
+  Zap,
+  Plus
+} from "lucide-react"
 import { UserNavigation } from "./user-navigation"
 import { ThemeSwitch } from "@/components/ui/theme-switch-button"
 
@@ -32,32 +45,85 @@ export function MainHeader() {
   // Determine if on the landing page
   const isLandingPage = pathname === '/';
 
-  // Navigation links configuration for reuse
-  const navLinks = [
+  // Enhanced navigation links configuration
+  const primaryNavLinks = [
+    {
+      href: "/dashboard",
+      label: "Dashboard",
+      icon: <Home className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/dashboard"),
+      priority: "high"
+    },
     {
       href: "/workouts",
       label: "Workouts",
       icon: <History className="h-5 w-5 md:h-4 md:w-4" />,
-      active: isPath("/workouts") || isPath("/workout")
+      active: isPath("/workouts") || isPath("/workout"),
+      priority: "high"
     },
     {
       href: "/exercises",
       label: "Exercises",
       icon: <List className="h-5 w-5 md:h-4 md:w-4" />,
-      active: isPath("/exercises")
+      active: isPath("/exercises"),
+      priority: "medium"
     },
     {
       href: "/chat",
-      label: "Talk to Aivery",
+      label: "AI Coach",
       icon: <MessageSquare className="h-5 w-5 md:h-4 md:w-4" />,
-      active: isPath("/chat")
+      active: isPath("/chat"),
+      priority: "high"
+    }
+  ]
+
+  // Secondary navigation for analytics and planning
+  const secondaryNavLinks = [
+    {
+      href: "/analytics",
+      label: "Analytics",
+      icon: <TrendingUp className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/analytics"),
+      category: "insights"
+    },
+    {
+      href: "/calendar",
+      label: "Calendar",
+      icon: <Calendar className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/calendar"),
+      category: "planning"
+    },
+    {
+      href: "/plan",
+      label: "Plans",
+      icon: <Target className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/plan") || isPath("/planner"),
+      category: "planning"
     },
     {
       href: "/challenges",
       label: "Challenges",
-      icon: <BarChart2 className="h-5 w-5 md:h-4 md:w-4" />,
-      active: isPath("/challenges")
+      icon: <Zap className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/challenges"),
+      category: "motivation"
     },
+    {
+      href: "/settings",
+      label: "Settings",
+      icon: <Settings className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/settings"),
+      category: "account"
+    }
+  ]
+
+  // Quick action links
+  const quickActions = [
+    {
+      href: "/workouts/new",
+      label: "Log Workout",
+      icon: <Plus className="h-4 w-4" />,
+      variant: "default" as const
+    }
   ]
 
   // --- Event Logic Helper ---
@@ -97,123 +163,15 @@ export function MainHeader() {
   };
   // --- End Event Logic Helper ---
 
-  // --- Combined Event Effect ---
-  /* // Temporarily commented out to fix build issues
-  useEffect(() => {
-    // Early exit if window is not defined (SSR or other environments)
-    if (typeof window === 'undefined') {
-      console.log("[Logo Effect] Window not available, cannot add listeners.");
-      return () => {}; // Return empty cleanup
-    }
-
-    let activeListenerType: 'orientation' | 'mouse' | null = null;
-    let cleanupListener = () => {}; // Initialize cleanup function
-
-    // --- Define Handlers ---
-    const handleDeviceOrientation = (event: DeviceOrientationEvent) => {
-      const beta = event.beta;
-      const gamma = event.gamma;
-      if (beta === null || gamma === null) {
-        resetElementPositions();
-        return;
-      }
-      const clampedGamma = Math.max(-45, Math.min(45, gamma));
-      const clampedBeta = Math.max(-45, Math.min(45, beta));
-      const deltaX = clampedGamma / 45;
-      const deltaY = clampedBeta / 45;
-      updateElementPositions(deltaX, deltaY);
-    };
-
-    const handleMouseMove = (event: MouseEvent) => {
-        console.log('[Logo Effect] handleMouseMove - logoRef:', logoRef.current);
-        const logoContainer = logoRef.current;
-        if (!logoContainer) return;
-        const { clientX, clientY } = event;
-        const { left, top, width, height } = logoContainer.getBoundingClientRect();
-        const centerX = left + width / 2;
-        const centerY = top + height / 2;
-        const deltaX = (clientX - centerX) / (width / 2);
-        const deltaY = (clientY - centerY) / (height / 2);
-        updateElementPositions(deltaX, deltaY);
-    };
-    // --- End Handlers ---
-
-    // --- Listener Setup Functions ---
-    const addOrientationListener = () => {
-        console.log("[Logo Effect] Adding DeviceOrientation listener.");
-        window.addEventListener('deviceorientation', handleDeviceOrientation);
-        activeListenerType = 'orientation';
-        cleanupListener = () => {
-            if (activeListenerType === 'orientation') {
-                console.log("[Logo Effect] Removing DeviceOrientation listener.");
-                window.removeEventListener('deviceorientation', handleDeviceOrientation);
-                resetElementPositions();
-                activeListenerType = null;
-            }
-        };
-    };
-
-    const addMouseListener = () => {
-        console.log("[Logo Effect] Adding Mouse listeners to window.");
-        window.addEventListener('mousemove', handleMouseMove);
-        activeListenerType = 'mouse';
-        cleanupListener = () => {
-            if (activeListenerType === 'mouse') {
-                console.log("[Logo Effect] Removing Mouse listeners from window.");
-                window.removeEventListener('mousemove', handleMouseMove);
-                resetElementPositions();
-                activeListenerType = null;
-            }
-        };
-    };
-    // --- End Listener Setup Functions ---
-
-    // --- Determine and Add Listener ---
-    // Check for the permission API first
-    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-      console.log("[Logo Effect] Requesting DeviceOrientation permission...");
-      (DeviceOrientationEvent as any).requestPermission()
-        .then((permissionState: string) => {
-          if (permissionState === 'granted') {
-            console.log("[Logo Effect] DeviceOrientation permission granted.");
-            addOrientationListener();
-          } else {
-             console.warn("[Logo Effect] DeviceOrientation permission denied. Falling back to mouse.");
-             addMouseListener(); // Fallback if denied
-          }
-        })
-        .catch((error: any) => {
-           console.error("[Logo Effect] Error requesting DeviceOrientation permission. Falling back to mouse.", error);
-           addMouseListener(); // Fallback on error
-        });
-    } else {
-      // If requestPermission doesn't exist, default to mouse listeners
-      console.log("[Logo Effect] DeviceOrientation requires no permission or not supported. Using mouse listeners.");
-      addMouseListener();
-    }
-    // --- End Determine and Add Listener ---
-
-    // Return the assigned cleanup function
-    return () => {
-        // Execute whatever cleanup was assigned based on the successful listener
-        cleanupListener();
-    };
-
-  }, []); // Run once on mount
-  */
-  // --- End Combined Event Effect ---
-
-
   // Prevent render errors during loading state
   if (isLoading && !isLandingPage) {
     return (
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"> {/* Keep layout consistent */}
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 rounded-full bg-primary/10 animate-pulse" />
-             <span className="font-bold text-xl ml-2 opacity-0">Aivery</span> {/* Keep space but hide text */}
+             <span className="font-bold text-xl ml-2 opacity-0">Aivery</span>
           </div>
-           {/* Placeholder for user nav during load */}
           <div className="w-10 h-10 rounded-full bg-muted animate-pulse" />
         </div>
       </header>
@@ -249,21 +207,35 @@ export function MainHeader() {
              </div>
             <span className={cn("font-bold text-xl", isLandingPage ? "text-gray-800 dark:text-white" : "")}>aivery</span>
           </Link>
-          {/* Desktop Navigation - shown only for logged-in users */}
+          
+          {/* Desktop Navigation - Primary links only */}
           {user && (
-            <nav className="hidden md:flex items-center gap-4">
-              {navLinks.map((link) => (
+            <nav className="hidden lg:flex items-center gap-1">
+              {primaryNavLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "text-sm font-medium transition-colors",
+                    "px-3 py-2 text-sm font-medium rounded-md transition-all duration-200",
                     link.active
-                      ? (isLandingPage ? "text-indigo-600 dark:text-indigo-400" : "text-foreground") // Adjust active color for landing page
-                      : (isLandingPage ? "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" : "text-muted-foreground hover:text-foreground/80") // Adjust default/hover for landing page
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                   )}
                 >
                   {link.label}
+                </Link>
+              ))}
+              
+              {/* Divider */}
+              <div className="h-6 w-px bg-border mx-2" />
+              
+              {/* Quick Action Button */}
+              {quickActions.map((action) => (
+                <Link key={action.href} href={action.href}>
+                  <Button size="sm" className="shadow-sm hover:shadow-md transition-shadow duration-200">
+                    {action.icon}
+                    <span className="ml-2 hidden xl:inline">{action.label}</span>
+                  </Button>
                 </Link>
               ))}
             </nav>
@@ -277,17 +249,18 @@ export function MainHeader() {
           
           {user ? (
             <>
-              {/* Mobile Menu Trigger - only shows for logged in users on small screens */}
+              {/* Mobile Menu Trigger */}
                <Sheet>
                  <SheetTrigger asChild>
-                   <Button variant="ghost" size="icon" className="md:hidden"> {/* Show only on small screens */} 
+                   <Button variant="ghost" size="icon" className="lg:hidden">
                      <Menu className="h-6 w-6" />
                      <span className="sr-only">Toggle Navigation</span>
                    </Button>
                  </SheetTrigger>
-                 <SheetContent side="left" className="w-[250px]">
-                    <div className="flex items-center p-4 border-b mb-2">
-                       <div className="h-8 w-8 mr-2 relative">
+                 <SheetContent side="left" className="w-[280px]">
+                    {/* Header */}
+                    <div className="flex items-center p-4 border-b mb-4">
+                       <div className="h-8 w-8 mr-3 relative">
                            <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
                              <defs>
                                <radialGradient id="glow-sheet" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
@@ -303,18 +276,98 @@ export function MainHeader() {
                        </div>
                        <span className="font-bold text-lg">aivery</span>
                     </div>
-                    <nav className="flex flex-col p-2 space-y-1">
-                       {navLinks.map((link) => (
-                         <Button key={link.href} variant="ghost" className={cn("justify-start", link.active ? "bg-accent" : "")} asChild>
-                           <Link href={link.href} >
+                    
+                    {/* Primary Navigation */}
+                    <nav className="flex flex-col space-y-1 mb-6">
+                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
+                         Main
+                       </div>
+                       {primaryNavLinks.map((link) => (
+                         <Button 
+                           key={link.href} 
+                           variant="ghost" 
+                           className={cn(
+                             "justify-start h-10",
+                             link.active ? "bg-accent text-accent-foreground" : ""
+                           )} 
+                           asChild
+                         >
+                           <Link href={link.href}>
                              {link.icon}
-                             <span className="ml-2">{link.label}</span>
+                             <span className="ml-3">{link.label}</span>
                            </Link>
                          </Button>
                        ))}
                     </nav>
+
+                    {/* Secondary Navigation by Category */}
+                    <nav className="flex flex-col space-y-1 mb-6">
+                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
+                         Analytics & Planning
+                       </div>
+                       {secondaryNavLinks.filter(link => link.category === 'insights' || link.category === 'planning').map((link) => (
+                         <Button 
+                           key={link.href} 
+                           variant="ghost" 
+                           className={cn(
+                             "justify-start h-10",
+                             link.active ? "bg-accent text-accent-foreground" : ""
+                           )} 
+                           asChild
+                         >
+                           <Link href={link.href}>
+                             {link.icon}
+                             <span className="ml-3">{link.label}</span>
+                           </Link>
+                         </Button>
+                       ))}
+                    </nav>
+
+                    {/* Other Features */}
+                    <nav className="flex flex-col space-y-1 mb-6">
+                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
+                         More
+                       </div>
+                       {secondaryNavLinks.filter(link => link.category === 'motivation' || link.category === 'account').map((link) => (
+                         <Button 
+                           key={link.href} 
+                           variant="ghost" 
+                           className={cn(
+                             "justify-start h-10",
+                             link.active ? "bg-accent text-accent-foreground" : ""
+                           )} 
+                           asChild
+                         >
+                           <Link href={link.href}>
+                             {link.icon}
+                             <span className="ml-3">{link.label}</span>
+                           </Link>
+                         </Button>
+                       ))}
+                    </nav>
+
+                    {/* Quick Actions */}
+                    <div className="border-t pt-4">
+                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
+                         Quick Actions
+                       </div>
+                       {quickActions.map((action) => (
+                         <Button 
+                           key={action.href} 
+                           variant={action.variant}
+                           className="w-full justify-start h-10" 
+                           asChild
+                         >
+                           <Link href={action.href}>
+                             {action.icon}
+                             <span className="ml-3">{action.label}</span>
+                           </Link>
+                         </Button>
+                       ))}
+                    </div>
                  </SheetContent>
                </Sheet>
+              
               {/* User Navigation (for desktop) */}
               <UserNavigation />
             </>
