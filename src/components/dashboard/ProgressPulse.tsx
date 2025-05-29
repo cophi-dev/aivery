@@ -2,17 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-
-interface ProgressData {
-  weeklyWorkouts: number
-  previousWeekWorkouts: number
-  weeklyDuration: number
-  previousWeekDuration: number
-  weeklyVolume: number
-  previousWeekVolume: number
-  weeklyDistance: number
-  previousWeekDistance: number
-}
+import { calculateDelta, formatters, type ProgressData } from '@/lib/dashboard-utils'
 
 const ProgressPulse = () => {
   const [progress, setProgress] = useState<ProgressData | null>(null)
@@ -23,26 +13,14 @@ const ProgressPulse = () => {
     const fetchProgress = async () => {
       try {
         setIsLoading(true)
-        // This would typically call your metrics API
-        const res = await fetch('/api/dashboard/metrics')
+        const res = await fetch('/api/dashboard/progress')
         
         if (!res.ok) {
           throw new Error('Failed to fetch progress data')
         }
         
         const data = await res.json()
-        
-        // Transform the data to match our interface
-        setProgress({
-          weeklyWorkouts: data.workoutCount || 0,
-          previousWeekWorkouts: data.previousWorkoutCount || 0,
-          weeklyDuration: data.cardioDurationLast7Days || 0,
-          previousWeekDuration: data.cardioDurationPrevious7Days || 0,
-          weeklyVolume: data.strengthVolumeLast7Days || 0,
-          previousWeekVolume: data.strengthVolumePrevious7Days || 0,
-          weeklyDistance: (data.runningDistanceLast7Days || 0) + (data.swimmingDistanceLast7Days || 0) + (data.bikingDistanceLast7Days || 0),
-          previousWeekDistance: (data.runningDistancePrevious7Days || 0) + (data.swimmingDistancePrevious7Days || 0) + (data.bikingDistancePrevious7Days || 0)
-        })
+        setProgress(data.progress)
       } catch (error) {
         console.error('Failed to fetch progress:', error)
         setError('Unable to load progress data')
@@ -54,40 +32,15 @@ const ProgressPulse = () => {
     fetchProgress()
   }, [])
 
-  const calculateChange = (current: number, previous: number) => {
-    if (previous === 0) return current > 0 ? 100 : 0
-    return ((current - previous) / previous) * 100
-  }
-
-  const formatDuration = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`
-    }
-    return `${minutes}m`
-  }
-
-  const formatDistance = (meters: number) => {
-    const km = meters / 1000
-    return `${km.toFixed(1)}km`
-  }
-
-  const formatVolume = (kg: number) => {
-    const tons = kg / 1000
-    return `${tons.toFixed(1)}t`
-  }
-
-  const getChangeColor = (change: number) => {
-    if (change > 0) return 'text-emerald-600 dark:text-emerald-400'
-    if (change < 0) return 'text-orange-600 dark:text-orange-400'
+  const getChangeColor = (direction: 'up' | 'down' | 'same') => {
+    if (direction === 'up') return 'text-emerald-600 dark:text-emerald-400'
+    if (direction === 'down') return 'text-orange-600 dark:text-orange-400'
     return 'text-zinc-500 dark:text-zinc-400'
   }
 
-  const getChangeIcon = (change: number) => {
-    if (change > 0) return '↗'
-    if (change < 0) return '↘'
+  const getChangeIcon = (direction: 'up' | 'down' | 'same') => {
+    if (direction === 'up') return '↗'
+    if (direction === 'down') return '↘'
     return '→'
   }
 
@@ -102,7 +55,7 @@ const ProgressPulse = () => {
     previous: number
     formatter: (value: number) => string
   }) => {
-    const change = calculateChange(current, previous)
+    const delta = calculateDelta(current, previous)
     
     return (
       <motion.div 
@@ -115,9 +68,9 @@ const ProgressPulse = () => {
           <p className="text-xl font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
             {formatter(current)}
           </p>
-          <div className={`flex items-center gap-1 ${getChangeColor(change)}`}>
-            <span className="text-sm">{getChangeIcon(change)}</span>
-            <span className="text-sm font-medium">{Math.abs(change).toFixed(0)}%</span>
+          <div className={`flex items-center gap-1 ${getChangeColor(delta.direction)}`}>
+            <span className="text-sm">{getChangeIcon(delta.direction)}</span>
+            <span className="text-sm font-medium">{delta.percentage.toFixed(0)}%</span>
           </div>
         </div>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -219,7 +172,7 @@ const ProgressPulse = () => {
       label: 'duration',
       current: progress.weeklyDuration,
       previous: progress.previousWeekDuration,
-      formatter: formatDuration
+      formatter: formatters.duration
     })
   }
 
@@ -228,7 +181,7 @@ const ProgressPulse = () => {
       label: 'distance',
       current: progress.weeklyDistance,
       previous: progress.previousWeekDistance,
-      formatter: formatDistance
+      formatter: formatters.distance
     })
   }
 
@@ -237,7 +190,7 @@ const ProgressPulse = () => {
       label: 'volume',
       current: progress.weeklyVolume,
       previous: progress.previousWeekVolume,
-      formatter: formatVolume
+      formatter: formatters.volume
     })
   }
 

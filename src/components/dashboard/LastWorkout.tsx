@@ -4,16 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
 import Link from 'next/link'
-
-interface LastWorkoutData {
-  _id: string
-  name?: string
-  type: string
-  date: string
-  duration?: number
-  distance?: number
-  calculatedVolume?: number
-}
+import { formatters, type LastWorkoutData } from '@/lib/dashboard-utils'
 
 const LastWorkout = () => {
   const [workout, setWorkout] = useState<LastWorkoutData | null>(null)
@@ -24,17 +15,14 @@ const LastWorkout = () => {
     const fetchLastWorkout = async () => {
       try {
         setIsLoading(true)
-        const res = await fetch('/api/workouts?limit=1&sort=date&order=desc')
+        const res = await fetch('/api/dashboard/last-workout')
         
         if (!res.ok) {
           throw new Error('Failed to fetch last workout')
         }
         
         const data = await res.json()
-        
-        if (data.workouts && data.workouts.length > 0) {
-          setWorkout(data.workouts[0])
-        }
+        setWorkout(data.workout)
       } catch (error) {
         console.error('Failed to fetch last workout:', error)
         setError('Unable to load your last workout')
@@ -45,40 +33,6 @@ const LastWorkout = () => {
 
     fetchLastWorkout()
   }, [])
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return null
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-    const remainingMinutes = minutes % 60
-    
-    if (hours > 0) {
-      return `${hours}h ${remainingMinutes}m`
-    }
-    return `${minutes}m`
-  }
-
-  const formatDistance = (meters?: number) => {
-    if (!meters) return null
-    const km = meters / 1000
-    return `${km.toFixed(1)}km`
-  }
-
-  const formatVolume = (kg?: number) => {
-    if (!kg) return null
-    const tons = kg / 1000
-    return `${tons.toFixed(1)}t`
-  }
-
-  const getWorkoutTypeDisplay = (type: string) => {
-    switch (type) {
-      case 'strength': return 'Strength'
-      case 'running': return 'Running'
-      case 'cycling': return 'Cycling'
-      case 'swimming': return 'Swimming'
-      default: return type.charAt(0).toUpperCase() + type.slice(1)
-    }
-  }
 
   if (error) {
     return (
@@ -181,11 +135,11 @@ const LastWorkout = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.8 }}
         >
-          {format(new Date(workout.date), 'EEEE, MMMM d')}
+          {formatters.date(workout.date)}
         </motion.p>
       </div>
 
-      <Link href={`/workouts/${workout._id}`}>
+      <Link href={`/workouts/${workout.id}`}>
         <motion.div 
           className="p-8 bg-white dark:bg-neutral-900/50 rounded-xl backdrop-blur-sm shadow-sm border border-neutral-200/50 dark:border-neutral-800/50 hover:shadow-md transition-all duration-300 cursor-pointer"
           initial={{ opacity: 0, scale: 0.98 }}
@@ -200,19 +154,19 @@ const LastWorkout = () => {
             {/* Workout Header */}
             <div>
               <h3 className="text-[1rem] font-medium text-neutral-900 dark:text-neutral-100 mb-1">
-                {workout.name || getWorkoutTypeDisplay(workout.type)}
+                {formatters.workoutType(workout.type)}
               </h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                {getWorkoutTypeDisplay(workout.type)}
+                {formatters.workoutType(workout.type)}
               </p>
             </div>
 
             {/* Workout Metrics */}
             <div className="flex gap-8">
-              {formatDuration(workout.duration) && (
+              {workout.duration && (
                 <div>
                   <p className="text-lg font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
-                    {formatDuration(workout.duration)}
+                    {formatters.duration(workout.duration)}
                   </p>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
                     duration
@@ -220,10 +174,10 @@ const LastWorkout = () => {
                 </div>
               )}
               
-              {formatDistance(workout.distance) && (
+              {workout.distance && (
                 <div>
                   <p className="text-lg font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
-                    {formatDistance(workout.distance)}
+                    {formatters.distance(workout.distance)}
                   </p>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
                     distance
@@ -231,10 +185,10 @@ const LastWorkout = () => {
                 </div>
               )}
               
-              {formatVolume(workout.calculatedVolume) && (
+              {workout.calculatedVolume && (
                 <div>
                   <p className="text-lg font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
-                    {formatVolume(workout.calculatedVolume)}
+                    {formatters.volume(workout.calculatedVolume)}
                   </p>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
                     volume
