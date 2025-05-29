@@ -8,7 +8,7 @@ import {
   LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, 
   Search, Zap, Target, Weight, Dumbbell, Home, 
   Footprints, Bike, Waves, PersonStanding, Lightbulb,
-  Timer, MapPin, Trash2
+  Timer, MapPin, Trash2, ChevronLeft, ArrowRight
 } from "lucide-react"
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'react-hot-toast'
@@ -23,6 +23,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { fetchAllExercisesAction, searchAllExercisesAction } from "@/lib/exercise-actions"
 import type { ExerciseData as DbExerciseData } from "@/types/db"
 import { useDebounce } from "@/hooks/useDebounce"
+import { createWorkout } from "@/lib/workout-actions"
+import { ExerciseInstructionsDialog } from "@/components/exercise/exercise-instructions-dialog"
+import { ExerciseFormHints } from "@/components/exercise/exercise-form-hints"
 
 // Simplified types
 type WorkoutTypeOption = 'gym' | 'home' | 'running' | 'cycling' | 'swimming' | 'yoga'
@@ -575,99 +578,117 @@ export default function CleanWorkoutLogger() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {exercises.map((exercise, index) => (
-                        <motion.div
-                          key={exercise.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-card rounded-lg border border-border p-4"
-                        >
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="font-medium">{exercise.name}</h4>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeExercise(exercise.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-
-                          {/* Strength Exercise Sets */}
-                          {!['running', 'cycling', 'swimming', 'yoga'].includes(workoutType || '') && (
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium">Sets</span>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => addSet(exercise.id)}
-                                >
-                                  <LucidePlus className="h-4 w-4" />
-                                </Button>
+                      {exercises.map((exercise, index) => {
+                        // Find the canonical exercise data
+                        const exerciseData = allExercises.find(ex => ex.name === exercise.name) || null;
+                        
+                        return (
+                          <motion.div
+                            key={exercise.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-card rounded-lg border border-border p-4"
+                          >
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-3">
+                                <h4 className="font-medium">{exercise.name}</h4>
+                                {/* Form Instructions Dialog */}
+                                <ExerciseInstructionsDialog exercise={exerciseData} />
                               </div>
-                              
-                              {exercise.sets.map((set, setIndex) => (
-                                <div key={set.id} className="flex items-center gap-3">
-                                  <span className="text-sm text-muted-foreground w-8">
-                                    {setIndex + 1}
-                                  </span>
-                                  <Input
-                                    placeholder="Weight"
-                                    value={set.weight}
-                                    onChange={(e) => updateSet(exercise.id, set.id, 'weight', e.target.value)}
-                                    className="flex-1"
-                                  />
-                                  <span className="text-sm text-muted-foreground">×</span>
-                                  <Input
-                                    placeholder="Reps"
-                                    value={set.reps}
-                                    onChange={(e) => updateSet(exercise.id, set.id, 'reps', e.target.value)}
-                                    className="flex-1"
-                                  />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeExercise(exercise.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            {/* Inline Form Hints */}
+                            {exerciseData && (
+                              <ExerciseFormHints 
+                                exercise={exerciseData} 
+                                variant="compact"
+                                className="mb-4"
+                              />
+                            )}
+
+                            {/* Strength Exercise Sets */}
+                            {!['running', 'cycling', 'swimming', 'yoga'].includes(workoutType || '') && (
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium">Sets</span>
                                   <Button
-                                    variant="ghost"
+                                    variant="outline"
                                     size="sm"
-                                    onClick={() => removeSet(exercise.id, set.id)}
+                                    onClick={() => addSet(exercise.id)}
                                   >
-                                    <LucideX className="h-4 w-4" />
+                                    <LucidePlus className="h-4 w-4" />
                                   </Button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                                
+                                {exercise.sets.map((set, setIndex) => (
+                                  <div key={set.id} className="flex items-center gap-3">
+                                    <span className="text-sm text-muted-foreground w-8">
+                                      {setIndex + 1}
+                                    </span>
+                                    <Input
+                                      placeholder="Weight"
+                                      value={set.weight}
+                                      onChange={(e) => updateSet(exercise.id, set.id, 'weight', e.target.value)}
+                                      className="flex-1"
+                                    />
+                                    <span className="text-sm text-muted-foreground">×</span>
+                                    <Input
+                                      placeholder="Reps"
+                                      value={set.reps}
+                                      onChange={(e) => updateSet(exercise.id, set.id, 'reps', e.target.value)}
+                                      className="flex-1"
+                                    />
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeSet(exercise.id, set.id)}
+                                    >
+                                      <LucideX className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
 
-                          {/* Cardio Exercise Details */}
-                          {['running', 'cycling', 'swimming'].includes(workoutType || '') && (
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label className="text-sm">Duration (min)</Label>
-                                <div className="relative mt-1">
-                                  <Timer className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                  <Input
-                                    placeholder="30"
-                                    value={exercise.duration || ''}
-                                    onChange={(e) => updateExercise(exercise.id, 'duration', e.target.value)}
-                                    className="pl-10"
-                                  />
+                            {/* Cardio Exercise Details */}
+                            {['running', 'cycling', 'swimming'].includes(workoutType || '') && (
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <Label className="text-sm">Duration (min)</Label>
+                                  <div className="relative mt-1">
+                                    <Timer className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                      placeholder="30"
+                                      value={exercise.duration || ''}
+                                      onChange={(e) => updateExercise(exercise.id, 'duration', e.target.value)}
+                                      className="pl-10"
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <Label className="text-sm">Distance (km)</Label>
+                                  <div className="relative mt-1">
+                                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                      placeholder="5"
+                                      value={exercise.distance || ''}
+                                      onChange={(e) => updateExercise(exercise.id, 'distance', e.target.value)}
+                                      className="pl-10"
+                                    />
+                                  </div>
                                 </div>
                               </div>
-                              <div>
-                                <Label className="text-sm">Distance (km)</Label>
-                                <div className="relative mt-1">
-                                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                  <Input
-                                    placeholder="5"
-                                    value={exercise.distance || ''}
-                                    onChange={(e) => updateExercise(exercise.id, 'distance', e.target.value)}
-                                    className="pl-10"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      ))}
+                            )}
+                          </motion.div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

@@ -140,6 +140,23 @@ const coreExercises = [
     ]
   },
   {
+    name: 'Air Squat',
+    description: 'A bodyweight squat exercise that builds lower body strength and mobility',
+    muscleGroups: ['quadriceps', 'glutes', 'hamstrings', 'core'],
+    category: 'strength',
+    level: 'beginner',
+    equipment: ['bodyweight'],
+    instructions: [
+      'Stand with feet shoulder-width apart, toes slightly pointed out',
+      'Keep your chest up and engage your core',
+      'Lower your body by bending at the hips and knees',
+      'Go down until your thighs are parallel to the floor or as low as comfortable',
+      'Keep your knees tracking over your toes throughout the movement',
+      'Drive through your heels to return to the starting position',
+      'Maintain a straight back and avoid letting knees cave inward'
+    ]
+  },
+  {
     name: 'Lunge',
     description: 'A unilateral lower body exercise that works one leg at a time',
     muscleGroups: ['quadriceps', 'glutes', 'hamstrings', 'calves'],
@@ -437,8 +454,28 @@ async function seedCoreExercises() {
         const existingExercise = await ExerciseModel.findOne({ name: exercise.name });
         
         if (existingExercise) {
-          console.log(`⏭️  Skipping "${exercise.name}" - already exists`);
-          skipped++;
+          // Check if existing exercise is missing instructions
+          if (!existingExercise.instructions || existingExercise.instructions.length === 0) {
+            // Update existing exercise with instructions and other missing fields
+            await ExerciseModel.updateOne(
+              { name: exercise.name },
+              { 
+                $set: {
+                  instructions: exercise.instructions,
+                  description: exercise.description || existingExercise.description,
+                  level: exercise.level || existingExercise.level,
+                  equipment: exercise.equipment || existingExercise.equipment,
+                  muscleGroups: exercise.muscleGroups || existingExercise.muscleGroups,
+                  category: exercise.category || existingExercise.category
+                }
+              }
+            );
+            console.log(`🔄 Updated "${exercise.name}" with instructions and missing fields`);
+            updated++;
+          } else {
+            console.log(`⏭️  Skipping "${exercise.name}" - already has instructions`);
+            skipped++;
+          }
         } else {
           // Create new exercise
           await ExerciseModel.create(exercise);

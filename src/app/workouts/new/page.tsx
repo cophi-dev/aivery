@@ -1,42 +1,54 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import Link from "next/link"
-import { format, isToday, isPast, isFuture, parseISO, differenceInDays } from "date-fns"
 import { useSession } from "next-auth/react"
-import { LucideArrowLeft, CalendarIcon, LucidePlus, LucideX, ChevronsUpDown, Check, Loader2, Dumbbell, Home, Footprints, Bike, PersonStanding, Waves, LucideMinus, Lightbulb } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { toast } from 'react-hot-toast'
-import { motion, AnimatePresence } from 'motion/react'
-import { SlidingNumber } from "@/components/ui/sliding-number"
-
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
 import { Label } from "@/components/ui/label"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Textarea } from "@/components/ui/textarea"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { 
-  createWorkout as createWorkoutAction, 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from "@/components/ui/dialog"
+import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from "@/components/ui/popover"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { LoadingIndicator } from "@/components/ui/loading-indicator"
+import { CalendarIcon, LucideChevronLeft, LucideCalendar, LucidePlus, LucideMinus, LucideTrash2, LucideLoader, LucideCheck, Plus, ChevronsUpDown, Minus, ChevronRight, CheckCircle, Dumbbell, Home, Footprints, Waves, Bike, PersonStanding, HelpCircle } from "lucide-react"
+import { format, isToday, isFuture, isPast, addDays, subDays, parseISO, differenceInDays } from "date-fns"
+import { motion, AnimatePresence } from "framer-motion"
+import { cn } from "@/lib/utils"
+import { toast } from "react-hot-toast"
+import { 
+  createWorkout, 
   updateWorkoutAction,
-  getRecentPerformedExercisesAction,
-  getExercisePerformanceStatsAction, // <-- Import new action
+  getExercisePerformanceStatsAction,
   type WorkoutUpdatePayload,
   type InputSetData,
-  type ExercisePerformanceStats // <-- Import new type
+  type ExercisePerformanceStats
 } from "@/lib/workout-actions"
-import { fetchExercises, searchAllExercisesAction, fetchAllExercisesAction } from "@/lib/exercise-actions"
-import type { ExerciseData, WorkoutData, WorkoutExerciseData, Set } from "@/types/db"
-import { IWorkout } from "@/lib/db/models/workout"
-import { estimateBodyweightForExercise } from "@/lib/utils"
-import { Textarea } from "@/components/ui/textarea"
+import { fetchAllExercisesAction, searchAllExercisesAction, getUsedExercises } from "@/lib/exercise-actions"
 import { useDebounce } from "@/hooks/useDebounce"
+import type { WorkoutData, ExerciseData, WorkoutExerciseData } from "@/types/db"
+import { IWorkout } from "@/lib/db/models/workout"
+import { SlidingNumber } from "@/components/ui/sliding-number"
 import { GlowEffect } from "@/components/ui/glow-effect"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ExerciseInstructionsDialog } from "@/components/exercise/exercise-instructions-dialog"
+import { ExerciseFormHints } from "@/components/exercise/exercise-form-hints"
+import { Calendar } from "@/components/ui/calendar"
 
 // Type guard to filter out nulls
 function isDefined<T>(value: T | null | undefined): value is T {
@@ -109,7 +121,26 @@ type WorkoutTypeOption = AllowedWorkoutType | "gym" | "home_strength";
 type WorkoutTense = "past" | "present" | "future"
 
 // Estimate weight for common bodyweight exercises
-// Moved to src/lib/utils.ts
+const estimateBodyweightForExercise = (exerciseName: string, userWeight: number): number => {
+  const name = exerciseName.toLowerCase();
+  
+  if (name.includes('push-up') || name.includes('pushup')) {
+    return userWeight * 0.65; // ~65% of body weight
+  } else if (name.includes('pull-up') || name.includes('pullup') || name.includes('chin-up')) {
+    return userWeight * 0.95; // ~95% of body weight
+  } else if (name.includes('dip')) {
+    return userWeight * 0.85; // ~85% of body weight
+  } else if (name.includes('squat') && name.includes('bodyweight')) {
+    return userWeight * 0.9; // ~90% of body weight
+  } else if (name.includes('lunge')) {
+    return userWeight * 0.7; // ~70% of body weight per leg
+  } else if (name.includes('plank') || name.includes('crunch') || name.includes('sit-up')) {
+    return userWeight * 0.5; // ~50% of body weight for core exercises
+  }
+  
+  // Default for unknown bodyweight exercises
+  return userWeight * 0.6;
+};
 
 // Add this function near the other utility functions
 const estimateWorkoutDuration = (exercises: ExerciseState[]): number => {
@@ -608,8 +639,8 @@ export default function NewWorkoutPage() {
   useEffect(() => {
     const loadPerformedExercises = async () => {
       try {
-        // TODO: Ensure getRecentPerformedExercisesAction exists and handles fetching/uniqueness
-        const recentExercises = await getRecentPerformedExercisesAction();
+        // Use getUsedExercises instead of the missing function
+        const recentExercises = await getUsedExercises();
         setPerformedExercises(recentExercises);
         console.log(`Fetched ${recentExercises.length} recently performed unique exercises.`);
       } catch (err) {
@@ -758,7 +789,7 @@ export default function NewWorkoutPage() {
                 name: ex.exerciseId?.name || 'Unknown Exercise',
                 notes: ex.notes || undefined,
                 // Only include sets if it's NOT a cardio exercise being mapped
-                sets: !isMappedExerciseCardio ? setsArray.map((set: Set, setIndex: number): SetState => ({ 
+                sets: !isMappedExerciseCardio ? setsArray.map((set: any, setIndex: number): SetState => ({ 
                   id: set._id || `loaded-set-${setIndex}-${Date.now()}-${Math.random()}`,
                   order: set.order ?? setIndex,
                   weight: set.weight?.toString() || "",
@@ -1388,8 +1419,8 @@ export default function NewWorkoutPage() {
         savedWorkout = await updateWorkoutAction(editingWorkoutId, workoutPayload);
         toast.success('Workout updated successfully!');
       } else {
-        // Explicitly construct payload for createWorkoutAction to ensure cardioDetails is passed
-        type CreateActionPayload = Parameters<typeof createWorkoutAction>[0]; 
+        // Explicitly construct payload for createWorkout to ensure cardioDetails is passed
+        type CreateActionPayload = Parameters<typeof createWorkout>[0]; 
         const createPayload: CreateActionPayload = {
             userId: session!.user!.id, 
             date: workoutPayload.date,
@@ -1404,11 +1435,11 @@ export default function NewWorkoutPage() {
             intensity: workoutPayload.intensity, 
         };
 
-        console.log("[handleSaveWorkout] Sending createPayload to createWorkoutAction:", JSON.stringify(createPayload, null, 2));
+        console.log("[handleSaveWorkout] Sending createPayload to createWorkout:", JSON.stringify(createPayload, null, 2));
 
         // ---> THE ACTUAL CALL <--- 
-        savedWorkout = await createWorkoutAction(createPayload); // Original Call Restored
-        // savedWorkout = await createWorkoutAction(simplifiedPayload); // Use simplified payload for testing
+        savedWorkout = await createWorkout(createPayload); // Original Call Restored
+        // savedWorkout = await createWorkout(simplifiedPayload); // Use simplified payload for testing
         // ---> END CALL <---
         toast.success('Workout created successfully!');
       }
@@ -1657,7 +1688,7 @@ export default function NewWorkoutPage() {
               onClick={() => router.back()} 
               className="shrink-0 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors duration-200"
             >
-              <LucideArrowLeft className="h-5 w-5" />
+              <LucideChevronLeft className="h-5 w-5" />
             </Button>
           </motion.div>
           <div className="flex-1 flex items-center justify-between">
@@ -1682,7 +1713,7 @@ export default function NewWorkoutPage() {
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <LucideLoader className="mr-2 h-4 w-4 animate-spin" />
                     Saving...
                   </>
                 ) : (isEditing ? "Update" : "Save")}
@@ -1733,7 +1764,7 @@ export default function NewWorkoutPage() {
                     variant="outline" 
                     className="rounded-full border-neutral-200/50 dark:border-neutral-700/50 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm hover:bg-white/80 dark:hover:bg-neutral-900/80 transition-all duration-200"
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    <LucideCalendar className="mr-2 h-4 w-4" />
                     {date ? (isToday(date) ? 'Today' : format(date, "MMM d, yyyy")) : <span>Pick a date</span>}
                   </Button>
                 </PopoverTrigger>
@@ -1904,12 +1935,12 @@ export default function NewWorkoutPage() {
                   >
                     {isProcessingAi ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <LucideLoader className="mr-2 h-4 w-4 animate-spin" />
                         Processing...
                       </>
                     ) : (
                       <>
-                        <Lightbulb className="mr-2 h-4 w-4" />
+                        <LucideCheck className="mr-2 h-4 w-4" />
                         Process with AI
                       </>
                     )}
@@ -2004,235 +2035,145 @@ export default function NewWorkoutPage() {
                           )}
                         </div>
                         
-                        <Dialog open={isExerciseDialogOpen} onOpenChange={setIsExerciseDialogOpen}>
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              className="w-full justify-between px-0 font-normal text-xl hover:bg-transparent hover:text-foreground/90 hover:opacity-90 transition-colors"
-                            >
-                              <span className="font-semibold">{exercise.name || "Select exercise..."}</span>
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-[700px] bg-gradient-to-br from-white/95 to-neutral-50/95 dark:from-neutral-900/95 dark:to-neutral-950/95 backdrop-blur-xl border border-neutral-200/50 dark:border-neutral-800/50 shadow-2xl">
-                            <DialogHeader className="space-y-4 pb-6">
-                              <DialogTitle className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
-                                Select Exercise
-                              </DialogTitle>
-                              <DialogDescription className="text-neutral-600 dark:text-neutral-400">
-                                Choose from recently performed exercises or browse by muscle group
-                              </DialogDescription>
-                            </DialogHeader>
-                            <Tabs defaultValue="performed" className="w-full">
-                              <TabsList className="grid w-full grid-cols-4 h-12 rounded-2xl bg-gradient-to-r from-neutral-100/80 to-neutral-200/80 dark:from-neutral-800/80 dark:to-neutral-900/80 backdrop-blur-sm border border-neutral-200/30 dark:border-neutral-700/30 p-1">
-                                <TabsTrigger value="performed" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
-                                  Recent
-                                </TabsTrigger>
-                                <TabsTrigger value="chest" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
-                                  Chest
-                                </TabsTrigger>
-                                <TabsTrigger value="back" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
-                                  Back
-                                </TabsTrigger>
-                                <TabsTrigger value="legs" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
-                                  Legs
-                                </TabsTrigger>
-                              </TabsList>
-                              <TabsContent value="performed" className="mt-6">
-                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
-                                  {performedExercises.length === 0 ? (
-                                    <motion.div 
-                                      initial={{ opacity: 0 }}
-                                      animate={{ opacity: 1 }}
-                                      className="text-center py-12 px-4 rounded-2xl bg-gradient-to-br from-neutral-50/80 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-950/40 border border-neutral-200/30 dark:border-neutral-800/30"
-                                    >
-                                      <div className="text-4xl mb-4">💪</div>
-                                      <p className="text-neutral-600 dark:text-neutral-400 font-medium">No recently performed exercises found</p>
-                                      <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-2">Start working out to see your favorites here</p>
-                                    </motion.div>
-                                  ) : (
-                                    performedExercises.map((dbEx, index) => (
-                                      <motion.button
-                                        key={dbEx._id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.05, duration: 0.3 }}
-                                        whileHover={{ scale: 1.01 }}
-                                        whileTap={{ scale: 0.99 }}
-                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
-                                            {dbEx.name}
-                                          </span>
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                          </div>
-                                        </div>
-                                        {dbEx.muscleGroups && dbEx.muscleGroups.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-2">
-                                            {dbEx.muscleGroups.slice(0, 3).map((muscle: string) => (
-                                              <span
-                                                key={muscle}
-                                                className="inline-flex items-center rounded-full border border-neutral-200/50 dark:border-neutral-700/50 px-2 py-0.5 text-xs font-medium bg-white/40 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400"
-                                              >
-                                                {muscle}
+                        <div className="flex items-center gap-3">
+                          <Dialog open={isExerciseDialogOpen} onOpenChange={setIsExerciseDialogOpen}>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                className="flex-1 justify-between px-0 font-normal text-xl hover:bg-transparent hover:text-foreground/90 hover:opacity-90 transition-colors"
+                              >
+                                <span className="font-semibold">{exercise.name || "Select exercise..."}</span>
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-md">
+                              <DialogHeader>
+                                <DialogTitle>Select Exercise</DialogTitle>
+                                <DialogDescription>
+                                  Choose an exercise for your workout
+                                </DialogDescription>
+                              </DialogHeader>
+                              <Tabs defaultValue="search" className="w-full">
+                                <TabsList className="grid w-full grid-cols-2">
+                                  <TabsTrigger value="search">Search</TabsTrigger>
+                                  <TabsTrigger value="recent">Recent</TabsTrigger>
+                                </TabsList>
+                                <TabsContent value="search" className="space-y-4">
+                                  <Input
+                                    placeholder="Search exercises..."
+                                    value={exerciseSearchQuery}
+                                    onChange={(e) => setExerciseSearchQuery(e.target.value)}
+                                    className="w-full"
+                                  />
+                                  <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    {isSearching ? (
+                                      <div className="flex items-center justify-center py-4">
+                                        <LucideLoader className="h-4 w-4 animate-spin" />
+                                      </div>
+                                    ) : searchResults.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {searchResults.map((ex) => (
+                                          <Button
+                                            key={ex._id}
+                                            variant="ghost"
+                                            className="w-full justify-start text-left h-auto p-3"
+                                            onClick={() => handleExerciseSelection(exercise.id, ex)}
+                                          >
+                                            <div className="flex flex-col items-start">
+                                              <span className="font-medium">{ex.name}</span>
+                                              <span className="text-xs text-muted-foreground">
+                                                {ex.category} • {ex.equipment?.join(', ') || 'No equipment'}
                                               </span>
-                                            ))}
+                                            </div>
+                                          </Button>
+                                        ))}
+                                      </div>
+                                    ) : exerciseSearchQuery.length >= 2 ? (
+                                      <div className="text-center py-4 text-muted-foreground">
+                                        No exercises found
+                                      </div>
+                                    ) : exerciseSearchQuery.length === 0 ? (
+                                      <div className="space-y-1">
+                                        <div className="text-xs text-muted-foreground px-3 py-2 font-medium">Popular Exercises</div>
+                                        {filteredExercises.slice(0, 10).map((ex) => (
+                                          <Button
+                                            key={ex._id}
+                                            variant="ghost"
+                                            className="w-full justify-start text-left h-auto p-3"
+                                            onClick={() => handleExerciseSelection(exercise.id, ex)}
+                                          >
+                                            <div className="flex flex-col items-start">
+                                              <span className="font-medium">{ex.name}</span>
+                                              <span className="text-xs text-muted-foreground">
+                                                {ex.category} • {ex.equipment?.join(', ') || 'No equipment'}
+                                              </span>
+                                            </div>
+                                          </Button>
+                                        ))}
+                                        {filteredExercises.length > 10 && (
+                                          <div className="text-xs text-muted-foreground px-3 py-2 text-center">
+                                            Start typing to see more exercises...
                                           </div>
                                         )}
-                                      </motion.button>
-                                    ))
-                                  )}
-                                </div>
-                              </TabsContent>
-                              <TabsContent value="chest" className="mt-6">
-                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
-                                  {dbExercises
-                                    .filter(ex =>
-                                      Array.isArray(ex.muscleGroups) &&
-                                      ex.muscleGroups.some((m: string) => m.toLowerCase() === 'chest')
-                                    )
-                                    .map((dbEx, index) => (
-                                      <motion.button
-                                        key={dbEx._id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.03, duration: 0.3 }}
-                                        whileHover={{ scale: 1.01 }}
-                                        whileTap={{ scale: 0.99 }}
-                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
-                                            {dbEx.name}
-                                          </span>
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                          </div>
-                                        </div>
-                                        {dbEx.equipment && dbEx.equipment.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-2">
-                                            {dbEx.equipment.slice(0, 2).map((eq: string) => (
-                                              <span
-                                                key={eq}
-                                                className="inline-flex items-center rounded-full border border-blue-200/50 dark:border-blue-800/50 px-2 py-0.5 text-xs font-medium bg-blue-50/40 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
-                                              >
-                                                {eq}
+                                      </div>
+                                    ) : (
+                                      <div className="text-center py-4 text-muted-foreground">
+                                        Type at least 2 characters to search
+                                      </div>
+                                    )}
+                                  </div>
+                                </TabsContent>
+                                <TabsContent value="recent" className="space-y-4">
+                                  <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    {performedExercises.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {performedExercises.map((ex) => (
+                                          <Button
+                                            key={ex._id}
+                                            variant="ghost"
+                                            className="w-full justify-start text-left h-auto p-3"
+                                            onClick={() => handleExerciseSelection(exercise.id, ex)}
+                                          >
+                                            <div className="flex flex-col items-start">
+                                              <span className="font-medium">{ex.name}</span>
+                                              <span className="text-xs text-muted-foreground">
+                                                {ex.category} • {ex.equipment?.join(', ') || 'No equipment'}
                                               </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </motion.button>
-                                    ))}
-                                </div>
-                              </TabsContent>
-                              <TabsContent value="back" className="mt-6">
-                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
-                                  {dbExercises
-                                    .filter(ex =>
-                                      Array.isArray(ex.muscleGroups) &&
-                                      ex.muscleGroups.some((m: string) => m.toLowerCase() === 'back')
-                                    )
-                                    .map((dbEx, index) => (
-                                      <motion.button
-                                        key={dbEx._id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.03, duration: 0.3 }}
-                                        whileHover={{ scale: 1.01 }}
-                                        whileTap={{ scale: 0.99 }}
-                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
-                                            {dbEx.name}
-                                          </span>
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                          </div>
-                                        </div>
-                                        {dbEx.equipment && dbEx.equipment.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-2">
-                                            {dbEx.equipment.slice(0, 2).map((eq: string) => (
-                                              <span
-                                                key={eq}
-                                                className="inline-flex items-center rounded-full border border-emerald-200/50 dark:border-emerald-800/50 px-2 py-0.5 text-xs font-medium bg-emerald-50/40 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
-                                              >
-                                                {eq}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </motion.button>
-                                    ))}
-                                </div>
-                              </TabsContent>
-                              <TabsContent value="legs" className="mt-6">
-                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
-                                  {dbExercises
-                                    .filter(ex =>
-                                      Array.isArray(ex.muscleGroups) &&
-                                      ex.muscleGroups.some((m: string) => [
-                                        'legs',
-                                        'quadriceps',
-                                        'hamstrings',
-                                        'glutes',
-                                        'calves'
-                                      ].includes(m.toLowerCase()))
-                                    )
-                                    .map((dbEx, index) => (
-                                      <motion.button
-                                        key={dbEx._id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.03, duration: 0.3 }}
-                                        whileHover={{ scale: 1.01 }}
-                                        whileTap={{ scale: 0.99 }}
-                                        onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
-                                            {dbEx.name}
-                                          </span>
-                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                            <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                                          </div>
-                                        </div>
-                                        {dbEx.equipment && dbEx.equipment.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-2">
-                                            {dbEx.equipment.slice(0, 2).map((eq: string) => (
-                                              <span
-                                                key={eq}
-                                                className="inline-flex items-center rounded-full border border-orange-200/50 dark:border-orange-800/50 px-2 py-0.5 text-xs font-medium bg-orange-50/40 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400"
-                                              >
-                                                {eq}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </motion.button>
-                                    ))}
-                                </div>
-                              </TabsContent>
-                            </Tabs>
-                          </DialogContent>
-                        </Dialog>
+                                            </div>
+                                          </Button>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-center py-4 text-muted-foreground">
+                                        No recent exercises found
+                                      </div>
+                                    )}
+                                  </div>
+                                </TabsContent>
+                              </Tabs>
+                            </DialogContent>
+                          </Dialog>
+                          
+                          {/* Help icon for exercise instructions - separate from exercise selection */}
+                          {canonicalExercise && (
+                            <ExerciseInstructionsDialog exercise={canonicalExercise}>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-950/20 flex-shrink-0">
+                                <HelpCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                              </Button>
+                            </ExerciseInstructionsDialog>
+                          )}
+                        </div>
+                        
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeExercise(exercise.id)}
+                          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
+                        >
+                          <LucideTrash2 className="h-4 w-4" />
+                          <span className="sr-only">Remove Exercise</span>
+                        </Button>
                       </div>
-                      
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeExercise(exercise.id)}
-                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full"
-                      >
-                        <LucideX className="h-4 w-4" />
-                        <span className="sr-only">Remove Exercise</span>
-                      </Button>
                     </div>
 
                     <div className={exerciseBodyStyle}>
@@ -2246,7 +2187,7 @@ export default function NewWorkoutPage() {
                             transition={{ duration: 0.2 }}
                             className={aiSuggestionStyle}
                           >
-                            <Lightbulb className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500 dark:text-blue-400" />
+                            <LucideCheck className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500 dark:text-blue-400" />
                             <span className="text-sm text-blue-700 dark:text-blue-300">
                               <span className="font-semibold">AI Suggestion:</span> {exercise.aiRecommendation}
                             </span>
@@ -2352,7 +2293,7 @@ export default function NewWorkoutPage() {
                                   onClick={() => removeSet(exercise.id, set.id)}
                                   className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full h-6 w-6"
                                 >
-                                  <LucideX className="h-3 w-3" />
+                                  <LucideMinus className="h-3 w-3" />
                                   <span className="sr-only">Remove Set {setIndex + 1}</span>
                                 </Button>
                               </motion.div>
