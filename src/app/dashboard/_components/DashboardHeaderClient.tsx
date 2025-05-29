@@ -6,7 +6,6 @@ import { getQuote } from "@/lib/client-utils";
 import UserNicknameDisplay from "@/components/UserNicknameDisplay";
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Sun, Moon } from 'lucide-react';
 
 interface DashboardHeaderProps {
   displayName: ReactNode;
@@ -14,7 +13,7 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps) {
-  const [quote, setQuote] = useState("Loading quote...");
+  const [quote, setQuote] = useState("");
   const [location, setLocation] = useState<{lat: number; lon: number} | null>(null);
   const [insight, setInsight] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -70,86 +69,80 @@ export function DashboardHeader({ displayName, userImage }: DashboardHeaderProps
     fetchInsight();
   }, []);
 
-  // Get current time-based greeting
+  // Get current time for minimal greeting
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return { text: "Good morning", icon: Sun };
-    if (hour < 17) return { text: "Good afternoon", icon: Sun };
-    return { text: "Good evening", icon: Moon };
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
   };
 
-  const greeting = getGreeting();
-  const GreetingIcon = greeting.icon;
+  const currentDate = new Date().toLocaleDateString('en-US', { 
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
   return (
-    <section 
-      className={cn(
-        "p-6 md:p-8 rounded-xl w-full",
-        "bg-card border shadow-sm",
-        "hover:shadow-md transition-shadow duration-200"
-      )}
-    >
-      <div className="flex flex-col sm:flex-row items-center gap-6">
-        {/* Avatar */}
-        <div className="relative">
-          <UserAvatar 
-            imageUrl={userImage}
-            size="lg"
-            className="shadow-sm"
-          />
-          {/* Simple status indicator */}
-          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-background" />
-        </div>
-        
-        <div className="flex-1 text-center sm:text-left space-y-2">
-          {/* Time-based greeting */}
-          <div className="flex items-center justify-center sm:justify-start gap-2 text-muted-foreground">
-            <GreetingIcon className="w-4 h-4" />
-            <span className="text-sm font-medium">{greeting.text}</span>
-          </div>
-          
-          {/* Main heading */}
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-            Welcome back, <span className="text-primary">{displayName}</span>!
-          </h1>
-          
-          {/* Daily insight */}
-          <div className="pt-1">
-            {loading ? (
-              <div className="flex items-center justify-center sm:justify-start gap-1">
-                <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" />
-                <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
-                <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
-                <span className="text-sm text-muted-foreground ml-2">Loading your daily insight...</span>
-              </div>
-            ) : error ? (
-              <p className="text-sm text-muted-foreground italic">
-                Ready to crush your fitness goals today? 💪
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground italic leading-relaxed max-w-2xl">
-                {insight}
-              </p>
-            )}
-          </div>
+    <header className={cn(
+      "w-full py-12 md:py-16 lg:py-20 animate-fade-in",
+      "bg-gradient-to-b from-background to-background/80"
+    )}>
+      <div className="max-w-4xl mx-auto px-6">
+        {/* Date */}
+        <div className="mb-4">
+          <time className="text-caption uppercase tracking-wider text-neutral-500 font-medium">
+            {currentDate}
+          </time>
         </div>
 
-        {/* Date display */}
-        <div className="hidden lg:flex flex-col items-center text-center">
-          <div className="p-3 rounded-lg bg-muted/50">
-            <GreetingIcon className="w-5 h-5 text-primary" />
-          </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            <div className="font-semibold">
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'short',
-                month: 'short',
-                day: 'numeric'
-              })}
+        {/* Main Greeting */}
+        <div className="space-y-3 mb-8">
+          <h1 className={cn(
+            "font-display text-display-md lg:text-display-lg",
+            "text-foreground tracking-tight leading-none"
+          )}>
+            {getGreeting()}
+          </h1>
+          
+          <div className="flex items-center gap-4">
+            <UserAvatar 
+              imageUrl={userImage}
+              size="md"
+              className="ring-2 ring-background shadow-lg"
+            />
+            <div>
+              <p className="text-heading-md text-foreground/90 font-medium">
+                {displayName}
+              </p>
+              <div className="w-8 h-0.5 bg-primary mt-1 rounded-full"></div>
             </div>
           </div>
         </div>
+
+        {/* Daily Insight */}
+        <div className="max-w-2xl">
+          {loading ? (
+            <div className="flex items-center gap-2">
+              <div className="flex space-x-1">
+                <div className="w-1 h-1 bg-neutral-400 rounded-full animate-bounce"></div>
+                <div className="w-1 h-1 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                <div className="w-1 h-1 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+              </div>
+              <span className="text-body-sm text-neutral-500">Generating insight</span>
+            </div>
+          ) : error ? (
+            <p className="text-body-lg text-neutral-600 leading-relaxed italic">
+              Ready to make today count?
+            </p>
+          ) : (
+            <p className="text-body-lg text-neutral-700 leading-relaxed max-w-none">
+              {insight}
+            </p>
+          )}
+        </div>
       </div>
-    </section>
+    </header>
   );
 } 

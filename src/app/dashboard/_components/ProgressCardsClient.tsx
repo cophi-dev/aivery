@@ -1,8 +1,6 @@
 'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dumbbell, HeartPulse, TrendingDown, TrendingUp, Bike, Waves, Footprints, Target } from "lucide-react";
-import { formatDuration } from "@/lib/utils"
+import { Dumbbell, HeartPulse, TrendingDown, TrendingUp, Bike, Waves, Footprints } from "lucide-react";
 import { cn } from '@/lib/utils';
 
 // --- Formatting Helpers (defined locally) ---
@@ -54,56 +52,73 @@ const calculateChange = (current: number, previous: number): number => {
   return percentChange;
 };
 
-// Simple progress bar component
-const ProgressBar = ({ value, max, className }: { value: number; max: number; className?: string }) => {
-  const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  
-  return (
-    <div className={cn("w-full bg-muted rounded-full h-2", className)}>
-      <div
-        className="h-2 rounded-full bg-primary transition-all duration-500 ease-out"
-        style={{ width: `${percentage}%` }}
-      />
-    </div>
-  );
-};
-
 // Clean trend indicator component
-const TrendIndicator = ({ change, large = false }: { change: number; large?: boolean }) => {
-  const size = large ? "h-5 w-5" : "h-4 w-4";
-  const textSize = large ? "text-base" : "text-sm";
-  
+const TrendIndicator = ({ change }: { change: number }) => {
   if (change > 0) {
     return (
-      <div className="flex items-center gap-1">
-        <TrendingUp className={cn(size, "text-emerald-600")} />
-        <span className={cn(textSize, "text-emerald-600 font-medium")}>
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-emerald-600" />
+        <span className="text-body-sm text-emerald-600 font-medium">
           +{Math.abs(change).toFixed(1)}%
         </span>
       </div>
     );
   } else if (change < 0) {
     return (
-      <div className="flex items-center gap-1">
-        <TrendingDown className={cn(size, "text-red-600")} />
-        <span className={cn(textSize, "text-red-600 font-medium")}>
+      <div className="flex items-center gap-2">
+        <TrendingDown className="h-4 w-4 text-red-600" />
+        <span className="text-body-sm text-red-600 font-medium">
           -{Math.abs(change).toFixed(1)}%
         </span>
       </div>
     );
   } else {
     return (
-      <div className="flex items-center gap-1">
-        <div className={cn(size, "flex items-center justify-center")}>
-          <div className="w-3 h-0.5 bg-muted-foreground rounded-full" />
+      <div className="flex items-center gap-2">
+        <div className="h-4 w-4 flex items-center justify-center">
+          <div className="w-3 h-0.5 bg-neutral-400 rounded-full" />
         </div>
-        <span className={cn(textSize, "text-muted-foreground font-medium")}>
-          0%
+        <span className="text-body-sm text-neutral-500 font-medium">
+          No change
         </span>
       </div>
     );
   }
 };
+
+// Minimalist metric card
+const MetricCard = ({ 
+  icon: Icon, 
+  label, 
+  value, 
+  change, 
+  subtitle 
+}: { 
+  icon: any; 
+  label: string; 
+  value: string; 
+  change: number; 
+  subtitle?: string;
+}) => (
+  <div className="space-y-4">
+    <div className="flex items-center gap-3">
+      <div className="w-10 h-10 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+        <Icon className="w-5 h-5 text-neutral-600 dark:text-neutral-400" />
+      </div>
+      <div className="flex-1">
+        <h3 className="text-heading-sm font-medium text-foreground">{label}</h3>
+        <p className="text-body-sm text-neutral-600">{subtitle || "Last 7 days"}</p>
+      </div>
+    </div>
+    
+    <div className="pl-13 space-y-2">
+      <div className="text-display-sm font-display text-foreground tracking-tight">
+        {value}
+      </div>
+      <TrendIndicator change={change} />
+    </div>
+  </div>
+);
 
 interface ProgressCardsProps {
   strengthVolume: number;
@@ -144,7 +159,7 @@ export function ProgressCards({
   // Calculate formatted values
   const formattedVolume = formatVolume(strengthVolume) ?? "0 tons";
   const minutes = Math.floor(cardioDuration / 60);
-  const formattedDuration = `${minutes} minutes`;
+  const formattedDuration = `${minutes} min`;
 
   // Format exercise-specific distances
   const formattedRunningDistance = formatDistance(runningDistance);
@@ -156,14 +171,10 @@ export function ProgressCards({
     runningDistance = cardioDistance;
     runningDistancePrevious = cardioDistancePrevious || 0;
   }
-  
-  const formattedDistance = formatDistance(cardioDistance);
 
   // Calculate percentage changes
   const volumeChange = calculateChange(strengthVolume, strengthVolumePrevious);
   const durationChange = calculateChange(cardioDuration, cardioDurationPrevious);
-  const distanceChange = cardioDistance && cardioDistancePrevious ? 
-    calculateChange(cardioDistance, cardioDistancePrevious) : 0;
     
   // Calculate exercise-specific percentage changes
   const runningDistanceChange = calculateChange(runningDistance, runningDistancePrevious);
@@ -175,150 +186,60 @@ export function ProgressCards({
   const showSwimmingMetrics = swimmingDistance > 0 || swimmingDistancePrevious > 0;
   const showBikingMetrics = bikingDistance > 0 || bikingDistancePrevious > 0;
 
+  // Prepare metrics to display
+  const metrics = [
+    {
+      icon: Dumbbell,
+      label: "Strength Volume",
+      value: formattedVolume,
+      change: volumeChange,
+      subtitle: "Total weight lifted"
+    },
+    {
+      icon: HeartPulse,
+      label: "Cardio Duration",
+      value: formattedDuration,
+      change: durationChange,
+      subtitle: "Active time"
+    }
+  ];
+
+  // Add specific cardio metrics if available
+  if (showRunningMetrics && formattedRunningDistance) {
+    metrics.push({
+      icon: Footprints,
+      label: "Running",
+      value: formattedRunningDistance,
+      change: runningDistanceChange,
+      subtitle: "Distance covered"
+    });
+  }
+
+  if (showBikingMetrics && formattedBikingDistance) {
+    metrics.push({
+      icon: Bike,
+      label: "Cycling",
+      value: formattedBikingDistance,
+      change: bikingDistanceChange,
+      subtitle: "Distance covered"
+    });
+  }
+
+  if (showSwimmingMetrics && formattedSwimmingDistance) {
+    metrics.push({
+      icon: Waves,
+      label: "Swimming",
+      value: formattedSwimmingDistance,
+      change: swimmingDistanceChange,
+      subtitle: "Distance covered"
+    });
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Main Progress Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Strength Progress Card */}
-        <Card className="hover:shadow-md transition-shadow duration-200">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Dumbbell className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg font-semibold">Strength Training</CardTitle>
-                  <CardDescription>Total volume this week</CardDescription>
-                </div>
-              </div>
-              <TrendIndicator change={volumeChange} large />
-            </div>
-          </CardHeader>
-          
-          <CardContent className="space-y-4">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight">{formattedVolume}</span>
-              <span className="text-sm text-muted-foreground">lifted</span>
-            </div>
-            
-            {strengthVolumePrevious > 0 && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Progress vs last week</span>
-                  <span>{formatVolume(strengthVolumePrevious)}</span>
-                </div>
-                <ProgressBar 
-                  value={strengthVolume} 
-                  max={Math.max(strengthVolume, strengthVolumePrevious)} 
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Cardio Progress Card */}
-        <Card className="hover:shadow-md transition-shadow duration-200">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-accent/10">
-                  <HeartPulse className="h-5 w-5 text-accent" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg font-semibold">Cardio Training</CardTitle>
-                  <CardDescription>Total time this week</CardDescription>
-                </div>
-              </div>
-              <TrendIndicator change={durationChange} large />
-            </div>
-          </CardHeader>
-          
-          <CardContent className="space-y-4">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight">{minutes}</span>
-              <span className="text-sm text-muted-foreground">minutes</span>
-            </div>
-            
-            {cardioDurationPrevious > 0 && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Progress vs last week</span>
-                  <span>{Math.floor(cardioDurationPrevious / 60)} min</span>
-                </div>
-                <ProgressBar 
-                  value={cardioDuration} 
-                  max={Math.max(cardioDuration, cardioDurationPrevious)} 
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Activity-Specific Distance Cards */}
-      {(showRunningMetrics || showSwimmingMetrics || showBikingMetrics) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold flex items-center gap-2">
-              <Target className="h-5 w-5 text-primary" />
-              Activity Breakdown
-            </CardTitle>
-            <CardDescription>Distance covered by activity type</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Running */}
-              {showRunningMetrics && (
-                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
-                      <Footprints className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Running</p>
-                      <p className="text-lg font-bold">{formattedRunningDistance || "0 km"}</p>
-                    </div>
-                  </div>
-                  <TrendIndicator change={runningDistanceChange} />
-                </div>
-              )}
-
-              {/* Swimming */}
-              {showSwimmingMetrics && (
-                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                      <Waves className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Swimming</p>
-                      <p className="text-lg font-bold">{formattedSwimmingDistance || "0 km"}</p>
-                    </div>
-                  </div>
-                  <TrendIndicator change={swimmingDistanceChange} />
-                </div>
-              )}
-
-              {/* Biking */}
-              {showBikingMetrics && (
-                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                      <Bike className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Cycling</p>
-                      <p className="text-lg font-bold">{formattedBikingDistance || "0 km"}</p>
-                    </div>
-                  </div>
-                  <TrendIndicator change={bikingDistanceChange} />
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+      {metrics.map((metric, index) => (
+        <MetricCard key={index} {...metric} />
+      ))}
     </div>
   );
 } 

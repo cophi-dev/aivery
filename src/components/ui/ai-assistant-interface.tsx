@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   LucideSend, 
   Search, 
@@ -192,6 +193,7 @@ function CommandButton({ icon, label, isActive, onClick }: CommandButtonProps) {
 
 export function AIAssistantInterface() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -683,6 +685,149 @@ Format the response using markdown with clear headings and bullet points.
     }, 350); // Match menu animation duration
     return () => clearTimeout(timeout);
   }, [activeCommandCategory]);
+
+  // Handle URL parameters from dashboard redirects
+  useEffect(() => {
+    if (messages.length === 0 && searchParams) {
+      const initialQuery = searchParams.get('initialQuery');
+      const requestType = searchParams.get('requestType');
+      
+      if (initialQuery && requestType) {
+        console.log('[Chat] Processing URL parameters:', { initialQuery, requestType });
+        
+        // Set welcome message first
+        const welcomeMessage = getRandomWelcomeMessage(userDisplayName);
+        setMessages([{ id: `ai-welcome-${Date.now()}`, role: "assistant", content: welcomeMessage }]);
+        
+        // Then automatically send the query after a short delay
+        setTimeout(() => {
+          let context: any = { requestType };
+          
+          // Set up context based on request type
+          if (requestType === 'generate_plan') {
+            // Detect workout type from the query
+            const query = initialQuery.toLowerCase();
+            let workoutType = 'mixed'; // default
+            
+            if (query.includes('strength') || query.includes('weight') || query.includes('muscle')) {
+              workoutType = 'strength';
+            } else if (query.includes('cardio') || query.includes('running') || query.includes('run')) {
+              workoutType = 'cardio';
+            } else if (query.includes('home') || query.includes('bodyweight')) {
+              workoutType = 'bodyweight';
+            }
+            
+            context.workoutType = workoutType;
+            setDetectedWorkoutType(workoutType);
+            
+            // Add appropriate system prompts
+            if (workoutType === 'strength') {
+              context.systemPrompt = `
+You are Aivery, an AI fitness coach specializing in strength training. Create a strength training plan focusing on the user's specific request: "${initialQuery}"
+
+IMPORTANT: This is a STRENGTH TRAINING plan, NOT a running plan. Do NOT include running workouts or running metrics.
+
+Create a plan with the following structure:
+1. Brief introduction to the plan
+2. Weekly schedule overview showing which muscle groups will be trained on which days
+3. For each training day, provide:
+   - Specific exercises (3-6 per workout)
+   - Sets and reps for each exercise
+   - Rest periods
+   - Difficulty progression options
+4. Include at least 2 rest/recovery days
+
+The user has the following equipment available:
+- Body weight
+- Resistance bands
+- A pair of dumbbells
+- A pull-up bar (optional)
+
+The user's recent PRs:
+- Push-ups: 20 reps
+- Sit-ups: 50 reps
+- Dips: 3 reps
+
+Format the response using markdown with clear headings and bullet points.
+`;
+              context.overrideDefaultPrompt = true;
+            } else if (workoutType === 'bodyweight') {
+              context.systemPrompt = `
+You are Aivery, an AI fitness coach specializing in home workouts. Create a home workout plan based on the user's specific request: "${initialQuery}"
+
+IMPORTANT: This is a HOME WORKOUT plan, NOT a running plan. Do NOT include running workouts or running metrics.
+
+Create a plan with the following structure:
+1. Brief introduction to the home workout plan
+2. Weekly schedule overview showing which muscle groups will be trained on which days
+3. For each training day, provide:
+   - Specific exercises (3-6 per workout)
+   - Sets and reps for each exercise
+   - Difficulty options for beginners and advanced
+   - Estimated workout duration
+4. Include at least 2 rest/recovery days
+
+The user has NO special equipment beyond:
+- Their own body weight
+- A yoga mat
+- Perhaps a chair or stable surface
+
+The user's recent PRs:
+- Push-ups: 20 reps
+- Sit-ups: 50 reps
+- Dips: 3 reps
+
+Format the response using markdown with clear headings and bullet points.
+`;
+              context.overrideDefaultPrompt = true;
+            } else if (workoutType === 'mixed') {
+              context.systemPrompt = `
+You are Aivery, an AI fitness coach specializing in balanced workout plans. Create a workout plan based on the user's specific request: "${initialQuery}"
+
+IMPORTANT: This should be a BALANCED fitness plan that includes BOTH strength and cardio, with appropriate rest days.
+
+Create a plan with the following structure:
+1. Brief introduction to the balanced plan
+2. Weekly schedule overview showing what type of workout will be done each day:
+   - Strength days (2-3 days)
+   - Cardio days (2-3 days)
+   - Recovery/Rest days (1-2 days)
+3. For each training day, provide:
+   - Workout type (strength or cardio)
+   - Specific exercises (for strength) or activity (for cardio)
+   - Sets and reps (for strength) or duration/intensity (for cardio)
+   - Equipment needed
+4. Include recovery recommendations
+
+Consider the user's recent performance metrics:
+- Recent strength PRs: Push-ups (20 reps), Sit-ups (50 reps), Dips (3 reps)
+- Recent cardio: Running about 12km per week, longest run 6.9km
+
+Format the response using markdown with clear headings and bullet points.
+`;
+              context.overrideDefaultPrompt = true;
+            }
+          } else if (requestType === 'generate_weekly_review') {
+            // Weekly review request
+            context.requestType = 'generate_weekly_review';
+          }
+          
+          // Send the message with context
+          sendMessage(initialQuery, context);
+          
+          // Clear URL parameters by replacing the URL without them
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('initialQuery');
+            url.searchParams.delete('requestType');
+            window.history.replaceState({}, '', url.toString());
+          }
+        }, 1000); // 1 second delay to let welcome message appear first
+        
+        return; // Skip the normal initialization
+      }
+    }
+  }, [messages.length, searchParams, userDisplayName, sendMessage]);
 
   // Set up initial welcome message
   useEffect(() => {

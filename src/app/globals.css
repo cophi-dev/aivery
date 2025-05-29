@@ -51,7 +51,7 @@
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
-    --card: 0 0% 98%; /* Slightly off-white */
+    --card: 0 0% 99%; /* Even cleaner white */
     --card-foreground: 222.2 84% 4.9%;
  
     --popover: 0 0% 100%;
@@ -61,12 +61,12 @@
     --primary: 214 100% 67%; /* Original brand-blue */
     --primary-foreground: 0 0% 100%; /* Original white */
  
-    /* Swapped secondary/muted */
-    --secondary: 216 100% 95%; /* Very light blue */
-    --secondary-foreground: 215.4 16.3% 46.9%; /* Grey */
+    /* Minimalist secondary/muted for cleaner feel */
+    --secondary: 0 0% 97%; /* Very light neutral */
+    --secondary-foreground: 0 0% 40%; /* Medium grey */
  
-    --muted: 216 100% 88%; /* Light blue */
-    --muted-foreground: 222.2 84% 4.9%; /* Dark grey */
+    --muted: 0 0% 95%; /* Light neutral */
+    --muted-foreground: 0 0% 45%; /* Medium grey */
  
     --accent: 19 94% 73%; /* Original brand-orange */
     --accent-foreground: 0 0% 100%; /* Original white */
@@ -74,9 +74,9 @@
     --destructive: 0 84.2% 60.2%; /* Keep existing red */
     --destructive-foreground: 0 0% 100%; /* white */
 
-    /* Adjusted border/input */
-    --border: 210 20% 94%; /* Lighter grey border */
-    --input: 210 20% 94%; /* Lighter grey input border */
+    /* Cleaner border/input */
+    --border: 0 0% 90%; /* Lighter neutral border */
+    --input: 0 0% 90%; /* Lighter neutral input border */
     --ring: 214 100% 67%; /* Original brand-blue */
  
     --radius: 0.5rem;
@@ -87,25 +87,25 @@
   }
  
   .dark {
-    --background: 220 15% 15%; /* Darker background */
-    --foreground: 210 40% 98%; /* light grey */
+    --background: 0 0% 8%; /* Darker, cleaner background */
+    --foreground: 0 0% 95%; /* Clean light grey */
  
-    --card: 220 15% 22%; /* Slightly lighter dark card */
-    --card-foreground: 210 40% 98%; /* light grey */
+    --card: 0 0% 12%; /* Slightly lighter dark card */
+    --card-foreground: 0 0% 95%; /* Clean light grey */
  
-    --popover: 220 15% 15%; /* Darker popover */
-    --popover-foreground: 210 40% 98%; /* light grey */
+    --popover: 0 0% 8%; /* Darker popover */
+    --popover-foreground: 0 0% 95%; /* Clean light grey */
  
     /* Brand Colors - Dark Theme */
     --primary: 214 100% 67%; /* Original brand-blue */
     --primary-foreground: 0 0% 100%; /* Original white */
  
-    /* Swapped secondary/muted */
-    --secondary: 216 50% 25%; /* Darker muted blue */
-    --secondary-foreground: 215 20.2% 65%; /* Lighter grey */
+    /* Minimalist secondary/muted for dark theme */
+    --secondary: 0 0% 20%; /* Dark neutral */
+    --secondary-foreground: 0 0% 70%; /* Light grey */
  
-    --muted: 216 50% 30%; /* Dark muted blue */
-    --muted-foreground: 210 40% 98%; /* light grey */
+    --muted: 0 0% 16%; /* Dark neutral */
+    --muted-foreground: 0 0% 65%; /* Light grey */
  
     --accent: 19 94% 73%; /* Original brand-orange */
     --accent-foreground: 0 0% 100%; /* Original white */
@@ -113,9 +113,9 @@
     --destructive: 0 70% 50%; /* Slightly adjusted red */
     --destructive-foreground: 0 0% 100%; /* white */
 
-    /* Adjusted border/input */
-    --border: 216 10% 40%; /* Slightly lighter dark border */
-    --input: 216 10% 40%; /* Slightly lighter dark input border */
+    /* Cleaner dark borders */
+    --border: 0 0% 24%; /* Lighter dark border */
+    --input: 0 0% 24%; /* Lighter dark input border */
     --ring: 214 100% 67%; /* Original brand-blue */
 
     /* Brand colors for hero section */
@@ -126,7 +126,14 @@
 
 @layer base {
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Smooth scrolling for better UX */
+  html {
+    scroll-behavior: smooth;
   }
   
   /* Splash screen background */
@@ -198,139 +205,135 @@
   
   /* Add specific styles for dark mode chat messages */
   .dark .bg-muted {
-    @apply text-gray-50;
+    @apply text-white;
+  }
+
+  .dark .prose p, .dark .prose li, .dark .prose h1, .dark .prose h2, .dark .prose h3 {
+    @apply text-white;
+  }
+}
+
+/* Focus management for better a11y */
+@layer utilities {
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background;
   }
   
-  .dark .prose p, .dark .prose li, .dark .prose h1, .dark .prose h2, .dark .prose h3 {
-    @apply text-gray-50;
+  /* Custom scrollbar styling */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground)) transparent;
   }
-} /* End of @layer base containing prose styles */
-
-/* --- Temporarily Commented Out for Debugging --- 
-
-// Custom scrollbar styles 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground));
+    border-radius: 3px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--foreground));
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.3);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.5);
-}
-*/
-
-/* Smooth scrolling */
 html {
   scroll-behavior: smooth;
 }
 
-/* Navigation Loading Indicator Animation */
 @keyframes loading-fade-out {
-  0%, 80% { /* Stay visible for 2s (80% of 2.5s) */
+  from {
     opacity: 1;
-    pointer-events: auto;
   }
-  100% { /* Fade out over 0.5s (20% of 2.5s) */
+  to {
     opacity: 0;
-    pointer-events: none;
+    visibility: hidden;
   }
 }
 
 #page-loading-indicator {
-  animation: loading-fade-out 2.5s ease-out forwards; /* 2s visible + 0.5s fade */
-  /* Ensure background color is consistent */
-  background-color: hsl(var(--background)); 
+  animation: loading-fade-out 0.3s ease-out 2s forwards;
 }
 
-/* Ensure the image inside also follows the animation (optional, but good practice) */
 #page-loading-indicator img {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Add this font utility class */
 .font-dm-serif {
-  font-family: var(--font-dm-serif);
+  font-family: 'DM Serif Display', serif;
 }
 
-/* Animated gradient for the AI interface */
 @keyframes gradient-shift {
   0% {
-    transform: rotate(0deg) scale(1);
+    background-position: 0% 50%;
   }
   25% {
-    transform: rotate(90deg) scale(1.05);
+    background-position: 100% 50%;
   }
   50% {
-    transform: rotate(180deg) scale(1);
+    background-position: 100% 50%;
   }
   75% {
-    transform: rotate(270deg) scale(0.95);
+    background-position: 0% 50%;
   }
   100% {
-    transform: rotate(360deg) scale(1);
+    background-position: 0% 50%;
   }
 }
 
 .animate-gradient {
-  animation: gradient-shift 15s ease infinite;
-  transform-origin: center;
-  transform-box: fill-box;
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease-in-out infinite;
 }
 
-/* Message animations */
 @keyframes message-fade-in {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(10px);
   }
-  to {
+  100% {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
 .message-animation {
-  animation: message-fade-in 0.3s ease-out forwards;
+  animation: message-fade-in 0.3s ease-out;
 }
 
-/* Chat input animations */
 @keyframes input-focus {
   0% {
-    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
   }
   70% {
-    box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
   }
 }
 
 .input-focus-animation:focus {
-  animation: input-focus 1s ease-out;
+  animation: input-focus 0.6s ease-out;
 }
 
-/* Animation delays */
-@layer utilities {
+@media (prefers-reduced-motion: reduce) {
   .delay-100 {
-    animation-delay: 100ms;
+    animation-delay: 0ms !important;
   }
   .delay-300 {
-    animation-delay: 300ms;
+    animation-delay: 0ms !important;
   }
   .delay-700 {
-    animation-delay: 700ms;
+    animation-delay: 0ms !important;
   }
   .delay-1000 {
-    animation-delay: 1000ms;
+    animation-delay: 0ms !important;
   }
 }

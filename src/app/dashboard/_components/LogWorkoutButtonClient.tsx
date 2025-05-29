@@ -3,57 +3,67 @@
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { PlusCircle, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function LogWorkoutButton() {
   return (
-    <Card className={cn(
-      "bg-primary text-primary-foreground",
-      "hover:shadow-lg transition-shadow duration-200"
+    <div className={cn(
+      "group relative overflow-hidden",
+      "bg-gradient-to-br from-primary to-primary/90",
+      "rounded-subtle p-8 md:p-10",
+      "hover:shadow-xl transition-all duration-300",
+      "border border-primary/20"
     )}>
-      <CardContent className="p-6 md:p-8">
-        <div className="flex flex-col sm:flex-row items-center gap-6">
-          {/* Content */}
-          <div className="flex-1 text-center sm:text-left space-y-2">
-            <h2 className="text-2xl md:text-3xl font-bold">
-              Ready to train?
-            </h2>
-            <p className="text-primary-foreground/90 text-base">
-              Log your workout and track your progress with AI-powered insights
-            </p>
-          </div>
+      {/* Background Pattern */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-50" />
+      
+      <div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-6">
+        {/* Content */}
+        <div className="flex-1 space-y-3">
+          <h2 className="text-heading-lg text-primary-foreground font-medium tracking-tight">
+            Ready to train?
+          </h2>
+          <p className="text-body-md text-primary-foreground/90 leading-relaxed max-w-md">
+            Log your workout and track your progress with AI-powered insights
+          </p>
           
-          {/* CTA Button */}
-          <Link href="/workouts/new">
-            <Button
-              size="lg"
-              variant="secondary"
-              className={cn(
-                "h-12 px-6 text-base font-semibold",
-                "bg-white text-primary",
-                "hover:bg-white/95",
-                "shadow-sm hover:shadow-md",
-                "transition-all duration-200 group"
-              )}
-            >
-              <PlusCircle className="w-5 h-5 mr-2" />
-              Log Workout
-              <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform duration-200" />
-            </Button>
-          </Link>
+          {/* Features */}
+          <div className="flex flex-wrap gap-4 pt-2">
+            <span className="inline-flex items-center gap-2 text-body-sm text-primary-foreground/80">
+              <div className="w-1.5 h-1.5 bg-primary-foreground/60 rounded-full" />
+              Track any activity
+            </span>
+            <span className="inline-flex items-center gap-2 text-body-sm text-primary-foreground/80">
+              <div className="w-1.5 h-1.5 bg-primary-foreground/60 rounded-full" />
+              Get instant insights
+            </span>
+            <span className="inline-flex items-center gap-2 text-body-sm text-primary-foreground/80">
+              <div className="w-1.5 h-1.5 bg-primary-foreground/60 rounded-full" />
+              Build consistency
+            </span>
+          </div>
         </div>
         
-        {/* Simple feature list */}
-        <div className="mt-6 pt-4 border-t border-primary-foreground/20">
-          <div className="flex items-center justify-center sm:justify-start gap-6 text-primary-foreground/80 text-sm">
-            <span>📊 Track any activity</span>
-            <span>🤖 Get instant insights</span>
-            <span>📈 Build consistency</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        {/* CTA Button */}
+        <Link href="/workouts/new">
+          <Button
+            size="lg"
+            variant="secondary"
+            className={cn(
+              "h-12 px-8 text-body-md font-medium",
+              "bg-white/95 text-primary border-0",
+              "hover:bg-white hover:scale-[1.02]",
+              "shadow-lg hover:shadow-xl",
+              "transition-all duration-200 group/btn backdrop-blur-sm"
+            )}
+          >
+            <PlusCircle className="w-5 h-5 mr-3" />
+            Log Workout
+            <ArrowRight className="w-4 h-4 ml-3 group-hover/btn:translate-x-1 transition-transform duration-200" />
+          </Button>
+        </Link>
+      </div>
+    </div>
   );
 } 

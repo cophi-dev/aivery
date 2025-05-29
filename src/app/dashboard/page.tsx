@@ -63,27 +63,6 @@ interface ChatMessage {
 // TODO: Replace this with your actual chat context/state management hook/import
 declare function addMessageToChat(message: ChatMessage): void;
 
-// Simple animation variants
-const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-        opacity: 1,
-        transition: {
-            staggerChildren: 0.1,
-            delayChildren: 0.1
-        }
-    }
-};
-
-const itemVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: {
-        opacity: 1,
-        y: 0,
-        transition: { duration: 0.3, ease: "easeOut" }
-    }
-};
-
 // --- Main Dashboard Page Component (Client Component) ---
 export default function DashboardPage() {
     const { data: session, status } = useSession({
@@ -170,8 +149,11 @@ export default function DashboardPage() {
     // Handle loading state for session
     if (status === "loading") {
         return (
-            <div className="flex justify-center items-center h-screen">
-                <LoadingIndicator />
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="text-center space-y-4">
+                    <LoadingIndicator />
+                    <p className="text-body-sm text-neutral-500">Loading your dashboard</p>
+                </div>
             </div>
         );
     }
@@ -185,114 +167,107 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10">
-                <div className="max-w-6xl mx-auto space-y-8">
-                    {/* Header */}
-                    <DashboardHeader 
-                        displayName={<UserNicknameDisplay fallback={displayName} />} 
-                        userImage={userImage} 
-                    />
+            {/* Header */}
+            <DashboardHeader 
+                displayName={<UserNicknameDisplay fallback={displayName} />} 
+                userImage={userImage} 
+            />
 
-                    {/* Feature Highlights */}
-                    {!isLoadingMetrics && metrics && metrics.workoutCount > 0 && (
-                        <FeatureHighlightClient />
-                    )}
-
-                    {/* Main Action Section */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2">
-                            <LogWorkoutButton />
-                        </div>
-                        <div>
-                            <SubscriptionStatus />
+            {/* Main Content Container */}
+            <main className="max-w-6xl mx-auto px-6 pb-20">
+                {/* AI Preferences Prompt */}
+                {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
+                    <div className="mb-12 p-6 border border-primary/20 rounded-minimal bg-primary/5">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <Sparkles className="w-5 h-5 text-primary" />
+                                    <h3 className="text-heading-sm font-medium">Unlock Your Full Potential</h3>
+                                </div>
+                                <p className="text-body-sm text-neutral-600">
+                                    Set your fitness goals and preferences to receive personalized AI insights.
+                                </p>
+                            </div>
+                            <Link href="/settings?tab=ai">
+                                <Button variant="default" size="sm" className="font-medium">
+                                    Get Started <ArrowRight className="w-4 h-4 ml-2" />
+                                </Button>
+                            </Link>
                         </div>
                     </div>
-                    
-                    {/* AI Preferences Prompt */}
-                    {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
-                        <Card className="border border-primary/20 bg-primary/5">
-                            <CardHeader className="flex flex-row items-center justify-between pb-4">
-                                <div className="space-y-1">
-                                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                                        <Sparkles className="w-5 h-5 text-primary" />
-                                        Unlock Your Full Potential
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Set your fitness goals and preferences to receive personalized AI insights.
-                                    </CardDescription>
-                                </div>
-                                <Link href="/settings?tab=ai">
-                                    <Button>
-                                        Get Started <ArrowRight className="w-4 h-4 ml-2" />
-                                    </Button>
-                                </Link>
-                            </CardHeader>
-                        </Card>
-                    )}
-                    
-                    {/* Main Content */}
-                    {isLoadingMetrics ? (
-                        <div className="flex justify-center items-center py-20">
-                            <div className="text-center space-y-4">
-                                <LoadingIndicator />
-                                <p className="text-muted-foreground">Loading your fitness insights...</p>
-                            </div>
+                )}
+
+                {/* Content Sections */}
+                {isLoadingMetrics ? (
+                    <div className="flex justify-center items-center py-32">
+                        <div className="text-center space-y-6">
+                            <LoadingIndicator />
+                            <p className="text-body-sm text-neutral-500">Loading your fitness insights...</p>
                         </div>
-                    ) : errorMetrics ? (
-                        <Card className="border-destructive/20 bg-destructive/5">
-                            <CardContent className="text-center py-12">
-                                <p className="text-destructive font-medium">Error loading metrics: {errorMetrics}</p>
-                                <Button 
-                                    variant="outline" 
-                                    className="mt-4"
-                                    onClick={() => window.location.reload()}
-                                >
-                                    Try Again
+                    </div>
+                ) : errorMetrics ? (
+                    <div className="text-center py-32 space-y-6">
+                        <p className="text-heading-md text-destructive font-medium">Error loading metrics</p>
+                        <p className="text-body-sm text-neutral-600">{errorMetrics}</p>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => window.location.reload()}
+                            className="font-medium"
+                        >
+                            Try Again
+                        </Button>
+                    </div>
+                ) : metrics && metrics.workoutCount === 0 ? (
+                    // Getting Started Experience
+                    <div className="text-center py-20 space-y-8">
+                        <div className="space-y-4">
+                            <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-6">
+                                <Activity className="w-8 h-8 text-primary" />
+                            </div>
+                            <h2 className="text-display-sm font-display">Welcome to Your Fitness Journey</h2>
+                            <p className="text-body-lg text-neutral-600 max-w-lg mx-auto">
+                                Ready to track your progress and get AI-powered insights?
+                            </p>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
+                            <Link href="/workouts/new">
+                                <Button variant="default" size="lg" className="w-full sm:w-auto font-medium">
+                                    <Edit3 className="w-5 h-5 mr-2" />
+                                    Log First Workout
                                 </Button>
-                            </CardContent>
-                        </Card>
-                    ) : metrics && metrics.workoutCount === 0 ? (
-                        // Getting Started Experience
-                        <Card className="border-2 border-dashed border-muted-foreground/20">
-                            <CardHeader className="text-center pb-6">
-                                <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                                    <Activity className="w-8 h-8 text-primary" />
-                                </div>
-                                <CardTitle className="text-2xl">Welcome to Your Fitness Journey</CardTitle>
-                                <CardDescription className="text-lg">
-                                    Ready to track your progress and get AI-powered insights?
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-md mx-auto">
-                                    <Link href="/workouts/new">
-                                        <Card className="h-full border hover:border-primary/40 transition-colors duration-200 hover:shadow-sm">
-                                            <CardContent className="p-6 text-center">
-                                                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                                                    <Edit3 className="w-6 h-6 text-primary" />
-                                                </div>
-                                                <h3 className="font-semibold mb-2">Log First Workout</h3>
-                                                <p className="text-sm text-muted-foreground">Manual entry for any activity</p>
-                                            </CardContent>
-                                        </Card>
-                                    </Link>
-                                    <Link href="/integrations">
-                                        <Card className="h-full border hover:border-accent/40 transition-colors duration-200 hover:shadow-sm">
-                                            <CardContent className="p-6 text-center">
-                                                <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-3">
-                                                    <Upload className="w-6 h-6 text-accent" />
-                                                </div>
-                                                <h3 className="font-semibold mb-2">Connect Strava</h3>
-                                                <p className="text-sm text-muted-foreground">Import existing activities</p>
-                                            </CardContent>
-                                        </Card>
-                                    </Link>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ) : metrics ? (
-                        // Metrics Dashboard
-                        <div className="space-y-8">
+                            </Link>
+                            <Link href="/integrations">
+                                <Button variant="outline" size="lg" className="w-full sm:w-auto font-medium">
+                                    <Upload className="w-5 h-5 mr-2" />
+                                    Connect Strava
+                                </Button>
+                            </Link>
+                        </div>
+                    </div>
+                ) : metrics ? (
+                    // Dashboard with Data
+                    <div className="space-y-16">
+                        {/* Quick Actions Row */}
+                        <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                            <div className="lg:col-span-3">
+                                <LogWorkoutButton />
+                            </div>
+                            <div>
+                                <SubscriptionStatus />
+                            </div>
+                        </section>
+
+                        {/* Feature Highlights */}
+                        {metrics.workoutCount > 0 && (
+                            <section>
+                                <FeatureHighlightClient />
+                            </section>
+                        )}
+
+                        {/* Progress Overview */}
+                        <section className="space-y-6">
+                            <h2 className="text-heading-lg font-medium">Progress Overview</h2>
                             <ProgressCards 
                                 strengthVolume={metrics.strengthVolumeLast7Days}
                                 cardioDuration={metrics.cardioDurationLast7Days}
@@ -307,47 +282,52 @@ export default function DashboardPage() {
                                 swimmingDistancePrevious={metrics.swimmingDistancePrevious7Days}
                                 bikingDistancePrevious={metrics.bikingDistancePrevious7Days}
                             />
+                        </section>
 
-                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                                <div className="xl:col-span-2">
-                                    <PersonalRecordsCard 
-                                        exercisePRs={metrics.exercisePRs || []}
-                                        overallPRs={{
-                                            longestRun: metrics.overallPRs?.longestRun ? {
-                                                ...metrics.overallPRs.longestRun,
-                                                workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
-                                            } : undefined,
-                                            fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
-                                                ...metrics.overallPRs.fastest5kPace,
-                                                workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
-                                            } : undefined,
-                                            maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
-                                                ...metrics.overallPRs.maxStrengthVolume,
-                                                workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
-                                            } : undefined
-                                        }}
-                                    />
-                                </div>
+                        {/* Personal Records & AI Actions */}
+                        <section className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                            <div className="xl:col-span-2 space-y-6">
+                                <h2 className="text-heading-lg font-medium">Personal Records</h2>
+                                <PersonalRecordsCard 
+                                    exercisePRs={metrics.exercisePRs || []}
+                                    overallPRs={{
+                                        longestRun: metrics.overallPRs?.longestRun ? {
+                                            ...metrics.overallPRs.longestRun,
+                                            workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
+                                        } : undefined,
+                                        fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
+                                            ...metrics.overallPRs.fastest5kPace,
+                                            workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
+                                        } : undefined,
+                                        maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
+                                            ...metrics.overallPRs.maxStrengthVolume,
+                                            workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
+                                        } : undefined
+                                    }}
+                                />
+                            </div>
 
+                            <div className="space-y-8">
                                 <div className="space-y-6">
+                                    <h2 className="text-heading-lg font-medium">AI Insights</h2>
                                     <SpotlightCards />
-                                    <QuickActionsCard sendAiMessage={handleSendAiMessage} />
                                 </div>
+                                <QuickActionsCard sendAiMessage={handleSendAiMessage} />
                             </div>
+                        </section>
 
-                            <div className="space-y-6">
-                                <RecentExerciseCardClient />
-                            </div>
-                        </div>
-                    ) : (
-                        <Card>
-                            <CardContent className="text-center py-12">
-                                <p className="text-muted-foreground">Metrics data not available.</p>
-                            </CardContent>
-                        </Card>
-                    )}
-                </div>
-            </div>
+                        {/* Recent Activity */}
+                        <section className="space-y-6">
+                            <h2 className="text-heading-lg font-medium">Recent Activity</h2>
+                            <RecentExerciseCardClient />
+                        </section>
+                    </div>
+                ) : (
+                    <div className="text-center py-32">
+                        <p className="text-body-sm text-neutral-500">Metrics data not available.</p>
+                    </div>
+                )}
+            </main>
         </div>
     );
 }
