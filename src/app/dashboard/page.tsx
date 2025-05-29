@@ -30,6 +30,16 @@ import type { ObjectId } from 'mongoose'; // Import ObjectId for type checking
 import { FeatureHighlightClient } from "./_components/FeatureHighlightClient";
 import { RecentExerciseCardClient } from './_components/RecentExerciseCardClient';
 
+// Import New Minimal Dashboard Components
+import DashboardWrapper from "@/components/dashboard/DashboardWrapper";
+import DailyInsight from "@/components/dashboard/DailyInsight";
+import LastWorkout from "@/components/dashboard/LastWorkout";
+import ProgressPulse from "@/components/dashboard/ProgressPulse";
+import AskAivery from "@/components/dashboard/AskAivery";
+
+// 🎯 DESIGN MODE TOGGLE
+const MINIMAL_MODE = true;
+
 // Define a type for the metrics data
 interface DashboardMetrics {
     strengthVolumeLast7Days: number;
@@ -167,167 +177,184 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            {/* Header */}
-            <DashboardHeader 
-                displayName={<UserNicknameDisplay fallback={displayName} />} 
-                userImage={userImage} 
-            />
+            {MINIMAL_MODE ? (
+                // 🎨 NEW MINIMAL DESIGN
+                <DashboardWrapper>
+                    <DailyInsight />
+                    <LastWorkout />
+                    <ProgressPulse />
+                    <AskAivery />
+                </DashboardWrapper>
+            ) : (
+                // 🏛️ LEGACY LAYOUT (SAFELY COLLAPSED)
+                <>
+                    {/* LEGACY_BLOCK_START */}
+                    <div className="legacy-dashboard">
+                        {/* Header */}
+                        <DashboardHeader 
+                            displayName={<UserNicknameDisplay fallback={displayName} />} 
+                            userImage={userImage} 
+                        />
 
-            {/* Main Content Container */}
-            <main className="max-w-6xl mx-auto px-6 pb-20">
-                {/* AI Preferences Prompt */}
-                {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
-                    <div className="mb-12 p-6 border border-primary/20 rounded-minimal bg-primary/5">
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <Sparkles className="w-5 h-5 text-primary" />
-                                    <h3 className="text-heading-sm font-medium">Unlock Your Full Potential</h3>
+                        {/* Main Content Container */}
+                        <main className="max-w-6xl mx-auto px-6 pb-20">
+                            {/* AI Preferences Prompt */}
+                            {!isLoadingMetrics && metrics && !metrics.hasAiPreferences && metrics.workoutCount > 0 && (
+                                <div className="mb-12 p-6 border border-primary/20 rounded-minimal bg-primary/5">
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <Sparkles className="w-5 h-5 text-primary" />
+                                                <h3 className="text-heading-sm font-medium">Unlock Your Full Potential</h3>
+                                            </div>
+                                            <p className="text-body-sm text-neutral-600">
+                                                Set your fitness goals and preferences to receive personalized AI insights.
+                                            </p>
+                                        </div>
+                                        <Link href="/settings?tab=ai">
+                                            <Button variant="default" size="sm" className="font-medium">
+                                                Get Started <ArrowRight className="w-4 h-4 ml-2" />
+                                            </Button>
+                                        </Link>
+                                    </div>
                                 </div>
-                                <p className="text-body-sm text-neutral-600">
-                                    Set your fitness goals and preferences to receive personalized AI insights.
-                                </p>
-                            </div>
-                            <Link href="/settings?tab=ai">
-                                <Button variant="default" size="sm" className="font-medium">
-                                    Get Started <ArrowRight className="w-4 h-4 ml-2" />
-                                </Button>
-                            </Link>
-                        </div>
-                    </div>
-                )}
+                            )}
 
-                {/* Content Sections */}
-                {isLoadingMetrics ? (
-                    <div className="flex justify-center items-center py-32">
-                        <div className="text-center space-y-6">
-                            <LoadingIndicator />
-                            <p className="text-body-sm text-neutral-500">Loading your fitness insights...</p>
-                        </div>
-                    </div>
-                ) : errorMetrics ? (
-                    <div className="text-center py-32 space-y-6">
-                        <p className="text-heading-md text-destructive font-medium">Error loading metrics</p>
-                        <p className="text-body-sm text-neutral-600">{errorMetrics}</p>
-                        <Button 
-                            variant="outline" 
-                            onClick={() => window.location.reload()}
-                            className="font-medium"
-                        >
-                            Try Again
-                        </Button>
-                    </div>
-                ) : metrics && metrics.workoutCount === 0 ? (
-                    // Getting Started Experience
-                    <div className="text-center py-20 space-y-8">
-                        <div className="space-y-4">
-                            <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-6">
-                                <Activity className="w-8 h-8 text-primary" />
-                            </div>
-                            <h2 className="text-display-sm font-display">Welcome to Your Fitness Journey</h2>
-                            <p className="text-body-lg text-neutral-600 max-w-lg mx-auto">
-                                Ready to track your progress and get AI-powered insights?
-                            </p>
-                        </div>
-                        
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
-                            <Link href="/workouts/new">
-                                <Button variant="default" size="lg" className="w-full sm:w-auto font-medium">
-                                    <Edit3 className="w-5 h-5 mr-2" />
-                                    Log First Workout
-                                </Button>
-                            </Link>
-                            <Link href="/integrations">
-                                <Button variant="outline" size="lg" className="w-full sm:w-auto font-medium">
-                                    <Upload className="w-5 h-5 mr-2" />
-                                    Connect Strava
-                                </Button>
-                            </Link>
-                        </div>
-                    </div>
-                ) : metrics ? (
-                    // Dashboard with Data
-                    <div className="space-y-16">
-                        {/* Quick Actions Row */}
-                        <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                            <div className="lg:col-span-3">
-                                <LogWorkoutButton />
-                            </div>
-                            <div>
-                                <SubscriptionStatus />
-                            </div>
-                        </section>
-
-                        {/* Feature Highlights */}
-                        {metrics.workoutCount > 0 && (
-                            <section>
-                                <FeatureHighlightClient />
-                            </section>
-                        )}
-
-                        {/* Progress Overview */}
-                        <section className="space-y-6">
-                            <h2 className="text-heading-lg font-medium">Progress Overview</h2>
-                            <ProgressCards 
-                                strengthVolume={metrics.strengthVolumeLast7Days}
-                                cardioDuration={metrics.cardioDurationLast7Days}
-                                cardioDistance={metrics.cardioDistanceLast7Days}
-                                strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
-                                cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
-                                cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
-                                runningDistance={metrics.runningDistanceLast7Days}
-                                swimmingDistance={metrics.swimmingDistanceLast7Days}
-                                bikingDistance={metrics.bikingDistanceLast7Days}
-                                runningDistancePrevious={metrics.runningDistancePrevious7Days}
-                                swimmingDistancePrevious={metrics.swimmingDistancePrevious7Days}
-                                bikingDistancePrevious={metrics.bikingDistancePrevious7Days}
-                            />
-                        </section>
-
-                        {/* Personal Records & AI Actions */}
-                        <section className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                            <div className="xl:col-span-2 space-y-6">
-                                <h2 className="text-heading-lg font-medium">Personal Records</h2>
-                                <PersonalRecordsCard 
-                                    exercisePRs={metrics.exercisePRs || []}
-                                    overallPRs={{
-                                        longestRun: metrics.overallPRs?.longestRun ? {
-                                            ...metrics.overallPRs.longestRun,
-                                            workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
-                                        } : undefined,
-                                        fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
-                                            ...metrics.overallPRs.fastest5kPace,
-                                            workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
-                                        } : undefined,
-                                        maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
-                                            ...metrics.overallPRs.maxStrengthVolume,
-                                            workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
-                                        } : undefined
-                                    }}
-                                />
-                            </div>
-
-                            <div className="space-y-8">
-                                <div className="space-y-6">
-                                    <h2 className="text-heading-lg font-medium">AI Insights</h2>
-                                    <SpotlightCards />
+                            {/* Content Sections */}
+                            {isLoadingMetrics ? (
+                                <div className="flex justify-center items-center py-32">
+                                    <div className="text-center space-y-6">
+                                        <LoadingIndicator />
+                                        <p className="text-body-sm text-neutral-500">Loading your fitness insights...</p>
+                                    </div>
                                 </div>
-                                <QuickActionsCard sendAiMessage={handleSendAiMessage} />
-                            </div>
-                        </section>
+                            ) : errorMetrics ? (
+                                <div className="text-center py-32 space-y-6">
+                                    <p className="text-heading-md text-destructive font-medium">Error loading metrics</p>
+                                    <p className="text-body-sm text-neutral-600">{errorMetrics}</p>
+                                    <Button 
+                                        variant="outline" 
+                                        onClick={() => window.location.reload()}
+                                        className="font-medium"
+                                    >
+                                        Try Again
+                                    </Button>
+                                </div>
+                            ) : metrics && metrics.workoutCount === 0 ? (
+                                // Getting Started Experience
+                                <div className="text-center py-20 space-y-8">
+                                    <div className="space-y-4">
+                                        <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-6">
+                                            <Activity className="w-8 h-8 text-primary" />
+                                        </div>
+                                        <h2 className="text-display-sm font-display">Welcome to Your Fitness Journey</h2>
+                                        <p className="text-body-lg text-neutral-600 max-w-lg mx-auto">
+                                            Ready to track your progress and get AI-powered insights?
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
+                                        <Link href="/workouts/new">
+                                            <Button variant="default" size="lg" className="w-full sm:w-auto font-medium">
+                                                <Edit3 className="w-5 h-5 mr-2" />
+                                                Log First Workout
+                                            </Button>
+                                        </Link>
+                                        <Link href="/integrations">
+                                            <Button variant="outline" size="lg" className="w-full sm:w-auto font-medium">
+                                                <Upload className="w-5 h-5 mr-2" />
+                                                Connect Strava
+                                            </Button>
+                                        </Link>
+                                    </div>
+                                </div>
+                            ) : metrics ? (
+                                // Dashboard with Data
+                                <div className="space-y-16">
+                                    {/* Quick Actions Row */}
+                                    <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                                        <div className="lg:col-span-3">
+                                            <LogWorkoutButton />
+                                        </div>
+                                        <div>
+                                            <SubscriptionStatus />
+                                        </div>
+                                    </section>
 
-                        {/* Recent Activity */}
-                        <section className="space-y-6">
-                            <h2 className="text-heading-lg font-medium">Recent Activity</h2>
-                            <RecentExerciseCardClient />
-                        </section>
+                                    {/* Feature Highlights */}
+                                    {metrics.workoutCount > 0 && (
+                                        <section>
+                                            <FeatureHighlightClient />
+                                        </section>
+                                    )}
+
+                                    {/* Progress Overview */}
+                                    <section className="space-y-6">
+                                        <h2 className="text-heading-lg font-medium">Progress Overview</h2>
+                                        <ProgressCards 
+                                            strengthVolume={metrics.strengthVolumeLast7Days}
+                                            cardioDuration={metrics.cardioDurationLast7Days}
+                                            cardioDistance={metrics.cardioDistanceLast7Days}
+                                            strengthVolumePrevious={metrics.strengthVolumePrevious7Days}
+                                            cardioDurationPrevious={metrics.cardioDurationPrevious7Days}
+                                            cardioDistancePrevious={metrics.cardioDistancePrevious7Days}
+                                            runningDistance={metrics.runningDistanceLast7Days}
+                                            swimmingDistance={metrics.swimmingDistanceLast7Days}
+                                            bikingDistance={metrics.bikingDistanceLast7Days}
+                                            runningDistancePrevious={metrics.runningDistancePrevious7Days}
+                                            swimmingDistancePrevious={metrics.swimmingDistancePrevious7Days}
+                                            bikingDistancePrevious={metrics.bikingDistancePrevious7Days}
+                                        />
+                                    </section>
+
+                                    {/* Personal Records & AI Actions */}
+                                    <section className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                                        <div className="xl:col-span-2 space-y-6">
+                                            <h2 className="text-heading-lg font-medium">Personal Records</h2>
+                                            <PersonalRecordsCard 
+                                                exercisePRs={metrics.exercisePRs || []}
+                                                overallPRs={{
+                                                    longestRun: metrics.overallPRs?.longestRun ? {
+                                                        ...metrics.overallPRs.longestRun,
+                                                        workoutId: metrics.overallPRs.longestRun.workoutId?.toString()
+                                                    } : undefined,
+                                                    fastest5kPace: metrics.overallPRs?.fastest5kPace ? {
+                                                        ...metrics.overallPRs.fastest5kPace,
+                                                        workoutId: metrics.overallPRs.fastest5kPace.workoutId?.toString()
+                                                    } : undefined,
+                                                    maxStrengthVolume: metrics.overallPRs?.maxStrengthVolume ? {
+                                                        ...metrics.overallPRs.maxStrengthVolume,
+                                                        workoutId: metrics.overallPRs.maxStrengthVolume.workoutId?.toString()
+                                                    } : undefined
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-8">
+                                            <div className="space-y-6">
+                                                <h2 className="text-heading-lg font-medium">AI Insights</h2>
+                                                <SpotlightCards />
+                                            </div>
+                                            <QuickActionsCard sendAiMessage={handleSendAiMessage} />
+                                        </div>
+                                    </section>
+
+                                    {/* Recent Activity */}
+                                    <section className="space-y-6">
+                                        <h2 className="text-heading-lg font-medium">Recent Activity</h2>
+                                        <RecentExerciseCardClient />
+                                    </section>
+                                </div>
+                            ) : (
+                                <div className="text-center py-32">
+                                    <p className="text-body-sm text-neutral-500">Metrics data not available.</p>
+                                </div>
+                            )}
+                        </main>
                     </div>
-                ) : (
-                    <div className="text-center py-32">
-                        <p className="text-body-sm text-neutral-500">Metrics data not available.</p>
-                    </div>
-                )}
-            </main>
+                    {/* LEGACY_BLOCK_END */}
+                </>
+            )}
         </div>
     );
 }
