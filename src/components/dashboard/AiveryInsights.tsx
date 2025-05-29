@@ -195,9 +195,19 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
               return;
           }
           
-          const normalizedStart = new Date(Date.UTC(dateRange.start.getFullYear(), dateRange.start.getMonth(), dateRange.start.getDate(), 12, 0, 0, 0));
-          const normalizedEnd = new Date(Date.UTC(dateRange.end.getFullYear(), dateRange.end.getMonth(), dateRange.end.getDate(), 12, 0, 0, 0));
-          apiUrl = `/api/ai/overview-insights?start=${normalizedStart.toISOString()}&end=${normalizedEnd.toISOString()}&t=${requestId}`;
+          // Fix: Use the exact date range passed from parent without additional normalization
+          // The parent (WorkoutDailyView) already provides the correct full-day range
+          const startDateStr = dateRange.start.toISOString();
+          const endDateStr = dateRange.end.toISOString();
+          
+          console.log("[AiveryInsights] Using exact date range from parent:", {
+            start: startDateStr,
+            end: endDateStr,
+            originalStart: dateRange.start,
+            originalEnd: dateRange.end
+          });
+          
+          apiUrl = `/api/ai/overview-insights?start=${startDateStr}&end=${endDateStr}&t=${requestId}`;
         } else {
           apiUrl = `/api/daily-insight?t=${requestId}`;
         }
@@ -368,269 +378,332 @@ export default function AiveryInsights({ dateRange, className, onLoad }: AiveryI
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className={cn("w-full h-full", className)}
+        className={cn("w-full", className)}
       >
         <motion.div
-          variants={cardVariants}
-          initial="initial"
-          whileHover="hover"
-          onHoverStart={() => setIsHovered(true)}
-          onHoverEnd={() => setIsHovered(false)}
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          whileHover={{ y: -2 }}
         >
-          <Card className={cn(
-            "relative overflow-hidden backdrop-blur-xl bg-opacity-20",
-            "h-full rounded-xl transition-all duration-300",
-            "dark:bg-slate-800/70 border border-slate-200/50 dark:border-slate-700/50",
-            "hover:border-slate-300/80 dark:hover:border-slate-600/80",
-            className
-          )}>
-            {/* Background gradient */}
-            {!isDateRangedInsight && (
-              <motion.div 
-                className={cn(
-                  "absolute inset-0 opacity-10 bg-gradient-to-br", 
-                  theme.gradient
-                )}
-                animate={{
-                  opacity: isHovered ? 0.15 : 0.1,
-                  transition: { duration: 0.3 }
-                }}
-              />
-            )}
+          <div className="relative">
+            {/* Enhanced background with sophisticated gradients */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-2xl" />
+            <div className="absolute inset-0 bg-white/50 dark:bg-neutral-900/50 rounded-2xl backdrop-blur-xl" />
             
-            <div className="relative z-10 p-6 flex flex-col h-full">
-              {/* Header with day theme icon or generic title */}
+            <div className="relative z-10 p-8">
+              {/* Enhanced Header */}
               <motion.div 
-                className="flex items-center justify-between mb-4"
-                variants={contentVariants}
-                initial="hidden"
-                animate="visible"
+                className="mb-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.5 }}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4">
                   {!isDateRangedInsight && (
                     <motion.div
                       className={cn(
-                        "p-2 rounded-full bg-gradient-to-br", 
-                        theme.gradient,
-                        "text-white shadow-sm"
+                        "w-12 h-12 rounded-2xl bg-gradient-to-br flex items-center justify-center shadow-sm", 
+                        theme.gradient
                       )}
                       whileHover={{ 
                         scale: 1.05,
                         transition: { duration: 0.2 } 
                       }}
-                      variants={itemVariants}
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
                     >
                       <motion.div
                         animate={iconAnimations[animationType]}
                       >
-                        <Icon size={18} />
+                        <Icon size={20} className="text-white" />
                       </motion.div>
                     </motion.div>
                   )}
                   
-                  <motion.div variants={itemVariants}>
-                    <h3 className="font-medium text-lg tracking-tight">
+                  <div>
+                    <h3 className="text-xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
                       {isDateRangedInsight 
-                        ? (insight?.title || 'Overview Insights') 
-                        : `${dayName} ${insight?.title || 'Insights'}`}
+                        ? (insight?.title || 'Daily Insights') 
+                        : `${dayName} Insights`}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">
                       {isDateRangedInsight
-                        ? (insight?.description || 'Performance analysis and optimization insights')
-                        : (insight?.description || "Data-driven training analysis")}
+                        ? (insight?.description || 'AI-powered performance analysis')
+                        : (insight?.description || "Your personalized training companion")}
                     </p>
-                  </motion.div>
+                  </div>
                 </div>
               </motion.div>
               
-              {/* Content */}
+              {/* Enhanced Content */}
               <motion.div
-                className="space-y-4"
-                variants={contentVariants}
-                initial="hidden"
-                animate="visible"
+                className="space-y-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.5 }}
               >
                 {isDateRangedInsight ? (
-                  <motion.div
-                    variants={itemVariants}
-                    className="space-y-4"
-                  >
-                    {/* Overview insights display */}
+                  <div className="space-y-6">
+                    {/* Enhanced highlight section */}
                     {error ? (
-                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
-                        <p className="text-sm text-destructive">{error}</p>
-                      </div>
+                      <motion.div 
+                        className="p-6 rounded-2xl border border-red-200/50 dark:border-red-800/30 bg-gradient-to-br from-red-50/80 to-red-100/50 dark:from-red-950/40 dark:to-red-900/30"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-xl">⚠️</span>
+                          <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{error}</p>
+                        </div>
+                      </motion.div>
                     ) : insight?.error ? (
-                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
-                        <p className="text-sm text-destructive">⚠️ {insight.error.message}</p>
-                      </div>
+                      <motion.div 
+                        className="p-6 rounded-2xl border border-red-200/50 dark:border-red-800/30 bg-gradient-to-br from-red-50/80 to-red-100/50 dark:from-red-950/40 dark:to-red-900/30"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-xl">⚠️</span>
+                          <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{insight.error.message}</p>
+                        </div>
+                      </motion.div>
                     ) : insight?.highlight && (
-                      <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
-                        <p className="text-base text-primary/80">
-                          {insight.highlight.split('. ').map((sentence, index) => {
-                            // Skip empty sentences
-                            if (!sentence.trim()) return null;
-                            
-                            // More precise detection for actual PRs, not just any positive content
-                            const containsPR = 
-                              // Use stricter matching patterns for actual PRs
-                              /\bnew pr\b|\bset a pr\b|\bpersonal record\b|\bnew personal best\b|\bbeat.*previous best\b|\bpr in\b/i.test(sentence) || 
-                              // Check for specific patterns like "X kg PR" or "PR of X km"
-                              /\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps).*\b(pr|record)\b/i.test(sentence) ||
-                              /\b(pr|record)\b.*\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps)/i.test(sentence);
-                            
-                            return (
-                              <span key={index} className={cn(
-                                containsPR ? "font-bold text-amber-600 dark:text-amber-400" : ""
-                              )}>
-                                {containsPR ? '🏆 ' : ''}
-                                {sentence}{index < (insight.highlight?.split('. ').length || 0) - 1 ? '. ' : ''}
-                              </span>
-                            );
-                          })}
-                        </p>
-                      </div>
+                      <motion.div 
+                        className="p-6 rounded-2xl border border-blue-200/50 dark:border-blue-800/30 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="flex items-start gap-4">
+                          <span className="text-2xl">💡</span>
+                          <div className="flex-1">
+                            <p className="text-base text-blue-800 dark:text-blue-200 leading-relaxed font-medium">
+                              {insight.highlight.split('. ').map((sentence, index) => {
+                                // Skip empty sentences
+                                if (!sentence.trim()) return null;
+                                
+                                // More precise detection for actual PRs
+                                const containsPR = 
+                                  /\bnew pr\b|\bset a pr\b|\bpersonal record\b|\bnew personal best\b|\bbeat.*previous best\b|\bpr in\b/i.test(sentence) || 
+                                  /\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps).*\b(pr|record)\b/i.test(sentence) ||
+                                  /\b(pr|record)\b.*\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps)/i.test(sentence);
+                                
+                                return (
+                                  <span key={index} className={cn(
+                                    containsPR ? "font-bold text-amber-700 dark:text-amber-300" : ""
+                                  )}>
+                                    {containsPR ? '🏆 ' : ''}
+                                    {sentence}{index < (insight.highlight?.split('. ').length || 0) - 1 ? '. ' : ''}
+                                  </span>
+                                );
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
                     
+                    {/* Enhanced sections */}
                     {!error && !insight?.error && insight?.positiveTrends && insight.positiveTrends.length > 0 && (
-                      <div>
-                        <strong className="text-green-700 dark:text-green-400">Performance Strengths:</strong>
-                        <ul className="mt-2 space-y-1">
-                          {insight.positiveTrends.map((trend, i) => {
-                            // More precise detection for actual PRs
-                            const containsPR = 
-                              // Use stricter matching patterns for actual PRs
-                              /\bnew pr\b|\bset a pr\b|\bpersonal record\b|\bnew personal best\b|\bbeat.*previous best\b|\bpr in\b/i.test(trend) || 
-                              // Check for specific patterns like "X kg PR" or "PR of X km"
-                              /\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps).*\b(pr|record)\b/i.test(trend) ||
-                              /\b(pr|record)\b.*\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps)/i.test(trend);
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4, duration: 0.5 }}
+                      >
+                        <div className="p-6 rounded-2xl border border-emerald-200/50 dark:border-emerald-800/30 bg-gradient-to-br from-emerald-50/80 to-green-50/80 dark:from-emerald-950/40 dark:to-green-950/40">
+                          <div className="flex items-center gap-3 mb-4">
+                            <span className="text-xl">📈</span>
+                            <h4 className="font-serif text-lg tracking-tight text-emerald-800 dark:text-emerald-200">
+                              Performance Strengths
+                            </h4>
+                          </div>
+                          <ul className="space-y-3">
+                            {insight.positiveTrends.map((trend, i) => {
+                              const containsPR = 
+                                /\bnew pr\b|\bset a pr\b|\bpersonal record\b|\bnew personal best\b|\bbeat.*previous best\b|\bpr in\b/i.test(trend) || 
+                                /\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps).*\b(pr|record)\b/i.test(trend) ||
+                                /\b(pr|record)\b.*\b\d+(\.\d+)?\s*(kg|km|mi|miles|ton|tons|t|rep|reps)/i.test(trend);
 
-                            return (
-                              <li key={i} className={cn(
-                                "text-sm",
-                                containsPR ? "font-semibold text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"
-                              )}>
-                                {containsPR ? '🏆 ' : '• '}
-                                {trend}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
+                              return (
+                                <motion.li 
+                                  key={i} 
+                                  className={cn(
+                                    "text-sm leading-relaxed flex items-start gap-3",
+                                    containsPR ? "font-semibold text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"
+                                  )}
+                                  initial={{ opacity: 0, x: -20 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 0.5 + (i * 0.1), duration: 0.3 }}
+                                >
+                                  <span className="mt-0.5">
+                                    {containsPR ? '🏆' : '•'}
+                                  </span>
+                                  <span>{trend}</span>
+                                </motion.li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      </motion.div>
                     )}
+
                     {!error && !insight?.error && insight?.negativeTrends && insight.negativeTrends.length > 0 && (
-                      <div>
-                        <strong className="text-amber-700 dark:text-amber-400">Optimization Opportunities:</strong>
-                        <ul className="mt-2 space-y-1">
-                          {insight.negativeTrends.map((trend, i) => (
-                            <li key={i} className="text-sm text-amber-600 dark:text-amber-400">• {trend}</li>
-                          ))}
-                        </ul>
-                      </div>
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5, duration: 0.5 }}
+                      >
+                        <div className="p-6 rounded-2xl border border-amber-200/50 dark:border-amber-800/30 bg-gradient-to-br from-amber-50/80 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/40">
+                          <div className="flex items-center gap-3 mb-4">
+                            <span className="text-xl">🎯</span>
+                            <h4 className="font-serif text-lg tracking-tight text-amber-800 dark:text-amber-200">
+                              Growth Opportunities
+                            </h4>
+                          </div>
+                          <ul className="space-y-3">
+                            {insight.negativeTrends.map((trend, i) => (
+                              <motion.li 
+                                key={i} 
+                                className="text-sm text-amber-700 dark:text-amber-300 leading-relaxed flex items-start gap-3"
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.6 + (i * 0.1), duration: 0.3 }}
+                              >
+                                <span className="mt-0.5">•</span>
+                                <span>{trend}</span>
+                              </motion.li>
+                            ))}
+                          </ul>
+                        </div>
+                      </motion.div>
                     )}
+
                     {!error && !insight?.error && insight?.milestones && insight.milestones.length > 0 && (
-                      <div>
-                        <strong className="text-blue-700 dark:text-blue-400">Key Metrics:</strong>
-                        <ul className="mt-2 space-y-1">
-                          {insight.milestones.map((stone, i) => (
-                            <li key={i} className="text-sm text-blue-600 dark:text-blue-400">• {stone}</li>
-                          ))}
-                        </ul>
-                      </div>
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6, duration: 0.5 }}
+                      >
+                        <div className="p-6 rounded-2xl border border-blue-200/50 dark:border-blue-800/30 bg-gradient-to-br from-blue-50/80 to-cyan-50/80 dark:from-blue-950/40 dark:to-cyan-950/40">
+                          <div className="flex items-center gap-3 mb-4">
+                            <span className="text-xl">📊</span>
+                            <h4 className="font-serif text-lg tracking-tight text-blue-800 dark:text-blue-200">
+                              Key Metrics
+                            </h4>
+                          </div>
+                          <ul className="space-y-3">
+                            {insight.milestones.map((stone, i) => (
+                              <motion.li 
+                                key={i} 
+                                className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed flex items-start gap-3"
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.7 + (i * 0.1), duration: 0.3 }}
+                              >
+                                <span className="mt-0.5">•</span>
+                                <span>{stone}</span>
+                              </motion.li>
+                            ))}
+                          </ul>
+                        </div>
+                      </motion.div>
                     )}
                     
-                    {/* Show loading indicator only if loading is true and no error and no actual highlight */}
+                    {/* Enhanced loading state */}
                     {loading && !error && !insight?.error && !insight?.highlight && (
-                      <div className="space-y-4">
-                        <div className="p-4 rounded-lg border border-primary/10 bg-primary/5">
-                          <p className="text-base text-primary/80">Analyzing performance data for your selected timeframe...</p>
+                      <motion.div 
+                        className="space-y-6"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="p-6 rounded-2xl border border-blue-200/50 dark:border-blue-800/30 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40">
+                          <div className="flex items-start gap-4">
+                            <span className="text-2xl">🤖</span>
+                            <p className="text-base text-blue-800 dark:text-blue-200 leading-relaxed font-medium">
+                              Analyzing your performance data and generating personalized insights...
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                          <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                          <span>Processing training metrics</span>
+                        <div className="flex items-center justify-center gap-3">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
                         </div>
-                      </div>
+                      </motion.div>
                     )}
 
-                    {/* Fallback for no data when not loading and no error */}
+                    {/* Enhanced empty state */}
                     {!loading && !error && !insight?.error && !(insight?.highlight || insight?.positiveTrends?.length || insight?.negativeTrends?.length || insight?.milestones?.length) && (
-                       <div className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/30">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Insufficient training data for comprehensive analysis. Log more workouts to generate detailed performance insights.</p>
-                      </div>
+                      <motion.div 
+                        className="p-8 rounded-2xl border border-neutral-200/50 dark:border-neutral-800/30 bg-gradient-to-br from-neutral-50/80 to-slate-50/80 dark:from-neutral-950/40 dark:to-slate-950/40 text-center"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="space-y-4">
+                          <span className="text-4xl">📝</span>
+                          <div>
+                            <p className="text-base font-serif text-neutral-700 dark:text-neutral-300 mb-2">
+                              Building your insights...
+                            </p>
+                            <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                              Log a few more workouts to unlock personalized performance analysis and AI-powered training insights.
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
-                  </motion.div>
+                  </div>
                 ) : (
                   <motion.div
-                    variants={itemVariants}
-                    className="space-y-2"
+                    className="space-y-4"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4, duration: 0.5 }}
                   >
                     {loading ? (
-                      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                        <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                        <span>Analyzing your training data...</span>
+                      <div className="flex items-center justify-center gap-3 p-6">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                        <span className="text-sm text-neutral-500 dark:text-neutral-400 ml-3">
+                          Analyzing your training data...
+                        </span>
                       </div>
                     ) : error ? (
-                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
-                        <p className="text-sm text-destructive">{error}</p>
+                      <div className="p-6 rounded-2xl border border-red-200/50 dark:border-red-800/30 bg-gradient-to-br from-red-50/80 to-red-100/50 dark:from-red-950/40 dark:to-red-900/30">
+                        <div className="flex items-start gap-3">
+                          <span className="text-xl">⚠️</span>
+                          <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{error}</p>
+                        </div>
                       </div>
                     ) : insight?.error ? (
-                      <div className="p-4 rounded-lg border border-destructive/10 bg-destructive/5">
-                        <p className="text-sm text-destructive">⚠️ {insight.error.message}</p>
+                      <div className="p-6 rounded-2xl border border-red-200/50 dark:border-red-800/30 bg-gradient-to-br from-red-50/80 to-red-100/50 dark:from-red-950/40 dark:to-red-900/30">
+                        <div className="flex items-start gap-3">
+                          <span className="text-xl">⚠️</span>
+                          <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{insight.error.message}</p>
+                        </div>
                       </div>
                     ) : (
-                      <div className="prose prose-sm max-w-none">
-                        <p className="text-base leading-relaxed text-foreground">
-                          {insight?.insight}
-                        </p>
+                      <div className="p-6 rounded-2xl border border-blue-200/50 dark:border-blue-800/30 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40">
+                        <div className="flex items-start gap-4">
+                          <span className="text-2xl">💭</span>
+                          <p className="text-base text-blue-800 dark:text-blue-200 leading-relaxed font-medium">
+                            {insight?.insight}
+                          </p>
+                        </div>
                       </div>
                     )}
                   </motion.div>
                 )}
               </motion.div>
-              
-              {/* Visual indicator for day context */}
-              {!isDateRangedInsight && (
-                <motion.div 
-                  className="pt-4 mt-auto"
-                  variants={contentVariants}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  <div className="flex gap-1">
-                    {Array.from({ length: 7 }).map((_, i) => {
-                      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                      const currentDayIndex = days.indexOf(dayName);
-                      const isCurrentDay = i === currentDayIndex;
-                      return (
-                        <motion.div 
-                          key={i} 
-                          className={cn(
-                            "h-1.5 rounded-full flex-1 transition-all",
-                            isCurrentDay 
-                              ? `bg-gradient-to-r ${theme.gradient}` 
-                              : "bg-slate-300/30 dark:bg-slate-700/30"
-                          )}
-                          variants={itemVariants}
-                          whileHover={{
-                            scaleY: isCurrentDay ? 1.3 : 1.1,
-                            transition: { duration: 0.2 }
-                          }}
-                          animate={isCurrentDay ? {
-                            opacity: [0.7, 1, 0.7],
-                            transition: { 
-                              repeat: Infinity,
-                              duration: 3,
-                              ease: "easeInOut"
-                            }
-                          } : {}}
-                        />
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
             </div>
-          </Card>
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>

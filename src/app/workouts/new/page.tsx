@@ -255,72 +255,62 @@ function NumberSlider({
   className?: string;
   isDecimal?: boolean;
 }) {
-  // Convert to number and ensure it's within bounds
-  const numValue = Math.max(min, Math.min(max, Number(value) || 0));
-  
-  // Format value for display - if decimal, multiply by 10 for sliding number
-  const displayValue = isDecimal ? numValue * 10 : numValue;
-  
-  // Handle increment/decrement
+  const numValue = Number(value) || 0;
+
   const increment = () => {
-    const newVal = Math.min(max, numValue + step);
-    onChange(String(newVal));
+    const newValue = Math.min(max, numValue + step);
+    onChange(isDecimal ? newValue.toFixed(1) : newValue.toString());
   };
-  
+
   const decrement = () => {
-    const newVal = Math.max(min, numValue - step);
-    onChange(String(newVal));
+    const newValue = Math.max(min, numValue - step);
+    onChange(isDecimal ? newValue.toFixed(1) : newValue.toString());
   };
-  
+
   return (
-    <div className={`flex flex-col space-y-2 ${className}`}> {/* Removed responsive width */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={decrement}
-          className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
-        >
-          <LucideMinus className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="sr-only">Decrease</span>
-        </button>
-        
-        <div className="flex items-center justify-center rounded-lg bg-muted/50 px-2 sm:px-4 py-1.5 sm:py-2 min-w-[80px] sm:min-w-[100px]">
-          <div className="flex items-baseline">
-            <div className="text-lg sm:text-2xl font-medium tabular-nums tracking-tighter w-16 sm:w-20 text-right h-6 sm:h-8 flex items-center justify-end">
-              {isDecimal ? (
-                <>
-                  <SlidingNumber value={Math.floor(displayValue / 10)} />
-                  <span>.</span>
-                  <SlidingNumber value={displayValue % 10} />
-                </>
-              ) : (
-                <SlidingNumber value={numValue} />
-              )}
-            </div>
-            {unit && <span className="ml-1 text-xs sm:text-sm text-muted-foreground min-w-8 sm:min-w-10">{unit}</span>}
-          </div>
-        </div>
-        
-        <button
-          type="button"
-          onClick={increment}
-          className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
-        >
-          <LucidePlus className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="sr-only">Increase</span>
-        </button>
-      </div>
+    <motion.div 
+      className={cn("flex items-center justify-center gap-3 w-full max-w-[180px]", className)}
+      whileHover={{ scale: 1.02 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
+      <motion.button
+        type="button"
+        onClick={decrement}
+        disabled={numValue <= min}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className="w-8 h-8 rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900 border border-neutral-200/50 dark:border-neutral-700/50 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md transition-all duration-200 backdrop-blur-sm"
+      >
+        <LucideMinus className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
+      </motion.button>
       
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={numValue}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-      />
-    </div>
+      <motion.div 
+        className="flex flex-col items-center min-w-[70px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        <div className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+          <SlidingNumber value={numValue} />
+        </div>
+        {unit && (
+          <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium tracking-wide">
+            {unit}
+          </span>
+        )}
+      </motion.div>
+      
+      <motion.button
+        type="button"
+        onClick={increment}
+        disabled={numValue >= max}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className="w-8 h-8 rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900 border border-neutral-200/50 dark:border-neutral-700/50 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md transition-all duration-200 backdrop-blur-sm"
+      >
+        <LucidePlus className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
+      </motion.button>
+    </motion.div>
   );
 }
 
@@ -1437,45 +1427,70 @@ export default function NewWorkoutPage() {
   }
   // --- END Submit function ---
 
-  // Helper styles (remain the same)
-  const inlineInputStyle = "w-20 h-auto inline-block border-0 border-b border-input rounded-none px-1 py-0 text-center focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 bg-transparent align-baseline text-base font-bold focus:border-primary transition-colors duration-200 ease-in-out"
-  const inlineSelectStyle = "h-auto border-0 p-0 font-medium text-primary hover:text-primary/80 focus:ring-0 focus:ring-offset-0 shadow-none bg-transparent w-auto inline-block align-baseline text-base font-medium underline-offset-4 hover:underline transition-colors duration-200 ease-in-out"
-  const inlineButtonStyle = "h-auto p-0 font-medium text-primary hover:text-primary/80 focus:ring-0 focus:ring-offset-0 shadow-none bg-transparent w-auto inline-block align-baseline text-base underline-offset-4 hover:underline transition-colors duration-200 ease-in-out"
+  // --- Enhanced CSS Style Constants with Sophisticated Minimalistic Design ---
+  const inlineInputStyle = "w-20 h-auto inline-block border-0 border-b border-neutral-300/50 dark:border-neutral-700/50 rounded-none px-1 py-0 text-center focus-visible:ring-1 focus-visible:ring-primary/30 focus-visible:ring-offset-0 bg-transparent align-baseline transition-colors duration-200"
+  const inlineSelectStyle = "h-auto border-0 p-0 font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 focus:ring-0 focus:ring-offset-0 shadow-none bg-transparent w-auto inline-block align-baseline text-base font-medium underline-offset-4 hover:underline transition-colors duration-200"
+  const inlineButtonStyle = "h-auto p-0 font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 focus:ring-0 focus:ring-offset-0 shadow-none bg-transparent w-auto inline-block align-baseline text-base underline-offset-4 hover:underline transition-colors duration-200"
 
-  // Loading indicator
-  if (isLoadingData) {
-      return <div className="container mx-auto px-4 py-8">Loading workout data...</div>;
-  }
-
-  // --- Render Logic ---
-  const isStrengthWorkout = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
-
-  // Add these style constants near other style definitions
-  const exerciseCardStyle = "relative overflow-hidden rounded-2xl bg-card shadow-sm transition-all duration-200 hover:shadow-md border border-border/40"
-  const exerciseHeaderStyle = "flex items-center gap-4 p-6 bg-gradient-to-b from-muted/30 to-transparent"
-  const exerciseBodyStyle = "px-6 pb-6 space-y-6"
-  const exerciseStatsStyle = "flex items-center gap-2 text-sm text-muted-foreground"
-  const exerciseStatBadgeStyle = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20"
-  const setRowStyle = "group relative grid gap-4 sm:gap-6 rounded-xl p-3 sm:p-5 bg-card shadow-sm border border-border/30 mb-4 grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_1fr_1fr_auto] justify-items-center" // Modified base grid
-  const inputGroupStyle = "flex flex-col items-center space-y-2 w-full max-w-[250px] mx-auto" // Changed items-start to items-center
-  const inputLabelStyle = "text-xs font-semibold text-center text-muted-foreground/80 tracking-wide uppercase" // Added font-semibold and text-center
-  const numberControlStyle = "flex items-center justify-center gap-2 w-full max-w-[160px]"
-
-  // Add these style constants at the top with other styles
-  const pageHeaderStyle = "sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
-  const pageContentStyle = "container max-w-2xl mx-auto px-4 py-6 space-y-8"
-  const sectionStyle = "space-y-4"
+  // Enhanced page layout with sophisticated styling
+  const pageHeaderStyle = "sticky top-0 z-50 w-full border-b border-neutral-200/50 dark:border-neutral-800/50 bg-background/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background/80"
+  const pageContentStyle = "min-h-screen bg-background ai-gradient dark:ai-gradient-dark transition-colors duration-300"
+  const sectionStyle = "space-y-8"
   const sectionHeaderStyle = "flex items-center justify-between"
-  const sectionTitleStyle = "text-lg font-semibold tracking-tight"
-  const activityTypeStyle = "grid grid-cols-6 gap-2"
-  const activityButtonStyle = "flex flex-col items-center justify-center gap-1 rounded-2xl p-3 hover:bg-accent transition-colors"
-  const activityIconStyle = "h-6 w-6"
-  const activityLabelStyle = "text-xs font-medium"
-  const quickLogStyle = "relative overflow-hidden rounded-2xl bg-card shadow-lg border border-border/40"
-  const exercisesContainerStyle = "space-y-4"
+  const sectionTitleStyle = "text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100"
+  
+  // Enhanced activity type selection with sophisticated design
+  const activityTypeStyle = "grid grid-cols-6 gap-3"
+  const activityButtonStyle = "group flex flex-col items-center justify-center gap-2 rounded-2xl p-4 hover:bg-white/60 dark:hover:bg-neutral-900/60 transition-all duration-300 backdrop-blur-sm border border-neutral-200/30 dark:border-neutral-800/30 shadow-sm hover:shadow-md"
+  const activityIconStyle = "h-6 w-6 text-neutral-600 dark:text-neutral-400 group-hover:text-neutral-900 dark:group-hover:text-neutral-100 transition-colors duration-300"
+  const activityLabelStyle = "text-xs font-medium text-neutral-600 dark:text-neutral-400 group-hover:text-neutral-900 dark:group-hover:text-neutral-100 transition-colors duration-300"
+  
+  // Enhanced quick log section with sophisticated glow effect
+  const quickLogStyle = "relative overflow-hidden rounded-3xl bg-gradient-to-br from-white/80 to-neutral-50/80 dark:from-neutral-900/80 dark:to-neutral-950/80 backdrop-blur-xl border border-neutral-200/50 dark:border-neutral-800/50 shadow-xl"
+  
+  // Enhanced exercises container with sophisticated spacing
+  const exercisesContainerStyle = "space-y-8"
+  
+  // Enhanced exercise cards with sophisticated design
+  const exerciseCardStyle = "group relative overflow-hidden rounded-3xl bg-gradient-to-br from-white/90 to-neutral-50/90 dark:from-neutral-900/90 dark:to-neutral-950/90 backdrop-blur-xl border border-neutral-200/50 dark:border-neutral-800/50 shadow-lg hover:shadow-xl transition-all duration-500 hover:scale-[1.01]"
+  const exerciseHeaderStyle = "flex items-center gap-4 p-8 bg-gradient-to-b from-neutral-50/50 to-transparent dark:from-neutral-900/50"
+  const exerciseBodyStyle = "px-8 pb-8 space-y-8"
+  const exerciseStatsStyle = "flex items-center gap-3 text-sm"
+  const exerciseStatBadgeStyle = "inline-flex items-center rounded-full border border-neutral-200/50 dark:border-neutral-700/50 px-3 py-1 text-xs font-medium bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm text-neutral-700 dark:text-neutral-300 transition-colors duration-200"
+  
+  // Enhanced set rows with sophisticated design
+  const setRowStyle = "group relative grid gap-6 rounded-3xl p-6 bg-gradient-to-br from-white/70 to-neutral-50/70 dark:from-neutral-900/70 dark:to-neutral-950/70 backdrop-blur-sm border border-neutral-200/30 dark:border-neutral-800/30 shadow-sm hover:shadow-md transition-all duration-300 mb-6 grid-cols-[3rem_1fr_auto] sm:grid-cols-[3rem_1fr_1fr_auto] justify-items-center hover:scale-[1.01]"
+  
+  // Enhanced input styling with sophisticated look
+  const inputGroupStyle = "flex flex-col items-center space-y-3 w-full max-w-[280px] mx-auto"
+  const inputLabelStyle = "text-xs font-semibold text-center text-neutral-500 dark:text-neutral-400 tracking-[0.1em] uppercase"
+  const numberControlStyle = "flex items-center justify-center gap-3 w-full max-w-[180px]"
+  
+  // Enhanced AI suggestion styling
+  const aiSuggestionStyle = "flex items-start p-6 space-x-4 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/30 dark:border-blue-800/30 backdrop-blur-sm"
 
-  // Update the style constants
-  const aiSuggestionStyle = "flex items-start p-4 space-x-3 rounded-xl bg-blue-500/10 dark:bg-blue-400/10 border border-blue-200/20 dark:border-blue-300/20"
+  // Enhanced custom scrollbar styling
+  const customScrollbarStyle = `
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.3);
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(156, 163, 175, 0.5);
+    }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(115, 115, 115, 0.3);
+    }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(115, 115, 115, 0.5);
+    }
+  `
 
   // Add a function to check if an exercise is a bodyweight exercise
   const isBodyweightExercise = (exercise: any): boolean => {
@@ -1614,100 +1629,177 @@ export default function NewWorkoutPage() {
     { label: "60°", value: 0.4 },
   ];
 
+  // Loading indicator
+  if (isLoadingData) {
+      return <div className="container mx-auto px-4 py-8">Loading workout data...</div>;
+  }
+
+  // --- Render Logic ---
+  const isStrengthWorkout = workoutType === "gym" || workoutType === "home_strength" || workoutType === "strength";
+
   return (
-    <>
-      {/* Page Header */}
-      <div className={pageHeaderStyle}>
-        <div className="container max-w-2xl mx-auto px-4 h-14 flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="shrink-0">
-            <LucideArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="flex-1 flex items-center justify-between">
-            <h1 className="text-xl font-semibold">
-              {isEditing ? "Edit Workout" : duplicateWorkoutId ? "Duplicate Workout" : "Log New Workout"}
-            </h1>
-            <Button
-              type="button"
-              onClick={handleSaveWorkout}
-              disabled={isSubmitting}
-              size="sm"
-              className="rounded-full"
+    <div className={pageContentStyle}>
+      {/* Enhanced Page Header with sophisticated design */}
+      <motion.div 
+        className={pageHeaderStyle}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      >
+        <div className="container max-w-2xl mx-auto px-6 h-16 flex items-center gap-4">
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => router.back()} 
+              className="shrink-0 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors duration-200"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (isEditing ? "Update" : "Save")}
+              <LucideArrowLeft className="h-5 w-5" />
             </Button>
+          </motion.div>
+          <div className="flex-1 flex items-center justify-between">
+            <motion.h1 
+              className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2, duration: 0.8 }}
+            >
+              {isEditing ? "Edit Workout" : duplicateWorkoutId ? "Duplicate Workout" : "Log New Workout"}
+            </motion.h1>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Button
+                type="button"
+                onClick={handleSaveWorkout}
+                disabled={isSubmitting}
+                size="sm"
+                className="rounded-full bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:hover:bg-neutral-200 text-white dark:text-neutral-900 transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (isEditing ? "Update" : "Save")}
+              </Button>
+            </motion.div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Main Content */}
-      <main className={pageContentStyle}>
-        {/* Error Display */}
+      {/* Main Content with sophisticated layout */}
+      <main className="container max-w-2xl mx-auto px-6 py-12 space-y-12">
+        {/* Error Display with enhanced styling */}
         {error && (
-          <div className="rounded-xl border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
-            <p className="font-medium">Error</p>
-            <p>{error}</p>
-          </div>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="rounded-2xl border border-red-200/50 dark:border-red-800/50 bg-gradient-to-br from-red-50/80 to-red-100/80 dark:from-red-950/40 dark:to-red-900/40 p-6 backdrop-blur-sm"
+          >
+            <p className="font-medium text-red-800 dark:text-red-200">Error</p>
+            <p className="text-red-700 dark:text-red-300 mt-1">{error}</p>
+          </motion.div>
         )}
 
-        {/* Activity Type & Date Section */}
-        <div className={sectionStyle}>
+        {/* Enhanced Activity Type & Date Section */}
+        <motion.div 
+          className={sectionStyle}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+        >
           <div className={sectionHeaderStyle}>
-            <h2 className={sectionTitleStyle}>Activity Type</h2>
-            <Popover modal={false}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="rounded-full">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date ? (isToday(date) ? 'Today' : format(date, "MMM d, yyyy")) : <span>Pick a date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={(newDate) => {
-                    if (newDate) {
-                      setDate(newDate);
-                      updateTenseBasedOnDate(newDate);
-                    }
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
+            <motion.h2 
+              className={sectionTitleStyle}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.8 }}
+            >
+              Activity Type
+            </motion.h2>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.4, duration: 0.6 }}
+            >
+              <Popover modal={false}>
+                <PopoverTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    className="rounded-full border-neutral-200/50 dark:border-neutral-700/50 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm hover:bg-white/80 dark:hover:bg-neutral-900/80 transition-all duration-200"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? (isToday(date) ? 'Today' : format(date, "MMM d, yyyy")) : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 border-neutral-200/50 dark:border-neutral-800/50 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl" align="end">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={(newDate) => {
+                      if (newDate) {
+                        setDate(newDate);
+                        updateTenseBasedOnDate(newDate);
+                      }
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </motion.div>
           </div>
 
-          <div className={activityTypeStyle}>
-            {mainWorkoutTypes.map((type) => {
+          <motion.div 
+            className={activityTypeStyle}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.6 }}
+          >
+            {mainWorkoutTypes.map((type, index) => {
               const isSelected = workoutType === type.value;
               return (
-                <Button
+                <motion.div
                   key={type.value}
-                  variant="ghost"
-                  className={cn(
-                    activityButtonStyle,
-                    isSelected && "bg-primary/10 text-primary"
-                  )}
-                  onClick={() => setWorkoutType(type.value)}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.6 + index * 0.1, duration: 0.4 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
-                  <type.icon className={activityIconStyle} />
-                  <span className={activityLabelStyle}>{type.label}</span>
-                </Button>
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      activityButtonStyle,
+                      isSelected && "bg-neutral-900/10 dark:bg-neutral-100/10 border-neutral-300/50 dark:border-neutral-600/50 text-neutral-900 dark:text-neutral-100"
+                    )}
+                    onClick={() => setWorkoutType(type.value)}
+                  >
+                    <type.icon className={activityIconStyle} />
+                    <span className={activityLabelStyle}>{type.label}</span>
+                  </Button>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
 
-          <Input
-            placeholder={getDefaultWorkoutName(workoutType, date)}
-            value={workoutName}
-            onChange={(e) => setWorkoutName(e.target.value)}
-            className="text-xl font-semibold bg-transparent border-0 px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-          />
-        </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8, duration: 0.6 }}
+          >
+            <Input
+              placeholder={getDefaultWorkoutName(workoutType, date)}
+              value={workoutName}
+              onChange={(e) => setWorkoutName(e.target.value)}
+              className="text-2xl font-serif bg-transparent border-0 px-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
+            />
+          </motion.div>
+        </motion.div>
 
         {/* NEW: Overall Distance/Duration for Cardio Types */}
         {workoutType && cardioExerciseNames[workoutType] && (
@@ -1745,10 +1837,20 @@ export default function NewWorkoutPage() {
           </motion.div>
         )}
 
-        {/* Quick Log Section - Preserved with glow effect */}
+        {/* Enhanced Quick Log Section with sophisticated design */}
         {!isEditing && (
-          <div className="relative">
-            <motion.div className="pointer-events-none absolute inset-0">
+          <motion.div 
+            className="relative"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.9, duration: 0.8 }}
+          >
+            <motion.div 
+              className="pointer-events-none absolute inset-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.2, duration: 1 }}
+            >
               <GlowEffect
                 colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']}
                 mode="colorShift"
@@ -1758,48 +1860,85 @@ export default function NewWorkoutPage() {
               />
             </motion.div>
             <div className={quickLogStyle}>
-              <div className="p-6 space-y-4">
-                <h2 className="text-lg font-semibold">Quick Log with AI</h2>
-                <Textarea
-                  placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
-                  className="min-h-[80px] bg-background/50 resize-none"
-                  value={aiLogInput}
-                  onChange={(e) => setAiLogInput(e.target.value)}
-                  disabled={isProcessingAi}
-                />
-                <Button
-                  type="button"
-                  onClick={() => handleAiProcess(aiLogInput)}
-                  disabled={isProcessingAi || !aiLogInput.trim()}
-                  variant="outline"
-                  className="w-full"
+              <div className="p-8 space-y-6">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.0, duration: 0.6 }}
                 >
-                  {isProcessingAi ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Lightbulb className="mr-2 h-4 w-4" />
-                      Process with AI
-                    </>
-                  )}
-                </Button>
+                  <h2 className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2">
+                    Quick Log with AI
+                  </h2>
+                  <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                    Paste your workout data and let AI parse it intelligently
+                  </p>
+                </motion.div>
+                
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1.1, duration: 0.6 }}
+                >
+                  <Textarea
+                    placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
+                    className="min-h-[100px] bg-white/70 dark:bg-neutral-900/70 border-neutral-200/50 dark:border-neutral-700/50 rounded-2xl backdrop-blur-sm resize-none text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-neutral-600 transition-colors duration-200"
+                    value={aiLogInput}
+                    onChange={(e) => setAiLogInput(e.target.value)}
+                    disabled={isProcessingAi}
+                  />
+                </motion.div>
+                
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.2, duration: 0.6 }}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                >
+                  <Button
+                    type="button"
+                    onClick={() => handleAiProcess(aiLogInput)}
+                    disabled={isProcessingAi || !aiLogInput.trim()}
+                    variant="outline"
+                    className="w-full h-12 rounded-2xl border-neutral-200/50 dark:border-neutral-700/50 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm hover:bg-white/80 dark:hover:bg-neutral-900/80 transition-all duration-200 text-neutral-900 dark:text-neutral-100"
+                  >
+                    {isProcessingAi ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Lightbulb className="mr-2 h-4 w-4" />
+                        Process with AI
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
-        {/* Exercises Section - Conditionally Render based on Workout Type */}
+        {/* Enhanced Exercises Section with sophisticated design */}
         {!cardioExerciseNames[workoutType as WorkoutTypeOption] && (
           <motion.div
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            transition={{ delay: 0.1 }} // Slight delay after type selection
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ delay: 1.3, duration: 0.8 }}
             className={sectionStyle}
           >
-            <h2 className={sectionTitleStyle}>Exercises</h2>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.4, duration: 0.6 }}
+            >
+              <h2 className={sectionTitleStyle}>Exercises</h2>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2">
+                Build your workout with precise tracking and AI insights
+              </p>
+            </motion.div>
+            
             <div className={exercisesContainerStyle}>
               {/* Existing exercises mapping with updated styling */} 
               {exercises.map((exercise, index) => {
@@ -1875,75 +2014,165 @@ export default function NewWorkoutPage() {
                               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="sm:max-w-[600px]">
-                            <DialogHeader>
-                              <DialogTitle>Select Exercise</DialogTitle>
-                              <DialogDescription>
-                                Choose an exercise from the list or search.
+                          <DialogContent className="sm:max-w-[700px] bg-gradient-to-br from-white/95 to-neutral-50/95 dark:from-neutral-900/95 dark:to-neutral-950/95 backdrop-blur-xl border border-neutral-200/50 dark:border-neutral-800/50 shadow-2xl">
+                            <DialogHeader className="space-y-4 pb-6">
+                              <DialogTitle className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                Select Exercise
+                              </DialogTitle>
+                              <DialogDescription className="text-neutral-600 dark:text-neutral-400">
+                                Choose from recently performed exercises or browse by muscle group
                               </DialogDescription>
                             </DialogHeader>
                             <Tabs defaultValue="performed" className="w-full">
-                              <TabsList className="grid w-full grid-cols-4">
-                                <TabsTrigger value="performed">Performed</TabsTrigger>
-                                <TabsTrigger value="chest">Chest</TabsTrigger>
-                                <TabsTrigger value="back">Back</TabsTrigger>
-                                <TabsTrigger value="legs">Legs</TabsTrigger>
+                              <TabsList className="grid w-full grid-cols-4 h-12 rounded-2xl bg-gradient-to-r from-neutral-100/80 to-neutral-200/80 dark:from-neutral-800/80 dark:to-neutral-900/80 backdrop-blur-sm border border-neutral-200/30 dark:border-neutral-700/30 p-1">
+                                <TabsTrigger value="performed" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
+                                  Recent
+                                </TabsTrigger>
+                                <TabsTrigger value="chest" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
+                                  Chest
+                                </TabsTrigger>
+                                <TabsTrigger value="back" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
+                                  Back
+                                </TabsTrigger>
+                                <TabsTrigger value="legs" className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-900 data-[state=active]:shadow-sm data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-100 text-neutral-600 dark:text-neutral-400 font-medium transition-all duration-200">
+                                  Legs
+                                </TabsTrigger>
                               </TabsList>
-                              <TabsContent value="performed">
-                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                              <TabsContent value="performed" className="mt-6">
+                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
                                   {performedExercises.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground p-2">No recently performed exercises found.</p>
+                                    <motion.div 
+                                      initial={{ opacity: 0 }}
+                                      animate={{ opacity: 1 }}
+                                      className="text-center py-12 px-4 rounded-2xl bg-gradient-to-br from-neutral-50/80 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-950/40 border border-neutral-200/30 dark:border-neutral-800/30"
+                                    >
+                                      <div className="text-4xl mb-4">💪</div>
+                                      <p className="text-neutral-600 dark:text-neutral-400 font-medium">No recently performed exercises found</p>
+                                      <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-2">Start working out to see your favorites here</p>
+                                    </motion.div>
                                   ) : (
-                                    performedExercises.map((dbEx) => (
-                                      <button
+                                    performedExercises.map((dbEx, index) => (
+                                      <motion.button
                                         key={dbEx._id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: index * 0.05, duration: 0.3 }}
+                                        whileHover={{ scale: 1.01 }}
+                                        whileTap={{ scale: 0.99 }}
                                         onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
                                       >
-                                        {dbEx.name}
-                                      </button>
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
+                                            {dbEx.name}
+                                          </span>
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                          </div>
+                                        </div>
+                                        {dbEx.muscleGroups && dbEx.muscleGroups.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-2">
+                                            {dbEx.muscleGroups.slice(0, 3).map((muscle: string) => (
+                                              <span
+                                                key={muscle}
+                                                className="inline-flex items-center rounded-full border border-neutral-200/50 dark:border-neutral-700/50 px-2 py-0.5 text-xs font-medium bg-white/40 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400"
+                                              >
+                                                {muscle}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </motion.button>
                                     ))
                                   )}
                                 </div>
                               </TabsContent>
-                              <TabsContent value="chest">
-                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                              <TabsContent value="chest" className="mt-6">
+                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
                                   {dbExercises
                                     .filter(ex =>
                                       Array.isArray(ex.muscleGroups) &&
                                       ex.muscleGroups.some((m: string) => m.toLowerCase() === 'chest')
                                     )
-                                    .map((dbEx) => (
-                                      <button
+                                    .map((dbEx, index) => (
+                                      <motion.button
                                         key={dbEx._id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: index * 0.03, duration: 0.3 }}
+                                        whileHover={{ scale: 1.01 }}
+                                        whileTap={{ scale: 0.99 }}
                                         onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
                                       >
-                                        {dbEx.name}
-                                      </button>
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
+                                            {dbEx.name}
+                                          </span>
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                          </div>
+                                        </div>
+                                        {dbEx.equipment && dbEx.equipment.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-2">
+                                            {dbEx.equipment.slice(0, 2).map((eq: string) => (
+                                              <span
+                                                key={eq}
+                                                className="inline-flex items-center rounded-full border border-blue-200/50 dark:border-blue-800/50 px-2 py-0.5 text-xs font-medium bg-blue-50/40 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                                              >
+                                                {eq}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </motion.button>
                                     ))}
                                 </div>
                               </TabsContent>
-                              <TabsContent value="back">
-                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                              <TabsContent value="back" className="mt-6">
+                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
                                   {dbExercises
                                     .filter(ex =>
                                       Array.isArray(ex.muscleGroups) &&
                                       ex.muscleGroups.some((m: string) => m.toLowerCase() === 'back')
                                     )
-                                    .map((dbEx) => (
-                                      <button
+                                    .map((dbEx, index) => (
+                                      <motion.button
                                         key={dbEx._id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: index * 0.03, duration: 0.3 }}
+                                        whileHover={{ scale: 1.01 }}
+                                        whileTap={{ scale: 0.99 }}
                                         onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
                                       >
-                                        {dbEx.name}
-                                      </button>
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
+                                            {dbEx.name}
+                                          </span>
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                          </div>
+                                        </div>
+                                        {dbEx.equipment && dbEx.equipment.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-2">
+                                            {dbEx.equipment.slice(0, 2).map((eq: string) => (
+                                              <span
+                                                key={eq}
+                                                className="inline-flex items-center rounded-full border border-emerald-200/50 dark:border-emerald-800/50 px-2 py-0.5 text-xs font-medium bg-emerald-50/40 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+                                              >
+                                                {eq}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </motion.button>
                                     ))}
                                 </div>
                               </TabsContent>
-                              <TabsContent value="legs">
-                                <div className="py-4 space-y-2 max-h-[400px] overflow-y-auto">
+                              <TabsContent value="legs" className="mt-6">
+                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
                                   {dbExercises
                                     .filter(ex =>
                                       Array.isArray(ex.muscleGroups) &&
@@ -1955,14 +2184,38 @@ export default function NewWorkoutPage() {
                                         'calves'
                                       ].includes(m.toLowerCase()))
                                     )
-                                    .map((dbEx) => (
-                                      <button
+                                    .map((dbEx, index) => (
+                                      <motion.button
                                         key={dbEx._id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: index * 0.03, duration: 0.3 }}
+                                        whileHover={{ scale: 1.01 }}
+                                        whileTap={{ scale: 0.99 }}
                                         onClick={() => handleExerciseSelection(exercise.id, dbEx)}
-                                        className="block w-full text-left p-2 rounded-md hover:bg-accent"
+                                        className="w-full text-left p-4 rounded-2xl bg-gradient-to-r from-white/60 to-neutral-50/60 dark:from-neutral-900/60 dark:to-neutral-950/60 border border-neutral-200/30 dark:border-neutral-800/30 hover:border-neutral-300/50 dark:hover:border-neutral-700/50 transition-all duration-200 backdrop-blur-sm hover:shadow-md group"
                                       >
-                                        {dbEx.name}
-                                      </button>
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors duration-200">
+                                            {dbEx.name}
+                                          </span>
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                            <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                                          </div>
+                                        </div>
+                                        {dbEx.equipment && dbEx.equipment.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-2">
+                                            {dbEx.equipment.slice(0, 2).map((eq: string) => (
+                                              <span
+                                                key={eq}
+                                                className="inline-flex items-center rounded-full border border-orange-200/50 dark:border-orange-800/50 px-2 py-0.5 text-xs font-medium bg-orange-50/40 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400"
+                                              >
+                                                {eq}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </motion.button>
                                     ))}
                                 </div>
                               </TabsContent>
@@ -2196,7 +2449,7 @@ export default function NewWorkoutPage() {
           </div>
         )}
       </main>
-    </>
+    </div>
   )
 }
 

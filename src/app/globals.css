@@ -87,81 +87,198 @@
   }
  
   .dark {
-    --background: 0 0% 8%; /* Darker, cleaner background */
-    --foreground: 0 0% 95%; /* Clean light grey */
+    /* Sophisticated dark background - very deep, pure black base */
+    --background: 0 0% 3%; /* Almost pure black for that minimalist sophistication */
+    --foreground: 0 0% 96%; /* Very light, clean white */
  
-    --card: 0 0% 12%; /* Slightly lighter dark card */
-    --card-foreground: 0 0% 95%; /* Clean light grey */
+    /* Enhanced card colors for depth and elegance */
+    --card: 0 0% 6%; /* Slightly elevated from background */
+    --card-foreground: 0 0% 94%; /* Clean light text */
  
-    --popover: 0 0% 8%; /* Darker popover */
+    /* Sophisticated popover styling */
+    --popover: 0 0% 4%; /* Very dark, sophisticated */
     --popover-foreground: 0 0% 95%; /* Clean light grey */
  
-    /* Brand Colors - Dark Theme */
-    --primary: 214 100% 67%; /* Original brand-blue */
-    --primary-foreground: 0 0% 100%; /* Original white */
+    /* Enhanced brand colors for dark theme */
+    --primary: 214 100% 65%; /* Slightly refined blue */
+    --primary-foreground: 0 0% 100%; /* Pure white */
  
-    /* Minimalist secondary/muted for dark theme */
-    --secondary: 0 0% 20%; /* Dark neutral */
-    --secondary-foreground: 0 0% 70%; /* Light grey */
+    /* Sophisticated neutral palette */
+    --secondary: 0 0% 10%; /* Deep charcoal */
+    --secondary-foreground: 0 0% 80%; /* Refined light grey */
  
-    --muted: 0 0% 16%; /* Dark neutral */
-    --muted-foreground: 0 0% 65%; /* Light grey */
+    --muted: 0 0% 8%; /* Very dark, subtle */
+    --muted-foreground: 0 0% 70%; /* Elegant light grey */
  
-    --accent: 19 94% 73%; /* Original brand-orange */
-    --accent-foreground: 0 0% 100%; /* Original white */
+    /* Enhanced accent for sophistication */
+    --accent: 19 85% 65%; /* Slightly muted orange for elegance */
+    --accent-foreground: 0 0% 100%; /* Pure white */
  
-    --destructive: 0 70% 50%; /* Slightly adjusted red */
-    --destructive-foreground: 0 0% 100%; /* white */
+    --destructive: 0 65% 55%; /* Refined red */
+    --destructive-foreground: 0 0% 100%; /* Pure white */
 
-    /* Cleaner dark borders */
-    --border: 0 0% 24%; /* Lighter dark border */
-    --input: 0 0% 24%; /* Lighter dark input border */
-    --ring: 214 100% 67%; /* Original brand-blue */
+    /* Sophisticated border system */
+    --border: 0 0% 15%; /* Subtle, elegant borders */
+    --input: 0 0% 18%; /* Slightly lighter for inputs */
+    --ring: 214 100% 65%; /* Refined brand blue */
 
-    /* Brand colors for hero section */
-    --brand: 31 97% 72%;
-    --brand-foreground: 27 96% 61%;
+    /* Enhanced brand colors for dark sophistication */
+    --brand: 31 90% 65%;
+    --brand-foreground: 27 85% 60%;
   }
 }
 
 @layer base {
+  * {
+    @apply border-border;
+  }
+  
   body {
     @apply bg-background text-foreground font-sans;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Enhanced dark mode background */
+    min-height: 100vh;
+    background-attachment: fixed;
   }
   
-  /* Smooth scrolling for better UX */
+  /* Ensure the entire viewport is properly dark */
   html {
     scroll-behavior: smooth;
+    /* Force dark background even before theme loads */
+    background-color: rgb(8, 8, 8);
   }
   
-  /* Splash screen background */
+  /* Enhanced dark body styling */
+  .dark body {
+    background: rgb(8, 8, 8); /* Fallback pure dark */
+    background: linear-gradient(135deg, rgb(8, 8, 8) 0%, rgb(5, 5, 5) 50%, rgb(8, 8, 8) 100%);
+    color: rgb(245, 245, 245);
+  }
+  
+  /* Splash screen with dark support */
   #splash-screen {
     background-color: hsl(var(--background));
+  }
+  
+  .dark #splash-screen {
+    background: rgb(8, 8, 8);
   }
 }
 
 @layer components {
-  /* Enhanced markdown styling for chat messages */
+  /* Enhanced sophisticated dark theme gradients */
+  .ai-gradient {
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.02) 0%, 
+      rgba(248, 250, 252, 0.03) 25%, 
+      rgba(255, 255, 255, 0.01) 50%, 
+      rgba(248, 250, 252, 0.02) 75%, 
+      rgba(255, 255, 255, 0.01) 100%
+    );
+  }
+
+  .ai-gradient-dark {
+    background: linear-gradient(135deg, 
+      rgba(8, 8, 8, 1) 0%, 
+      rgba(12, 12, 12, 0.98) 25%, 
+      rgba(6, 6, 6, 1) 50%, 
+      rgba(10, 10, 10, 0.99) 75%, 
+      rgba(8, 8, 8, 1) 100%
+    );
+  }
+
+  /* Sophisticated dark card styling */
+  .dashboard-card {
+    @apply bg-gradient-to-br from-card/[0.95] to-card/[0.98] backdrop-blur-xl;
+    @apply border border-border/30 rounded-xl shadow-sm;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark .dashboard-card {
+    @apply bg-gradient-to-br from-card/[0.80] to-card/[0.95] backdrop-blur-xl;
+    @apply border border-white/[0.08] shadow-lg;
+    box-shadow: 
+      0 4px 6px -1px rgba(0, 0, 0, 0.3),
+      0 2px 4px -1px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* Enhanced focus rings for dark mode */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2;
+  }
+
+  .dark .focus-ring {
+    @apply focus-visible:ring-offset-background;
+  }
+
+  /* Sophisticated scrollbar for dark theme */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+    transition: background-color 0.2s ease;
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-border/80;
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Enhanced prose styling for dark mode */
   .prose {
     @apply max-w-none text-foreground;
+  }
+  
+  .dark .prose {
+    color: rgb(245, 245, 245);
   }
   
   .prose h1 {
     @apply text-xl font-bold mb-3 mt-4 text-foreground;
   }
   
+  .dark .prose h1 {
+    color: rgb(248, 248, 248);
+  }
+  
   .prose h2 {
     @apply text-lg font-semibold mb-2 mt-3 text-foreground;
+  }
+  
+  .dark .prose h2 {
+    color: rgb(245, 245, 245);
   }
   
   .prose h3 {
     @apply text-base font-semibold mb-2 mt-3 text-foreground;
   }
   
+  .dark .prose h3 {
+    color: rgb(240, 240, 240);
+  }
+  
   .prose h4 {
     @apply text-sm font-medium mb-1 mt-2 text-muted-foreground;
+  }
+  
+  .dark .prose h4 {
+    color: rgb(180, 180, 180);
   }
   
   .prose ul, .prose ol {
@@ -172,463 +289,308 @@
     @apply text-sm leading-relaxed;
   }
   
+  .dark .prose li {
+    color: rgb(220, 220, 220);
+  }
+  
   .prose p {
     @apply my-2 text-sm leading-relaxed;
+  }
+  
+  .dark .prose p {
+    color: rgb(225, 225, 225);
   }
   
   .prose strong {
     @apply font-semibold text-foreground;
   }
   
+  .dark .prose strong {
+    color: rgb(248, 248, 248);
+  }
+  
   .prose em {
     @apply italic text-muted-foreground;
+  }
+  
+  .dark .prose em {
+    color: rgb(180, 180, 180);
   }
   
   .prose a {
     @apply text-primary hover:text-primary/80 underline underline-offset-2;
   }
   
+  .dark .prose a {
+    color: rgb(96, 165, 250);
+  }
+  
+  .dark .prose a:hover {
+    color: rgb(147, 197, 253);
+  }
+  
   .prose code {
     @apply bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-foreground;
+  }
+  
+  .dark .prose code {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgb(240, 240, 240);
   }
   
   .prose pre {
     @apply bg-muted p-3 rounded-lg overflow-x-auto my-3;
   }
   
+  .dark .prose pre {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  
   .prose pre code {
     @apply bg-transparent p-0 text-xs;
   }
-  
+
   .prose blockquote {
-    @apply border-l-4 border-muted-foreground/30 pl-4 my-3 italic text-muted-foreground;
+    @apply border-l-4 border-primary/30 pl-4 italic text-muted-foreground my-3;
   }
-  
+
+  .dark .prose blockquote {
+    border-left-color: rgba(96, 165, 250, 0.3);
+    color: rgb(180, 180, 180);
+  }
+
   .prose table {
-    @apply w-full border-collapse my-3 text-xs;
+    @apply w-full border-collapse border border-border my-3;
   }
-  
+
+  .dark .prose table {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
   .prose th, .prose td {
-    @apply border border-border px-2 py-1 text-left;
+    @apply border border-border px-3 py-2 text-left text-sm;
   }
-  
+
+  .dark .prose th, .dark .prose td {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
   .prose th {
-    @apply bg-muted font-medium;
-  }
-  
-  /* Chat-specific prose styling */
-  .chat-prose {
-    @apply prose prose-sm max-w-none;
-  }
-  
-  /* Concept explanation specific styling */
-  .concept-explanation .prose h3 {
-    @apply text-lg font-bold text-primary mb-3 mt-0;
-  }
-  
-  .concept-explanation .prose h4 {
-    @apply text-sm font-medium text-primary/80 mb-2 mt-3;
-  }
-  
-  .concept-explanation .prose p {
-    @apply my-2 text-sm leading-relaxed;
-  }
-  
-  .concept-explanation .prose ul {
-    @apply my-2 space-y-1;
-  }
-  
-  .concept-explanation .prose li {
-    @apply text-sm leading-relaxed;
+    @apply bg-muted font-semibold;
   }
 
-  /* Direct markdown styling - bypassing prose issues */
-  .markdown-content {
-    @apply text-sm leading-relaxed;
+  .dark .prose th {
+    background: rgba(255, 255, 255, 0.05);
   }
-  
-  .markdown-content h1 {
-    @apply text-xl font-bold mb-3 mt-4 text-foreground;
-  }
-  
-  .markdown-content h2 {
-    @apply text-lg font-semibold mb-2 mt-3 text-foreground;
-  }
-  
-  .markdown-content h3 {
-    @apply text-base font-semibold mb-2 mt-3 text-foreground;
-  }
-  
-  .markdown-content h4 {
-    @apply text-sm font-medium mb-1 mt-2 text-muted-foreground;
-  }
-  
-  .markdown-content p {
-    @apply my-2 text-sm leading-relaxed;
-  }
-  
-  .markdown-content strong {
-    @apply font-bold text-foreground;
-  }
-  
-  .markdown-content em {
-    @apply italic text-muted-foreground;
-  }
-  
-  .markdown-content ul {
-    @apply my-2 pl-4 space-y-1 list-disc;
-  }
-  
-  .markdown-content ol {
-    @apply my-2 pl-4 space-y-1 list-decimal;
-  }
-  
-  .markdown-content li {
-    @apply text-sm leading-relaxed;
-  }
-  
-  .markdown-content code {
-    @apply bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-foreground;
-  }
-  
-  .markdown-content pre {
-    @apply bg-muted p-3 rounded-lg overflow-x-auto my-3;
-  }
-  
-  .markdown-content pre code {
-    @apply bg-transparent p-0 text-xs;
-  }
-  
-  .markdown-content a {
-    @apply text-primary hover:text-primary/80 underline underline-offset-2;
-  }
-  
-  .markdown-content blockquote {
-    @apply border-l-4 border-muted-foreground/30 pl-4 my-3 italic text-muted-foreground;
-  }
-}
 
-/* Specific context-based styling using CSS custom properties */
-@layer utilities {
-  /* User message styling (primary background) */
+  /* Enhanced chat bubble styling for dark mode */
   .chat-bubble-user .prose,
-  .chat-bubble-user .prose * {
-    color: hsl(var(--primary-foreground));
+  .chat-bubble-user .prose p,
+  .chat-bubble-user .prose li {
+    @apply text-white;
   }
-  
+
   .chat-bubble-user .prose strong {
-    color: hsl(var(--primary-foreground));
-    font-weight: 600;
+    @apply text-white font-semibold;
   }
-  
+
   .chat-bubble-user .prose code {
-    background-color: rgba(255, 255, 255, 0.2);
-    color: hsl(var(--primary-foreground));
+    @apply bg-white/20 text-white;
   }
-  
+
   .chat-bubble-user .prose a {
-    color: hsl(var(--primary-foreground));
-    text-decoration: underline;
+    @apply text-blue-100 hover:text-white;
   }
-  
-  /* Assistant message styling (muted background) */
+
   .chat-bubble-assistant .prose h1,
   .chat-bubble-assistant .prose h2,
   .chat-bubble-assistant .prose h3 {
-    color: hsl(var(--foreground));
+    @apply text-foreground font-semibold;
   }
-  
+
+  .dark .chat-bubble-assistant .prose h1,
+  .dark .chat-bubble-assistant .prose h2,
+  .dark .chat-bubble-assistant .prose h3 {
+    color: rgb(248, 248, 248);
+  }
+
   .chat-bubble-assistant .prose h4 {
-    color: hsl(var(--primary));
+    @apply text-muted-foreground font-medium;
   }
-  
+
   .chat-bubble-assistant .prose strong {
-    color: hsl(var(--foreground));
+    @apply text-foreground font-semibold;
+  }
+
+  .dark .chat-bubble-assistant .prose strong {
+    color: rgb(240, 240, 240);
+  }
+
+  /* Enhanced typography system for dark mode */
+  .editorial-text {
+    @apply font-serif leading-relaxed tracking-wide;
+    font-variation-settings: 'wght' 400;
+    letter-spacing: 0.015em;
+  }
+
+  .dark .editorial-text {
+    color: rgb(245, 245, 245);
+  }
+
+  .system-text {
+    @apply font-sans text-sm leading-normal tracking-normal;
+    font-variation-settings: 'wght' 400;
+    letter-spacing: 0.005em;
+  }
+
+  .dark .system-text {
+    color: rgb(220, 220, 220);
+  }
+
+  /* Enhanced container styling */
+  .editorial-container {
+    @apply max-w-4xl mx-auto px-6 lg:px-8;
+    container-type: inline-size;
+  }
+
+  /* Enhanced spacing utilities */
+  .fluid-padding {
+    @apply px-4 md:px-6 lg:px-8;
+  }
+
+  .fluid-gap {
+    @apply space-y-4 md:space-y-6 lg:space-y-8;
+  }
+
+  /* Sophisticated border utilities for dark mode */
+  .gentle-border {
+    @apply border border-border/50;
+  }
+
+  .dark .gentle-border {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .gentle-border-dark {
+    @apply border border-border/30;
+  }
+
+  .dark .gentle-border-dark {
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+
+  /* Enhanced hover effects for dark mode */
+  .minimal-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .minimal-hover:hover {
+    @apply scale-[1.02] shadow-lg;
+    transform-origin: center;
+  }
+
+  .dark .minimal-hover:hover {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Enhanced spacing utilities */
+  .golden-spacing {
+    @apply space-y-8 md:space-y-12 lg:space-y-16;
+  }
+
+  .golden-padding {
+    @apply py-8 md:py-12 lg:py-16;
+  }
+
+  /* Enhanced typography scale for dark mode */
+  .display-hero {
+    @apply font-display text-display-lg md:text-display-md lg:text-display-lg;
+    @apply tracking-tight leading-none;
+  }
+
+  .dark .display-hero {
+    color: rgb(248, 248, 248);
+  }
+
+  .heading-primary {
+    @apply font-display text-heading-lg md:text-heading-md lg:text-heading-lg;
+    @apply tracking-tight leading-tight;
+  }
+
+  .dark .heading-primary {
+    color: rgb(245, 245, 245);
+  }
+
+  .body-primary {
+    @apply font-sans text-body-md md:text-body-lg;
+    @apply leading-relaxed tracking-normal;
+  }
+
+  .dark .body-primary {
+    color: rgb(225, 225, 225);
+  }
+
+  .caption-soft {
+    @apply font-sans text-caption uppercase tracking-wider;
+    @apply text-muted-foreground font-medium;
+    letter-spacing: 0.08em;
+  }
+
+  .dark .caption-soft {
+    color: rgb(160, 160, 160);
+  }
+
+  /* Enhanced animation utilities */
+  .appear-gently {
+    @apply animate-fade-in;
+  }
+
+  .appear-delayed {
+    @apply animate-slide-up;
+  }
+
+  .float-subtle {
+    @apply animate-float;
+  }
+
+  @keyframes gentle-float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+
+  /* Enhanced insight text styling */
+  .insight-text {
+    @apply text-sm leading-relaxed font-medium;
+  }
+
+  .dark .insight-text {
+    color: rgb(220, 220, 220);
+  }
+
+  .metric-display {
+    @apply font-mono text-lg font-semibold tracking-tight;
+  }
+
+  .dark .metric-display {
+    color: rgb(240, 240, 240);
   }
 }
 
-/* Focus management for better a11y */
-@layer utilities {
-  .focus-ring {
-    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background;
-  }
-  
-  /* Custom scrollbar styling */
-  .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground)) transparent;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground));
-    border-radius: 3px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--foreground));
-  }
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-@keyframes loading-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-    visibility: hidden;
-  }
-}
-
-#page-loading-indicator {
-  animation: loading-fade-out 0.3s ease-out 2s forwards;
-}
-
-#page-loading-indicator img {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-.font-dm-serif {
-  font-family: 'DM Serif Display', serif;
-}
-
-@keyframes gradient-shift {
-  0% {
-    background-position: 0% 50%;
-  }
-  25% {
-    background-position: 100% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  75% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient-shift 8s ease-in-out infinite;
-}
-
-@keyframes message-fade-in {
-  0% {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.message-animation {
-  animation: message-fade-in 0.3s ease-out;
-}
-
-@keyframes input-focus {
-  0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
-  }
-}
-
-.input-focus-animation:focus {
-  animation: input-focus 0.6s ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .delay-100 {
-    animation-delay: 0ms !important;
-  }
-  .delay-300 {
-    animation-delay: 0ms !important;
-  }
-  .delay-700 {
-    animation-delay: 0ms !important;
-  }
-  .delay-1000 {
-    animation-delay: 0ms !important;
-  }
-}
-
-/* 90s Apple + Modern AI Design System */
-
-/* Typography Foundation */
-.editorial-text {
-  font-family: ui-serif, "Charter", "Georgia", "Times New Roman", serif;
-  font-weight: 400;
-  font-optical-sizing: auto;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-
-.system-text {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  font-weight: 400;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-
-/* Editorial Layout */
-.editorial-container {
-  max-width: 800px;
-  margin-inline: auto;
-  padding-inline: clamp(1rem, 4vw, 3rem);
-}
-
-/* Fluid Spacing */
-.fluid-padding {
-  padding: clamp(1rem, 3vw, 2rem);
-}
-
-.fluid-gap {
-  gap: clamp(1rem, 2.5vw, 1.5rem);
-}
-
-/* Subtle Gradients for AI Feel */
-.ai-gradient {
-  background: linear-gradient(135deg, 
-    rgba(255, 255, 255, 0.95) 0%, 
-    rgba(250, 250, 250, 0.98) 100%);
-}
-
-.ai-gradient-dark {
-  background: linear-gradient(135deg, 
-    rgba(15, 15, 15, 0.95) 0%, 
-    rgba(10, 10, 10, 0.98) 100%);
-}
-
-/* Gentle Border Effects */
-.gentle-border {
-  border: 1px solid rgba(0, 0, 0, 0.04);
-}
-
-.gentle-border-dark {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Minimalist Hover States */
-.minimal-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.minimal-hover:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.04);
-}
-
-/* Emotional Spacing - Based on Golden Ratio */
-.golden-spacing {
-  margin-bottom: 1.618rem;
-}
-
-.golden-padding {
-  padding: 1.618rem;
-}
-
-/* Typography Hierarchy */
-.display-hero {
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-  font-weight: 300;
-}
-
-.heading-primary {
-  font-size: clamp(1.5rem, 3vw, 2.25rem);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  font-weight: 400;
-}
-
-.body-primary {
-  font-size: clamp(1rem, 2vw, 1.125rem);
-  line-height: 1.6;
-  letter-spacing: 0;
-  font-weight: 400;
-}
-
-.caption-soft {
-  font-size: 0.875rem;
-  line-height: 1.4;
-  letter-spacing: 0.02em;
-  font-weight: 400;
-  opacity: 0.7;
-}
-
-/* Animation Presets */
-.appear-gently {
-  animation: fade-in 0.6s ease-out;
-}
-
-.appear-delayed {
-  animation: fade-in 0.8s ease-out 0.2s both;
-}
-
-.float-subtle {
-  animation: gentle-float 8s ease-in-out infinite;
-}
-
-@keyframes gentle-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
-
-/* Component-specific styles */
-.dashboard-card {
-  @apply bg-white dark:bg-neutral-900 rounded-lg gentle-border ai-gradient;
-  backdrop-filter: blur(8px);
-}
-
-.insight-text {
-  @apply editorial-text body-primary text-neutral-700 dark:text-neutral-300;
-}
-
-.metric-display {
-  @apply system-text font-medium tracking-tight;
-}
-
-/* Focus states with accessibility */
-.focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-neutral-900;
-}
-
-/* Responsive breakpoints aligned with content */
+/* Enhanced responsive utilities for mobile */
 @media (max-width: 640px) {
   .editorial-container {
-    padding-inline: 1rem;
+    @apply px-4;
   }
   
   .fluid-padding {
-    padding: 1rem;
+    @apply px-3;
   }
 }
 
+/* Enhanced desktop optimizations */
 @media (min-width: 1200px) {
   .editorial-container {
-    max-width: 900px;
+    @apply px-12;
   }
 }

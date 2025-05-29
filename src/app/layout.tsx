@@ -153,6 +153,8 @@ export default async function RootLayout({
         <meta name="build-id" content={VERSION} />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="theme-color" content="#4B9EFF" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#080808" />
+        <meta name="color-scheme" content="light dark" />
         <link rel="manifest" href="/manifest.json" />
         <style
           dangerouslySetInnerHTML={{
@@ -163,6 +165,30 @@ export default async function RootLayout({
               }
               #splash-screen img {
                 animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+              }
+              /* Enhanced dark mode support for splash screen */
+              #splash-screen {
+                background: rgb(255, 255, 255);
+              }
+              @media (prefers-color-scheme: dark) {
+                #splash-screen {
+                  background: rgb(8, 8, 8) !important;
+                }
+              }
+              .dark #splash-screen {
+                background: rgb(8, 8, 8) !important;
+              }
+              /* Ensure immediate dark background without flash */
+              html {
+                background-color: rgb(255, 255, 255);
+              }
+              @media (prefers-color-scheme: dark) {
+                html {
+                  background-color: rgb(8, 8, 8);
+                }
+              }
+              .dark {
+                background-color: rgb(8, 8, 8);
               }
             `,
           }}

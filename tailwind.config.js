@@ -102,6 +102,13 @@ module.exports = {
           900: '#171717',
           950: '#0a0a0a',
         },
+        // Enhanced sophisticated dark palette
+        slate: {
+          950: '#020617',
+        },
+        zinc: {
+          950: '#09090b',
+        },
         // Keep existing brand colors
         brand: "hsl(var(--brand))",
         "brand-foreground": "hsl(var(--brand-foreground))",
@@ -164,6 +171,10 @@ module.exports = {
       },
       backdropBlur: {
         'subtle': '8px',
+      },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
     },
   },

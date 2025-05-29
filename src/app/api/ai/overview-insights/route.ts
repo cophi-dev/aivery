@@ -105,28 +105,30 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
     }
     
     // Post-filter workouts to make sure they fall within the actual requested day
-    // Convert all dates to UTC midnight for comparison
-    const startUtc = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
-    const endUtc = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
-    
-    console.log('[overview-insights] Using UTC comparison dates:', {
-        startUtc: startUtc.toISOString(),
-        endUtc: endUtc.toISOString()
-    });
-    
+    // Convert all dates to the same timezone for accurate comparison
     const filteredWorkouts = workouts.filter(workout => {
         const workoutDate = new Date(workout.date);
-        const workoutUtc = new Date(Date.UTC(workoutDate.getUTCFullYear(), workoutDate.getUTCMonth(), workoutDate.getUTCDate(), 
-                                           workoutDate.getUTCHours(), workoutDate.getUTCMinutes(), workoutDate.getUTCSeconds()));
-        return workoutUtc >= startUtc && workoutUtc <= endUtc;
+        
+        // Check if workout falls within the exact requested date range
+        const isWithinRange = workoutDate >= startDate && workoutDate <= endDate;
+        
+        if (!isWithinRange) {
+            console.log(`[overview-insights] Excluding workout from ${workoutDate.toISOString()} (outside range ${startDate.toISOString()} to ${endDate.toISOString()})`);
+        }
+        
+        return isWithinRange;
     });
 
-    // Filter PRs to the actual requested period
+    // Filter PRs to the actual requested period using the same logic
     const filteredPRs = exercisePRs.filter(pr => {
         const prDate = new Date(pr.date);
-        const prUtc = new Date(Date.UTC(prDate.getUTCFullYear(), prDate.getUTCMonth(), prDate.getUTCDate(),
-                                      prDate.getUTCHours(), prDate.getUTCMinutes(), prDate.getUTCSeconds()));
-        return prUtc >= startUtc && prUtc <= endUtc;
+        const isWithinRange = prDate >= startDate && prDate <= endDate;
+        
+        if (!isWithinRange) {
+            console.log(`[overview-insights] Excluding PR from ${prDate.toISOString()} (outside range ${startDate.toISOString()} to ${endDate.toISOString()})`);
+        }
+        
+        return isWithinRange;
     });
     
     console.log(`[overview-insights] After filtering: ${filteredWorkouts.length} workouts in actual period`);
@@ -217,14 +219,14 @@ async function getWorkoutSummaryForPeriod(userId: string, startDate: Date, endDa
     });
 
     return {
-        count: totalWorkouts,
+        totalWorkouts,
         totalDurationSeconds: totalDuration,
         totalDistanceMeters: totalDistance,
         totalVolumeKg: totalVolume,
         types: Array.from(workoutTypes),
         latestWorkoutDate: latestWorkoutDate,
-        workouts: workoutSummaries,
-        recentPRs: recentPRs
+        workoutSummaries,
+        recentPRs
     };
 }
 
@@ -256,41 +258,44 @@ export async function GET(request: NextRequest) {
         // DEBUG: Log the raw date strings
         console.log('[overview-insights] Raw date parameters:', { startDateStr, endDateStr, requestTimestamp });
         
-        // Parse dates and ensure they're in UTC
+        // Parse dates directly from the ISO strings sent by the client
+        // These already contain the correct timezone and range information
         const startDate = new Date(startDateStr);
         const endDate = new Date(endDateStr);
         
-        // Set to start and end of the UTC day
-        const utcStartDate = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate(), 0, 0, 0, 0));
-        const utcEndDate = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
+        // Validate the parsed dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            console.error('[overview-insights] Invalid date parameters:', { startDateStr, endDateStr });
+            return NextResponse.json({ error: "Invalid date parameters" }, { status: 400 });
+        }
         
         // DEBUG: Log the parsed date objects
-        console.log('[overview-insights] Parsed UTC date objects:', { 
-            startDate: utcStartDate.toISOString(),
-            endDate: utcEndDate.toISOString(),
-            originalStart: startDate.toISOString(),
-            originalEnd: endDate.toISOString()
+        console.log('[overview-insights] Using client-provided date range:', { 
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            startLocal: startDate.toString(),
+            endLocal: endDate.toString()
         });
         
-        const daysDiff = differenceInDays(utcEndDate, utcStartDate);
+        const daysDiff = differenceInDays(endDate, startDate);
         
         const periodType = daysDiff <= 1 ? 'daily' : daysDiff <= 7 ? 'weekly' : 'monthly';
-        const isOngoingPeriod = isFuture(utcEndDate) || isToday(utcEndDate);
+        const isOngoingPeriod = isFuture(endDate) || isToday(endDate);
 
-        const [prevStartDate, prevEndDate] = getPreviousPeriodDates(utcStartDate, utcEndDate, periodType);
+        const [prevStartDate, prevEndDate] = getPreviousPeriodDates(startDate, endDate, periodType);
 
         // Cache check
         const expandedStartDate = new Date(Date.UTC(
-            utcStartDate.getUTCFullYear(),
-            utcStartDate.getUTCMonth(),
-            utcStartDate.getUTCDate() - 2, // 2 days before
+            startDate.getUTCFullYear(),
+            startDate.getUTCMonth(),
+            startDate.getUTCDate() - 2, // 2 days before
             0, 0, 0, 0 // Start of day in UTC
         ));
         
         const expandedEndDate = new Date(Date.UTC(
-            utcEndDate.getUTCFullYear(),
-            utcEndDate.getUTCMonth(),
-            utcEndDate.getUTCDate() + 2, // 2 days after
+            endDate.getUTCFullYear(),
+            endDate.getUTCMonth(),
+            endDate.getUTCDate() + 2, // 2 days after
             23, 59, 59, 999 // End of day in UTC
         ));
         
@@ -309,7 +314,7 @@ export async function GET(request: NextRequest) {
         const cachedInsight = await ActivityInsightModel.findOne({
             userId: new ObjectId(userId),
             periodType: periodType,
-            periodStartDate: utcStartDate
+            periodStartDate: startDate
         }).lean<IActivityInsight>();
         console.log('[overview-insights-TRACE] Finished attempting to find cached insight. Found:', cachedInsight ? `Insight for ${cachedInsight.periodStartDate}` : 'null');
 
@@ -400,18 +405,36 @@ export async function GET(request: NextRequest) {
         try {
             console.log('[overview-insights-TRACE] Attempting to get workout summaries.');
             const [periodSummary, previousPeriodSummary] = await Promise.all([
-                getWorkoutSummaryForPeriod(userId, utcStartDate, utcEndDate),
+                getWorkoutSummaryForPeriod(userId, startDate, endDate),
                 getWorkoutSummaryForPeriod(userId, prevStartDate, prevEndDate)
             ]);
             console.log('[overview-insights-TRACE] Successfully fetched workout summaries.');
-            // console.log('[overview-insights-TRACE] Current period summary:', JSON.stringify(periodSummary, null, 2).substring(0, 500) + '...');
-            // console.log('[overview-insights-TRACE] Previous period summary:', JSON.stringify(previousPeriodSummary, null, 2).substring(0, 500) + '...');
+            
+            // DEBUG: Log exactly what data we're using for insights
+            console.log('[overview-insights] DATA VERIFICATION:', {
+                requestedPeriod: `${startDate.toISOString()} to ${endDate.toISOString()}`,
+                workoutsFound: periodSummary.workoutSummaries?.map((w: any) => ({
+                    type: w.type,
+                    date: w.date,
+                    durationSeconds: w.durationSeconds,
+                    volumeKg: w.volumeKg
+                })) || [],
+                totalWorkouts: periodSummary.totalWorkouts,
+                totalVolume: periodSummary.totalVolumeKg,
+                recentPRs: periodSummary.recentPRs?.map((pr: any) => ({
+                    description: pr.description,
+                    date: pr.date
+                })) || []
+            });
             
             // Make these variables mutable so they can be modified by weekly view logic
             let currentPeriodSummary = periodSummary;
-            const formattedStartDate = formatDate(utcStartDate, 'MMM d');
+            const formattedStartDate = formatDate(startDate, 'MMM d');
             let currentPeriodJSON = JSON.stringify(currentPeriodSummary, null, 2);
-
+            
+            // console.log('[overview-insights-TRACE] Current period summary:', JSON.stringify(currentPeriodSummary, null, 2).substring(0, 500) + '...');
+            // console.log('[overview-insights-TRACE] Previous period summary:', JSON.stringify(previousPeriodSummary, null, 2).substring(0, 500) + '...');
+            
             console.log('[overview-insights-TRACE] Constructing system prompt for Grok.');
             let systemPrompt = `You're Aivery, ${session.user.nickname || session.user.name || 'there'}'s fitness buddy who's been tracking their journey. You know their patterns, celebrate their wins, and notice the small things that matter.
 
@@ -594,7 +617,7 @@ Output Format: Respond ONLY with a valid JSON object matching the structure abov
                     {
                         userId: new ObjectId(userId),
                         periodType: periodType,
-                        periodStartDate: utcStartDate
+                        periodStartDate: startDate
                     },
                     {
                         $set: {

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, Activity, Dumbbell, Ruler, Clock, Route, Weight, ChevronDown, ChevronUp, Heart, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, Activity, Dumbbell, Ruler, Clock, Route, Weight, ChevronDown, ChevronUp, Heart, Zap, LucidePlus } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData, SetData } from '@/types/db';
 import { formatDuration, formatDistance, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
 import { MetricContent } from '@/components/ui/metric-card';
@@ -19,6 +19,8 @@ import { PRBadge } from "@/components/ui/pr-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Settings2 } from "lucide-react";
 import { usePRNotification } from '@/components/providers/pr-notification-provider';
+import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 // Helper to format date for display and API calls
 const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
@@ -198,111 +200,235 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     );
 
     return (
-        <Card className="mb-6 overflow-hidden bg-[#58a3ff]/[0.02] hover:bg-[#58a3ff]/[0.04] transition-all duration-300 border-0 shadow-none">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            whileHover={{ scale: 1.01 }}
+        >
+            <Card className="overflow-hidden bg-gradient-to-br from-blue-50/50 to-indigo-50/50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200/50 dark:border-blue-800/30 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
             <CardHeader 
-                className="pb-2 cursor-pointer"
+                    className="pb-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Activity className="h-5 w-5 text-[#58a3ff]" />
-                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                        <div className="flex items-center gap-3">
+                            <motion.div 
+                                className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm"
+                                whileHover={{ scale: 1.1 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <Activity className="h-5 w-5 text-white" />
+                            </motion.div>
+                            <div>
+                                <CardTitle className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                    {workout.name}
+                                </CardTitle>
+                                <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">
+                                    {format(new Date(workout.date), 'h:mm a')}
+                                </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                        {workout.records && workout.records.length > 0 && (
-                            <PRBadge isNew={hasNewDistancePR || hasNewPacePR} />
-                        )}
-                        <div className="h-8 w-8 rounded-md flex items-center justify-center transition-colors hover:bg-[#58a3ff]/5">
-                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                         </div>
+                        <div className="flex items-center gap-3">
+                        {workout.records && workout.records.length > 0 && (
+                                <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                                >
+                            <PRBadge isNew={hasNewDistancePR || hasNewPacePR} />
+                                </motion.div>
+                        )}
+                            <motion.div 
+                                className="w-8 h-8 rounded-full bg-white/50 dark:bg-neutral-800/50 flex items-center justify-center transition-colors hover:bg-white/80 dark:hover:bg-neutral-700/50"
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </motion.div>
                     </div>
                 </div>
             </CardHeader>
-            <CardContent>
+                <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                        <Clock className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
-                        <span className="text-xs text-muted-foreground">Duration</span>
-                    </div>
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                        <Route className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                        <div className="flex items-center gap-1">
-                            <span className="text-base font-medium mb-1">{distanceInKm.toFixed(1)} km</span>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Clock className="h-5 w-5 mb-3 text-blue-600 dark:text-blue-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {formatDuration(workout.duration)}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Duration
+                            </span>
+                        </motion.div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Route className="h-5 w-5 mb-3 text-blue-600 dark:text-blue-400" />
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                    {distanceInKm.toFixed(1)} km
+                                </span>
                             {workout.records?.some(r => r.type === 'longestRun') && (
                                 <PRBadge size="sm" className="mb-1" isNew={hasNewDistancePR} />
                             )}
                         </div>
-                        <span className="text-xs text-muted-foreground">Distance</span>
-                    </div>
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                        <Activity className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                        <div className="flex items-center gap-1">
-                            <span className="text-base font-medium mb-1">{pace}</span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Distance
+                            </span>
+                        </motion.div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Activity className="h-5 w-5 mb-3 text-blue-600 dark:text-blue-400" />
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                    {pace}
+                                </span>
                             {workout.records?.some(r => r.type === 'fastest5kPace') && (
                                 <PRBadge size="sm" className="mb-1" isNew={hasNewPacePR} />
                             )}
                         </div>
-                        <span className="text-xs text-muted-foreground">Pace (min/km)</span>
-                    </div>
-                    <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                        <Zap className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                        <span className="text-base font-medium mb-1">{maxSpeed ? `${maxSpeed.toFixed(1)} km/h` : '--'}</span>
-                        <span className="text-xs text-muted-foreground">Max Speed</span>
-                    </div>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Pace
+                            </span>
+                        </motion.div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Zap className="h-5 w-5 mb-3 text-blue-600 dark:text-blue-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {maxSpeed ? `${maxSpeed.toFixed(1)}` : '--'}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Max Speed (km/h)
+                            </span>
+                        </motion.div>
                 </div>
 
                 {isExpanded && (
-                    <>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            className="space-y-6"
+                        >
+                            {(avgHeartRate || maxHeartRate || elevationGain) && (
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                             {avgHeartRate && (
-                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                                    <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                                    <span className="text-base font-medium mb-1">{Math.round(avgHeartRate)} bpm</span>
-                                    <span className="text-xs text-muted-foreground">Avg Heart Rate</span>
-                                </div>
+                                        <motion.div 
+                                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.1 }}
+                                        >
+                                            <Heart className="h-5 w-5 mb-3 text-red-500" />
+                                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                                {Math.round(avgHeartRate)}
+                                            </span>
+                                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                                Avg HR
+                                            </span>
+                                        </motion.div>
                             )}
                             {maxHeartRate && (
-                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                                    <Heart className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                                    <span className="text-base font-medium mb-1">{Math.round(maxHeartRate)} bpm</span>
-                                    <span className="text-xs text-muted-foreground">Max Heart Rate</span>
-                                </div>
+                                        <motion.div 
+                                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.2 }}
+                                        >
+                                            <Heart className="h-5 w-5 mb-3 text-red-600" />
+                                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                                {Math.round(maxHeartRate)}
+                                            </span>
+                                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                                Max HR
+                                            </span>
+                                        </motion.div>
                             )}
                             {elevationGain && (
-                                <div className="flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-black border border-[#58a3ff]/[0.08]">
-                                    <Ruler className="h-5 w-5 mb-2 text-[#58a3ff]" />
-                                    <span className="text-base font-medium mb-1">{Math.round(elevationGain)}m</span>
-                                    <span className="text-xs text-muted-foreground">Elevation Gain</span>
-                                </div>
+                                        <motion.div 
+                                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.3 }}
+                                        >
+                                            <Ruler className="h-5 w-5 mb-3 text-emerald-600 dark:text-emerald-400" />
+                                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                                {Math.round(elevationGain)}m
+                                            </span>
+                                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                                Elevation
+                                            </span>
+                                        </motion.div>
                             )}
                         </div>
+                            )}
+                            
                         {workout.notes && (
-                            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
-                                <p className="text-sm text-muted-foreground">{workout.notes}</p>
-                            </div>
+                                <motion.div 
+                                    className="p-6 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/50 dark:border-blue-800/30"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.4 }}
+                                >
+                                    <p className="text-sm text-neutral-700 dark:text-neutral-300 italic leading-relaxed">
+                                        "{workout.notes}"
+                                    </p>
+                                </motion.div>
                         )}
+                            
                         {workout.aiHighlight && (
-                            <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-[#58a3ff]/5 to-[#58a3ff]/5 border border-[#58a3ff]/10">
-                                <p className="text-sm font-medium italic text-[#58a3ff]/90 leading-relaxed">
-                                    <span className="block mb-1">{getHighlightIcon(workout.aiHighlight)} “{workout.aiHighlight}”</span>
-                                    <span className="text-xs not-italic text-muted-foreground">– Aivery</span>
+                                <motion.div 
+                                    className="p-6 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/50 dark:border-blue-800/30"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.5 }}
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-xl">{getHighlightIcon(workout.aiHighlight)}</span>
+                                        <div>
+                                            <p className="text-sm font-medium text-blue-700 dark:text-blue-300 leading-relaxed italic">
+                                                "{workout.aiHighlight}"
+                                            </p>
+                                            <p className="text-xs text-blue-500 dark:text-blue-400 mt-2 font-medium">
+                                                — Aivery
                                 </p>
                             </div>
+                                    </div>
+                                </motion.div>
                         )}
-                        <div className="mt-6 flex justify-end">
+                            
+                            <motion.div 
+                                className="flex justify-end"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.6 }}
+                            >
                             <Button 
                                 variant="outline" 
-                                className="border-[#58a3ff]/20 text-[#58a3ff] hover:bg-[#58a3ff]/5"
+                                    className="bg-white/50 dark:bg-neutral-800/50 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 font-medium tracking-tight transition-all duration-300"
                                 onClick={() => router.push(`/workouts/${workout._id}`)}
                             >
                                 View Details
                             </Button>
-                        </div>
-                    </>
+                            </motion.div>
+                        </motion.div>
                 )}
             </CardContent>
         </Card>
+        </motion.div>
     );
 };
 
@@ -407,54 +533,120 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
     };
 
     return (
-        <Card className="mb-6 overflow-hidden bg-[#fa9f7b]/[0.02] hover:bg-[#fa9f7b]/[0.04] transition-all duration-300 border-0 shadow-none">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            whileHover={{ scale: 1.01 }}
+        >
+            <Card className="overflow-hidden bg-gradient-to-br from-orange-50/50 to-red-50/50 dark:from-orange-950/30 dark:to-red-950/30 border border-orange-200/50 dark:border-orange-800/30 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
             <CardHeader 
-                className="pb-2 cursor-pointer"
+                    className="pb-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Dumbbell className="h-4 w-4 sm:h-5 sm:w-5 text-[#fa9f7b]" />
-                        <CardTitle className="text-base sm:text-lg font-medium">{workout.name}</CardTitle>
+                        <div className="flex items-center gap-3">
+                            <motion.div 
+                                className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shadow-sm"
+                                whileHover={{ scale: 1.1 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <Dumbbell className="h-5 w-5 text-white" />
+                            </motion.div>
+                            <div>
+                                <CardTitle className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                    {workout.name}
+                                </CardTitle>
+                                <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">
+                                    {format(new Date(workout.date), 'h:mm a')}
+                                </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                        {workout.records && workout.records.length > 0 && (
-                            <PRBadge />
-                        )}
-                        <div className="h-8 w-8 rounded-md flex items-center justify-center transition-colors hover:bg-[#fa9f7b]/5">
-                            {isExpanded ? <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4" /> : <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />}
                         </div>
+                        <div className="flex items-center gap-3">
+                        {workout.records && workout.records.length > 0 && (
+                                <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                                >
+                            <PRBadge />
+                                </motion.div>
+                        )}
+                            <motion.div 
+                                className="w-8 h-8 rounded-full bg-white/50 dark:bg-neutral-800/50 flex items-center justify-center transition-colors hover:bg-white/80 dark:hover:bg-neutral-700/50"
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </motion.div>
                     </div>
                 </div>
             </CardHeader>
-            <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Clock className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
-                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{formatDuration(workout.duration)}</span>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground">Duration</span>
-                    </div>
-                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Weight className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
-                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{formatVolume(totalVolume)}</span>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground">Volume</span>
-                    </div>
-                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Activity className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
-                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{totalReps}</span>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground">Total Reps</span>
-                    </div>
-                    <div className="flex flex-col items-center p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                        <Dumbbell className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2 text-[#fa9f7b]" />
-                        <span className="text-sm sm:text-base font-medium mb-0.5 sm:mb-1">{totalSets}</span>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground">Sets</span>
-                    </div>
+                <CardContent className="space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Clock className="h-5 w-5 mb-3 text-orange-600 dark:text-orange-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {formatDuration(workout.duration)}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Duration
+                            </span>
+                        </motion.div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Weight className="h-5 w-5 mb-3 text-orange-600 dark:text-orange-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {formatVolume(totalVolume)}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Volume
+                            </span>
+                        </motion.div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Activity className="h-5 w-5 mb-3 text-orange-600 dark:text-orange-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {totalReps}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Total Reps
+                            </span>
+                        </motion.div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Dumbbell className="h-5 w-5 mb-3 text-orange-600 dark:text-orange-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {totalSets}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Sets
+                            </span>
+                        </motion.div>
                 </div>
 
                 {isExpanded && (
-                    <>
-                        <div className="space-y-3 sm:space-y-4 mt-4 sm:mt-6">
-                            {workout.workoutExercises?.map((exercise) => {
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            className="space-y-4"
+                        >
+                            {workout.workoutExercises?.map((exercise, index) => {
                                 const exerciseReps = exercise.sets?.reduce((acc, set) => acc + (set.reps || 0), 0) || 0;
                                 // Calculate volume for bodyweight and weighted exercises
                                 const isBodyweight = estimateBodyweightForExercise(exercise.exerciseId.name) > 0;
@@ -473,58 +665,100 @@ const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => 
                                 );
                                 
                                 return (
-                                    <div key={exercise._id} className="p-3 sm:p-6 rounded-2xl bg-white dark:bg-black border border-[#fa9f7b]/[0.08]">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm sm:text-base font-medium">{exercise.exerciseId.name}</span>
-                                                {hasPR && <PRBadge size="sm" />}
+                                    <motion.div 
+                                        key={exercise._id} 
+                                        className="p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.1 + (index * 0.1) }}
+                                        whileHover={{ y: -2 }}
+                                    >
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-400 flex items-center justify-center">
+                                                    <Dumbbell className="w-4 h-4 text-white" />
                                             </div>
-                                            <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-muted-foreground">
-                                                <span>{exerciseReps} reps</span>
-                                                <span>•</span>
-                                                <span>{formatVolume(exerciseVolume)}</span>
+                                                <div>
+                                                    <span className="text-base font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                                        {exercise.exerciseId.name}
+                                                    </span>
+                                                    {hasPR && (
+                                                        <motion.div
+                                                            initial={{ scale: 0 }}
+                                                            animate={{ scale: 1 }}
+                                                            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                                                            className="inline-block ml-2"
+                                                        >
+                                                            <PRBadge size="sm" />
+                                                        </motion.div>
+                                                    )}
                                             </div>
                                         </div>
-                                        <div className="space-y-1 sm:space-y-2">
-                                            {exercise.sets?.map((set: SetData, index) => {
+                                            <div className="flex items-center gap-4 text-sm text-neutral-500 dark:text-neutral-400">
+                                                <span className="font-medium">{exerciseReps} reps</span>
+                                                <span className="font-medium">{formatVolume(exerciseVolume)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {exercise.sets?.map((set: SetData, setIndex) => {
                                                 const isBodyweight = estimateBodyweightForExercise(exercise.exerciseId.name) > 0;
                                                 return (
-                                                    <div key={index} className="text-xs text-muted-foreground flex items-center space-x-3">
+                                                    <div key={setIndex} className="flex items-center justify-between py-2 px-4 rounded-lg bg-gradient-to-r from-orange-50/50 to-red-50/50 dark:from-orange-950/20 dark:to-red-950/20">
+                                                        <div className="flex items-center gap-3 text-sm">
+                                                            <span className="w-6 h-6 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-xs font-medium text-orange-700 dark:text-orange-300">
+                                                                {setIndex + 1}
+                                                            </span>
                                                         {isBodyweight ? (
-                                                            <span>{set.reps} reps</span>
+                                                                <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                                                                    {set.reps} reps
+                                                                </span>
                                                         ) : (
-                                                            <>
-                                                                <span>{set.weight}kg</span>
-                                                                <span>×</span>
-                                                                <span>{set.reps} reps</span>
-                                                            </>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                                                                        {set.weight}kg
+                                                                    </span>
+                                                                    <span className="text-neutral-500 dark:text-neutral-400">×</span>
+                                                                    <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                                                                        {set.reps}
+                                                                    </span>
+                                                                </div>
                                                         )}
-                                                        {set.notes && <span className="text-primary/60">• {set.notes}</span>}
+                                                        </div>
+                                                        {set.notes && (
+                                                            <span className="text-xs text-orange-600 dark:text-orange-400 italic">
+                                                                {set.notes}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
                                         </div>
-                                    </div>
+                                    </motion.div>
                                 );
                             })}
-                        </div>
-                        <div className="mt-6 flex justify-end">
+                            <motion.div 
+                                className="flex justify-end"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.6 }}
+                            >
                             <Button 
                                 variant="outline" 
-                                className="border-[#fa9f7b]/20 text-[#fa9f7b] hover:bg-[#fa9f7b]/5"
+                                    className="bg-white/50 dark:bg-neutral-800/50 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/50 font-medium tracking-tight transition-all duration-300"
                                 onClick={() => router.push(`/workouts/${workout._id}`)}
                             >
                                 View Details
                             </Button>
-                        </div>
-                    </>
+                            </motion.div>
+                        </motion.div>
                 )}
             </CardContent>
         </Card>
+        </motion.div>
     );
 };
 
-// Add this new component before the WorkoutDailyView component
+// Enhanced WorkoutGroup component with sophisticated design
 const WorkoutGroup = ({ type, workouts }: { type: string, workouts: WorkoutWithExercises[] }) => {
     const { colorClasses } = getWorkoutTypeStyle(type);
     const baseColor = colorClasses.includes('text-[#58a3ff]') ? '#58a3ff' : 
@@ -532,36 +766,71 @@ const WorkoutGroup = ({ type, workouts }: { type: string, workouts: WorkoutWithE
                      '#94a3b8';
 
     return (
-        <div className="relative mb-8 last:mb-0">
-            {/* Group Header */}
-            <div className="sticky top-[7.5rem] z-[5] mb-4 flex items-center gap-2 bg-background/80 backdrop-blur-lg py-2">
-                <div className={cn(
-                    "text-sm font-medium capitalize flex items-center gap-2",
-                    colorClasses
-                )}>
-                    <div className={cn(
-                        "h-2 w-2 rounded-full",
+        <motion.div 
+            className="space-y-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+        >
+            {/* Enhanced Group Header */}
+            <motion.div 
+                className="sticky top-[7.5rem] z-[5] bg-background/95 backdrop-blur-xl py-4"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2, duration: 0.5 }}
+            >
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                        <motion.div 
+                            className={cn(
+                                "w-3 h-3 rounded-full",
                         colorClasses.replace('text-', 'bg-')
-                    )} />
+                            )}
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ delay: 0.3, duration: 0.3, type: "spring", stiffness: 200 }}
+                        />
+                        <div>
+                            <h3 className={cn(
+                                "text-lg font-serif tracking-tight capitalize",
+                                "text-neutral-900 dark:text-neutral-100"
+                            )}>
                     {type}
-                    <span className="text-muted-foreground font-normal">
-                        ({workouts.length} {workouts.length === 1 ? 'workout' : 'workouts'})
-                    </span>
+                            </h3>
+                            <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">
+                                {workouts.length} {workouts.length === 1 ? 'session' : 'sessions'}
+                            </p>
                 </div>
             </div>
+                </div>
+            </motion.div>
 
-            {/* Workouts Grid */}
-            <div className="space-y-4">
+            {/* Enhanced Workouts Grid */}
+            <div className="space-y-6">
                 {workouts.map((workout, index) => (
-                    <div 
+                    <motion.div 
                         key={workout._id} 
-                        className={cn(
-                            "relative rounded-xl overflow-hidden",
-                            "before:absolute before:inset-0 before:pointer-events-none",
-                            `before:border-l-[4px] before:border-[${baseColor}]`,
-                            "transition-all duration-300"
-                        )}
+                        className="relative"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ 
+                            delay: 0.4 + (index * 0.1), 
+                            duration: 0.5, 
+                            ease: "easeOut" 
+                        }}
+                        whileHover={{ 
+                            y: -2,
+                            transition: { duration: 0.2 }
+                        }}
                     >
+                        {/* Subtle left border accent */}
+                        <div className={cn(
+                            "absolute left-0 top-0 bottom-0 w-1 rounded-full",
+                            colorClasses.replace('text-', 'bg-'),
+                            "opacity-30"
+                        )} />
+                        
+                        <div className="pl-6">
                         {workout.type === 'running' ? (
                             <RunningWorkoutCard workout={workout} />
                         ) : workout.type === 'strength' ? (
@@ -570,13 +839,14 @@ const WorkoutGroup = ({ type, workouts }: { type: string, workouts: WorkoutWithE
                             <DefaultWorkoutCard workout={workout} />
                         )}
                     </div>
+                    </motion.div>
                 ))}
             </div>
-        </div>
+        </motion.div>
     );
 };
 
-// Update the DefaultWorkoutCard component to match the new style
+// Enhanced DefaultWorkoutCard component to match the sophisticated style
 const DefaultWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
@@ -586,84 +856,116 @@ const DefaultWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
                      '#94a3b8';
 
     return (
-        <Card className={cn(
-            "overflow-hidden transition-all duration-300",
-            "border-0 shadow-none",
-            `bg-[${baseColor}]/[0.02]`,
-            `hover:bg-[${baseColor}]/[0.04]`,
-            "relative"
-        )}>
+        <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            whileHover={{ scale: 1.01 }}
+        >
+            <Card className="overflow-hidden bg-gradient-to-br from-neutral-50/50 to-slate-50/50 dark:from-neutral-950/30 dark:to-slate-950/30 border border-neutral-200/50 dark:border-neutral-800/30 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
             <CardHeader 
-                className="pb-2 cursor-pointer"
+                    className="pb-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Activity className={cn("h-5 w-5", colorClasses)} />
-                        <CardTitle className="text-lg font-medium">{workout.name}</CardTitle>
+                        <div className="flex items-center gap-3">
+                            <motion.div 
+                                className="w-10 h-10 rounded-full bg-gradient-to-br from-neutral-500 to-slate-600 flex items-center justify-center shadow-sm"
+                                whileHover={{ scale: 1.1 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <Activity className="h-5 w-5 text-white" />
+                            </motion.div>
+                            <div>
+                                <CardTitle className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                    {workout.name}
+                                </CardTitle>
+                                <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">
+                                    {format(new Date(workout.date), 'h:mm a')}
+                                </p>
                     </div>
-                    <div className={cn(
-                        "h-8 w-8 rounded-md flex items-center justify-center transition-colors",
-                        `hover:bg-[${baseColor}]/5`
-                    )}>
+                        </div>
+                        <motion.div 
+                            className="w-8 h-8 rounded-full bg-white/50 dark:bg-neutral-800/50 flex items-center justify-center transition-colors hover:bg-white/80 dark:hover:bg-neutral-700/50"
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </div>
+                        </motion.div>
                 </div>
             </CardHeader>
-            <CardContent>
+                <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className={cn(
-                        "flex flex-col items-center p-6 rounded-2xl",
-                        "bg-white dark:bg-black border",
-                        `border-[${baseColor}]/[0.08]`
-                    )}>
-                        <Clock className={cn("h-5 w-5 mb-2", colorClasses)} />
-                        <span className="text-base font-medium mb-1">{formatDuration(workout.duration)}</span>
-                        <span className="text-xs text-muted-foreground">Duration</span>
-                    </div>
+                        <motion.div 
+                            className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Clock className="h-5 w-5 mb-3 text-neutral-600 dark:text-neutral-400" />
+                            <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
+                                {formatDuration(workout.duration)}
+                            </span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                Duration
+                            </span>
+                        </motion.div>
                     {workout.distance && (
-                        <div className={cn(
-                            "flex flex-col items-center p-6 rounded-2xl",
-                            "bg-white dark:bg-black border",
-                            `border-[${baseColor}]/[0.08]`
-                        )}>
-                            <Route className={cn("h-5 w-5 mb-2", colorClasses)} />
-                            <span className="text-base font-medium mb-1">
+                            <motion.div 
+                                className="flex flex-col items-center p-6 rounded-2xl bg-white/70 dark:bg-neutral-800/50 backdrop-blur-sm border border-white/50 dark:border-neutral-700/50 shadow-sm"
+                                whileHover={{ y: -2 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <Route className="h-5 w-5 mb-3 text-neutral-600 dark:text-neutral-400" />
+                                <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
                                 {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
                             </span>
-                            <span className="text-xs text-muted-foreground">Distance</span>
-                        </div>
+                                <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
+                                    Distance
+                                </span>
+                            </motion.div>
                     )}
                 </div>
 
-                {isExpanded && workout.notes && (
-                    <div className={cn(
-                        "mt-6 p-4 rounded-xl border",
-                        `bg-[${baseColor}]/[0.05]`,
-                        `border-[${baseColor}]/[0.1]`
-                    )}>
-                        <p className="text-sm text-muted-foreground">{workout.notes}</p>
-                    </div>
+                    {isExpanded && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            className="space-y-6"
+                        >
+                            {workout.notes && (
+                                <motion.div 
+                                    className="p-6 rounded-2xl bg-gradient-to-br from-neutral-50/80 to-slate-50/80 dark:from-neutral-950/40 dark:to-slate-950/40 border border-neutral-200/50 dark:border-neutral-800/30"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.2 }}
+                                >
+                                    <p className="text-sm text-neutral-700 dark:text-neutral-300 italic leading-relaxed">
+                                        "{workout.notes}"
+                                    </p>
+                                </motion.div>
                 )}
 
-                {isExpanded && (
-                    <div className="mt-6 flex justify-end">
+                            <motion.div 
+                                className="flex justify-end"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.4 }}
+                            >
                         <Button 
                             variant="outline" 
-                            className={cn(
-                                "border-opacity-20 hover:bg-opacity-5",
-                                colorClasses,
-                                `border-[${baseColor}]`,
-                                `hover:bg-[${baseColor}]`
-                            )}
+                                    className="bg-white/50 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-950/50 font-medium tracking-tight transition-all duration-300"
                             onClick={() => router.push(`/workouts/${workout._id}`)}
                         >
                             View Details
                         </Button>
-                    </div>
+                            </motion.div>
+                        </motion.div>
                 )}
             </CardContent>
         </Card>
+        </motion.div>
     );
 };
 
@@ -881,22 +1183,32 @@ export default function WorkoutDailyView() {
     const workoutsForDisplay = dailyMetrics?.workouts || [];
 
     return (
-        <div className="space-y-6">
-            {/* Date Scroller - Now with frosted glass effect and session indicators */}
-            <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-lg border-b pb-4">
-                <div className="flex items-center space-x-2">
+        <motion.div 
+            className="space-y-12"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+        >
+            {/* Enhanced Date Scroller with sophisticated design */}
+            <motion.div 
+                className="sticky top-0 z-10 bg-background/95 backdrop-blur-xl border-b border-neutral-200/50 dark:border-neutral-800/50 pb-6"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+            >
+                <div className="flex items-center justify-between gap-4">
                     <Button 
                         variant="ghost" 
                         size="icon" 
                         onClick={() => shiftView(-7)} 
                         aria-label="Previous week"
-                        className="hover:bg-primary/5"
+                        className="w-10 h-10 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all duration-300"
                     >
-                        <ChevronLeft className="h-5 w-5" />
+                        <ChevronLeft className="h-4 w-4" />
                     </Button>
 
-                    <ScrollArea className="flex-grow w-full whitespace-nowrap rounded-md">
-                        <div className="flex justify-center space-x-2 p-2">
+                    <ScrollArea className="flex-grow w-full">
+                        <div className="flex justify-center gap-3 px-4">
                             {dateRange.map(date => {
                                 const dateStr = formatDateKey(date);
                                 const isSelected = isSameDay(date, selectedDate);
@@ -906,53 +1218,61 @@ export default function WorkoutDailyView() {
                                 const workoutTypes = Array.from(new Set(workoutsOnDate.map(w => w.type)));
 
                                 return (
-                                    <Button
+                                    <motion.div
                                         key={dateStr}
-                                        variant={isSelected ? "default" : "ghost"}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        transition={{ duration: 0.2 }}
+                                    >
+                                        <Button
+                                            variant="ghost"
                                         className={cn(
-                                            "flex flex-col items-center justify-center h-[4.5rem] w-16 rounded-xl p-2 transition-all relative",
-                                            isSelected && "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg scale-110",
-                                            !isSelected && hasWorkout && "border-2 border-primary/20 bg-primary/5",
-                                            !isSelected && !hasWorkout && "hover:bg-muted/10",
-                                            isFuture && "opacity-50"
+                                                "flex flex-col items-center justify-center h-20 w-16 rounded-2xl p-3 transition-all duration-300 relative backdrop-blur-sm",
+                                                isSelected && "bg-gradient-to-br from-neutral-900 to-neutral-800 dark:from-neutral-100 dark:to-neutral-200 text-white dark:text-neutral-900 shadow-lg scale-105",
+                                                !isSelected && hasWorkout && "bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border border-blue-200/50 dark:border-blue-800/50",
+                                                !isSelected && !hasWorkout && "hover:bg-neutral-50 dark:hover:bg-neutral-900/50",
+                                                isFuture && "opacity-40"
                                         )}
                                         onClick={() => handleDateSelect(date)}
                                     >
                                         <span className={cn(
-                                            "text-xs font-medium",
-                                            isSelected ? "text-primary-foreground" : "text-muted-foreground"
+                                                "text-xs font-medium tracking-wider uppercase",
+                                                isSelected ? "text-white dark:text-neutral-900" : "text-neutral-500 dark:text-neutral-400"
                                         )}>{format(date, 'eee')}</span>
                                         <span className={cn(
-                                            "text-2xl font-bold",
-                                            isSelected ? "text-primary-foreground" : ""
+                                                "text-xl font-serif tracking-tight mt-1",
+                                                isSelected ? "text-white dark:text-neutral-900" : "text-neutral-900 dark:text-neutral-100"
                                         )}>{format(date, 'd')}</span>
                                         <span className={cn(
-                                            "text-xs",
-                                            isSelected ? "text-primary-foreground" : "text-muted-foreground"
+                                                "text-xs font-medium tracking-wide",
+                                                isSelected ? "text-white/80 dark:text-neutral-900/80" : "text-neutral-500 dark:text-neutral-400"
                                         )}>{format(date, 'MMM')}</span>
                                         
-                                        {/* Workout Type Indicators */}
+                                            {/* Enhanced Workout Indicators */}
                                         {hasWorkout && (
-                                            <div className="absolute -bottom-1 flex gap-0.5 justify-center">
-                                                {workoutTypes.map((type, idx) => {
-                                                    const { colorClasses } = getWorkoutTypeStyle(type);
-                                                    return (
+                                                <motion.div 
+                                                    className="absolute -bottom-1 flex gap-1 justify-center"
+                                                    initial={{ opacity: 0, scale: 0 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    transition={{ delay: 0.2, duration: 0.3 }}
+                                                >
+                                                    {workoutTypes.slice(0, 3).map((type, idx) => (
                                                         <div 
                                                             key={`${dateStr}-${type}`}
                                                             className={cn(
-                                                                "w-1.5 h-1.5 rounded-full",
+                                                                "w-2 h-2 rounded-full backdrop-blur-sm",
                                                                 type.toLowerCase().includes('run') || type.toLowerCase().includes('cardio') 
-                                                                    ? "bg-blue-500" 
+                                                                    ? "bg-blue-500 shadow-sm" 
                                                                     : type.toLowerCase().includes('strength') 
-                                                                        ? "bg-purple-500"
-                                                                        : colorClasses.replace('text-', 'bg-')
+                                                                        ? "bg-purple-500 shadow-sm"
+                                                                        : "bg-emerald-500 shadow-sm"
                                                             )}
                                                         />
-                                                    );
-                                                })}
-                                            </div>
+                                                    ))}
+                                                </motion.div>
                                         )}
                                     </Button>
+                                    </motion.div>
                                 );
                             })}
                         </div>
@@ -964,90 +1284,167 @@ export default function WorkoutDailyView() {
                         size="icon" 
                         onClick={() => shiftView(7)} 
                         aria-label="Next week"
-                        className="hover:bg-primary/5"
+                        className="w-10 h-10 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all duration-300"
                     >
-                        <ChevronRight className="h-5 w-5" />
+                        <ChevronRight className="h-4 w-4" />
                     </Button>
                 </div>
-            </div>
+            </motion.div>
 
-            {/* Daily Summary Card - Updated to match weekly view exactly */}
+            {/* Enhanced Daily Summary Card */}
             {!metricsLoading && dailyMetrics && (
-                <Card className="overflow-hidden">
-                    <CardHeader>
-                        <CardTitle className="text-base font-semibold">Daily Totals</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
-                                <MetricContent 
-                                    title="Workouts" 
-                                    value={dailyMetrics.workoutCount.toString()}
-                                    change={calculatePercentageChange(dailyMetrics.workoutCount, previousDayMetrics?.workoutCount)}
-                                />
-                            </Card>
-                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
-                                <MetricContent 
-                                    title="Total Duration" 
-                                    value={formatDuration(dailyMetrics.totalDuration)}
-                                    change={calculatePercentageChange(dailyMetrics.totalDuration, previousDayMetrics?.totalDuration)}
-                                />
-                            </Card>
-                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
-                                <MetricContent 
-                                    title="Total Distance" 
-                                    value={formatDistance(dailyMetrics.totalDistance)}
-                                    change={dailyMetrics.totalDistance > 0 ? calculatePercentageChange(dailyMetrics.totalDistance, previousDayMetrics?.totalDistance) : null}
-                                />
-                            </Card>
-                            <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
-                                <MetricContent 
-                                    title="Total Volume" 
-                                    value={`${(dailyMetrics.totalVolume / 1000).toFixed(1)}t`}
-                                    change={dailyMetrics.totalVolume > 0 ? calculatePercentageChange(dailyMetrics.totalVolume, previousDayMetrics?.totalVolume) : null}
-                                />
-                            </Card>
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2, duration: 0.6, ease: "easeOut" }}
+                >
+                    <div className="p-8 bg-white/80 dark:bg-neutral-900/50 rounded-2xl backdrop-blur-xl border border-neutral-200/50 dark:border-neutral-800/50 shadow-sm">
+                        <div className="mb-6">
+                            <h3 className="text-xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2">
+                                Daily Summary
+                            </h3>
+                            <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">
+                                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                            </p>
                         </div>
-                    </CardContent>
-                </Card>
-            )}
-            {/* Show a loading spinner for metrics if they are loading */}
-            {metricsLoading && (
-                 <div className="flex justify-center items-center p-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /> 
-                    <span className="ml-2 text-muted-foreground">Loading daily summary...</span>
-                </div>
+                        
+                        <div className="grid gap-6 grid-cols-2 lg:grid-cols-4">
+                            <motion.div
+                                className="space-y-3"
+                                whileHover={{ y: -2 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                        <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                            {dailyMetrics.workoutCount}
+                                        </p>
+                                        <p className="text-sm text-neutral-500 dark:text-neutral-400">Workouts</p>
+                                    </div>
+                                </div>
+                            </motion.div>
+
+                            <motion.div
+                                className="space-y-3"
+                                whileHover={{ y: -2 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                                        <Clock className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                            {formatDuration(dailyMetrics.totalDuration)}
+                                        </p>
+                                        <p className="text-sm text-neutral-500 dark:text-neutral-400">Duration</p>
+                                    </div>
+                                </div>
+                            </motion.div>
+
+                            {dailyMetrics.totalDistance > 0 && (
+                                <motion.div
+                                    className="space-y-3"
+                                    whileHover={{ y: -2 }}
+                                    transition={{ duration: 0.2 }}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                            <Route className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                                {formatDistance(dailyMetrics.totalDistance)}
+                                            </p>
+                                            <p className="text-sm text-neutral-500 dark:text-neutral-400">Distance</p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {dailyMetrics.totalVolume > 0 && (
+                                <motion.div
+                                    className="space-y-3"
+                                    whileHover={{ y: -2 }}
+                                    transition={{ duration: 0.2 }}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                                            <Weight className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                                {`${(dailyMetrics.totalVolume / 1000).toFixed(1)}t`}
+                                            </p>
+                                            <p className="text-sm text-neutral-500 dark:text-neutral-400">Volume</p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </div>
+                    </div>
+                </motion.div>
             )}
 
-            {/* Aivery Insights Section */}
-            <section className="mb-6">
+            {/* Loading state for metrics */}
+            {metricsLoading && (
+                <motion.div 
+                    className="flex justify-center items-center p-12"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                >
+                    <div className="flex items-center gap-3">
+                        <Loader2 className="h-5 w-5 animate-spin text-neutral-400" /> 
+                        <span className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">Loading daily summary...</span>
+                </div>
+                </motion.div>
+            )}
+
+            {/* Enhanced AI Insights Section */}
+            <motion.section 
+                className="space-y-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
+            >
                 {!loading && (
-                    <Card className="overflow-hidden">
-                        <CardContent className="p-0">
+                    <div className="p-8 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-2xl border border-blue-200/50 dark:border-blue-800/30 backdrop-blur-xl shadow-sm">
                             {insightsLoading && (
                                 <div className="flex justify-center items-center p-8">
-                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /> 
-                                    <span className="ml-2 text-muted-foreground">Loading insights...</span>
+                                <div className="flex items-center gap-3">
+                                    <Loader2 className="h-5 w-5 animate-spin text-blue-400" /> 
+                                    <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">Generating insights...</span>
+                                </div>
                                 </div>
                             )}
-                            <div className={insightsLoading ? "opacity-0 h-0 overflow-hidden" : "opacity-100 transition-opacity duration-300"}>
+                        <motion.div 
+                            className={insightsLoading ? "opacity-0 h-0 overflow-hidden" : "opacity-100 transition-opacity duration-500"}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: insightsLoading ? 0 : 1 }}
+                            transition={{ duration: 0.5 }}
+                        >
                                 <AiveryInsights 
                                     dateRange={aiveryDateRange}
                                     onLoad={handleInsightsLoad}
                                 />
+                        </motion.div>
                             </div>
-                        </CardContent>
-                    </Card>
                 )}
                 {loading && (
-                    <div className="flex justify-center items-center p-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /> 
-                        <span className="ml-2 text-muted-foreground">Loading workouts...</span>
+                    <div className="flex justify-center items-center p-12">
+                        <div className="flex items-center gap-3">
+                            <Loader2 className="h-5 w-5 animate-spin text-neutral-400" /> 
+                            <span className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">Loading workouts...</span>
+                        </div>
                     </div>
                 )}
-            </section>
+            </motion.section>
 
-            {/* Workouts List - Grouped by type */}
+            {/* Enhanced Workouts List */}
             {!metricsLoading && (() => {
                 // Group workouts by type
                 const workoutsByType = workoutsForDisplay.reduce((acc, workout) => {
@@ -1066,27 +1463,70 @@ export default function WorkoutDailyView() {
                     });
                 });
 
-                return Object.entries(workoutsByType).map(([type, workouts]) => (
-                    <WorkoutGroup key={type} type={type} workouts={workouts} />
-                ));
+                return (
+                    <motion.div
+                        className="space-y-8"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6, duration: 0.6, ease: "easeOut" }}
+                    >
+                        {Object.entries(workoutsByType).map(([type, workouts], index) => (
+                            <motion.div
+                                key={type}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.6 + (index * 0.1), duration: 0.5, ease: "easeOut" }}
+                            >
+                                <WorkoutGroup type={type} workouts={workouts} />
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                );
             })()}
 
+            {/* Enhanced Empty State */}
             {!metricsLoading && workoutsForDisplay.length === 0 && !dailyMetrics?.workoutCount && (
-                <div className="text-center py-8">
-                    <p className="text-muted-foreground">
+                <motion.div 
+                    className="text-center py-16"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5, duration: 0.6 }}
+                >
+                    <div className="space-y-6">
+                        <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-700 flex items-center justify-center">
+                            <Activity className="w-8 h-8 text-neutral-400" />
+                        </div>
+                        <div className="space-y-2">
+                            <p className="text-lg font-serif text-neutral-600 dark:text-neutral-300">
                         {isSameDay(selectedDate, today) 
-                            ? "No workouts logged yet today. Ready to get started?" 
-                            : "No workouts recorded for this day."}
+                                    ? "Ready to start today's journey?" 
+                                    : "A quiet day in your training log"}
+                            </p>
+                            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                                {isSameDay(selectedDate, today) 
+                                    ? "Log your first workout and let's begin tracking your progress." 
+                                    : "No workouts were recorded for this day."}
                     </p>
+                        </div>
+                        {isSameDay(selectedDate, today) && (
+                            <motion.div
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                <Link href="/workouts/new">
                     <Button 
-                        variant="outline" 
-                        className="mt-4"
-                        onClick={() => router.push('/workouts/new')}
+                                        size="lg" 
+                                        className="bg-gradient-to-r from-neutral-900 to-neutral-800 hover:from-neutral-800 hover:to-neutral-700 dark:from-neutral-100 dark:to-neutral-200 dark:hover:from-neutral-200 dark:hover:to-neutral-300 text-white dark:text-neutral-900 font-medium tracking-tight transition-all duration-300 shadow-lg hover:shadow-xl"
                     >
-                        {isSameDay(selectedDate, today) ? "Log Today's Workout" : "Log a Workout"}
+                                        <LucidePlus className="h-4 w-4 mr-2" />
+                                        Log Your First Workout
                     </Button>
-                </div>
+                                </Link>
+                            </motion.div>
             )}
         </div>
+                </motion.div>
+            )}
+        </motion.div>
     );
 } 

@@ -140,15 +140,15 @@ const DailyInsight = () => {
 
   return (
     <motion.section 
-      className="mb-10"
+      className="mb-12 md:mb-16"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
     >
-      {/* Enhanced Header */}
-      <div className="mb-6">
+      {/* Enhanced Header with better dark mode support */}
+      <div className="mb-8">
         <motion.h1 
-          className="text-3xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2"
+          className="text-3xl md:text-4xl font-serif tracking-tight text-foreground mb-3"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2, duration: 0.8 }}
@@ -156,7 +156,7 @@ const DailyInsight = () => {
           {getGreeting()}
         </motion.h1>
         <motion.p 
-          className="text-sm text-zinc-500 dark:text-zinc-400"
+          className="text-sm text-muted-foreground font-medium"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.8 }}
@@ -165,31 +165,69 @@ const DailyInsight = () => {
         </motion.p>
       </div>
 
-      {/* Enhanced Insight Content */}
+      {/* Enhanced Insight Content with sophisticated dark theme */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5, duration: 0.7 }}
-        className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200/50 dark:border-blue-800/50"
+        className="relative group"
       >
-        {isLoading ? (
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></div>
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.6s' }}></div>
-          </div>
-        ) : (
-          <div className="flex items-start gap-3">
-            <div className="text-2xl">
-              {insight.type === 'celebration' ? '🎉' : 
-               insight.type === 'welcome' ? '👋' : 
-               insight.type === 'guidance' ? '🎯' : '💫'}
+        {/* Enhanced background with sophisticated gradients */}
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-2xl blur-sm -z-10" />
+        
+        <div className="p-8 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-2xl border border-blue-200/50 dark:border-blue-800/30 backdrop-blur-xl shadow-sm dark:shadow-lg relative overflow-hidden">
+          {/* Subtle inner glow for dark mode */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] via-transparent to-white/[0.01] dark:from-white/[0.08] dark:via-transparent dark:to-white/[0.04] pointer-events-none" />
+          
+          {/* Enhanced loading state */}
+          {isLoading ? (
+            <div className="flex items-center gap-4">
+              <div className="flex gap-2">
+                <div className="w-2 h-2 bg-blue-400/60 dark:bg-blue-400/80 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-blue-400/60 dark:bg-blue-400/80 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                <div className="w-2 h-2 bg-blue-400/60 dark:bg-blue-400/80 rounded-full animate-pulse" style={{ animationDelay: '0.6s' }}></div>
+              </div>
+              <span className="text-sm text-muted-foreground animate-pulse">Crafting your insight...</span>
             </div>
-            <p className="text-sm leading-relaxed font-medium text-blue-700 dark:text-blue-300">
-              {insight.message}
-            </p>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-start gap-4 relative z-10">
+              {/* Enhanced emoji with better dark mode visibility */}
+              <div className="text-3xl drop-shadow-sm">
+                {insight.type === 'celebration' ? '🎉' : 
+                 insight.type === 'welcome' ? '👋' : 
+                 insight.type === 'guidance' ? '🎯' : '💫'}
+              </div>
+              
+              {/* Enhanced text with better typography */}
+              <div className="flex-1">
+                <p className="text-sm md:text-base leading-relaxed font-medium text-blue-700 dark:text-blue-300 insight-text">
+                  {insight.message}
+                </p>
+                
+                {/* Subtle progress indicator if available */}
+                {insight.context?.weekProgress && (
+                  <div className="mt-4 flex items-center gap-2">
+                    <div className="flex gap-1">
+                      {Array.from({ length: 7 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
+                            i < (insight.context?.weekProgress ?? 0)
+                              ? 'bg-blue-500 dark:bg-blue-400' 
+                              : 'bg-blue-200/50 dark:bg-blue-800/30'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground font-medium">
+                      {insight.context?.weekProgress}/7 this week
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </motion.div>
     </motion.section>
   )
