@@ -85,8 +85,8 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
       </div>
       {/* Bubble */}
       <div className={cn('px-4 py-2.5 rounded-xl max-w-[75%] break-words shadow-sm', {
-        'order-1 bg-primary/90 text-primary-foreground': isUserMessage,
-        'order-2 bg-muted/80 dark:bg-secondary/90 border border-border/5': !isUserMessage,
+        'order-1 bg-primary/90 text-primary-foreground chat-bubble-user': isUserMessage,
+        'order-2 bg-muted/80 dark:bg-secondary/90 border border-border/5 chat-bubble-assistant': !isUserMessage,
         'hover:bg-primary/95': isUserMessage,
         'hover:bg-muted/90 dark:hover:bg-secondary/95': !isUserMessage
       })}>
@@ -127,11 +127,11 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
                     <div className="p-1 mb-2 text-xs text-primary bg-primary/10 rounded text-center">
                       Concept Explanation
                     </div>
-                    <ReactMarkdown 
-                      className="prose prose-sm prose-headings:text-primary dark:prose-invert prose-p:leading-relaxed prose-pre:bg-secondary/50 prose-headings:font-bold prose-h3:text-xl prose-h3:mt-0 prose-h4:text-base prose-h4:text-primary/80 prose-headings:mt-3 prose-headings:mb-2 prose-strong:text-primary prose-em:text-muted-foreground max-w-none"
-                    >
-                      {message.content}
-                    </ReactMarkdown>
+                    <div className="markdown-content">
+                      <ReactMarkdown>
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 );
               }
@@ -139,9 +139,11 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
               // Standard message rendering
               return (
                 <>
-                  <ReactMarkdown className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:bg-secondary/50 prose-headings:font-bold prose-h3:text-lg prose-h4:text-base prose-headings:mt-2 prose-headings:mb-1">
-                    {typeof message.content === 'string' ? message.content : ''}
-                  </ReactMarkdown>
+                  <div className="markdown-content">
+                    <ReactMarkdown>
+                      {typeof message.content === 'string' ? message.content : ''}
+                    </ReactMarkdown>
+                  </div>
                   {/* Conditionally render data if it exists */}
                   {message.role === 'assistant' && message.data?.workouts && message.data.workouts.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-border/10">

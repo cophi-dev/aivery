@@ -13,8 +13,8 @@ export async function GET() {
   }
 
   try {
-    const progressData = await getWeeklyStats();
-    return NextResponse.json({ progress: progressData });
+    const stats = await getWeeklyStats();
+    return NextResponse.json({ stats });
   } catch (error) {
     console.error('Error fetching progress data:', error);
     return NextResponse.json(

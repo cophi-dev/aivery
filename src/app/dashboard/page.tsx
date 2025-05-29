@@ -36,6 +36,7 @@ import DailyInsight from "@/components/dashboard/DailyInsight";
 import LastWorkout from "@/components/dashboard/LastWorkout";
 import ProgressPulse from "@/components/dashboard/ProgressPulse";
 import AskAivery from "@/components/dashboard/AskAivery";
+import SmartNudges from "@/components/dashboard/SmartNudges";
 
 // 🎯 DESIGN MODE TOGGLE
 const MINIMAL_MODE = true;
@@ -183,6 +184,7 @@ export default function DashboardPage() {
                     <DailyInsight />
                     <LastWorkout />
                     <ProgressPulse />
+                    <SmartNudges mode="multiple" maxNudges={2} title="Weekly Insights" />
                     <AskAivery />
                 </DashboardWrapper>
             ) : (

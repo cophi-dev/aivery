@@ -215,13 +215,15 @@ export function PersistentChat() {
                   <div
                     className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-md font-sans text-base leading-relaxed transition-colors duration-150 ${
                       message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
+                        ? "bg-primary text-primary-foreground chat-bubble-user"
+                        : "bg-muted chat-bubble-assistant"
                     }`}
                     style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
                   >
-                    <div className={`${message.role === "assistant" ? "prose prose-sm dark:prose-invert" : ""}`}>
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                    <div className="markdown-content">
+                      <ReactMarkdown>
+                        {message.content}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 </div>

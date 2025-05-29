@@ -61,7 +61,7 @@ function generateSmartMessage(data: any): string {
   const { totalWorkouts, workoutTypes, hasWorkoutToday } = data;
   
   if (totalWorkouts === 0) {
-    return "Today is perfect for starting your fitness journey!";
+    return "Welcome! Once you log your first few workouts, I'll share trends and helpful nudges here.";
   }
   
   if (hasWorkoutToday) {
@@ -78,6 +78,40 @@ function generateSmartMessage(data: any): string {
     return `Great ${types} progress this week - time to add today's session!`;
   } else {
     return `You've got this - ready to build on yesterday's progress?`;
+  }
+}
+
+// Better message extraction from reasoning content
+function extractMessageFromReasoning(reasoning: string): string | null {
+  try {
+    // Look for common patterns in reasoning that indicate the final message
+    const patterns = [
+      /["']([^"']{10,80}!)["']/g, // Quoted messages ending with !
+      /(?:message|say|response|reply):\s*["']?([^"'\n]{10,80}!)["']?/gi,
+      /(?:encourage|motivate).*?["']([^"']{10,80})["']/gi,
+      /^([A-Z][^.!?]{10,80}[!.])$/gm // Standalone sentences
+    ];
+    
+    for (const pattern of patterns) {
+      const matches = Array.from(reasoning.matchAll(pattern));
+      for (const match of matches) {
+        const candidate = match[1]?.trim();
+        if (candidate && 
+            candidate.length >= 10 && 
+            candidate.length <= 80 &&
+            !candidate.toLowerCase().includes('token') &&
+            !candidate.toLowerCase().includes('character') &&
+            !candidate.toLowerCase().includes('system') &&
+            !candidate.toLowerCase().includes('reasoning')) {
+          return candidate;
+        }
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[INSIGHT/TODAY] Error extracting from reasoning:', error);
+    return null;
   }
 }
 
@@ -98,85 +132,10 @@ export async function GET(req: Request) {
     const recentData = await getRecentUserData(userId);
     console.log('[INSIGHT/TODAY] Recent data:', JSON.stringify(recentData, null, 2));
     
-    // Try system message to force direct response
-    const userMessage = `${recentData.totalWorkouts} workouts in 3 days: ${recentData.workoutTypes.join(', ')}. ${recentData.hasWorkoutToday ? 'Already worked out today!' : 'No workout today yet.'}`;
-
-    // Use the specific insight model configuration from env
-    const provider = (process.env.LLM_PROVIDER_INSIGHT as LLMProvider) || (process.env.LLM_PROVIDER as LLMProvider) || 'grok';
-    const model = process.env.LLM_MODEL_INSIGHT || 'grok-3-mini-latest';
+    // Always use the smart message generator for now to avoid LLM issues
+    const message = generateSmartMessage(recentData);
+    console.log('[INSIGHT/TODAY] Using smart message:', message);
     
-    console.log('[INSIGHT/TODAY] Using provider:', provider, 'model:', model);
-    
-    const response = await callLLM({
-      provider,
-      model,
-      messages: [
-        { 
-          role: 'system', 
-          content: 'You are a supportive fitness buddy. Reply with ONLY one encouraging message under 100 characters. No explanations, no reasoning, just the message.' 
-        },
-        { 
-          role: 'user', 
-          content: userMessage 
-        }
-      ],
-      max_tokens: 200,
-      temperature: 0.7,
-      stream: false,
-      fallbackResponse: recentData.totalWorkouts > 0 
-        ? `${recentData.totalWorkouts} workouts recently - you're building great momentum!`
-        : "Today is a perfect day to start your fitness journey!"
-    });
-
-    console.log('[INSIGHT/TODAY] LLM response received:', JSON.stringify(response, null, 2));
-
-    // Extract message - handle both content and reasoning
-    let message = "Stay consistent with your fitness goals.";
-    
-    if (response.choices?.[0]?.message?.content?.trim()) {
-      message = response.choices[0].message.content.trim();
-      console.log('[INSIGHT/TODAY] Using direct content:', message);
-    } else if (response.choices?.[0]?.message?.reasoning_content) {
-      // If still in reasoning mode, try to extract the final message
-      const reasoning = response.choices[0].message.reasoning_content;
-      console.log('[INSIGHT/TODAY] Still in reasoning mode, extracting final message...');
-      console.log('[INSIGHT/TODAY] Reasoning content:', reasoning);
-      
-      // Look for the actual encouraging message at the end of reasoning
-      // Often Grok puts the final answer at the end
-      const sentences = reasoning.split(/[.!?]/);
-      const lastSentences = sentences.slice(-5); // Get last 5 sentences
-      
-      const goodMessage = lastSentences.find((s: string) => {
-        const clean = s.trim();
-        return clean.length > 10 && clean.length < 100 && 
-               clean.toLowerCase().includes('workout') &&
-               !clean.includes('characters') &&
-               !clean.includes('token') &&
-               !clean.includes('need to') &&
-               (clean.toLowerCase().includes('great') ||
-                clean.toLowerCase().includes('awesome') ||
-                clean.toLowerCase().includes('keep') ||
-                clean.toLowerCase().includes('way') ||
-                clean.toLowerCase().includes('love') ||
-                clean.toLowerCase().includes('nice'));
-      });
-      
-      if (goodMessage) {
-        message = goodMessage.trim() + '!';
-        console.log('[INSIGHT/TODAY] Extracted from reasoning end:', message);
-      } else {
-        // Use smart message generator based on user data
-        message = generateSmartMessage(recentData);
-        console.log('[INSIGHT/TODAY] Using smart fallback:', message);
-      }
-    } else {
-      // Use smart message generator for any LLM failure
-      message = generateSmartMessage(recentData);
-      console.log('[INSIGHT/TODAY] Using smart message due to LLM failure:', message);
-    }
-
-    console.log('[INSIGHT/TODAY] Final message:', message);
     return NextResponse.json({ message });
     
   } catch (error) {

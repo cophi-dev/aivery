@@ -2,41 +2,141 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
+import { InsightCard } from '@/components/ui/InsightCard'
+import { format } from 'date-fns'
+
+interface DailyInsightData {
+  message: string;
+  type: 'motivation' | 'celebration' | 'guidance' | 'welcome';
+  context?: {
+    todayWorkouts?: number;
+    weekProgress?: number;
+    lastWorkoutDays?: number;
+    streak?: number;
+  };
+}
 
 const DailyInsight = () => {
-  const [insight, setInsight] = useState('Loading your insight...')
+  const [insight, setInsight] = useState<DailyInsightData>({
+    message: 'Starting your day with intention...',
+    type: 'motivation'
+  })
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const fetchInsight = async () => {
       try {
         setIsLoading(true)
-        console.log('[DailyInsight] Fetching insight from /api/insight/today')
+        console.log('[DailyInsight] Fetching enhanced insight')
         
-        // Add cache-busting parameter
-        const res = await fetch(`/api/insight/today?t=${Date.now()}`)
-        const data = await res.json()
+        // Fetch both daily insight and some context
+        const [insightRes, statsRes] = await Promise.all([
+          fetch(`/api/insight/today?t=${Date.now()}`),
+          fetch('/api/dashboard/progress')
+        ])
         
-        console.log('[DailyInsight] Response received:', data)
+        const insightData = await insightRes.json()
+        const statsData = statsRes.ok ? await statsRes.json() : null
         
-        if (data.error) {
-          console.log('[DailyInsight] Error in response, using fallback')
-          setInsight('Take a moment to reflect on your fitness journey today.')
-        } else {
-          console.log('[DailyInsight] Setting insight:', data.message)
-          setInsight(data.message || 'Stay consistent with your fitness goals.')
-        }
+        console.log('[DailyInsight] Data received:', { insightData, statsData })
+        
+        // Generate more contextual insights
+        const enhancedInsight = generateEnhancedInsight(insightData, statsData)
+        setInsight(enhancedInsight)
+        
       } catch (error) {
         console.error('[DailyInsight] Failed to fetch daily insight:', error)
-        setInsight('Every day is a new opportunity for progress.')
+        setInsight({
+          message: getTimeBasedMessage(),
+          type: 'motivation'
+        })
       } finally {
         setIsLoading(false)
-        console.log('[DailyInsight] Loading complete')
       }
     }
 
     fetchInsight()
   }, [])
+
+  const generateEnhancedInsight = (insightData: any, statsData: any): DailyInsightData => {
+    const currentStats = statsData?.stats?.current
+    const dayOfWeek = format(new Date(), 'EEEE')
+    const hour = new Date().getHours()
+    
+    // If no workouts yet, welcome message
+    if (!currentStats || currentStats.workouts === 0) {
+      return {
+        message: `${dayOfWeek} energy incoming! Perfect day to start building your fitness momentum.`,
+        type: 'welcome'
+      }
+    }
+    
+    // Strong week going
+    if (currentStats.workouts >= 4) {
+      return {
+        message: `${currentStats.workouts} sessions this week — you're in the zone! ${dayOfWeek} momentum continues.`,
+        type: 'celebration',
+        context: { weekProgress: currentStats.workouts }
+      }
+    }
+    
+    // Getting started
+    if (currentStats.workouts <= 2) {
+      return {
+        message: `${getMotivationalPrefix()} ${dayOfWeek} is calling for movement. Ready to build on your progress?`,
+        type: 'motivation',
+        context: { weekProgress: currentStats.workouts }
+      }
+    }
+    
+    // Mid-week momentum
+    return {
+      message: `${currentStats.workouts} down, momentum building! ${dayOfWeek} is your canvas — what will you create?`,
+      type: 'guidance',
+      context: { weekProgress: currentStats.workouts }
+    }
+  }
+
+  const getTimeBasedMessage = (): string => {
+    const hour = new Date().getHours()
+    const dayOfWeek = format(new Date(), 'EEEE')
+    
+    if (hour < 10) {
+      return `Good morning! ${dayOfWeek} holds fresh possibilities for progress.`
+    } else if (hour < 17) {
+      return `${dayOfWeek} afternoon energy! Your body is ready for whatever comes next.`
+    } else {
+      return `${dayOfWeek} evening reflection. Every step today moves you forward.`
+    }
+  }
+
+  const getMotivationalPrefix = (): string => {
+    const prefixes = [
+      "Your journey is uniquely yours.",
+      "Small steps, big changes.",
+      "Progress over perfection.",
+      "Every rep counts.",
+      "Consistency builds champions."
+    ]
+    return prefixes[Math.floor(Math.random() * prefixes.length)]
+  }
+
+  const getGreeting = () => {
+    const hour = new Date().getHours()
+    if (hour < 12) return "Today"
+    if (hour < 17) return "This Afternoon" 
+    return "This Evening"
+  }
+
+  const getSubtitle = () => {
+    if (insight.context?.weekProgress) {
+      const { weekProgress } = insight.context
+      if (weekProgress >= 4) return "You're on fire this week"
+      if (weekProgress >= 2) return "Building momentum"
+      return "Your next step awaits"
+    }
+    return "Your daily insight"
+  }
 
   return (
     <motion.section 
@@ -45,7 +145,7 @@ const DailyInsight = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
     >
-      {/* Typography-led Header */}
+      {/* Enhanced Header */}
       <div className="mb-6">
         <motion.h1 
           className="text-3xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2"
@@ -53,7 +153,7 @@ const DailyInsight = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2, duration: 0.8 }}
         >
-          Today
+          {getGreeting()}
         </motion.h1>
         <motion.p 
           className="text-sm text-zinc-500 dark:text-zinc-400"
@@ -61,38 +161,34 @@ const DailyInsight = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.8 }}
         >
-          Your daily insight
+          {getSubtitle()}
         </motion.p>
       </div>
 
-      {/* Insight Content - Card with smooth padding */}
-      <motion.div 
-        className="p-8 bg-white dark:bg-neutral-900/50 rounded-xl backdrop-blur-sm shadow-sm border border-neutral-200/50 dark:border-neutral-800/50 hover:shadow-md transition-all duration-300"
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.3, duration: 0.7, ease: "easeOut" }}
+      {/* Enhanced Insight Content */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5, duration: 0.7 }}
+        className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200/50 dark:border-blue-800/50"
       >
-        <motion.div 
-          className={`text-[1.125rem] leading-relaxed font-serif italic text-neutral-800 dark:text-neutral-200 transition-all duration-500 ${isLoading ? 'opacity-60' : 'opacity-100'}`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: isLoading ? 0.6 : 1 }}
-          transition={{ duration: 0.5 }}
-        >
-          {insight}
-        </motion.div>
-        
-        {/* Subtle loading indicator */}
-        {isLoading && (
-          <motion.div 
-            className="mt-6 flex items-center gap-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-pulse"></div>
-            <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-            <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-          </motion.div>
+        {isLoading ? (
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.6s' }}></div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">
+              {insight.type === 'celebration' ? '🎉' : 
+               insight.type === 'welcome' ? '👋' : 
+               insight.type === 'guidance' ? '🎯' : '💫'}
+            </div>
+            <p className="text-sm leading-relaxed font-medium text-blue-700 dark:text-blue-300">
+              {insight.message}
+            </p>
+          </div>
         )}
       </motion.div>
     </motion.section>

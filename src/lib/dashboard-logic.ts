@@ -1,6 +1,7 @@
 import { subWeeks, parseISO, isValid, startOfDay, endOfDay, subDays, format } from "date-fns";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserWorkoutsByDateRange } from '@/lib/db/repositories/workoutRepository';
+import { WeeklyStats, calculateDelta, statsFormatters, type StatsDelta } from './stats';
 import type { WorkoutData } from "@/types/db";
 
 // Types for our dashboard components
@@ -17,16 +18,8 @@ export interface LastWorkoutData {
   };
 }
 
-export interface ProgressData {
-  weeklyWorkouts: number;
-  previousWeekWorkouts: number;
-  weeklyDuration: number; // in seconds
-  previousWeekDuration: number;
-  weeklyVolume: number; // in kg
-  previousWeekVolume: number;
-  weeklyDistance: number; // in km
-  previousWeekDistance: number;
-}
+// Re-export types for convenience
+export type { WeeklyStats, StatsDelta };
 
 // Helper to get sessions in last N days
 export async function getSessionsInLastNDays(days: number = 7): Promise<WorkoutData[]> {
@@ -65,8 +58,14 @@ export async function getLastWorkout(): Promise<LastWorkoutData | null> {
   };
 }
 
-// Helper to get weekly stats with comparison
-export async function getWeeklyStats(): Promise<ProgressData> {
+/**
+ * Get weekly stats in clean format for Progress Pulse
+ */
+export async function getWeeklyStats(): Promise<{
+  current: WeeklyStats;
+  previous: WeeklyStats;
+  deltas: StatsDelta;
+}> {
   const currentWeekWorkouts = await getSessionsInLastNDays(7);
   const allRecentWorkouts = await getSessionsInLastNDays(14);
   
@@ -79,90 +78,54 @@ export async function getWeeklyStats(): Promise<ProgressData> {
   });
 
   // Calculate current week metrics
-  const weeklyWorkouts = currentWeekWorkouts.length;
-  const weeklyDuration = currentWeekWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0);
-  const weeklyVolume = currentWeekWorkouts.reduce((sum, w) => sum + (w.calculatedVolume || 0), 0);
-  const weeklyDistance = currentWeekWorkouts.reduce((sum, w) => {
-    // Normalize distance to km
-    let distance = w.cardioDetails?.distance || w.distance || 0;
-    if (distance > 100) distance = distance / 1000; // Convert meters to km
-    return sum + distance;
-  }, 0);
+  const current: WeeklyStats = {
+    workouts: currentWeekWorkouts.length,
+    duration: Math.round(currentWeekWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0) / 60), // Convert to minutes
+    volume: currentWeekWorkouts.reduce((sum, w) => sum + (w.calculatedVolume || 0), 0),
+    distance: currentWeekWorkouts.reduce((sum, w) => {
+      // Normalize distance to km
+      let distance = w.cardioDetails?.distance || w.distance || 0;
+      if (distance > 100) distance = distance / 1000; // Convert meters to km
+      return sum + distance;
+    }, 0)
+  };
 
   // Calculate previous week metrics
-  const previousWeekWorkouts = prevWeekWorkouts.length;
-  const previousWeekDuration = prevWeekWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0);
-  const previousWeekVolume = prevWeekWorkouts.reduce((sum, w) => sum + (w.calculatedVolume || 0), 0);
-  const previousWeekDistance = prevWeekWorkouts.reduce((sum, w) => {
-    let distance = w.cardioDetails?.distance || w.distance || 0;
-    if (distance > 100) distance = distance / 1000;
-    return sum + distance;
-  }, 0);
+  const previous: WeeklyStats = {
+    workouts: prevWeekWorkouts.length,
+    duration: Math.round(prevWeekWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0) / 60), // Convert to minutes
+    volume: prevWeekWorkouts.reduce((sum, w) => sum + (w.calculatedVolume || 0), 0),
+    distance: prevWeekWorkouts.reduce((sum, w) => {
+      let distance = w.cardioDetails?.distance || w.distance || 0;
+      if (distance > 100) distance = distance / 1000;
+      return sum + distance;
+    }, 0)
+  };
+
+  const deltas = calculateDelta(current, previous);
 
   return {
-    weeklyWorkouts,
-    previousWeekWorkouts,
-    weeklyDuration,
-    previousWeekDuration,
-    weeklyVolume,
-    previousWeekVolume,
-    weeklyDistance,
-    previousWeekDistance
+    current,
+    previous,
+    deltas
   };
 }
 
-// Helper to calculate delta/change percentage
-export function calculateDelta(current: number, previous: number): {
-  value: number;
-  percentage: number;
-  direction: 'up' | 'down' | 'same';
-} {
-  if (previous === 0) {
-    return {
-      value: current,
-      percentage: current > 0 ? 100 : 0,
-      direction: current > 0 ? 'up' : 'same'
-    };
-  }
-
-  const change = current - previous;
-  const percentage = (change / previous) * 100;
-  
-  return {
-    value: change,
-    percentage: Math.abs(percentage),
-    direction: change > 0 ? 'up' : change < 0 ? 'down' : 'same'
-  };
-}
-
-// Helper for formatting functions
+// Legacy formatters for backward compatibility - use statsFormatters instead
 export const formatters = {
   duration: (seconds?: number) => {
     if (!seconds) return '0m';
     const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    
-    if (hours > 0) {
-      return `${hours}h ${remainingMinutes}m`;
-    }
-    return `${minutes}m`;
+    return statsFormatters.duration(minutes);
   },
 
   distance: (meters?: number) => {
     if (!meters) return '0km';
     const km = meters > 100 ? meters / 1000 : meters; // Auto-convert meters to km
-    return `${km.toFixed(1)}km`;
+    return statsFormatters.distance(km);
   },
 
-  volume: (kg?: number) => {
-    if (!kg) return '0kg';
-    if (kg >= 1000) {
-      const tons = kg / 1000;
-      return `${tons.toFixed(1)}t`;
-    }
-    return `${Math.round(kg)}kg`;
-  },
+  volume: statsFormatters.volume,
 
   workoutType: (type: string) => {
     const typeMap: Record<string, string> = {

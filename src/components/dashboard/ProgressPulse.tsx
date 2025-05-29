@@ -2,10 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { calculateDelta, formatters, type ProgressData } from '@/lib/dashboard-utils'
+import { getPercentChange, statsFormatters, type WeeklyStats, type StatsDelta } from '@/lib/stats'
+
+interface WeeklyStatsResponse {
+  current: WeeklyStats;
+  previous: WeeklyStats;
+  deltas: StatsDelta;
+}
 
 const ProgressPulse = () => {
-  const [progress, setProgress] = useState<ProgressData | null>(null)
+  const [stats, setStats] = useState<WeeklyStatsResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,7 +26,7 @@ const ProgressPulse = () => {
         }
         
         const data = await res.json()
-        setProgress(data.progress)
+        setStats(data.stats)
       } catch (error) {
         console.error('Failed to fetch progress:', error)
         setError('Unable to load progress data')
@@ -47,16 +53,14 @@ const ProgressPulse = () => {
   const ProgressMetric = ({ 
     label, 
     current, 
-    previous, 
+    delta,
     formatter 
   }: { 
     label: string
     current: number
-    previous: number
+    delta: { value: number; percentage: number; direction: 'up' | 'down' | 'same' }
     formatter: (value: number) => string
   }) => {
-    const delta = calculateDelta(current, previous)
-    
     return (
       <motion.div 
         className="space-y-3"
@@ -131,7 +135,7 @@ const ProgressPulse = () => {
     )
   }
 
-  if (!progress) {
+  if (!stats) {
     return (
       <motion.section 
         className="mb-10"
@@ -150,47 +154,77 @@ const ProgressPulse = () => {
         
         <div className="p-8 bg-white dark:bg-neutral-900/50 rounded-xl backdrop-blur-sm shadow-sm border border-neutral-200/50 dark:border-neutral-800/50 text-center">
           <p className="text-[1rem] text-neutral-600 dark:text-neutral-400 font-serif italic">
-            Start tracking workouts to see your progress
+            Not enough data yet for weekly progress. Check back soon!
           </p>
         </div>
       </motion.section>
     )
   }
 
-  // Prepare metrics for 2x2 grid
+  // Check if user has insufficient data (no workouts this week AND no workouts last week)
+  const hasInsufficientData = stats.current.workouts === 0 && stats.previous.workouts === 0;
+  
+  if (hasInsufficientData) {
+    return (
+      <motion.section 
+        className="mb-10"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+      >
+        <div className="mb-6">
+          <h2 className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2">
+            Progress Pulse
+          </h2>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Building your foundation
+          </p>
+        </div>
+        
+        <div className="p-8 bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-900/20 dark:to-violet-900/20 rounded-xl border border-purple-200/50 dark:border-purple-800/50 text-center">
+          <div className="text-4xl mb-4">📊</div>
+          <p className="text-[1rem] text-purple-700 dark:text-purple-300 font-serif italic">
+            Your progress story starts here. A few workouts will unlock meaningful insights.
+          </p>
+        </div>
+      </motion.section>
+    )
+  }
+
+  // Prepare metrics for 2x2 grid using new stats structure
   const metrics = [
     {
       label: 'workouts',
-      current: progress.weeklyWorkouts,
-      previous: progress.previousWeekWorkouts,
-      formatter: (val: number) => val.toString()
+      current: stats.current.workouts,
+      delta: stats.deltas.workoutsDelta,
+      formatter: statsFormatters.workouts
     }
   ]
 
-  if (progress.weeklyDuration > 0) {
+  if (stats.current.duration > 0) {
     metrics.push({
       label: 'duration',
-      current: progress.weeklyDuration,
-      previous: progress.previousWeekDuration,
-      formatter: formatters.duration
+      current: stats.current.duration,
+      delta: stats.deltas.durationDelta,
+      formatter: statsFormatters.duration
     })
   }
 
-  if (progress.weeklyDistance > 0) {
+  if (stats.current.distance > 0) {
     metrics.push({
       label: 'distance',
-      current: progress.weeklyDistance,
-      previous: progress.previousWeekDistance,
-      formatter: formatters.distance
+      current: stats.current.distance,
+      delta: stats.deltas.distanceDelta,
+      formatter: statsFormatters.distance
     })
   }
 
-  if (progress.weeklyVolume > 0) {
+  if (stats.current.volume > 0) {
     metrics.push({
       label: 'volume',
-      current: progress.weeklyVolume,
-      previous: progress.previousWeekVolume,
-      formatter: formatters.volume
+      current: stats.current.volume,
+      delta: stats.deltas.volumeDelta,
+      formatter: statsFormatters.volume
     })
   }
 
@@ -199,7 +233,7 @@ const ProgressPulse = () => {
     metrics.push({
       label: '',
       current: 0,
-      previous: 0,
+      delta: { value: 0, percentage: 0, direction: 'same' as const },
       formatter: () => ''
     })
   }
@@ -243,7 +277,7 @@ const ProgressPulse = () => {
                 key={index}
                 label={metric.label}
                 current={metric.current}
-                previous={metric.previous}
+                delta={metric.delta}
                 formatter={metric.formatter}
               />
             ) : (

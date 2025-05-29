@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { statsFormatters, type WeeklyStats, type StatsDelta, type PercentChange } from './stats';
 
 // Types for our dashboard components (client-safe)
 export interface LastWorkoutData {
@@ -14,6 +15,10 @@ export interface LastWorkoutData {
   };
 }
 
+// Re-export types from stats module for convenience
+export type { WeeklyStats, StatsDelta, PercentChange };
+
+// Legacy ProgressData interface for backward compatibility
 export interface ProgressData {
   weeklyWorkouts: number;
   previousWeekWorkouts: number;
@@ -25,7 +30,7 @@ export interface ProgressData {
   previousWeekDistance: number;
 }
 
-// Helper to calculate delta/change percentage (client-safe)
+// Helper to calculate delta/change percentage (client-safe) - DEPRECATED, use stats module
 export function calculateDelta(current: number, previous: number): {
   value: number;
   percentage: number;
@@ -49,34 +54,21 @@ export function calculateDelta(current: number, previous: number): {
   };
 }
 
-// Helper for formatting functions (client-safe)
+// Helper for formatting functions (client-safe) - use statsFormatters instead
 export const formatters = {
   duration: (seconds?: number) => {
     if (!seconds) return '0m';
     const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    
-    if (hours > 0) {
-      return `${hours}h ${remainingMinutes}m`;
-    }
-    return `${minutes}m`;
+    return statsFormatters.duration(minutes);
   },
 
   distance: (meters?: number) => {
     if (!meters) return '0km';
     const km = meters > 100 ? meters / 1000 : meters; // Auto-convert meters to km
-    return `${km.toFixed(1)}km`;
+    return statsFormatters.distance(km);
   },
 
-  volume: (kg?: number) => {
-    if (!kg) return '0kg';
-    if (kg >= 1000) {
-      const tons = kg / 1000;
-      return `${tons.toFixed(1)}t`;
-    }
-    return `${Math.round(kg)}kg`;
-  },
+  volume: statsFormatters.volume,
 
   workoutType: (type: string) => {
     const typeMap: Record<string, string> = {

@@ -140,76 +140,210 @@
   #splash-screen {
     background-color: hsl(var(--background));
   }
+}
+
+@layer components {
+  /* Enhanced markdown styling for chat messages */
+  .prose {
+    @apply max-w-none text-foreground;
+  }
   
-  /* Markdown styling for chat messages */
   .prose h1 {
-    @apply text-2xl font-extrabold mb-4 mt-3 font-sans;
+    @apply text-xl font-bold mb-3 mt-4 text-foreground;
   }
   
   .prose h2 {
-    @apply text-xl font-bold mb-3 mt-4 font-sans;
+    @apply text-lg font-semibold mb-2 mt-3 text-foreground;
   }
   
   .prose h3 {
-    @apply text-lg font-semibold mb-2 mt-3 font-sans;
+    @apply text-base font-semibold mb-2 mt-3 text-foreground;
+  }
+  
+  .prose h4 {
+    @apply text-sm font-medium mb-1 mt-2 text-muted-foreground;
   }
   
   .prose ul, .prose ol {
-    @apply my-3 pl-6;
+    @apply my-2 pl-4 space-y-1;
   }
   
   .prose li {
-    @apply my-2 leading-relaxed;
+    @apply text-sm leading-relaxed;
   }
   
   .prose p {
-    @apply my-3 leading-relaxed font-sans;
+    @apply my-2 text-sm leading-relaxed;
   }
   
   .prose strong {
-    @apply font-bold;
-  }
-  
-  .bg-muted .prose strong {
-    @apply text-primary-foreground dark:text-white;
-  }
-  
-  .bg-primary .prose strong {
-    @apply text-primary-foreground;
+    @apply font-semibold text-foreground;
   }
   
   .prose em {
-    @apply italic;
+    @apply italic text-muted-foreground;
   }
   
   .prose a {
-    @apply text-blue-600 dark:text-blue-300 hover:underline;
+    @apply text-primary hover:text-primary/80 underline underline-offset-2;
   }
   
-  .prose pre, .prose code {
-    @apply bg-gray-100 dark:bg-gray-800 p-3 rounded-lg font-mono text-sm;
-    font-family: 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+  .prose code {
+    @apply bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-foreground;
+  }
+  
+  .prose pre {
+    @apply bg-muted p-3 rounded-lg overflow-x-auto my-3;
+  }
+  
+  .prose pre code {
+    @apply bg-transparent p-0 text-xs;
+  }
+  
+  .prose blockquote {
+    @apply border-l-4 border-muted-foreground/30 pl-4 my-3 italic text-muted-foreground;
   }
   
   .prose table {
-    @apply w-full border-collapse my-3 bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden;
+    @apply w-full border-collapse my-3 text-xs;
   }
   
   .prose th, .prose td {
-    @apply border border-gray-300 dark:border-gray-700 px-3 py-2;
+    @apply border border-border px-2 py-1 text-left;
   }
   
   .prose th {
-    @apply bg-gray-100 dark:bg-gray-700 font-semibold;
+    @apply bg-muted font-medium;
   }
   
-  /* Add specific styles for dark mode chat messages */
-  .dark .bg-muted {
-    @apply text-white;
+  /* Chat-specific prose styling */
+  .chat-prose {
+    @apply prose prose-sm max-w-none;
+  }
+  
+  /* Concept explanation specific styling */
+  .concept-explanation .prose h3 {
+    @apply text-lg font-bold text-primary mb-3 mt-0;
+  }
+  
+  .concept-explanation .prose h4 {
+    @apply text-sm font-medium text-primary/80 mb-2 mt-3;
+  }
+  
+  .concept-explanation .prose p {
+    @apply my-2 text-sm leading-relaxed;
+  }
+  
+  .concept-explanation .prose ul {
+    @apply my-2 space-y-1;
+  }
+  
+  .concept-explanation .prose li {
+    @apply text-sm leading-relaxed;
   }
 
-  .dark .prose p, .dark .prose li, .dark .prose h1, .dark .prose h2, .dark .prose h3 {
-    @apply text-white;
+  /* Direct markdown styling - bypassing prose issues */
+  .markdown-content {
+    @apply text-sm leading-relaxed;
+  }
+  
+  .markdown-content h1 {
+    @apply text-xl font-bold mb-3 mt-4 text-foreground;
+  }
+  
+  .markdown-content h2 {
+    @apply text-lg font-semibold mb-2 mt-3 text-foreground;
+  }
+  
+  .markdown-content h3 {
+    @apply text-base font-semibold mb-2 mt-3 text-foreground;
+  }
+  
+  .markdown-content h4 {
+    @apply text-sm font-medium mb-1 mt-2 text-muted-foreground;
+  }
+  
+  .markdown-content p {
+    @apply my-2 text-sm leading-relaxed;
+  }
+  
+  .markdown-content strong {
+    @apply font-bold text-foreground;
+  }
+  
+  .markdown-content em {
+    @apply italic text-muted-foreground;
+  }
+  
+  .markdown-content ul {
+    @apply my-2 pl-4 space-y-1 list-disc;
+  }
+  
+  .markdown-content ol {
+    @apply my-2 pl-4 space-y-1 list-decimal;
+  }
+  
+  .markdown-content li {
+    @apply text-sm leading-relaxed;
+  }
+  
+  .markdown-content code {
+    @apply bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-foreground;
+  }
+  
+  .markdown-content pre {
+    @apply bg-muted p-3 rounded-lg overflow-x-auto my-3;
+  }
+  
+  .markdown-content pre code {
+    @apply bg-transparent p-0 text-xs;
+  }
+  
+  .markdown-content a {
+    @apply text-primary hover:text-primary/80 underline underline-offset-2;
+  }
+  
+  .markdown-content blockquote {
+    @apply border-l-4 border-muted-foreground/30 pl-4 my-3 italic text-muted-foreground;
+  }
+}
+
+/* Specific context-based styling using CSS custom properties */
+@layer utilities {
+  /* User message styling (primary background) */
+  .chat-bubble-user .prose,
+  .chat-bubble-user .prose * {
+    color: hsl(var(--primary-foreground));
+  }
+  
+  .chat-bubble-user .prose strong {
+    color: hsl(var(--primary-foreground));
+    font-weight: 600;
+  }
+  
+  .chat-bubble-user .prose code {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: hsl(var(--primary-foreground));
+  }
+  
+  .chat-bubble-user .prose a {
+    color: hsl(var(--primary-foreground));
+    text-decoration: underline;
+  }
+  
+  /* Assistant message styling (muted background) */
+  .chat-bubble-assistant .prose h1,
+  .chat-bubble-assistant .prose h2,
+  .chat-bubble-assistant .prose h3 {
+    color: hsl(var(--foreground));
+  }
+  
+  .chat-bubble-assistant .prose h4 {
+    color: hsl(var(--primary));
+  }
+  
+  .chat-bubble-assistant .prose strong {
+    color: hsl(var(--foreground));
   }
 }
 

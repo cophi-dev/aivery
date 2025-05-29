@@ -17,26 +17,28 @@ const AskAivery = () => {
     setResponse('')
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/ask-aivery', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: question,
-          context: 'dashboard'
+          input: question
         }),
       })
 
       if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error('Daily AI usage limit reached. Please contact hi@aivery.com for assistance.')
+        }
         throw new Error('Failed to get response')
       }
 
       const data = await res.json()
-      setResponse(data.response || 'I apologize, but I could not process your question at the moment.')
-    } catch (error) {
+      setResponse(data.answer || 'I apologize, but I could not process your question at the moment.')
+    } catch (error: any) {
       console.error('Failed to get AI response:', error)
-      setResponse('I apologize, but there was an error processing your question. Please try again later.')
+      setResponse(error.message || 'I apologize, but there was an error processing your question. Please try again later.')
     } finally {
       setIsLoading(false)
     }
@@ -48,10 +50,12 @@ const AskAivery = () => {
   }
 
   const suggestedQuestions = [
-    "How can I improve my running pace?",
-    "What's the best recovery strategy after strength training?",
-    "How often should I do cardio?",
-    "Tips for staying motivated?"
+    "What's my most consistent workout day?",
+    "How am I trending this month?",
+    "What's my longest streak?",
+    "Tips for improving my running pace?",
+    "Should I focus more on strength or cardio?",
+    "How can I stay consistent with my workouts?"
   ]
 
   return (
@@ -210,9 +214,9 @@ const AskAivery = () => {
                   transition={{ duration: 0.4, ease: "easeOut" }}
                   className="p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200/50 dark:border-green-800/50"
                 >
-                  <p className="text-[1rem] font-serif text-green-900 dark:text-green-100 leading-relaxed">
+                  <div className="text-[1rem] font-serif text-green-900 dark:text-green-100 leading-relaxed whitespace-pre-wrap">
                     {response}
-                  </p>
+                  </div>
                 </motion.div>
               )}
             </motion.div>
