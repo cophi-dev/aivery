@@ -125,23 +125,11 @@ export async function syncGarminWorkouts(userId: string) {
     }
 
     // In a real app, you would fetch workouts from Garmin's API
-    // This is just a mock implementation
-    const mockWorkout: Partial<WorkoutData> = {
-      userId: userId,
-      name: "Morning Run",
-      type: "running",
-      date: new Date(),
-      duration: 3600, // 1 hour
-      intensity: "Medium",
-      distance: 10000, // 10km
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    await createWorkout(mockWorkout)
+    // For now, just update the last synced timestamp without creating mock data
+    
     await updateLastSynced((integration._id as { toString: () => string }).toString(), new Date())
 
-    return 1
+    return 0 // Return 0 since we're not creating any workouts
   } catch (error) {
     console.error("Error syncing Garmin workouts:", error)
     throw new Error("Failed to sync Garmin workouts")
@@ -156,23 +144,11 @@ export async function syncCorosWorkouts(userId: string) {
     }
 
     // In a real app, you would fetch workouts from COROS's API
-    // This is just a mock implementation
-    const mockWorkout: Partial<WorkoutData> = {
-      userId: userId,
-      name: "Morning Run",
-      type: "running",
-      date: new Date(),
-      duration: 3600, // 1 hour
-      intensity: "Medium",
-      distance: 10000, // 10km
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    await createWorkout(mockWorkout)
+    // For now, just update the last synced timestamp without creating mock data
+    
     await updateLastSynced((integration._id as { toString: () => string }).toString(), new Date())
 
-    return 1
+    return 0 // Return 0 since we're not creating any workouts
   } catch (error) {
     console.error("Error syncing COROS workouts:", error)
     throw new Error("Failed to sync COROS workouts")
@@ -187,23 +163,11 @@ export async function syncStravaWorkouts(userId: string) {
     }
 
     // In a real app, you would fetch workouts from Strava's API
-    // This is just a mock implementation
-    const mockWorkout: Partial<WorkoutData> = {
-      userId: userId,
-      name: "Morning Run",
-      type: "running",
-      date: new Date(),
-      duration: 3600, // 1 hour
-      intensity: "Medium",
-      distance: 10000, // 10km
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    await createWorkout(mockWorkout)
+    // For now, just update the last synced timestamp without creating mock data
+    
     await updateLastSynced((integration._id as { toString: () => string }).toString(), new Date())
 
-    return 1
+    return 0 // Return 0 since we're not creating any workouts
   } catch (error) {
     console.error("Error syncing Strava workouts:", error)
     throw new Error("Failed to sync Strava workouts")

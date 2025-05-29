@@ -43,6 +43,12 @@ export const GET = withApiAuth(async (request: NextRequest, session: any) => {
       return NextResponse.json({ error: "User ID not found" }, { status: 400 });
     }
     
+    // Security: Only allow users to fetch their own avatar unless they have admin privileges
+    // For now, restrict to only fetching the authenticated user's avatar
+    if (queryUserId && queryUserId !== session.user.id) {
+      return NextResponse.json({ error: "Unauthorized: Cannot fetch other users' avatars" }, { status: 403 });
+    }
+    
     // Find user
     const userDoc = await UserModel.findById(userId).select("name image").lean();
     
@@ -53,9 +59,11 @@ export const GET = withApiAuth(async (request: NextRequest, session: any) => {
     // Properly serialize the document
     const user = serializeDocument(userDoc);
     
-    // Set cache headers for 1 hour to reduce frequent requests
+    // Remove cache headers to prevent cross-user contamination
     const headers = {
-      'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     };
     
     // Return image data

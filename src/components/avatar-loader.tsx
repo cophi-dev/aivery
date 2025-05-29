@@ -64,8 +64,14 @@ export function AvatarLoader({
 
     async function loadAvatar() {
       try {
-        // If we have a userId, use it, otherwise use the current user's avatar
-        const response = await fetch(`/api/user/avatar${userId ? `?userId=${userId}` : ''}`);
+        // Always use authenticated user's avatar, ignore userId param for security
+        const response = await fetch('/api/user/avatar', {
+          credentials: 'include',
+          cache: 'no-store', // Prevent caching to avoid cross-user contamination
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
         
         if (aborted) return;
         
@@ -100,42 +106,11 @@ export function AvatarLoader({
       clearTimeout(timeoutId);
       aborted = true;
     };
-  }, [userId, refreshKey, session, isAuthPage, skipLoad]); 
+  }, [refreshKey, session, isAuthPage, skipLoad]); // Removed userId dependency for security
 
   // Use session name as backup if no name is provided
   const displayName = name || session?.user?.name || "";
   
-  // Load avatar from session or API
-  useEffect(() => {
-    const loadAvatar = async () => {
-      try {
-        setLoading(true);
-        
-        // Try to get avatar directly from the API
-        const response = await fetch('/api/user/avatar', {
-          credentials: 'include'
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.image) {
-            setAvatarData(data.image);
-          }
-        }
-      } catch (error) {
-        // Silently fail - the fallback will be used
-      } finally {
-        setLoading(false);
-        setFallbackAttempted(true);
-      }
-    };
-    
-    // If we don't have an image URL and haven't tried the fallback yet, load from API
-    if (!avatarData && !fallbackAttempted) {
-      loadAvatar();
-    }
-  }, [avatarData, fallbackAttempted, refreshKey]);
-
   return (
     <UserAvatar 
       imageUrl={typeof avatarData === 'string' ? avatarData : null} 
