@@ -78,50 +78,58 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
       setIsGeneratingImage(true);
       setStep('downloading');
       
-      // Generate and download the image
-      const response = await fetch(`/api/workout/${workout.id}/share-image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          insight: insight || realLifeComparison,
-          comparison: realLifeComparison
-        })
+      // Generate image from the ShareCard component
+      const shareCardElement = document.querySelector('[data-share-card]') as HTMLElement;
+      
+      if (!shareCardElement) {
+        throw new Error('Share card not found');
+      }
+
+      // Use html2canvas to convert the ShareCard to an image
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(shareCardElement, {
+        useCORS: true,
+        background: '#ffffff',
+        logging: false,
+        width: shareCardElement.offsetWidth * 2,
+        height: shareCardElement.offsetHeight * 2,
       });
 
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        
-        // Create a well-named download
-        const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        const workoutType = workout.type.toLowerCase().replace(/\s+/g, '-');
-        const filename = `aivery-${workoutType}-${timestamp}.png`;
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        
-        URL.revokeObjectURL(url);
-        
-        // Move to ready state
-        setStep('ready');
-        
-        const { toast } = await import('sonner');
-        toast.success(`Image saved as "${filename}"`, { 
-          duration: 4000,
-          description: "Ready to share on Twitter!"
-        });
-        
-        // Wait a moment for download to register, then open Twitter
-        setTimeout(() => {
-          const shareText = generateShareText();
-          const shareUrl = `${window.location.origin}/workouts/${workout.id}`;
-          const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
+      // Create a well-named download
+      const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const workoutType = workout.type.toLowerCase().replace(/\s+/g, '-');
+      const filename = `aivery-${workoutType}-${timestamp}.png`;
+      
+      // Convert canvas to blob and download
+      canvas.toBlob(async (blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
           
-          window.open(twitterUrl, '_blank', 'width=600,height=400');
-        }, 1000);
-      }
+          // Move to ready state
+          setStep('ready');
+          
+          const { toast } = await import('sonner');
+          toast.success(`Image saved as "${filename}"`, { 
+            duration: 4000,
+            description: "Ready to share on Twitter!"
+          });
+          
+          // Wait a moment for download to register, then open Twitter
+          setTimeout(() => {
+            const shareText = generateShareText();
+            const shareUrl = `${window.location.origin}/workouts/${workout.id}`;
+            const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
+            
+            window.open(twitterUrl, '_blank', 'width=600,height=400');
+          }, 1000);
+        }
+      }, 'image/png', 0.95);
+
     } catch (error) {
       console.error('Failed to generate share image:', error);
       const { toast } = await import('sonner');
@@ -136,33 +144,39 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
     try {
       setIsGeneratingImage(true);
       
-      const response = await fetch(`/api/workout/${workout.id}/share-image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          insight: insight || realLifeComparison,
-          comparison: realLifeComparison
-        })
+      const shareCardElement = document.querySelector('[data-share-card]') as HTMLElement;
+      
+      if (!shareCardElement) {
+        throw new Error('Share card not found');
+      }
+
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(shareCardElement, {
+        useCORS: true,
+        background: '#ffffff',
+        logging: false,
+        width: shareCardElement.offsetWidth * 2,
+        height: shareCardElement.offsetHeight * 2,
       });
 
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        
-        const timestamp = new Date().toISOString().split('T')[0];
-        const workoutType = workout.type.toLowerCase().replace(/\s+/g, '-');
-        const filename = `aivery-${workoutType}-${timestamp}.png`;
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        
-        URL.revokeObjectURL(url);
-        
-        const { toast } = await import('sonner');
-        toast.success(`Image downloaded as "${filename}"`);
-      }
+      const timestamp = new Date().toISOString().split('T')[0];
+      const workoutType = workout.type.toLowerCase().replace(/\s+/g, '-');
+      const filename = `aivery-${workoutType}-${timestamp}.png`;
+      
+      canvas.toBlob(async (blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+          
+          const { toast } = await import('sonner');
+          toast.success(`Image downloaded as "${filename}"`);
+        }
+      }, 'image/png', 0.95);
+
     } catch (error) {
       console.error('Failed to generate share image:', error);
       const { toast } = await import('sonner');

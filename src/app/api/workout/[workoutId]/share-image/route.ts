@@ -6,6 +6,73 @@ import WorkoutModel, { IWorkout } from "@/lib/db/models/workout";
 import { ObjectId } from 'mongodb';
 import { generateDistanceComparisonText } from "@/lib/workout-distance-comparisons";
 
+// POST handler for generating downloadable PNG images
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { workoutId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = session.user.id;
+    const workoutId = params.workoutId;
+
+    if (!workoutId || !ObjectId.isValid(workoutId)) {
+      return NextResponse.json({ error: "Valid Workout ID is required" }, { status: 400 });
+    }
+
+    const body = await req.json();
+    const { insight, comparison } = body;
+
+    await dbConnect();
+
+    // Fetch the workout
+    const workout = await WorkoutModel.findOne({
+      _id: new ObjectId(workoutId),
+      userId: new ObjectId(userId)
+    }).lean<IWorkout>();
+
+    if (!workout) {
+      return NextResponse.json({ error: "Workout not found" }, { status: 404 });
+    }
+
+    // Use provided comparison or generate one
+    let comparisonText = comparison || insight || '';
+    if (!comparisonText && workout.type === 'running' && workout.cardioDetails?.distance) {
+      const autoComparison = generateDistanceComparisonText(workout.cardioDetails.distance);
+      if (autoComparison) {
+        comparisonText = autoComparison;
+      }
+    }
+
+    // Generate SVG image
+    const svg = generateWorkoutShareSVG({
+      workout,
+      comparisonText,
+      userName: session.user.name || 'Fitness Enthusiast'
+    });
+
+    // Convert SVG to PNG using a simpler approach
+    const svgBuffer = Buffer.from(svg, 'utf-8');
+
+    return new NextResponse(svgBuffer, {
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Content-Disposition': 'attachment; filename="workout-share.svg"',
+        'Cache-Control': 'no-cache',
+      },
+    });
+
+  } catch (error) {
+    console.error('Error generating share image:', error);
+    return NextResponse.json({ error: "Failed to generate image" }, { status: 500 });
+  }
+}
+
+// GET handler for simple SVG generation (existing functionality)
 export async function GET(
   req: NextRequest,
   { params }: { params: { workoutId: string } }

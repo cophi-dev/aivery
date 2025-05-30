@@ -764,7 +764,6 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
           name: workout.name
         }}
         insight={aiHighlight || undefined}
-        realLifeComparison={undefined} // This could be fetched separately if needed
       />
     </div>
   )
