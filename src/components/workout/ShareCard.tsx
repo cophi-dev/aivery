@@ -147,17 +147,10 @@ export function ShareCard({ workout, insight, realLifeComparison, className }: S
       const html2canvas = (await import('html2canvas')).default;
       const canvas = await html2canvas(cardRef.current, {
         useCORS: true,
-        backgroundColor: '#ffffff',
+        background: '#ffffff',
         logging: false,
         width: cardRef.current.offsetWidth * 2,
         height: cardRef.current.offsetHeight * 2,
-        onclone: (clonedDoc: Document) => {
-          // Ensure fonts are loaded in the cloned document
-          const clonedElement = clonedDoc.querySelector('[data-share-card]');
-          if (clonedElement) {
-            (clonedElement as HTMLElement).style.fontFamily = 'ui-monospace, monospace';
-          }
-        }
       });
       
       const link = document.createElement('a');
