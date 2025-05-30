@@ -486,12 +486,18 @@ export default function NewWorkoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [aiLogInput, setAiLogInput] = useState<string>("") // State for AI input
   const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false) // State for AI processing status
-  const [isUpdatingQuickLog, setIsUpdatingQuickLog] = useState<boolean>(false) // Prevent infinite loops
-  const [lastProcessedQuickLog, setLastProcessedQuickLog] = useState<string>("") // Track last processed quick log
+  // Remove bidirectional sync state - we don't need these anymore
+  // const [isUpdatingQuickLog, setIsUpdatingQuickLog] = useState<boolean>(false) // Prevent infinite loops
+  // const [lastProcessedQuickLog, setLastProcessedQuickLog] = useState<string>("") // Track last processed quick log
+  // const [lastManualLogUpdate, setLastManualLogUpdate] = useState<string>("") // Track manual updates to break cycles
+  // const [userTypingInQuickLog, setUserTypingInQuickLog] = useState<boolean>(false) // Track if user is actively typing
 
   // --- NEW State for Performance Data ---
   const [exercisePerformanceData, setExercisePerformanceData] = useState<Record<string | number, ExercisePerformanceStats>>({});
   // --- END NEW State ---
+
+  // Remove typing timeout ref since we don't need automatic processing
+  // const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- NEW Search State ---
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState("");
@@ -1858,128 +1864,26 @@ export default function NewWorkoutPage() {
     return logParts.join('\n');
   }, []); // Empty dependency array since this is a pure function
 
-  // Process quick log changes to update exercises (called when user manually edits quick log)
-  const processQuickLogToExercises = useCallback(async (quickLogText: string) => {
-    if (!quickLogText.trim()) {
-      // If quick log is empty, clear exercises
-      setExercises([]);
-      setWorkoutType(undefined);
-      setDistance('');
-      setDuration('');
+  // Auto-generate quick log text when exercises change (one-way sync) 
+  useEffect(() => {
+    // Don't auto-update if user is typing or we're processing
+    if (exercises.length === 0 && !workoutType && !distance && !duration) {
+      // Clear the quick log if everything is empty
+      setAiLogInput('');
       return;
     }
-    
-    // Use the existing AI processing function to parse the text
-    try {
-      const response = await fetch('/api/ai/parse-workout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ logText: quickLogText }),
-      });
 
-      if (!response.ok) {
-        throw new Error(`Failed to parse quick log: ${response.status}`);
-      }
-
-      const parsedData: ParsedWorkoutData = await response.json();
-      
-      // Update form state based on parsed data
-      if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
-        setWorkoutType(parsedData.workoutType as WorkoutTypeOption);
-      }
-      
-      if (parsedData.workoutName) {
-        setWorkoutName(parsedData.workoutName);
-      }
-      
-      // Update distance and duration from AI
-      if (parsedData.cardioDetails?.distance !== undefined) {
-        setDistance(String(parsedData.cardioDetails.distance));
-      }
-      if (parsedData.cardioDetails?.duration !== undefined) {
-        setDuration(String(parsedData.cardioDetails.duration));
-      }
-      
-      // Update exercises
-      const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
-        const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
-        const canonicalExercise = findCanonicalExercise(parsedEx.name, dbExercises, exerciseAliases);
-        
-        const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => {
-          const weight = parsedSet.weight || "0";
-          const reps = parsedSet.reps || "1";
-          const notes = parsedSet.notes || "";
-          const intensity = parsedSet.intensity !== undefined ? Number(parsedSet.intensity) : 0.7;
-          
-          return {
-            id: `set-temp-${Date.now()}-${Math.random()}`,
-            weight,
-            reps,
-            notes,
-            intensity,
-          };
-        });
-        
-        return {
-          id: exerciseTempId,
-          exerciseId: canonicalExercise?._id,
-          name: canonicalExercise?.name || parsedEx.name,
-          notes: parsedEx.notes || "",
-          sets: newSetsState,
-        };
-      });
-      
-      setExercises(newExercisesState);
-      
-    } catch (err) {
-      console.error("Failed to process quick log to exercises:", err);
-      toast.error("Failed to parse quick log changes");
-    }
-  }, [dbExercises]); // Only depends on dbExercises which is stable
-
-  // Debounced handler for manual quick log changes
-  const debouncedQuickLogValue = useDebounce(aiLogInput, 500);
-
-  // --- NEW: Effect to update quick log when exercises/form data changes ---
-  useEffect(() => {
-    if (isUpdatingQuickLog) return; // Prevent infinite loops
-    
     const quickLogText = generateQuickLogFromExercises(exercises, workoutType, distance, duration);
-    // Only update if there's a meaningful difference (ignore whitespace differences)
-    const normalizedCurrent = aiLogInput.trim().replace(/\s+/g, ' ');
-    const normalizedNew = quickLogText.trim().replace(/\s+/g, ' ');
-    
-    if (normalizedNew !== normalizedCurrent && normalizedNew !== '') {
-      setAiLogInput(quickLogText);
-    } else if (normalizedNew === '' && normalizedCurrent !== '') {
-      // Only clear if we had content before and now have no exercises
-      setAiLogInput('');
-    }
-  }, [exercises, workoutType, distance, duration, isUpdatingQuickLog, aiLogInput, generateQuickLogFromExercises]); // Include all dependencies
+    if (!quickLogText) return;
 
-  useEffect(() => {
-    // Only process if the quick log was manually changed (not auto-updated)
-    // and if there's meaningful content to process
-    if (debouncedQuickLogValue !== lastProcessedQuickLog && 
-        !isUpdatingQuickLog && 
-        debouncedQuickLogValue.trim() !== '') {
-      setIsUpdatingQuickLog(true);
-      processQuickLogToExercises(debouncedQuickLogValue).finally(() => {
-        setLastProcessedQuickLog(debouncedQuickLogValue);
-        setIsUpdatingQuickLog(false);
-      });
-    } else if (debouncedQuickLogValue.trim() === '' && lastProcessedQuickLog !== '') {
-      // Handle clearing the quick log
-      setIsUpdatingQuickLog(true);
-      setExercises([]);
-      setWorkoutType(undefined);
-      setDistance('');
-      setDuration('');
-      setLastProcessedQuickLog('');
-      setIsUpdatingQuickLog(false);
-    }
-  }, [debouncedQuickLogValue, lastProcessedQuickLog, isUpdatingQuickLog, processQuickLogToExercises]); // Include function dependency
-  // --- END Functions for Bidirectional Quick Log Sync ---
+    // Simple one-way sync - just update the quick log field
+    setAiLogInput(quickLogText);
+  }, [exercises, workoutType, distance, duration, generateQuickLogFromExercises]);
+
+  // Remove the problematic bidirectional sync useEffect
+  // The second useEffect that was causing the ReferenceError is removed
+  
+  // --- END Functions for Quick Log Sync ---
 
   // Loading indicator
   if (isLoadingData) {
@@ -2236,20 +2140,13 @@ export default function NewWorkoutPage() {
                 <Textarea
                   placeholder="Quick Log - Auto-syncs with manual entries below. Type or paste workout data here: e.g., Squats: 3x10 50kg, Push-ups: 2x15..."
                   className={cn(
-                    "min-h-[100px] bg-white/70 dark:bg-neutral-900/70 border-neutral-200/50 dark:border-neutral-700/50 rounded-2xl backdrop-blur-sm resize-none text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-neutral-600 transition-colors duration-200",
-                    isUpdatingQuickLog && "border-blue-300 dark:border-blue-600 shadow-sm"
+                    "min-h-[100px] bg-white/70 dark:bg-neutral-900/70 border-neutral-200/50 dark:border-neutral-700/50 rounded-2xl backdrop-blur-sm resize-none text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-neutral-600 transition-colors duration-200"
                   )}
                   value={aiLogInput}
                   onChange={(e) => setAiLogInput(e.target.value)}
                   disabled={isProcessingAi}
                 />
-                {/* Small sync indicator */}
-                {isUpdatingQuickLog && (
-                  <div className="flex items-center gap-2 mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-                    <LucideLoader className="h-3 w-3 animate-spin" />
-                    <span>Syncing with manual entries...</span>
-                  </div>
-                )}
+                {/* Removed sync indicator since we removed bidirectional sync */}
               </motion.div>
               
               <motion.div
@@ -2735,11 +2632,6 @@ export default function NewWorkoutPage() {
         {/* Custom Scrollbar Styles */}
         <style jsx global>{customScrollbarStyle}</style>
 
-        {/* Rest of the component would continue with exercises section */}
-        {/* Note: Adding a simple message for now to complete the component */}
-        <div className="text-center text-neutral-500 dark:text-neutral-400 text-sm">
-          Exercises section and remaining UI components would follow here...
-        </div>
       </main>
     </div>
   )
