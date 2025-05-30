@@ -109,16 +109,30 @@ export function WeeklyShareCard({ weeklyStats, className }: WeeklyShareCardProps
       
       switch (platform) {
         case 'x':
+          // Smart sharing: download image, open Twitter, show instructions
           await downloadCardAsImage();
-          setTimeout(() => {
-            window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`, '_blank');
-          }, 1000);
+          setTimeout(async () => {
+            const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+            window.open(twitterUrl, '_blank', 'width=600,height=400');
+            
+            // Show helpful instruction
+            const { toast } = await import('sonner');
+            toast.success(
+              'Weekly summary image downloaded! 📊',
+              { 
+                duration: 6000,
+                description: 'Click "Add photos" in Twitter and select your downloaded image.'
+              }
+            );
+          }, 800);
           break;
           
         case 'copy':
           await navigator.clipboard.writeText(shareText);
           const { toast } = await import('sonner');
-          toast.success('Copied');
+          toast.success('Weekly summary copied!', {
+            description: "Ready to paste on social media"
+          });
           break;
           
         case 'download':
@@ -127,6 +141,8 @@ export function WeeklyShareCard({ weeklyStats, className }: WeeklyShareCardProps
       }
     } catch (error) {
       console.error('Sharing failed:', error);
+      const { toast } = await import('sonner');
+      toast.error('Sharing failed. Please try again.');
     } finally {
       setIsSharing(false);
     }
@@ -139,17 +155,28 @@ export function WeeklyShareCard({ weeklyStats, className }: WeeklyShareCardProps
       const html2canvas = (await import('html2canvas')).default;
       const canvas = await html2canvas(cardRef.current, {
         useCORS: true,
+        background: '#ffffff',
+        logging: false,
+        width: cardRef.current.offsetWidth * 2,
+        height: cardRef.current.offsetHeight * 2,
       });
       
+      // Create a meaningful filename
+      const weekStart = format(startOfWeek(new Date()), 'MMM-dd');
+      const weekEnd = format(endOfWeek(new Date()), 'MMM-dd-yyyy');
+      const filename = `aivery-weekly-summary-${weekStart}-to-${weekEnd}.png`;
+      
       const link = document.createElement('a');
-      link.download = `week-${format(new Date(), 'yyyy-MM-dd')}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png', 0.95);
       link.click();
       
       const { toast } = await import('sonner');
-      toast.success('Downloaded');
+      toast.success(`Saved as "${filename}"`);
     } catch (error) {
       console.error('Download failed:', error);
+      const { toast } = await import('sonner');
+      toast.error('Failed to generate image. Please try again.');
     }
   };
 
