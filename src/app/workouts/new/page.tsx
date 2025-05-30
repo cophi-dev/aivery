@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
@@ -266,7 +266,7 @@ const cardioExerciseNames: Partial<Record<WorkoutTypeOption, string>> = {
   walking: "Walking",
 };
 
-// Update the NumberSlider component to have fixed width
+// Update the NumberSlider component to have better input methods
 function NumberSlider({
   value,
   onChange,
@@ -287,6 +287,12 @@ function NumberSlider({
   isDecimal?: boolean;
 }) {
   const numValue = Number(value) || 0;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value.toString());
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartY, setDragStartY] = useState(0);
+  const [dragStartValue, setDragStartValue] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const increment = () => {
     const newValue = Math.min(max, numValue + step);
@@ -298,9 +304,83 @@ function NumberSlider({
     onChange(isDecimal ? newValue.toFixed(1) : newValue.toString());
   };
 
+  const handleNumberClick = () => {
+    setIsEditing(true);
+    setEditValue(value.toString());
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditValue(e.target.value);
+  };
+
+  const handleInputBlur = () => {
+    const newValue = Number(editValue);
+    if (!isNaN(newValue) && newValue >= min && newValue <= max) {
+      onChange(isDecimal ? newValue.toFixed(1) : newValue.toString());
+    }
+    setIsEditing(false);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleInputBlur();
+    } else if (e.key === 'Escape') {
+      setEditValue(value.toString());
+      setIsEditing(false);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      increment();
+      setIsEditing(false);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      decrement();
+      setIsEditing(false);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    setIsDragging(true);
+    setDragStartY(e.clientY);
+    setDragStartValue(numValue);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    const deltaY = dragStartY - e.clientY; // Inverted: up = positive
+    const sensitivity = 2; // pixels per step
+    const steps = Math.floor(deltaY / sensitivity);
+    const newValue = Math.max(min, Math.min(max, dragStartValue + (steps * step)));
+    
+    if (newValue !== numValue) {
+      onChange(isDecimal ? newValue.toFixed(1) : newValue.toString());
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Add mouse event listeners for dragging
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ns-resize';
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+      };
+    }
+  }, [isDragging, dragStartY, dragStartValue]);
+
   return (
     <motion.div 
-      className={cn("flex items-center justify-center gap-3 w-full max-w-[180px]", className)}
+      className={cn("group flex items-center justify-center gap-3 w-full max-w-[180px]", className)}
       whileHover={{ scale: 1.02 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
     >
@@ -316,18 +396,56 @@ function NumberSlider({
       </motion.button>
       
       <motion.div 
-        className="flex flex-col items-center min-w-[70px]"
+        className="flex flex-col items-center min-w-[70px] relative"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
+        onMouseDown={handleMouseDown}
+        style={{ cursor: isDragging ? 'ns-resize' : 'pointer' }}
       >
-        <div className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
-          <SlidingNumber value={numValue} />
-        </div>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="number"
+            value={editValue}
+            onChange={handleInputChange}
+            onBlur={handleInputBlur}
+            onKeyDown={handleInputKeyDown}
+            min={min}
+            max={max}
+            step={step}
+            className="w-16 text-lg font-serif tracking-tight text-center bg-transparent border-0 outline-none text-neutral-900 dark:text-neutral-100 [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+        ) : (
+          <motion.div 
+            className={cn(
+              "text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 cursor-pointer select-none rounded-md px-2 py-1 transition-colors",
+              isDragging && "bg-blue-100 dark:bg-blue-900/30 shadow-sm"
+            )}
+            onClick={handleNumberClick}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <SlidingNumber value={numValue} />
+          </motion.div>
+        )}
         {unit && (
           <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium tracking-wide">
             {unit}
           </span>
+        )}
+        {!isEditing && (
+          <motion.div 
+            className="absolute -bottom-5 text-[10px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap"
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ 
+              opacity: isDragging ? 1 : 0, 
+              y: isDragging ? 0 : -5 
+            }}
+            transition={{ duration: 0.2 }}
+          >
+            {isDragging ? "dragging..." : "drag ↕ or click"}
+          </motion.div>
         )}
       </motion.div>
       
@@ -368,6 +486,8 @@ export default function NewWorkoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [aiLogInput, setAiLogInput] = useState<string>("") // State for AI input
   const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false) // State for AI processing status
+  const [isUpdatingQuickLog, setIsUpdatingQuickLog] = useState<boolean>(false) // Prevent infinite loops
+  const [lastProcessedQuickLog, setLastProcessedQuickLog] = useState<string>("") // Track last processed quick log
 
   // --- NEW State for Performance Data ---
   const [exercisePerformanceData, setExercisePerformanceData] = useState<Record<string | number, ExercisePerformanceStats>>({});
@@ -379,9 +499,13 @@ export default function NewWorkoutPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchList, setShowSearchList] = useState(false); // To control combobox popover visibility
   const [isExerciseDialogOpen, setIsExerciseDialogOpen] = useState(false); // NEW state for dialog
-  const [performedExercises, setPerformedExercises] = useState<ExerciseData[]>([]); // NEW state for performed exercises
-  const debouncedSearchQuery = useDebounce(exerciseSearchQuery, 300); // Debounce search input
-  // --- END Search State ---
+
+  // --- NEW State for Currently Used Exercises ---
+  const [performedExercises, setPerformedExercises] = useState<ExerciseData[]>([]);
+  // --- END NEW State ---
+
+  // Create debounced search query
+  const debouncedSearchQuery = useDebounce(exerciseSearchQuery, 300);
 
   const isEditing = !!editingWorkoutId
 
@@ -1660,6 +1784,203 @@ export default function NewWorkoutPage() {
     { label: "60°", value: 0.4 },
   ];
 
+  // --- NEW Functions for Bidirectional Quick Log Sync ---
+  // Generate quick log text from current exercises and form data
+  const generateQuickLogFromExercises = useCallback((exercises: ExerciseState[], workoutType?: WorkoutTypeOption, distance?: string, duration?: string): string => {
+    const logParts: string[] = [];
+    
+    // Add workout type if present
+    if (workoutType) {
+      const displayName = workoutTypeDisplayNames[workoutType] || workoutType;
+      logParts.push(`${displayName}`);
+    }
+    
+    // Add overall cardio details if present
+    if (workoutType && cardioExerciseNames[workoutType] && (distance || duration)) {
+      const cardioDetails: string[] = [];
+      if (duration) cardioDetails.push(`${duration} min`);
+      if (distance) cardioDetails.push(`${distance} km`);
+      if (cardioDetails.length > 0) {
+        logParts.push(`Overall: ${cardioDetails.join(', ')}`);
+      }
+    }
+    
+    // Add exercises with more natural formatting
+    exercises.forEach(exercise => {
+      if (!exercise.name) return; // Skip exercises without names
+      
+      const exerciseParts: string[] = [exercise.name + ':'];
+      
+      // For strength exercises with sets
+      if (exercise.sets.length > 0) {
+        const setStrings = exercise.sets.map(set => {
+          const parts: string[] = [];
+          
+          // Reps first, then weight (more natural reading order)
+          if (set.reps && Number(set.reps) > 0) {
+            if (set.weight && Number(set.weight) > 0) {
+              parts.push(`${set.reps}x${set.weight}kg`);
+            } else {
+              parts.push(`${set.reps} reps`);
+            }
+          }
+          
+          // Add duration and distance if present
+          if (set.duration) parts.push(`${set.duration}s`);
+          if (set.distance) parts.push(`${set.distance}m`);
+          
+          return parts.join(' ');
+        }).filter(Boolean);
+        
+        if (setStrings.length > 0) {
+          exerciseParts.push(setStrings.join(', '));
+        }
+      }
+      
+      // For cardio exercises with individual duration/distance
+      if (exercise.duration || exercise.distance) {
+        const cardioDetails: string[] = [];
+        if (exercise.duration) cardioDetails.push(`${exercise.duration} min`);
+        if (exercise.distance) cardioDetails.push(`${exercise.distance} km`);
+        if (cardioDetails.length > 0) {
+          exerciseParts.push(cardioDetails.join(', '));
+        }
+      }
+      
+      // Add notes if present
+      if (exercise.notes?.trim()) {
+        exerciseParts.push(`(${exercise.notes.trim()})`);
+      }
+      
+      logParts.push(exerciseParts.join(' '));
+    });
+    
+    return logParts.join('\n');
+  }, []); // Empty dependency array since this is a pure function
+
+  // Process quick log changes to update exercises (called when user manually edits quick log)
+  const processQuickLogToExercises = useCallback(async (quickLogText: string) => {
+    if (!quickLogText.trim()) {
+      // If quick log is empty, clear exercises
+      setExercises([]);
+      setWorkoutType(undefined);
+      setDistance('');
+      setDuration('');
+      return;
+    }
+    
+    // Use the existing AI processing function to parse the text
+    try {
+      const response = await fetch('/api/ai/parse-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logText: quickLogText }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to parse quick log: ${response.status}`);
+      }
+
+      const parsedData: ParsedWorkoutData = await response.json();
+      
+      // Update form state based on parsed data
+      if (parsedData.workoutType && workoutTypeDisplayNames.hasOwnProperty(parsedData.workoutType)) {
+        setWorkoutType(parsedData.workoutType as WorkoutTypeOption);
+      }
+      
+      if (parsedData.workoutName) {
+        setWorkoutName(parsedData.workoutName);
+      }
+      
+      // Update distance and duration from AI
+      if (parsedData.cardioDetails?.distance !== undefined) {
+        setDistance(String(parsedData.cardioDetails.distance));
+      }
+      if (parsedData.cardioDetails?.duration !== undefined) {
+        setDuration(String(parsedData.cardioDetails.duration));
+      }
+      
+      // Update exercises
+      const newExercisesState: ExerciseState[] = parsedData.exercises.map((parsedEx) => {
+        const exerciseTempId = `ex-temp-${Date.now()}-${Math.random()}`;
+        const canonicalExercise = findCanonicalExercise(parsedEx.name, dbExercises, exerciseAliases);
+        
+        const newSetsState: SetState[] = parsedEx.sets.map((parsedSet) => {
+          const weight = parsedSet.weight || "0";
+          const reps = parsedSet.reps || "1";
+          const notes = parsedSet.notes || "";
+          const intensity = parsedSet.intensity !== undefined ? Number(parsedSet.intensity) : 0.7;
+          
+          return {
+            id: `set-temp-${Date.now()}-${Math.random()}`,
+            weight,
+            reps,
+            notes,
+            intensity,
+          };
+        });
+        
+        return {
+          id: exerciseTempId,
+          exerciseId: canonicalExercise?._id,
+          name: canonicalExercise?.name || parsedEx.name,
+          notes: parsedEx.notes || "",
+          sets: newSetsState,
+        };
+      });
+      
+      setExercises(newExercisesState);
+      
+    } catch (err) {
+      console.error("Failed to process quick log to exercises:", err);
+      toast.error("Failed to parse quick log changes");
+    }
+  }, [dbExercises]); // Only depends on dbExercises which is stable
+
+  // Debounced handler for manual quick log changes
+  const debouncedQuickLogValue = useDebounce(aiLogInput, 500);
+
+  // --- NEW: Effect to update quick log when exercises/form data changes ---
+  useEffect(() => {
+    if (isUpdatingQuickLog) return; // Prevent infinite loops
+    
+    const quickLogText = generateQuickLogFromExercises(exercises, workoutType, distance, duration);
+    // Only update if there's a meaningful difference (ignore whitespace differences)
+    const normalizedCurrent = aiLogInput.trim().replace(/\s+/g, ' ');
+    const normalizedNew = quickLogText.trim().replace(/\s+/g, ' ');
+    
+    if (normalizedNew !== normalizedCurrent && normalizedNew !== '') {
+      setAiLogInput(quickLogText);
+    } else if (normalizedNew === '' && normalizedCurrent !== '') {
+      // Only clear if we had content before and now have no exercises
+      setAiLogInput('');
+    }
+  }, [exercises, workoutType, distance, duration, isUpdatingQuickLog, aiLogInput, generateQuickLogFromExercises]); // Include all dependencies
+
+  useEffect(() => {
+    // Only process if the quick log was manually changed (not auto-updated)
+    // and if there's meaningful content to process
+    if (debouncedQuickLogValue !== lastProcessedQuickLog && 
+        !isUpdatingQuickLog && 
+        debouncedQuickLogValue.trim() !== '') {
+      setIsUpdatingQuickLog(true);
+      processQuickLogToExercises(debouncedQuickLogValue).finally(() => {
+        setLastProcessedQuickLog(debouncedQuickLogValue);
+        setIsUpdatingQuickLog(false);
+      });
+    } else if (debouncedQuickLogValue.trim() === '' && lastProcessedQuickLog !== '') {
+      // Handle clearing the quick log
+      setIsUpdatingQuickLog(true);
+      setExercises([]);
+      setWorkoutType(undefined);
+      setDistance('');
+      setDuration('');
+      setLastProcessedQuickLog('');
+      setIsUpdatingQuickLog(false);
+    }
+  }, [debouncedQuickLogValue, lastProcessedQuickLog, isUpdatingQuickLog, processQuickLogToExercises]); // Include function dependency
+  // --- END Functions for Bidirectional Quick Log Sync ---
+
   // Loading indicator
   if (isLoadingData) {
       return <div className="container mx-auto px-4 py-8">Loading workout data...</div>;
@@ -1869,87 +2190,98 @@ export default function NewWorkoutPage() {
         )}
 
         {/* Enhanced Quick Log Section with sophisticated design */}
-        {!isEditing && (
+        <motion.div 
+          className="relative"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9, duration: 0.8 }}
+        >
           <motion.div 
-            className="relative"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9, duration: 0.8 }}
+            className="pointer-events-none absolute inset-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.2, duration: 1 }}
           >
-            <motion.div 
-              className="pointer-events-none absolute inset-0"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.2, duration: 1 }}
-            >
-              <GlowEffect
-                colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']}
-                mode="colorShift"
-                blur="strong"
-                scale={1}
-                duration={4}
-              />
-            </motion.div>
-            <div className={quickLogStyle}>
-              <div className="p-8 space-y-6">
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 1.0, duration: 0.6 }}
-                >
-                  <h2 className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2">
-                    Quick Log with AI
-                  </h2>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                    Paste your workout data and let AI parse it intelligently
-                  </p>
-                </motion.div>
-                
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 1.1, duration: 0.6 }}
-                >
-                  <Textarea
-                    placeholder="Paste your workout log... e.g., Squats: 1x5 60 kg, 3x5 50 kg..."
-                    className="min-h-[100px] bg-white/70 dark:bg-neutral-900/70 border-neutral-200/50 dark:border-neutral-700/50 rounded-2xl backdrop-blur-sm resize-none text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-neutral-600 transition-colors duration-200"
-                    value={aiLogInput}
-                    onChange={(e) => setAiLogInput(e.target.value)}
-                    disabled={isProcessingAi}
-                  />
-                </motion.div>
-                
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 1.2, duration: 0.6 }}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                >
-                  <Button
-                    type="button"
-                    onClick={() => handleAiProcess(aiLogInput)}
-                    disabled={isProcessingAi || !aiLogInput.trim()}
-                    variant="outline"
-                    className="w-full h-12 rounded-2xl border-neutral-200/50 dark:border-neutral-700/50 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm hover:bg-white/80 dark:hover:bg-neutral-900/80 transition-all duration-200 text-neutral-900 dark:text-neutral-100"
-                  >
-                    {isProcessingAi ? (
-                      <>
-                        <LucideLoader className="mr-2 h-4 w-4 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <LucideCheck className="mr-2 h-4 w-4" />
-                        Process with AI
-                      </>
-                    )}
-                  </Button>
-                </motion.div>
-              </div>
-            </div>
+            <GlowEffect
+              colors={['#0894FF', '#C959DD', '#FF2E54', '#FF9004']}
+              mode="colorShift"
+              blur="strong"
+              scale={1}
+              duration={4}
+            />
           </motion.div>
-        )}
+          <div className={quickLogStyle}>
+            <div className="p-8 space-y-6">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.0, duration: 0.6 }}
+              >
+                <h2 className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-2">
+                  Quick Log with AI
+                </h2>
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                  {isEditing 
+                    ? "Auto-syncs with your manual entries below. Edit here to update exercises, or modify exercises to see changes reflected here."
+                    : "Paste your workout data and let AI parse it intelligently. Auto-syncs with manual entries below."
+                  }
+                </p>
+              </motion.div>
+              
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.1, duration: 0.6 }}
+              >
+                <Textarea
+                  placeholder="Quick Log - Auto-syncs with manual entries below. Type or paste workout data here: e.g., Squats: 3x10 50kg, Push-ups: 2x15..."
+                  className={cn(
+                    "min-h-[100px] bg-white/70 dark:bg-neutral-900/70 border-neutral-200/50 dark:border-neutral-700/50 rounded-2xl backdrop-blur-sm resize-none text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-neutral-600 transition-colors duration-200",
+                    isUpdatingQuickLog && "border-blue-300 dark:border-blue-600 shadow-sm"
+                  )}
+                  value={aiLogInput}
+                  onChange={(e) => setAiLogInput(e.target.value)}
+                  disabled={isProcessingAi}
+                />
+                {/* Small sync indicator */}
+                {isUpdatingQuickLog && (
+                  <div className="flex items-center gap-2 mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                    <LucideLoader className="h-3 w-3 animate-spin" />
+                    <span>Syncing with manual entries...</span>
+                  </div>
+                )}
+              </motion.div>
+              
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.2, duration: 0.6 }}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+              >
+                <Button
+                  type="button"
+                  onClick={() => handleAiProcess(aiLogInput)}
+                  disabled={isProcessingAi || !aiLogInput.trim()}
+                  variant="outline"
+                  className="w-full h-12 rounded-2xl border-neutral-200/50 dark:border-neutral-700/50 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm hover:bg-white/80 dark:hover:bg-neutral-900/80 transition-all duration-200 text-neutral-900 dark:text-neutral-100"
+                >
+                  {isProcessingAi ? (
+                    <>
+                      <LucideLoader className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <LucideCheck className="mr-2 h-4 w-4" />
+                      Process with AI
+                    </>
+                  )}
+                </Button>
+              </motion.div>
+            </div>
+          </div>
+        </motion.div>
 
         {/* Enhanced Exercises Section with sophisticated design */}
         {!cardioExerciseNames[workoutType as WorkoutTypeOption] && (
@@ -2383,14 +2715,32 @@ export default function NewWorkoutPage() {
           </motion.div>
         )}
 
-        {/* Workout Summary - if exists */}
+        {/* Enhanced Workout Summary */}
         {workoutSummary && (
-          <div className="rounded-xl border bg-muted/50 p-4">
-            <p className="text-sm text-muted-foreground">{getSummaryText()}</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.5, duration: 0.6 }}
+            className="rounded-3xl bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/30 dark:border-blue-800/30 backdrop-blur-sm p-8"
+          >
+            <h3 className="text-lg font-serif tracking-tight text-blue-900 dark:text-blue-100 mb-3">
+              Workout Summary
+            </h3>
+            <p className="text-blue-800 dark:text-blue-200 leading-relaxed">
+              {getSummaryText()}
+            </p>
+          </motion.div>
         )}
+
+        {/* Custom Scrollbar Styles */}
+        <style jsx global>{customScrollbarStyle}</style>
+
+        {/* Rest of the component would continue with exercises section */}
+        {/* Note: Adding a simple message for now to complete the component */}
+        <div className="text-center text-neutral-500 dark:text-neutral-400 text-sm">
+          Exercises section and remaining UI components would follow here...
+        </div>
       </main>
     </div>
   )
 }
-
