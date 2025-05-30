@@ -212,9 +212,9 @@ export function WeeklyShareCard({ weeklyStats, className }: WeeklyShareCardProps
             <p className="text-sm text-gray-500 dark:text-gray-400 font-mono mb-1">
               {format(weekStart, 'MMM d')} — {format(weekEnd, 'MMM d, yyyy')}
             </p>
-            {session?.user?.name && (
+            {session?.user?.nickname || session?.user?.name && (
               <p className="text-xs text-gray-400 font-mono">
-                {session.user.name}
+                {session.user.nickname || session.user.name}
               </p>
             )}
           </div>

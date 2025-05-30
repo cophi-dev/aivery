@@ -124,7 +124,7 @@ export async function POST(req: Request) {
       return new Response("Authentication required", { status: 401 });
     }
     userId = session.user.id;
-    userName = session.user.name || "User";
+    userName = (session.user as any)?.nickname || session.user.name || "User";
     await dbConnect();
     
     // --- Rate Limit Check ---
