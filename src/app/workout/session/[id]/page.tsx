@@ -20,13 +20,20 @@ import {
   LucideCheckCircle,
   LucidePlay,
   LucidePause,
+  Share2,
+  Trophy,
+  Sparkles,
 } from "lucide-react"
 import { fetchWorkout, markWorkoutComplete } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
+import { ShareModal } from "@/components/workout/ShareModal"
+import { ShareCard } from "@/components/workout/ShareCard"
 import type { WorkoutData, ExerciseData, Set, WorkoutExerciseData } from "@/types/db"
 import { Label } from "@/components/ui/label"
 import { toast } from "react-hot-toast"
 import { LoadingIndicator } from "@/components/ui/loading-indicator"
+import { generateDistanceComparisonText } from "@/lib/workout-distance-comparisons"
+import { motion } from "framer-motion"
 
 export default function WorkoutSessionPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -36,6 +43,9 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
   const [elapsedTime, setElapsedTime] = useState(0)
   const [isTimerRunning, setIsTimerRunning] = useState(true)
   const [isCompleting, setIsCompleting] = useState(false)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [showCompletionCard, setShowCompletionCard] = useState(false)
+  const [workoutInsight, setWorkoutInsight] = useState<string>("")
 
   // Load workout data
   useEffect(() => {
@@ -81,6 +91,64 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
     }
   }, [isTimerRunning])
 
+  // Generate workout insight based on workout data
+  const generateWorkoutInsight = (workout: WorkoutData, elapsedTimeSeconds: number) => {
+    const insights = []
+
+    // Distance-based insights
+    if (workout.cardioDetails?.distance && workout.cardioDetails.distance > 0) {
+      const comparison = generateDistanceComparisonText(workout.cardioDetails.distance)
+      if (comparison) {
+        insights.push(comparison)
+      } else {
+        if (workout.cardioDetails.distance >= 10) {
+          insights.push(`Amazing ${workout.type}! You covered ${workout.cardioDetails.distance.toFixed(1)}km - that's like running across a city! 🏃‍♂️`)
+        } else if (workout.cardioDetails.distance >= 5) {
+          insights.push(`Great ${workout.type} session! ${workout.cardioDetails.distance.toFixed(1)}km is solid endurance building! 💪`)
+        } else {
+          insights.push(`Nice ${workout.type}! Every kilometer counts towards your fitness goals! ✨`)
+        }
+      }
+    }
+
+    // Volume-based insights (strength training)
+    if (workout.calculatedVolume && workout.calculatedVolume > 0) {
+      const volumeInTons = (workout.calculatedVolume / 1000).toFixed(1)
+      if (workout.calculatedVolume >= 5000) {
+        insights.push(`Incredible strength session! You moved ${volumeInTons} tons - that's like lifting a car! 🚗💪`)
+      } else if (workout.calculatedVolume >= 2000) {
+        insights.push(`Solid strength work! ${volumeInTons} tons moved is serious muscle building! 💪`)
+      } else {
+        insights.push(`Great strength session! ${volumeInTons} tons total volume - building that foundation! 🏗️`)
+      }
+    }
+
+    // Duration-based insights
+    const durationMinutes = Math.round(elapsedTimeSeconds / 60)
+    if (durationMinutes >= 60) {
+      insights.push(`Epic ${durationMinutes}-minute session! Your dedication is next level! 🔥`)
+    } else if (durationMinutes >= 30) {
+      insights.push(`Solid ${durationMinutes}-minute workout! Building consistency! 📈`)
+    } else if (durationMinutes >= 15) {
+      insights.push(`Efficient ${durationMinutes}-minute session! Quality over quantity! ⚡`)
+    }
+
+    // Exercise count insights
+    const exerciseCount = workout.workoutExercises?.length || 0
+    if (exerciseCount >= 8) {
+      insights.push(`Comprehensive workout with ${exerciseCount} exercises! Full-body power! 💥`)
+    } else if (exerciseCount >= 5) {
+      insights.push(`Well-rounded session with ${exerciseCount} exercises! Great variety! 🎯`)
+    }
+
+    // Default motivation if no specific insights
+    if (insights.length === 0) {
+      insights.push(`Another step forward in your fitness journey! Every workout counts! 🌟`)
+    }
+
+    return insights[0] // Return the first (most relevant) insight
+  }
+
   // Format time helper
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -112,15 +180,34 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
 
     try {
       setIsCompleting(true)
+      setIsTimerRunning(false) // Stop the timer
+      
       const result = await markWorkoutComplete(workout._id, {
         duration: Math.round(elapsedTime / 60), // Convert seconds to minutes
       })
       
       if (result.success && result.workout) {
         // Update local state to reflect completion
-        setWorkout(result.workout)
-        setIsCompleting(false)
-        toast.success("Workout marked as complete!")
+        const updatedWorkout = {
+          ...result.workout,
+          // Ensure we have the current elapsed time data
+          duration: elapsedTime
+        }
+        setWorkout(updatedWorkout)
+        
+        // Generate workout insight
+        const insight = generateWorkoutInsight(updatedWorkout, elapsedTime)
+        setWorkoutInsight(insight)
+        
+        // Show completion animation and then share modal
+        setShowCompletionCard(true)
+        toast.success("🎉 Workout completed! Great job!")
+        
+        // Show share modal after a short delay
+        setTimeout(() => {
+          setIsShareModalOpen(true)
+        }, 2000)
+        
       } else {
         console.error("Failed to complete workout:", result.error)
         toast.error(`Error: ${result.error || 'Failed to complete workout.'}`)
@@ -283,6 +370,80 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
           </div>
         </div>
       </div>
+      {showCompletionCard && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowCompletionCard(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0, y: 10 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: "spring", duration: 0.4, damping: 25 }}
+            className="bg-background/95 backdrop-blur-sm border border-border/20 rounded-lg shadow-lg max-w-sm w-full p-6 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.1, type: "spring", duration: 0.5 }}
+              className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-100/80 to-green-100/80 dark:from-emerald-900/40 dark:to-green-900/40 flex items-center justify-center border border-emerald-200/30 dark:border-emerald-700/30"
+            >
+              <LucideCheckCircle className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+            </motion.div>
+            
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              <h3 className="text-lg font-medium text-foreground/90 mb-2">
+                Workout Complete
+              </h3>
+              <p className="text-muted-foreground text-sm mb-6">
+                Great job! You've finished your {workout?.type} session.
+              </p>
+              
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => {
+                    setShowCompletionCard(false);
+                    setIsShareModalOpen(true);
+                  }}
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 text-sm"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share
+                </Button>
+                <Button
+                  onClick={() => setShowCompletionCard(false)}
+                  variant="outline"
+                  className="flex-1 text-sm"
+                >
+                  Close
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      )}
+      {isShareModalOpen && (
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          workout={{
+            id: workout._id,
+            type: workout.type,
+            date: new Date(workout.date),
+            duration: elapsedTime, // Use elapsed time in seconds
+            distance: workout.cardioDetails?.distance,
+            calculatedVolume: workout.calculatedVolume,
+            name: workout.name
+          }}
+          insight={workoutInsight}
+        />
+      )}
     </>
   )
 }

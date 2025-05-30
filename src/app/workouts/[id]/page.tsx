@@ -49,6 +49,7 @@ import { WorkoutAnalysis } from "@/components/workout-analysis"
 import ReactMarkdown from "react-markdown"
 import { LoadingIndicator } from "@/components/ui/loading-indicator"
 import { cn } from "@/lib/utils"
+import ShareModal from '@/components/workout/ShareModal'
 
 // Helper function to get icon based on workout type
 const getWorkoutIcon = (type: string) => {
@@ -358,6 +359,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
   const [isLoadingHighlight, setIsLoadingHighlight] = useState(false)
   const [workoutInsight, setWorkoutInsight] = useState<string | null>(null)
   const [isLoadingInsight, setIsLoadingInsight] = useState(false)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   
   const { id } = params
 
@@ -545,7 +547,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                 variant="ghost" 
                 size="sm" 
                 onClick={() => router.back()}
-                className="hover:bg-muted/50"
+                className="text-white/80 hover:text-white hover:bg-white/10"
               >
                 <LucideArrowLeft className="h-4 w-4 mr-2" />
                 Back
@@ -574,6 +576,16 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                 >
                 <LucideTrash className="h-4 w-4 mr-2" />
                 {isDeleting ? "Deleting..." : "Delete"}
+                </Button>
+
+                <Button
+                  onClick={() => setIsShareModalOpen(true)}
+                  variant="outline"
+                  size="sm"
+                  className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Achievement
                 </Button>
               </div>
             </div>
@@ -738,6 +750,22 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
           </Tabs>
         </div>
       </div>
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        workout={{
+          id: workout._id,
+          type: workout.type,
+          date: new Date(workout.date),
+          duration: workout.duration,
+          distance: workout.cardioDetails?.distance,
+          calculatedVolume: workout.calculatedVolume,
+          name: workout.name
+        }}
+        insight={aiHighlight || undefined}
+        realLifeComparison={undefined} // This could be fetched separately if needed
+      />
     </div>
   )
 }

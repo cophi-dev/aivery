@@ -20,7 +20,8 @@ import {
   Target,
   Settings,
   Zap,
-  Plus
+  Plus,
+  Share2
 } from "lucide-react"
 import { UserNavigation } from "./user-navigation"
 import { ThemeSwitch } from "@/components/ui/theme-switch-button"
@@ -85,6 +86,13 @@ export function MainHeader() {
       label: "Analytics",
       icon: <TrendingUp className="h-5 w-5 md:h-4 md:w-4" />,
       active: isPath("/analytics"),
+      category: "insights"
+    },
+    {
+      href: "/share",
+      label: "Share Moments",
+      icon: <Share2 className="h-5 w-5 md:h-4 md:w-4" />,
+      active: isPath("/share"),
       category: "insights"
     },
     {

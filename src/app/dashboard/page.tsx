@@ -37,6 +37,8 @@ import LastWorkout from "@/components/dashboard/LastWorkout";
 import ProgressPulse from "@/components/dashboard/ProgressPulse";
 import AskAivery from "@/components/dashboard/AskAivery";
 import SmartNudges from "@/components/dashboard/SmartNudges";
+import { WeeklyShareCard } from "@/components/dashboard/WeeklyShareCard";
+import ShareMoments from "@/components/dashboard/ShareMoments";
 
 // 🎯 DESIGN MODE TOGGLE
 const MINIMAL_MODE = true;
@@ -73,6 +75,51 @@ interface ChatMessage {
 // Placeholder declaration for the chat update function
 // TODO: Replace this with your actual chat context/state management hook/import
 declare function addMessageToChat(message: ChatMessage): void;
+
+// WeeklyShareCard wrapper component that fetches its own data
+function WeeklyShareCardWrapper() {
+  const [weeklyStats, setWeeklyStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [featureEnabled, setFeatureEnabled] = useState(false);
+
+  useEffect(() => {
+    // Check feature flag
+    const shareableEnabled = process.env.NEXT_PUBLIC_ENABLE_SHAREABLE_MOMENTS === 'true' || 
+                            localStorage.getItem('enable_shareable_moments') === 'true';
+    setFeatureEnabled(shareableEnabled);
+
+    if (!shareableEnabled) {
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchWeeklyStats = async () => {
+      try {
+        const response = await fetch('/api/dashboard/progress');
+        if (response.ok) {
+          const data = await response.json();
+          // Structure the data to match WeeklyShareCard expectations
+          if (data.stats && data.stats.current) {
+            setWeeklyStats(data.stats);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch weekly stats:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchWeeklyStats();
+  }, []);
+
+  if (!featureEnabled || isLoading || !weeklyStats) return null;
+
+  // Only show if there are workouts to share
+  if (!weeklyStats.current || weeklyStats.current.workouts === 0) return null;
+
+  return <WeeklyShareCard weeklyStats={weeklyStats} />;
+}
 
 // --- Main Dashboard Page Component (Client Component) ---
 export default function DashboardPage() {
@@ -179,13 +226,25 @@ export default function DashboardPage() {
     return (
         <div className="min-h-screen bg-background">
             {MINIMAL_MODE ? (
-                // 🎨 NEW MINIMAL DESIGN
+                // 🎨 NEW SOPHISTICATED MINIMAL DESIGN
                 <DashboardWrapper>
+                    {/* Hero Section - Your Story Today */}
                     <DailyInsight />
+                    
+                    {/* Last Achievement - Share-worthy moment */}
                     <LastWorkout />
+                    
+                    {/* Progress Story - Week at a glance */}
                     <ProgressPulse />
-                    <SmartNudges mode="multiple" maxNudges={2} title="Weekly Insights" />
+                    
+                    {/* Share Your Journey - Prominent placement */}
+                    <ShareMoments />
+                    
+                    {/* AI Companion - Always available */}
                     <AskAivery />
+                    
+                    {/* Contextual Guidance - Subtle nudges */}
+                    <SmartNudges mode="multiple" maxNudges={2} title="Weekly Insights" />
                 </DashboardWrapper>
             ) : (
                 // 🏛️ LEGACY LAYOUT (SAFELY COLLAPSED)

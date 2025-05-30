@@ -25,7 +25,8 @@ import {
   LucideSettings, 
   LucideUser,
   LucideHelpCircle,
-  LucideFileText
+  LucideFileText,
+  LucideShare2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "./user-avatar";
@@ -223,6 +224,16 @@ function UserNavigationInner({ session }: { session: any }) {
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">Integrations</span>
                   <span className="text-xs text-muted-foreground">Connect your apps</span>
+                </div>
+              </DropdownMenuItem>
+            </Link>
+
+            <Link href="/share">
+              <DropdownMenuItem className="mx-2 rounded-md hover:bg-accent/80 focus:bg-accent/80 transition-colors">
+                <LucideShare2 className="mr-3 h-4 w-4 text-muted-foreground" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">Share Moments</span>
+                  <span className="text-xs text-muted-foreground">Create shareable cards</span>
                 </div>
               </DropdownMenuItem>
             </Link>

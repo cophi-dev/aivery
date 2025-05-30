@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     const workouts = await getWorkoutsByUserId(session.user.id); 
     console.log(`[API /workouts] Fetched ${workouts.length} workouts.`);
 
-    return NextResponse.json(workouts);
+    return NextResponse.json({ workouts });
 
   } catch (error) {
     console.error("[API /workouts] Error fetching workouts:", error);
