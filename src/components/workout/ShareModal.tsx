@@ -46,21 +46,15 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
     try {
       setIsLoading(true);
       
-      // Generate real-life comparison
-      const response = await fetch('/api/workout-insight', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: workout.type,
-          duration: workout.duration,
-          distance: workout.distance,
-          volume: workout.calculatedVolume
-        })
+      // Generate real-life comparison using the correct API endpoint
+      const response = await fetch(`/api/workout-insight/${workout.id}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (response.ok) {
         const data = await response.json();
-        setRealLifeComparison(data.comparison || '');
+        setRealLifeComparison(data.insight || '');
       }
     } catch (error) {
       console.error('Failed to generate comparison:', error);

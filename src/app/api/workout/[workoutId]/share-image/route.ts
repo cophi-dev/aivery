@@ -52,7 +52,7 @@ export async function POST(
     const svg = generateWorkoutShareSVG({
       workout,
       comparisonText,
-      userName: session.user.name || 'Fitness Enthusiast'
+      userName: session.user.nickname || session.user.name || 'Fitness Enthusiast'
     });
 
     // Convert SVG to PNG using a simpler approach
@@ -115,7 +115,7 @@ export async function GET(
     const svg = generateWorkoutShareSVG({
       workout,
       comparisonText,
-      userName: session.user.name || 'Fitness Enthusiast'
+      userName: session.user.nickname || session.user.name || 'Fitness Enthusiast'
     });
 
     return new NextResponse(svg, {

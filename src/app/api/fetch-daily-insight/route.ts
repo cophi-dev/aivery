@@ -168,7 +168,7 @@ export async function GET() {
   }
   
   // --- Fetch User Details for Nickname ---
-  let displayName = session.user.name || 'User'; // Start with session name
+  let displayName = session.user.nickname || session.user.name || 'User'; // Start with nickname, fallback to name
   try {
     const user = await getUserById(userId);
     if (user?.nickname) {
