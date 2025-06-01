@@ -32,6 +32,7 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
     const hasAccess = tier === 'premium' || tier === 'expert';
     
     console.log(`[SUBSCRIPTION-CHECK] User ${userId} has tier: ${tier}, hasAccess: ${hasAccess}`);
+    console.log(`[SUBSCRIPTION-CHECK] Full token:`, JSON.stringify(token, null, 2));
     
     return {
       hasAccess,
