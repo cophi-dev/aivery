@@ -45,6 +45,15 @@ export default function LoginPage() {
       url.searchParams.delete("logout")
       window.history.replaceState({}, "", url)
     }
+
+    // Check for registration success with premium flag
+    const registeredParam = searchParams?.get("registered")
+    const premiumParam = searchParams?.get("premium")
+    if (registeredParam === "true" && premiumParam === "true") {
+      setSuccess("Account created successfully! Please sign in to start your premium subscription.")
+    } else if (registeredParam === "true") {
+      setSuccess("Account created successfully! Please sign in.")
+    }
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {

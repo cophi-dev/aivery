@@ -557,15 +557,15 @@ export default function LandingPageClient() {
              </div>
            </div>
            <div className="container px-4 md:px-6 max-w-4xl mx-auto text-center relative z-10">
-             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-6">Start Training Smarter Today</h2>
+             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-6">Start Your Premium Fitness Journey</h2>
              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
-               Free trial available. Premium features unlock unlimited insights and advanced coaching.
+               Aivery is a premium-only platform. Join today for unlimited AI insights, advanced analytics, and personalized coaching.
              </p>
              <Button
                asChild
                className="rounded-md px-8 py-3 text-white bg-brand-accent hover:bg-brand-accent-hover shadow-md transition-colors duration-200"
              >
-               <Link href="/register">Get Started</Link>
+               <Link href="/register">Join Premium Now</Link>
              </Button>
            </div>
          </section>

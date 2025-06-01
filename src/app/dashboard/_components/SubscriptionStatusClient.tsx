@@ -57,7 +57,7 @@ export function SubscriptionStatus() { // Export the function
                     <p className="text-gray-500 dark:text-muted-foreground mb-3">Upgrade your plan to unlock more features.</p>
                     <div className="flex flex-col sm:flex-row gap-4">
                         <UpgradeButton plan="premium" currentPlanIsFree={true} className="w-full sm:w-auto">
-                            Go Premium (€12.90/month)
+                            Go Premium (€6.90/month)
                         </UpgradeButton>
                     </div>
                 </div>

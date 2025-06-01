@@ -2,62 +2,19 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { VERSION } from '@/app/version'
+import { 
+  checkPremiumAccess, 
+  isPublicPath, 
+  requiresSubscription 
+} from '@/lib/subscription-middleware'
 
-// Paths that are considered public (accessible without authentication)
-const publicPaths = [
-  '/', 
-  '/login', 
-  '/register', 
-  '/forgot-password',
-  '/reset',
-  '/api/auth/',
-  '/api/stripe/webhook',
-  '/api/health'
-];
+// Premium-only middleware - path configurations are now handled in subscription-middleware.ts
 
-// Paths that are explicitly protected (require authentication)
-const protectedPaths = [
-  '/dashboard',
-  '/workouts',
-  '/workout',
-  '/exercises',
-  '/exercise', // Singular form
-  '/excercises', // Common misspelling 
-  '/chat',
-  '/challenges',
-  '/calendar',
-  '/integrations',
-  '/integration', // Singular form
-  '/my-story',
-  '/plan',
-  '/planner',
-  '/settings',
-  '/analytics',
-  '/activity',
-  '/admin',
-  '/profile',
-  '/user',
-  '/debug',
-  '/health', // Health checks that require authentication
-  '/init-db', // Database initialization page
-  '/strava-admin',
-  '/fix-auth',
-  '/check-db',
-  '/debug-images',
-  '/check-mongodb',
-];
-
-// Paths that authenticated users should be redirected AWAY from
-const authProtectedPaths = ['/login', '/register', '/forgot-password', '/reset'];
-
-// The main dashboard path
-const dashboardPath = '/dashboard';
-
-// Authentication middleware
+// Premium-only middleware
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip middleware for static files and specific API routes (like webhook)
+  // Skip middleware for static files and specific API routes
   if (pathname.startsWith('/_next') || 
       pathname.startsWith('/favicon.ico') || 
       pathname.startsWith('/icons/') || 
@@ -66,102 +23,99 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // --- DEBUGGING: Log Request Info ---
-  console.log(`[MIDDLEWARE] Processing request to: ${pathname}`);
-  // ----------------------------------------
+  console.log(`[PREMIUM-MIDDLEWARE] Processing request to: ${pathname}`);
 
-  // --- Get Token ---
-  let token = null;
-  let getTokenError = null;
-  const cookieName = `next-auth.session-token`;
-  const secureCookieName = `__Secure-next-auth.session-token`;
-  // --- DEBUGGING: Check if secret is loaded just before getToken ---
-  const loadedSecret = process.env.NEXTAUTH_SECRET;
-  if (loadedSecret) {
-    console.log(`[MIDDLEWARE] Path: ${pathname} | NEXTAUTH_SECRET CHECK (pre-getToken): Loaded (len: ${loadedSecret.length}), starts: ${loadedSecret.substring(0, 3)}, ends: ${loadedSecret.slice(-3)}`);
-  } else {
-    console.log(`[MIDDLEWARE] Path: ${pathname} | !!! NEXTAUTH_SECRET CHECK (pre-getToken): NOT LOADED !!!`);
+  // 1. For truly public paths (auth/payment), allow immediate access
+  if (isPublicPath(pathname)) {
+    console.log(`[PREMIUM-MIDDLEWARE] Public path allowed: ${pathname}`);
+    return NextResponse.next();
   }
-  // ------------------------------------------------------------------
-  try {
-    token = await getToken({
-      req: request,
-      cookieName: cookieName,
-      secureCookie: process.env.NODE_ENV === 'production',
-    });
-    console.log(`[MIDDLEWARE] Auth Result for ${pathname}: ${token ? 'Authenticated' : 'Not Authenticated'}`);
-  } catch (error: any) {
-    getTokenError = error.message || 'Unknown error';
-    console.error(`[MIDDLEWARE] Auth Error for ${pathname}:`, error);
-  }
-  const isAuthenticated = !!token;
-  // ----------------
 
-  // --- START ROUTING LOGIC ---
-
-  // 1. Check if path is explicitly protected - both exact matches and any subpaths
-  const isExplicitlyProtected = protectedPaths.some(path => 
-    pathname === path || pathname.startsWith(`${path}/`)
-  );
+  // 2. For ALL other paths (including root "/"), check authentication and premium access
+  const premiumCheck = await checkPremiumAccess(request);
+  console.log(`[PREMIUM-MIDDLEWARE] Premium check result for ${pathname}:`, {
+    hasAccess: premiumCheck.hasAccess,
+    tier: premiumCheck.tier,
+    userId: premiumCheck.userId,
+    error: premiumCheck.error
+  });
   
-  if (isExplicitlyProtected && !isAuthenticated) {
-    console.log(`[MIDDLEWARE] Blocking access to protected path: ${pathname}`);
+  if (!premiumCheck.userId) {
+    // Not authenticated - redirect to login
+    console.log(`[PREMIUM-MIDDLEWARE] Not authenticated, redirecting to login: ${pathname}`);
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('callbackUrl', encodeURIComponent(pathname));
     return NextResponse.redirect(url);
   }
 
-  // 2. Handle root path ('/')
-  if (pathname === '/') {
-    if (isAuthenticated) {
-      // If authenticated, redirect from landing page to dashboard
+  // 3. For specific premium-required paths, enforce premium access
+  if (requiresSubscription(pathname)) {
+    if (!premiumCheck.hasAccess) {
+      // Authenticated but no premium access - redirect to subscription page
+      console.log(`[PREMIUM-MIDDLEWARE] No premium access for ${pathname}, tier: ${premiumCheck.tier}`);
       const url = request.nextUrl.clone();
-      url.pathname = dashboardPath;
-      console.log(`[MIDDLEWARE] Redirecting authenticated user from / to ${dashboardPath}`);
+      url.pathname = '/subscribe';
+      url.searchParams.set('from', encodeURIComponent(pathname));
+      return NextResponse.redirect(url);
+    }
+    
+    console.log(`[PREMIUM-MIDDLEWARE] Premium access granted for ${pathname}, tier: ${premiumCheck.tier}`);
+    return NextResponse.next();
+  }
+
+  // 4. Handle root path - premium-only access
+  if (pathname === '/') {
+    if (premiumCheck.hasAccess) {
+      // Premium user - redirect to dashboard
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      console.log(`[PREMIUM-MIDDLEWARE] Redirecting premium user from / to /dashboard`);
+      return NextResponse.redirect(url);
+    } else {
+      // Free user - redirect to subscription page (this is the key change)
+      const url = request.nextUrl.clone();
+      url.pathname = '/subscribe';
+      console.log(`[PREMIUM-MIDDLEWARE] Redirecting free user from / to /subscribe`);
       return NextResponse.redirect(url);
     }
   }
 
-  // 3. Handle authenticated users trying to access login/register
-  if (isAuthenticated && authProtectedPaths.some(path => pathname === path)) {
+  // 5. Handle authenticated users trying to access auth pages
+  if (['login', 'register', 'forgot-password', 'reset'].some(path => pathname === `/${path}`)) {
+    if (premiumCheck.hasAccess) {
+      // Premium user - redirect to dashboard
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      console.log(`[PREMIUM-MIDDLEWARE] Redirecting premium user from ${pathname} to /dashboard`);
+      return NextResponse.redirect(url);
+    } else {
+      // Free user - redirect to subscription page
+      const url = request.nextUrl.clone();
+      url.pathname = '/subscribe';
+      console.log(`[PREMIUM-MIDDLEWARE] Redirecting free user from ${pathname} to /subscribe`);
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // 6. For API routes, return 402 Payment Required for non-premium users
+  if (pathname.startsWith('/api/') && requiresSubscription(pathname)) {
+    if (!premiumCheck.hasAccess) {
+      console.log(`[PREMIUM-MIDDLEWARE] Blocking API access for non-premium user: ${pathname}`);
+      return new NextResponse('Payment Required', { status: 402 });
+    }
+  }
+
+  // 7. Catch-all: For any other path accessed by non-premium users, redirect to subscribe
+  if (!premiumCheck.hasAccess) {
+    console.log(`[PREMIUM-MIDDLEWARE] Catch-all: Non-premium user accessing ${pathname}, redirecting to /subscribe`);
     const url = request.nextUrl.clone();
-    url.pathname = dashboardPath;
-    console.log(`[MIDDLEWARE] Redirecting authenticated user from ${pathname} to ${dashboardPath}`);
+    url.pathname = '/subscribe';
+    url.searchParams.set('from', encodeURIComponent(pathname));
     return NextResponse.redirect(url);
   }
 
-  // 4. General protection for non-public paths
-  const isPublic = publicPaths.some(path => {
-    if (!path.endsWith('/')) {
-      return pathname === path || pathname.startsWith(`${path}/`);
-    }
-    return pathname.startsWith(path);
-  });
-
-  // Default protection for any path not explicitly public
-  // This is a catch-all to ensure any path not in the public list requires auth
-  if (!isAuthenticated && !isPublic) {
-    // API routes return 401
-    if (pathname.startsWith('/api/')) {
-      console.log(`[MIDDLEWARE] Returning 401 for API route: ${pathname}`);
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
-    
-    // Special case: allow root path (/) even if unauthenticated
-    if (pathname === '/') {
-      return NextResponse.next();
-    }
-    
-    // Non-API routes redirect to login
-    console.log(`[MIDDLEWARE] Redirecting unauthenticated user from ${pathname} to /login`);
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('callbackUrl', encodeURIComponent(pathname));
-    return NextResponse.redirect(url);
-  }
-
-  // --- END ROUTING LOGIC ---
+  // --- END PREMIUM ROUTING LOGIC ---
 
   // Add standard headers to response
   const response = NextResponse.next();

@@ -39,6 +39,7 @@ import AskAivery from "@/components/dashboard/AskAivery";
 import SmartNudges from "@/components/dashboard/SmartNudges";
 import { WeeklyShareCard } from "@/components/dashboard/WeeklyShareCard";
 import ShareMoments from "@/components/dashboard/ShareMoments";
+import InfoBoxes from "@/components/dashboard/InfoBoxes";
 
 // 🎯 DESIGN MODE TOGGLE
 const MINIMAL_MODE = true;
@@ -228,6 +229,9 @@ export default function DashboardPage() {
             {MINIMAL_MODE ? (
                 // 🎨 NEW SOPHISTICATED MINIMAL DESIGN
                 <DashboardWrapper>
+                    {/* Important Info Boxes - User guidance */}
+                    <InfoBoxes />
+                    
                     {/* Hero Section - Your Story Today */}
                     <DailyInsight />
                     

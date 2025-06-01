@@ -105,11 +105,9 @@ export const authOptions: NextAuthOptions = {
           // Add user ID to token
           token.id = user.id;
           
-          // --- Temporarily Commented Out DB Call ---
-          /*
-          // Get complete user data including nickname
+          // Get complete user data including nickname and tier
           await dbConnect();
-          const userData = await UserModel.findById(user.id).select('nickname').lean();
+          const userData = await UserModel.findById(user.id).select('nickname tier').lean();
           
           if (userData) {
             // Add nickname to token if it exists in the database
@@ -117,32 +115,37 @@ export const authOptions: NextAuthOptions = {
               token.nickname = (userData as any).nickname;
               console.log(`[AUTH] Added nickname to token: ${token.nickname}`);
             }
+            
+            // Add tier to token for premium access checks
+            token.tier = (userData as any).tier || 'free';
+            console.log(`[AUTH] Added tier to token: ${token.tier}`);
           }
-          */
-          // --- End Commented Out ---
         }
         
-        // Always verify/update the nickname in the token on any token update after sign-in
+        // Always verify/update the nickname and tier in the token on any token update after sign-in
         if (token.id && trigger !== "signIn") {
-          // --- Temporarily Commented Out DB Call ---
-          /*
           try {
             await dbConnect();
-            const freshUserData = await UserModel.findById(token.id).select('nickname').lean();
+            const freshUserData = await UserModel.findById(token.id).select('nickname tier').lean();
             
-            if (freshUserData && (freshUserData as any).nickname) {
+            if (freshUserData) {
               // Update nickname in token if it changed or wasn't set
               const nickname = (freshUserData as any).nickname;
-              if (nickname !== token.nickname) {
+              if (nickname && nickname !== token.nickname) {
                 console.log(`[AUTH] Updating nickname in token from ${token.nickname} to ${nickname}`);
                 token.nickname = nickname;
               }
+              
+              // Update tier in token if it changed
+              const tier = (freshUserData as any).tier || 'free';
+              if (tier !== token.tier) {
+                console.log(`[AUTH] Updating tier in token from ${token.tier} to ${tier}`);
+                token.tier = tier;
+              }
             }
           } catch (error) {
-            console.error("[AUTH] Error refreshing nickname in token:", error);
+            console.error("[AUTH] Error refreshing user data in token:", error);
           }
-          */
-          // --- End Commented Out ---
         }
         
         return token;
@@ -268,6 +271,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
     nickname?: string;
+    tier?: string;
     accessToken?: string;
     refreshToken?: string;
     accessTokenExpires?: number;
