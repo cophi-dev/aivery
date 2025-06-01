@@ -49,9 +49,9 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
   }
 }
 
-// Paths that don't require premium access (auth flow + payment flow only)
-// Note: Root path "/" is NOT public - it will redirect based on user status
+// Paths that don't require premium access (auth flow + payment flow + landing page)
 export const publicPaths = [
+  '/', // Landing page - public access
   '/login',
   '/register', 
   '/forgot-password',

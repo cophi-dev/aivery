@@ -64,24 +64,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4. Handle root path - premium-only access
-  if (pathname === '/') {
-    if (premiumCheck.hasAccess) {
-      // Premium user - redirect to dashboard
-      const url = request.nextUrl.clone();
-      url.pathname = '/dashboard';
-      console.log(`[PREMIUM-MIDDLEWARE] Redirecting premium user from / to /dashboard`);
-      return NextResponse.redirect(url);
-    } else {
-      // Free user - redirect to subscription page (this is the key change)
-      const url = request.nextUrl.clone();
-      url.pathname = '/subscribe';
-      console.log(`[PREMIUM-MIDDLEWARE] Redirecting free user from / to /subscribe`);
-      return NextResponse.redirect(url);
-    }
-  }
-
-  // 5. Handle authenticated users trying to access auth pages
+  // 4. Handle authenticated users trying to access auth pages
   if (['login', 'register', 'forgot-password', 'reset'].some(path => pathname === `/${path}`)) {
     if (premiumCheck.hasAccess) {
       // Premium user - redirect to dashboard
@@ -98,7 +81,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 6. For API routes, return 402 Payment Required for non-premium users
+  // 5. For API routes, return 402 Payment Required for non-premium users
   if (pathname.startsWith('/api/') && requiresSubscription(pathname)) {
     if (!premiumCheck.hasAccess) {
       console.log(`[PREMIUM-MIDDLEWARE] Blocking API access for non-premium user: ${pathname}`);
@@ -106,7 +89,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 7. Catch-all: For any other path accessed by non-premium users, redirect to subscribe
+  // 6. Catch-all: For any other path accessed by non-premium users, redirect to subscribe
   if (!premiumCheck.hasAccess) {
     console.log(`[PREMIUM-MIDDLEWARE] Catch-all: Non-premium user accessing ${pathname}, redirecting to /subscribe`);
     const url = request.nextUrl.clone();
