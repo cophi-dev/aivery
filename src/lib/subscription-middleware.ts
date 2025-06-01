@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { parse } from 'cookie';
-import jwt from 'jsonwebtoken';
 
 // JWT secret for production
 const secret = process.env.NEXTAUTH_SECRET;
