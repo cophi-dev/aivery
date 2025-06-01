@@ -64,8 +64,13 @@ export default function LoginPage() {
 
     try {
       // Use callbackUrl parameter for clean redirection handling by NextAuth
-      // Ensure callbackUrl is a valid path or URL
-      const safeCallbackUrl = callbackUrl.startsWith('/') ? callbackUrl : '/'
+      // Ensure callbackUrl is a valid path or URL - NextAuth expects full URLs
+      let safeCallbackUrl = callbackUrl.startsWith('/') ? callbackUrl : '/'
+      
+      // Convert relative path to full URL for NextAuth
+      if (safeCallbackUrl.startsWith('/')) {
+        safeCallbackUrl = `${window.location.origin}${safeCallbackUrl}`
+      }
       
       const result = await signIn("credentials", {
         redirect: false,
@@ -84,9 +89,10 @@ export default function LoginPage() {
       setSuccess("Login successful! Redirecting...");
       setIsRedirecting(true);
       
-      // Wait a moment then redirect
+      // Wait a moment then redirect - use original relative path for router
+      const redirectPath = callbackUrl.startsWith('/') ? callbackUrl : '/'
       setTimeout(() => {
-        router.replace(safeCallbackUrl);
+        router.replace(redirectPath);
       }, 800);
       
     } catch (error) {
