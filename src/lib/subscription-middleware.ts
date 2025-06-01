@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { parse } from 'cookie';
+import jwt from 'jsonwebtoken';
+
+// JWT secret for production
+const secret = process.env.NEXTAUTH_SECRET;
 
 // Check if user has a valid premium subscription
 export async function checkPremiumAccess(request: NextRequest): Promise<{
@@ -9,12 +14,35 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
   error?: string;
 }> {
   try {
+    // Debug: Check if we have cookies
+    const cookieHeader = request.headers.get('cookie');
+    console.log(`[SUBSCRIPTION-CHECK] Cookie header present: ${!!cookieHeader}`);
+    console.log(`[SUBSCRIPTION-CHECK] NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}, SECRET: ${!!process.env.NEXTAUTH_SECRET}`);
+    
+    // Debug: Check for session token cookie
+    if (cookieHeader) {
+      const hasSessionToken = cookieHeader.includes('next-auth.session-token');
+      const hasSecureSessionToken = cookieHeader.includes('__Secure-next-auth.session-token');
+      console.log(`[SUBSCRIPTION-CHECK] Session token cookie: ${hasSessionToken}, Secure: ${hasSecureSessionToken}`);
+      
+      // Parse cookies to see what we have
+      const cookies = parse(cookieHeader);
+      const cookieNames = Object.keys(cookies);
+      console.log(`[SUBSCRIPTION-CHECK] All cookies: ${cookieNames.join(', ')}`);
+      
+      // Check for any auth-related cookies
+      const authCookies = cookieNames.filter(name => name.includes('auth'));
+      console.log(`[SUBSCRIPTION-CHECK] Auth-related cookies: ${authCookies.join(', ')}`);
+    }
+    
     // Get the authentication token
     const token = await getToken({
       req: request,
-      secret: process.env.NEXTAUTH_SECRET,
+      secret: secret,
       secureCookie: process.env.NODE_ENV === 'production',
     });
+
+    console.log(`[SUBSCRIPTION-CHECK] Token found: ${!!token}, Token sub: ${token?.sub || 'none'}`);
 
     if (!token?.sub) {
       return { hasAccess: false, tier: null, userId: null, error: 'Not authenticated' };
