@@ -62,6 +62,9 @@ export const publicPaths = [
   '/api/stripe/create-portal-session',
   '/api/health',
   '/api/user', // User API needed for authentication
+  '/api/debug-auth',
+  '/api/debug-token',
+  '/api/middleware-test',
   '/subscribe', // New subscription page
   '/payment-success',
   '/payment-canceled',
@@ -90,7 +93,18 @@ export const subscriptionRequiredPaths = [
   '/settings',
   '/analytics',
   '/activity',
-  '/profile'
+  '/profile',
+  // API endpoints that require premium access
+  '/api/dashboard',
+  '/api/workout',
+  '/api/workouts',
+  '/api/exercises',
+  '/api/chat',
+  '/api/challenges',
+  '/api/analytics',
+  '/api/insight',
+  '/api/my-story',
+  '/api/ai'
 ];
 
 export function isPublicPath(pathname: string): boolean {
