@@ -98,6 +98,10 @@ export function isPublicPath(pathname: string): boolean {
     if (path.endsWith('/')) {
       return pathname.startsWith(path);
     }
+    // Exact match or starts with path + slash (but not root path)
+    if (path === '/') {
+      return pathname === '/';
+    }
     return pathname === path || pathname.startsWith(`${path}/`);
   });
 }
