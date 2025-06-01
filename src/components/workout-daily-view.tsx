@@ -1086,8 +1086,20 @@ export default function WorkoutDailyView() {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                const data: WorkoutWithExercises[] = await response.json();
-                console.log(`[WorkoutDailyView] Received ${data.length} workouts from API`);
+                const responseData = await response.json();
+                console.log(`[WorkoutDailyView] Received response:`, responseData);
+                
+                // Extract workouts array from response object
+                const data: WorkoutWithExercises[] = responseData.workouts || [];
+                console.log(`[WorkoutDailyView] Received ${data ? data.length : 'undefined'} workouts from API`);
+                
+                // Safety check to ensure data is an array
+                if (!Array.isArray(data)) {
+                    console.error('[WorkoutDailyView] Received data is not an array:', data);
+                    setWorkouts([]);
+                    setLoading(false);
+                    return;
+                }
                 
                 // Debug output for workouts data
                 if (data.length > 0) {
