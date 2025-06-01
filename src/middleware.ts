@@ -75,11 +75,11 @@ export async function middleware(request: NextRequest) {
   });
   
   if (!premiumCheck.userId) {
-    // Not authenticated - redirect to login
-    console.log(`[PREMIUM-MIDDLEWARE] Not authenticated, redirecting to login: ${pathname}`);
+    // Not authenticated - redirect to subscribe page to encourage signup
+    console.log(`[PREMIUM-MIDDLEWARE] Not authenticated, redirecting to subscribe: ${pathname}`);
     const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('callbackUrl', encodeURIComponent(pathname));
+    url.pathname = '/subscribe';
+    url.searchParams.set('from', encodeURIComponent(pathname));
     return NextResponse.redirect(url);
   }
 
