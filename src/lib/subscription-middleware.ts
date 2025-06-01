@@ -17,6 +17,7 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
     const cookieHeader = request.headers.get('cookie');
     console.log(`[SUBSCRIPTION-CHECK] Cookie header present: ${!!cookieHeader}`);
     console.log(`[SUBSCRIPTION-CHECK] NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}, SECRET: ${!!process.env.NEXTAUTH_SECRET}`);
+    console.log(`[SUBSCRIPTION-CHECK] Environment: ${process.env.NODE_ENV}`);
     
     // Debug: Check for session token cookie
     if (cookieHeader) {
@@ -42,6 +43,25 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
     });
 
     console.log(`[SUBSCRIPTION-CHECK] Token found: ${!!token}, Token sub: ${token?.sub || 'none'}`);
+    
+    // If no token but we have cookies, try without secure cookie
+    if (!token && cookieHeader && process.env.NODE_ENV === 'production') {
+      console.log(`[SUBSCRIPTION-CHECK] Trying without secureCookie flag`);
+      const tokenRetry = await getToken({
+        req: request,
+        secret: secret,
+        secureCookie: false,
+      });
+      console.log(`[SUBSCRIPTION-CHECK] Token retry result: ${!!tokenRetry}`);
+      if (tokenRetry) {
+        console.log(`[SUBSCRIPTION-CHECK] Token found without secure flag, using it`);
+        return {
+          hasAccess: (tokenRetry as any).tier === 'premium' || (tokenRetry as any).tier === 'expert',
+          tier: (tokenRetry as any).tier || 'free',
+          userId: tokenRetry.sub as string,
+        };
+      }
+    }
 
     if (!token?.sub) {
       return { hasAccess: false, tier: null, userId: null, error: 'Not authenticated' };
@@ -84,6 +104,7 @@ export const publicPaths = [
   '/pricing', // Pricing page
   '/debug-token', // Debug page for testing
   '/debug-access', // Debug access page
+  '/auth-test', // Auth test page
   '/manifest.json', // PWA manifest
   '/icon.svg', // App icon
   '/favicon.ico', // Favicon
@@ -137,6 +158,7 @@ export function isPublicPath(pathname: string): boolean {
     '/pricing',
     '/debug-token',
     '/debug-access',
+    '/auth-test',
     '/manifest.json',
     '/icon.svg',
     '/favicon.ico'
