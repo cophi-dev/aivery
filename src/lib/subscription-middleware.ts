@@ -12,6 +12,7 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
     // Get the authentication token
     const token = await getToken({
       req: request,
+      secret: process.env.NEXTAUTH_SECRET,
       secureCookie: process.env.NODE_ENV === 'production',
     });
 
@@ -20,40 +21,12 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
     }
 
     const userId = token.sub;
-
-    // Get real-time tier from database instead of relying on cached JWT token
-    try {
-      const response = await fetch(`${process.env.NEXTAUTH_URL || 'https://www.aivery.app'}/api/user`, {
-        headers: {
-          'Cookie': request.headers.get('cookie') || '',
-          'Authorization': `Bearer ${token.accessToken || ''}`
-        }
-      });
-      
-      if (response.ok) {
-        const userData = await response.json();
-        const tier = userData.tier || 'free';
-        const hasAccess = tier === 'premium' || tier === 'expert';
-        
-        console.log(`[SUBSCRIPTION-CHECK] User ${userId} has real-time tier: ${tier}, hasAccess: ${hasAccess}`);
-        
-        return {
-          hasAccess,
-          tier,
-          userId,
-        };
-      } else {
-        console.log(`[SUBSCRIPTION-CHECK] Failed to fetch user data, falling back to token tier`);
-      }
-    } catch (error) {
-      console.log(`[SUBSCRIPTION-CHECK] Error fetching user data:`, error);
-    }
     
-    // Fallback to token tier if API call fails
+    // Use tier from token - this gets updated on login and can be refreshed
     const tier = (token as any).tier || 'free';
     const hasAccess = tier === 'premium' || tier === 'expert';
     
-    console.log(`[SUBSCRIPTION-CHECK] User ${userId} fallback tier: ${tier}, hasAccess: ${hasAccess}`);
+    console.log(`[SUBSCRIPTION-CHECK] User ${userId} tier: ${tier}, hasAccess: ${hasAccess}`);
     
     return {
       hasAccess,
@@ -83,6 +56,7 @@ export const publicPaths = [
   '/payment-canceled',
   '/pricing', // Pricing page
   '/debug-token', // Debug page for testing
+  '/debug-access', // Debug access page
   '/manifest.json', // PWA manifest
   '/icon.svg', // App icon
   '/favicon.ico', // Favicon
@@ -135,6 +109,7 @@ export function isPublicPath(pathname: string): boolean {
     '/payment-canceled',
     '/pricing',
     '/debug-token',
+    '/debug-access',
     '/manifest.json',
     '/icon.svg',
     '/favicon.ico'

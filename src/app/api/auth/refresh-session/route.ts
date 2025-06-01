@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/db/mongodb";
 import User from "@/lib/db/models/user";
 import { setNoCacheHeaders } from "@/app/api/force-dynamic";
+import { getToken } from 'next-auth/jwt';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -82,5 +83,39 @@ export async function GET(request: NextRequest) {
     );
     setNoCacheHeaders(errorResponse.headers);
     return errorResponse;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Get current session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // Connect to database and get fresh user data
+    await dbConnect();
+    const user = await User.findById(session.user.id).select('tier email').lean();
+    
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const tier = (user as any).tier || 'free';
+    
+    // Force the client to refetch the session
+    // This will trigger the JWT callback to update the tier
+    return NextResponse.json({
+      success: true,
+      tier,
+      message: 'Session refresh initiated. Please reload the page.',
+    });
+  } catch (error) {
+    console.error('Error refreshing session:', error);
+    return NextResponse.json({
+      error: 'Failed to refresh session',
+      message: (error as Error).message,
+    }, { status: 500 });
   }
 } 

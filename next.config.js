@@ -32,6 +32,17 @@ const nextConfig = {
   // --- RESTORING HEADERS --- 
   async headers() {
     return [
+      // NextAuth routes should have normal caching
+      {
+        source: '/api/auth/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' },
+          { key: 'Access-Control-Allow-Credentials', value: 'true' }
+        ]
+      },
+      // Other API routes get no-cache headers
       {
         source: '/api/:path*',
         headers: [
@@ -46,6 +57,7 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' }
         ]
       },
+      // Non-API routes
       {
         source: '/:path*',
         headers: [
