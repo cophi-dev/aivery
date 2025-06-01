@@ -24,8 +24,9 @@ export default function LoginPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [isRedirecting, setIsRedirecting] = useState(false)
   
-  // Get callback URL from search params
-  const callbackUrl = searchParams?.get("callbackUrl") || "/"
+  // Get callback URL from search params and decode it
+  const rawCallbackUrl = searchParams?.get("callbackUrl") || "/"
+  const callbackUrl = decodeURIComponent(rawCallbackUrl)
 
   // Check URL parameters
   useEffect(() => {
@@ -63,11 +64,14 @@ export default function LoginPage() {
 
     try {
       // Use callbackUrl parameter for clean redirection handling by NextAuth
+      // Ensure callbackUrl is a valid path or URL
+      const safeCallbackUrl = callbackUrl.startsWith('/') ? callbackUrl : '/'
+      
       const result = await signIn("credentials", {
         redirect: false,
         email,
         password,
-        callbackUrl
+        callbackUrl: safeCallbackUrl
       })
 
       if (!result?.ok) {
@@ -82,7 +86,7 @@ export default function LoginPage() {
       
       // Wait a moment then redirect
       setTimeout(() => {
-        router.replace(callbackUrl);
+        router.replace(safeCallbackUrl);
       }, 800);
       
     } catch (error) {
