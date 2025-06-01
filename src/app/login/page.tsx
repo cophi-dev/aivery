@@ -89,8 +89,10 @@ export default function LoginPage() {
       setSuccess("Login successful! Redirecting...");
       setIsRedirecting(true);
       
-      // Wait a moment then redirect - use original relative path for router
-      const redirectPath = callbackUrl.startsWith('/') ? callbackUrl : '/'
+      // Wait a moment then redirect
+      // For successful login, default to dashboard unless there's a specific callback
+      const redirectPath = callbackUrl === '/' ? '/dashboard' : callbackUrl
+      
       setTimeout(() => {
         router.replace(redirectPath);
       }, 800);
