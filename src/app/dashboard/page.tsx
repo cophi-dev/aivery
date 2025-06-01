@@ -40,6 +40,8 @@ import SmartNudges from "@/components/dashboard/SmartNudges";
 import { WeeklyShareCard } from "@/components/dashboard/WeeklyShareCard";
 import ShareMoments from "@/components/dashboard/ShareMoments";
 import InfoBoxes from "@/components/dashboard/InfoBoxes";
+import SmartProgressInsights from "@/components/dashboard/SmartProgressInsights";
+import WeeklyPlanner from "@/components/dashboard/WeeklyPlanner";
 
 // 🎯 DESIGN MODE TOGGLE
 const MINIMAL_MODE = true;
@@ -240,6 +242,12 @@ export default function DashboardPage() {
                     
                     {/* Progress Story - Week at a glance */}
                     <ProgressPulse />
+                    
+                    {/* Smart Progress Analysis - Actionable insights */}
+                    {metrics && <SmartProgressInsights metrics={metrics} />}
+                    
+                    {/* Weekly Planning - What to do next */}
+                    {metrics && <WeeklyPlanner metrics={metrics} />}
                     
                     {/* Share Your Journey - Prominent placement */}
                     <ShareMoments />
