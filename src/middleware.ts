@@ -154,8 +154,7 @@ export const config = {
 */
 
 // Define which paths the middleware should run on
-// Exclude static assets, images, icons, auth routes, etc.
-// Include root ('/') and specific app/api paths.
+// Simplified matcher to ensure it works
 export const config = {
   matcher: [
     /*
@@ -163,12 +162,9 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - api/stripe/webhook (Stripe webhook)
      * - api/auth/ (NextAuth internal routes)
-     * - icons/ (app icons)
-     * - images/ (public images)
+     * - api/stripe/webhook (Stripe webhook)
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/stripe/webhook|api/auth/|icons/|images/).*)',
-    '/api/:path*'
+    '/((?!_next/static|_next/image|favicon.ico|api/auth|api/stripe/webhook).*)',
   ],
 } 
