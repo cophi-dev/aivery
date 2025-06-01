@@ -85,6 +85,21 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // 3.5. Handle authenticated premium users trying to access subscribe page
+  if (pathname === '/subscribe') {
+    if (premiumCheck.userId && premiumCheck.hasAccess) {
+      // Premium user - redirect to dashboard
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      console.log(`[PREMIUM-MIDDLEWARE] Redirecting premium user from /subscribe to /dashboard`);
+      return NextResponse.redirect(url);
+    } else {
+      // Non-premium or anonymous user - allow access to subscribe page
+      console.log(`[PREMIUM-MIDDLEWARE] Allowing access to subscribe page for non-premium user`);
+      return NextResponse.next();
+    }
+  }
+
   // 4. For other public paths, allow immediate access
   if (isPublicPath(pathname)) {
     console.log(`[PREMIUM-MIDDLEWARE] Public path allowed: ${pathname}`);
