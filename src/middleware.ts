@@ -54,8 +54,23 @@ export async function middleware(request: NextRequest) {
   
   // For other public paths, allow immediate access
   console.log(`[PREMIUM-MIDDLEWARE] About to check if ${pathname} is public path`);
+  
+  // TEST: Let's check if the function exists and what it returns
+  console.log(`[PREMIUM-MIDDLEWARE] isPublicPath function type: ${typeof isPublicPath}`);
+  
   const isPublic = isPublicPath(pathname);
   console.log(`[PREMIUM-MIDDLEWARE] isPublicPath(${pathname}) returned: ${isPublic}`);
+  
+  // TEST: Let's also manually check what we think should be public
+  const manualPublicPaths = ['/', '/login', '/register', '/forgot-password', '/reset', '/subscribe', '/pricing', '/manifest.json', '/icon.svg'];
+  const shouldBePublic = manualPublicPaths.some(path => pathname === path || (path.endsWith('/') && pathname.startsWith(path)));
+  console.log(`[PREMIUM-MIDDLEWARE] Manual check: ${pathname} shouldBePublic: ${shouldBePublic}`);
+  
+  // TEST: Let's also manually check against the paths we know should NOT be public
+  if (pathname === '/dashboard' || pathname === '/workouts' || pathname === '/exercises' || pathname === '/chat') {
+    console.log(`[PREMIUM-MIDDLEWARE] ⚠️  ALERT: Path ${pathname} should NOT be public but isPublicPath returned ${isPublic}`);
+  }
+  
   if (isPublic) {
     console.log(`[PREMIUM-MIDDLEWARE] Public path allowed: ${pathname}`);
     return NextResponse.next();

@@ -109,6 +109,7 @@ export const subscriptionRequiredPaths = [
 ];
 
 export function isPublicPath(pathname: string): boolean {
+  console.log(`🔍 [isPublicPath] FUNCTION CALLED with pathname: ${pathname}`);
   const isPublic = publicPaths.some(path => {
     if (path.endsWith('/')) {
       return pathname.startsWith(path);
