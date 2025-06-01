@@ -26,6 +26,33 @@ export async function middleware(request: NextRequest) {
   console.log(`[PREMIUM-MIDDLEWARE] Processing request to: ${pathname}`);
 
   // 1. For truly public paths (auth/payment), allow immediate access
+  // Special handling for root path - redirect logged-in users appropriately
+  if (pathname === '/') {
+    const premiumCheck = await checkPremiumAccess(request);
+    
+    if (premiumCheck.userId) {
+      // User is logged in - redirect based on subscription tier
+      if (premiumCheck.hasAccess) {
+        // Premium user - redirect to dashboard
+        console.log(`[PREMIUM-MIDDLEWARE] Redirecting logged-in premium user from / to /dashboard`);
+        const url = request.nextUrl.clone();
+        url.pathname = '/dashboard';
+        return NextResponse.redirect(url);
+      } else {
+        // Free user - redirect to subscription page
+        console.log(`[PREMIUM-MIDDLEWARE] Redirecting logged-in free user from / to /subscribe`);
+        const url = request.nextUrl.clone();
+        url.pathname = '/subscribe';
+        return NextResponse.redirect(url);
+      }
+    } else {
+      // Anonymous user - show landing page
+      console.log(`[PREMIUM-MIDDLEWARE] Anonymous user accessing landing page`);
+      return NextResponse.next();
+    }
+  }
+  
+  // For other public paths, allow immediate access
   if (isPublicPath(pathname)) {
     console.log(`[PREMIUM-MIDDLEWARE] Public path allowed: ${pathname}`);
     return NextResponse.next();
