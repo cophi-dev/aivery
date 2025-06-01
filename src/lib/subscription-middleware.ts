@@ -49,23 +49,13 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
   }
 }
 
-// Paths that don't require premium access (auth flow + payment flow + landing page)
+// Paths that don't require premium access (ONLY auth flow + payment flow + landing page)
 export const publicPaths = [
   '/', // Landing page - public access
   '/login',
   '/register', 
   '/forgot-password',
   '/reset',
-  '/api/auth/',
-  '/api/stripe/webhook',
-  '/api/stripe/create-checkout-session',
-  '/api/stripe/create-portal-session',
-  '/api/health',
-  '/api/user', // User API needed for authentication
-  '/api/user/avatar', // User avatar API for navigation
-  '/api/debug-auth',
-  '/api/debug-token',
-  '/api/middleware-test',
   '/subscribe', // New subscription page
   '/payment-success',
   '/payment-canceled',
@@ -73,8 +63,10 @@ export const publicPaths = [
   '/debug-token', // Debug page for testing
   '/manifest.json', // PWA manifest
   '/icon.svg', // App icon
-  '/.well-known/', // Well-known paths for various services
-  '/favicon.ico' // Favicon
+  '/favicon.ico', // Favicon
+  // Static assets
+  '/uploads/',
+  '/icons/'
 ];
 
 // Paths that should redirect to subscription page (instead of blocking)
@@ -109,33 +101,41 @@ export const subscriptionRequiredPaths = [
 ];
 
 export function isPublicPath(pathname: string): boolean {
-  console.log(`🔍 [isPublicPath] FUNCTION CALLED with pathname: ${pathname}`);
-  const isPublic = publicPaths.some(path => {
-    if (path.endsWith('/')) {
-      return pathname.startsWith(path);
-    }
-    // Exact match or starts with path + slash (but not root path)
-    if (path === '/') {
-      return pathname === '/';
-    }
-    return pathname === path || pathname.startsWith(`${path}/`);
-  });
+  // Explicit list of paths that should be public (no premium required)
+  const exactPaths = [
+    '/',
+    '/login', 
+    '/register',
+    '/forgot-password',
+    '/reset',
+    '/subscribe',
+    '/payment-success', 
+    '/payment-canceled',
+    '/pricing',
+    '/debug-token',
+    '/manifest.json',
+    '/icon.svg',
+    '/favicon.ico'
+  ];
   
-  console.log(`🔍 [isPublicPath] Checking ${pathname}: ${isPublic ? 'PUBLIC' : 'PROTECTED'}`);
-  if (isPublic) {
-    const matchingPath = publicPaths.find(path => {
-      if (path.endsWith('/')) {
-        return pathname.startsWith(path);
-      }
-      if (path === '/') {
-        return pathname === '/';
-      }
-      return pathname === path || pathname.startsWith(`${path}/`);
-    });
-    console.log(`🔍 [isPublicPath] Matched public path: ${matchingPath}`);
+  // Check exact matches first
+  if (exactPaths.includes(pathname)) {
+    console.log(`[isPublicPath] ${pathname} is explicitly public`);
+    return true;
   }
   
-  return isPublic;
+  // Check path prefixes for static assets
+  const publicPrefixes = ['/uploads/', '/icons/'];
+  for (const prefix of publicPrefixes) {
+    if (pathname.startsWith(prefix)) {
+      console.log(`[isPublicPath] ${pathname} matches public prefix ${prefix}`);
+      return true;
+    }
+  }
+  
+  // Everything else is protected
+  console.log(`[isPublicPath] ${pathname} is PROTECTED (not in public paths)`);
+  return false;
 }
 
 export function requiresSubscription(pathname: string): boolean {

@@ -19,7 +19,14 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith('/favicon.ico') || 
       pathname.startsWith('/icons/') || 
       pathname.startsWith('/images/') || 
-      pathname === '/api/stripe/webhook') {
+      pathname.startsWith('/api/auth/') ||
+      pathname === '/api/stripe/webhook' ||
+      pathname === '/api/stripe/create-checkout-session' ||
+      pathname === '/api/stripe/create-portal-session' ||
+      pathname === '/api/health' ||
+      pathname === '/api/user' ||
+      pathname === '/api/user/avatar' ||
+      pathname === '/api/middleware-test') {
     return NextResponse.next();
   }
 
@@ -52,30 +59,11 @@ export async function middleware(request: NextRequest) {
     }
   }
   
-  // For other public paths, allow immediate access
-  console.log(`[PREMIUM-MIDDLEWARE] About to check if ${pathname} is public path`);
-  
-  // TEST: Let's check if the function exists and what it returns
-  console.log(`[PREMIUM-MIDDLEWARE] isPublicPath function type: ${typeof isPublicPath}`);
-  
-  const isPublic = isPublicPath(pathname);
-  console.log(`[PREMIUM-MIDDLEWARE] isPublicPath(${pathname}) returned: ${isPublic}`);
-  
-  // TEST: Let's also manually check what we think should be public
-  const manualPublicPaths = ['/', '/login', '/register', '/forgot-password', '/reset', '/subscribe', '/pricing', '/manifest.json', '/icon.svg'];
-  const shouldBePublic = manualPublicPaths.some(path => pathname === path || (path.endsWith('/') && pathname.startsWith(path)));
-  console.log(`[PREMIUM-MIDDLEWARE] Manual check: ${pathname} shouldBePublic: ${shouldBePublic}`);
-  
-  // TEST: Let's also manually check against the paths we know should NOT be public
-  if (pathname === '/dashboard' || pathname === '/workouts' || pathname === '/exercises' || pathname === '/chat') {
-    console.log(`[PREMIUM-MIDDLEWARE] ⚠️  ALERT: Path ${pathname} should NOT be public but isPublicPath returned ${isPublic}`);
-  }
-  
-  if (isPublic) {
+  // For public paths, allow immediate access
+  if (isPublicPath(pathname)) {
     console.log(`[PREMIUM-MIDDLEWARE] Public path allowed: ${pathname}`);
     return NextResponse.next();
   }
-  console.log(`[PREMIUM-MIDDLEWARE] Path ${pathname} is NOT public, continuing with premium checks`);
 
   // 2. For ALL other paths (including root "/"), check authentication and premium access
   const premiumCheck = await checkPremiumAccess(request);
@@ -95,11 +83,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // 3. For specific premium-required paths, enforce premium access
-  console.log(`[PREMIUM-MIDDLEWARE] About to check if ${pathname} requires subscription`);
-  const requiresPremium = requiresSubscription(pathname);
-  console.log(`[PREMIUM-MIDDLEWARE] requiresSubscription(${pathname}) returned: ${requiresPremium}`);
-  if (requiresPremium) {
+  // 3. For all authenticated users, check if path requires premium access
+  if (requiresSubscription(pathname)) {
     if (!premiumCheck.hasAccess) {
       // Authenticated but no premium access - redirect to subscription page
       console.log(`[PREMIUM-MIDDLEWARE] No premium access for ${pathname}, tier: ${premiumCheck.tier}`);
@@ -138,9 +123,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 6. Catch-all: For any other path accessed by non-premium users, redirect to subscribe
+  // 6. If user is authenticated but doesn't have premium access, redirect to subscribe
   if (!premiumCheck.hasAccess) {
-    console.log(`[PREMIUM-MIDDLEWARE] Catch-all: Non-premium user accessing ${pathname}, redirecting to /subscribe`);
+    console.log(`[PREMIUM-MIDDLEWARE] Non-premium user accessing ${pathname}, redirecting to /subscribe`);
     const url = request.nextUrl.clone();
     url.pathname = '/subscribe';
     url.searchParams.set('from', encodeURIComponent(pathname));
