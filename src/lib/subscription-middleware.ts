@@ -21,18 +21,39 @@ export async function checkPremiumAccess(request: NextRequest): Promise<{
 
     const userId = token.sub;
 
-    // For middleware, we need to check the user's tier
-    // We'll need to make a database call here
-    // Note: In middleware, we need to be careful about database calls for performance
+    // Get real-time tier from database instead of relying on cached JWT token
+    try {
+      const response = await fetch(`${process.env.NEXTAUTH_URL || 'https://www.aivery.app'}/api/user`, {
+        headers: {
+          'Cookie': request.headers.get('cookie') || '',
+          'Authorization': `Bearer ${token.accessToken || ''}`
+        }
+      });
+      
+      if (response.ok) {
+        const userData = await response.json();
+        const tier = userData.tier || 'free';
+        const hasAccess = tier === 'premium' || tier === 'expert';
+        
+        console.log(`[SUBSCRIPTION-CHECK] User ${userId} has real-time tier: ${tier}, hasAccess: ${hasAccess}`);
+        
+        return {
+          hasAccess,
+          tier,
+          userId,
+        };
+      } else {
+        console.log(`[SUBSCRIPTION-CHECK] Failed to fetch user data, falling back to token tier`);
+      }
+    } catch (error) {
+      console.log(`[SUBSCRIPTION-CHECK] Error fetching user data:`, error);
+    }
     
-    // For now, we'll get the tier from the token if it's available
-    // The token should include the user's tier (we'll need to update NextAuth config)
+    // Fallback to token tier if API call fails
     const tier = (token as any).tier || 'free';
-    
     const hasAccess = tier === 'premium' || tier === 'expert';
     
-    console.log(`[SUBSCRIPTION-CHECK] User ${userId} has tier: ${tier}, hasAccess: ${hasAccess}`);
-    console.log(`[SUBSCRIPTION-CHECK] Full token:`, JSON.stringify(token, null, 2));
+    console.log(`[SUBSCRIPTION-CHECK] User ${userId} fallback tier: ${tier}, hasAccess: ${hasAccess}`);
     
     return {
       hasAccess,
