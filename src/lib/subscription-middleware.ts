@@ -120,7 +120,7 @@ export function isPublicPath(pathname: string): boolean {
     return pathname === path || pathname.startsWith(`${path}/`);
   });
   
-  console.log(`[isPublicPath] Checking ${pathname}: ${isPublic ? 'PUBLIC' : 'PROTECTED'}`);
+  console.log(`🔍 [isPublicPath] Checking ${pathname}: ${isPublic ? 'PUBLIC' : 'PROTECTED'}`);
   if (isPublic) {
     const matchingPath = publicPaths.find(path => {
       if (path.endsWith('/')) {
@@ -131,7 +131,7 @@ export function isPublicPath(pathname: string): boolean {
       }
       return pathname === path || pathname.startsWith(`${path}/`);
     });
-    console.log(`[isPublicPath] Matched public path: ${matchingPath}`);
+    console.log(`🔍 [isPublicPath] Matched public path: ${matchingPath}`);
   }
   
   return isPublic;
@@ -142,12 +142,12 @@ export function requiresSubscription(pathname: string): boolean {
     pathname === path || pathname.startsWith(`${path}/`)
   );
   
-  console.log(`[requiresSubscription] Checking ${pathname}: ${requiresSub ? 'REQUIRES_PREMIUM' : 'NO_PREMIUM_REQUIRED'}`);
+  console.log(`💰 [requiresSubscription] Checking ${pathname}: ${requiresSub ? 'REQUIRES_PREMIUM' : 'NO_PREMIUM_REQUIRED'}`);
   if (requiresSub) {
     const matchingPath = subscriptionRequiredPaths.find(path => 
       pathname === path || pathname.startsWith(`${path}/`)
     );
-    console.log(`[requiresSubscription] Matched premium path: ${matchingPath}`);
+    console.log(`💰 [requiresSubscription] Matched premium path: ${matchingPath}`);
   }
   
   return requiresSub;

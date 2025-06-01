@@ -53,10 +53,14 @@ export async function middleware(request: NextRequest) {
   }
   
   // For other public paths, allow immediate access
-  if (isPublicPath(pathname)) {
+  console.log(`[PREMIUM-MIDDLEWARE] About to check if ${pathname} is public path`);
+  const isPublic = isPublicPath(pathname);
+  console.log(`[PREMIUM-MIDDLEWARE] isPublicPath(${pathname}) returned: ${isPublic}`);
+  if (isPublic) {
     console.log(`[PREMIUM-MIDDLEWARE] Public path allowed: ${pathname}`);
     return NextResponse.next();
   }
+  console.log(`[PREMIUM-MIDDLEWARE] Path ${pathname} is NOT public, continuing with premium checks`);
 
   // 2. For ALL other paths (including root "/"), check authentication and premium access
   const premiumCheck = await checkPremiumAccess(request);
@@ -77,7 +81,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // 3. For specific premium-required paths, enforce premium access
-  if (requiresSubscription(pathname)) {
+  console.log(`[PREMIUM-MIDDLEWARE] About to check if ${pathname} requires subscription`);
+  const requiresPremium = requiresSubscription(pathname);
+  console.log(`[PREMIUM-MIDDLEWARE] requiresSubscription(${pathname}) returned: ${requiresPremium}`);
+  if (requiresPremium) {
     if (!premiumCheck.hasAccess) {
       // Authenticated but no premium access - redirect to subscription page
       console.log(`[PREMIUM-MIDDLEWARE] No premium access for ${pathname}, tier: ${premiumCheck.tier}`);
