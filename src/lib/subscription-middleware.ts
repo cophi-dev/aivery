@@ -62,6 +62,7 @@ export const publicPaths = [
   '/api/stripe/create-portal-session',
   '/api/health',
   '/api/user', // User API needed for authentication
+  '/api/user/avatar', // User avatar API for navigation
   '/api/debug-auth',
   '/api/debug-token',
   '/api/middleware-test',
@@ -108,7 +109,7 @@ export const subscriptionRequiredPaths = [
 ];
 
 export function isPublicPath(pathname: string): boolean {
-  return publicPaths.some(path => {
+  const isPublic = publicPaths.some(path => {
     if (path.endsWith('/')) {
       return pathname.startsWith(path);
     }
@@ -118,10 +119,36 @@ export function isPublicPath(pathname: string): boolean {
     }
     return pathname === path || pathname.startsWith(`${path}/`);
   });
+  
+  console.log(`[isPublicPath] Checking ${pathname}: ${isPublic ? 'PUBLIC' : 'PROTECTED'}`);
+  if (isPublic) {
+    const matchingPath = publicPaths.find(path => {
+      if (path.endsWith('/')) {
+        return pathname.startsWith(path);
+      }
+      if (path === '/') {
+        return pathname === '/';
+      }
+      return pathname === path || pathname.startsWith(`${path}/`);
+    });
+    console.log(`[isPublicPath] Matched public path: ${matchingPath}`);
+  }
+  
+  return isPublic;
 }
 
 export function requiresSubscription(pathname: string): boolean {
-  return subscriptionRequiredPaths.some(path => 
+  const requiresSub = subscriptionRequiredPaths.some(path => 
     pathname === path || pathname.startsWith(`${path}/`)
   );
+  
+  console.log(`[requiresSubscription] Checking ${pathname}: ${requiresSub ? 'REQUIRES_PREMIUM' : 'NO_PREMIUM_REQUIRED'}`);
+  if (requiresSub) {
+    const matchingPath = subscriptionRequiredPaths.find(path => 
+      pathname === path || pathname.startsWith(`${path}/`)
+    );
+    console.log(`[requiresSubscription] Matched premium path: ${matchingPath}`);
+  }
+  
+  return requiresSub;
 } 
