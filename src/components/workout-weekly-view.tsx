@@ -16,7 +16,8 @@ import { PRBadge } from "@/components/ui/pr-badge";
 // Import recharts components
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, LabelList, Legend, ReferenceLine, Label as RechartsLabel } from 'recharts'; // Renamed Label import
 // Import helpers from utils and the new MetricCard location
-import { formatDuration, formatDistance, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
+import { formatDuration, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
+import { normalizeDistanceToKm, formatDistanceDisplay, calculatePace } from '@/lib/distance-utils';
 // Import the content component, and Card 
 import { MetricContent } from '@/components/ui/metric-card'; // Adjusted import name
 // Remove MetricCard import, Add DoubleMetricCard import
@@ -107,15 +108,8 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
         const volumeKg = w.calculatedVolume || 0;
         const volumeTons = volumeKg / 1000;
         
-        // Normalize distance to kilometers
-        let distanceInKm = 0;
-        if (w.cardioDetails?.distance) {
-            // cardioDetails.distance is already in km
-            distanceInKm = w.cardioDetails.distance;
-        } else if (w.distance) {
-            // If distance is large (> 100), assume it's in meters and convert to km
-            distanceInKm = w.distance > 100 ? w.distance / 1000 : w.distance;
-        }
+        // Use centralized distance normalization
+        const distanceInKm = normalizeDistanceToKm(w);
 
         // Update totals
         totalDuration += duration;
@@ -798,7 +792,7 @@ export default function WorkoutWeeklyView() {
                         <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
                             <MetricContent
                                 title="Total Distance"
-                                value={formatDistance(weeklyMetrics.totalDistance)}
+                                value={formatDistanceDisplay(weeklyMetrics.totalDistance)}
                                 change={calculatePercentageChange(weeklyMetrics.totalDistance, previousWeekMetrics?.totalDistance)}
                             />
                         </Card>
@@ -1040,7 +1034,7 @@ export default function WorkoutWeeklyView() {
                                                  {workout.distance && (
                                                      <span className="flex items-center">
                                                          <Route className="h-4 w-4 mr-1.5" />
-                                                         {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
+                                                         {formatDistanceDisplay(normalizeDistanceToKm(workout))}
                                                      </span>
                                                  )}
                                                  {workout.calculatedVolume && (

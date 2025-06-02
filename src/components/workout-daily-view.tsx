@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, Activity, Dumbbell, Ruler, Clock, Route, Weight, ChevronDown, ChevronUp, Heart, Zap, LucidePlus } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData, SetData } from '@/types/db';
-import { formatDuration, formatDistance, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
+import { formatDuration, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
+import { normalizeDistanceToKm, formatDistanceDisplay, calculatePace } from '@/lib/distance-utils';
 import { MetricContent } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -79,15 +80,8 @@ async function getMetricsForDate(date: Date, allWorkouts: WorkoutWithExercises[]
 
     workoutsOnDate.forEach(w => {
         totalDuration += w.duration || 0;
-        // Normalize distance to kilometers
-        let distanceInKm = 0;
-        if (w.cardioDetails?.distance) {
-            // cardioDetails.distance is already in km
-            distanceInKm = w.cardioDetails.distance;
-        } else if (w.distance) {
-            // If distance is large (> 100), assume it's in meters and convert to km
-            distanceInKm = w.distance > 100 ? w.distance / 1000 : w.distance;
-        }
+        // Use centralized distance normalization
+        const distanceInKm = normalizeDistanceToKm(w);
         totalDistance += distanceInKm;
         if (w.calculatedVolume) totalVolume += w.calculatedVolume;
     });
@@ -159,30 +153,9 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
         }
     }, [workout.records, showPR]);
     
-    // Format pace (min/km)
-    const formatPace = (duration: number, distance: number) => {
-        if (!distance || !duration) return '--:--';
-        // Convert distance to kilometers if needed
-        const distanceInKm = distance > 100 ? distance / 1000 : distance;
-        if (distanceInKm === 0) return '--:--';
-        
-        const paceInMinutes = duration / 60 / distanceInKm;
-        const minutes = Math.floor(paceInMinutes);
-        const seconds = Math.round((paceInMinutes - minutes) * 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    };
-
-    // Normalize distance to kilometers
-    let distanceInKm = 0;
-    if (workout.cardioDetails?.distance) {
-        // cardioDetails.distance is already in km
-        distanceInKm = workout.cardioDetails.distance;
-    } else if (workout.distance) {
-        // If distance is large (> 100), assume it's in meters and convert to km
-        distanceInKm = workout.distance > 100 ? workout.distance / 1000 : workout.distance;
-    }
-
-    const pace = formatPace(workout.duration || 0, distanceInKm);
+    // Use centralized distance normalization and pace calculation
+    const distanceInKm = normalizeDistanceToKm(workout);
+    const pace = calculatePace(workout.duration || 0, workout);
     const avgHeartRate = workout.cardioDetails?.heartRate?.average;
     const maxHeartRate = workout.cardioDetails?.heartRate?.max;
     const elevationGain = workout.cardioDetails?.elevationGain;
@@ -917,7 +890,7 @@ const DefaultWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
                             >
                                 <Route className="h-5 w-5 mb-3 text-neutral-600 dark:text-neutral-400" />
                                 <span className="text-lg font-serif tracking-tight text-neutral-900 dark:text-neutral-100 mb-1">
-                                {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
+                                {formatDistanceDisplay(normalizeDistanceToKm(workout))}
                             </span>
                                 <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">
                                     Distance
@@ -1368,9 +1341,9 @@ export default function WorkoutDailyView() {
                                             <Route className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                                         </div>
                                         <div>
-                                            <p className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
-                                                {formatDistance(dailyMetrics.totalDistance)}
-                                            </p>
+                                                                        <p className="text-2xl font-serif tracking-tight text-neutral-900 dark:text-neutral-100">
+                                {formatDistanceDisplay(dailyMetrics.totalDistance)}
+                            </p>
                                             <p className="text-sm text-neutral-500 dark:text-neutral-400">Distance</p>
                                         </div>
                                     </div>

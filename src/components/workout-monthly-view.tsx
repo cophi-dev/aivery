@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Loader2, Clock, Route, Weight, Dumbbell, Flame, Activity, Heart, Zap, Ruler, ChevronUp, ChevronDown } from 'lucide-react';
 import type { WorkoutData, WorkoutExerciseData } from '@/types/db';
-import { formatDuration, formatDistance, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
+import { formatDuration, calculatePercentageChange, estimateBodyweightForExercise } from '@/lib/utils';
+import { normalizeDistanceToKm, formatDistanceDisplay, calculatePace } from '@/lib/distance-utils';
 import { MetricContent } from '@/components/ui/metric-card';
 import { getWorkoutTypeStyle } from '@/lib/workout-utils';
 // Import AiveryInsights
@@ -69,15 +70,8 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
         .map(originalWorkout => {
             const workout = { ...originalWorkout }; // Shallow copy to allow modification
 
-            // Normalize distance to kilometers
-            let distanceInKm = 0;
-            if (workout.cardioDetails?.distance) {
-                // cardioDetails.distance is already in km
-                distanceInKm = workout.cardioDetails.distance;
-            } else if (workout.distance) {
-                // If distance is large (> 100), assume it's in meters and convert to km
-                distanceInKm = workout.distance > 100 ? workout.distance / 1000 : workout.distance;
-            }
+            // Use centralized distance normalization
+            const distanceInKm = normalizeDistanceToKm(workout);
             
             // Update the workout object's distance to the canonical KM value
             workout.distance = distanceInKm;
@@ -153,30 +147,12 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
-    // Format pace (min/km)
-    const formatPace = (duration: number, distance: number) => {
-        if (!distance || !duration) return '--:--';
-        // Convert distance to kilometers if needed
-        const distanceInKm = distance > 100 ? distance / 1000 : distance;
-        if (distanceInKm === 0) return '--:--';
-        
-        const paceInMinutes = duration / 60 / distanceInKm;
-        const minutes = Math.floor(paceInMinutes);
-        const seconds = Math.round((paceInMinutes - minutes) * 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    };
+    // Use centralized pace calculation - no need for local formatPace function
 
-    // Normalize distance to kilometers
-    let distanceInKm = 0;
-    if (workout.cardioDetails?.distance) {
-        // cardioDetails.distance is already in km
-        distanceInKm = workout.cardioDetails.distance;
-    } else if (workout.distance) {
-        // If distance is large (> 100), assume it's in meters and convert to km
-        distanceInKm = workout.distance > 100 ? workout.distance / 1000 : workout.distance;
-    }
+    // Use centralized distance normalization
+    const distanceInKm = normalizeDistanceToKm(workout);
 
-    const pace = formatPace(workout.duration || 0, distanceInKm);
+    const pace = calculatePace(workout.duration || 0, workout);
     const avgHeartRate = workout.cardioDetails?.heartRate?.average;
     const maxHeartRate = workout.cardioDetails?.heartRate?.max;
     const elevationGain = workout.cardioDetails?.elevationGain;
@@ -723,7 +699,7 @@ export default function WorkoutMonthlyView() {
                             <Card className="p-4 bg-background border border-border/10 hover:bg-muted/5 transition-colors">
                                 <MetricContent 
                                     title="Total Distance" 
-                                    value={formatDistance(monthlyMetrics.totalDistance)} 
+                                    value={formatDistanceDisplay(monthlyMetrics.totalDistance)} 
                                     change={monthlyMetrics.totalDistance > 0 ? calculatePercentageChange(monthlyMetrics.totalDistance, previousMonthMetrics?.totalDistance) : null}
                                 />
                             </Card>
@@ -964,7 +940,7 @@ export default function WorkoutMonthlyView() {
                                                  {workout.distance && (
                                                      <span className="flex items-center">
                                                          <Route className="h-4 w-4 mr-1.5" />
-                                                         {formatDistance(workout.distance > 100 ? workout.distance / 1000 : workout.distance)}
+                                                         {formatDistanceDisplay(normalizeDistanceToKm(workout))}
                                                      </span>
                                                  )}
                                                  {workout.calculatedVolume && (
