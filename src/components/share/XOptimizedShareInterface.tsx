@@ -113,9 +113,25 @@ export function XOptimizedShareInterface({
   
   // Filter PRs by timeframe
   const workoutPRs = personalRecords.filter(pr => pr.isNew);
-  const dailyPRs = personalRecords.filter(pr => pr.isNew); // For today
-  const weeklyPRs = personalRecords.filter(pr => pr.isNew); // For this week
-  const monthlyPRs = personalRecords.filter(pr => pr.isNew); // For this month
+  const dailyPRs = personalRecords.filter(pr => pr.isNew === true).map(pr => ({ ...pr, isNew: true as const })); // For today
+  
+  // Map PRs to weekly format (only distance, volume, or exercise types)
+  const weeklyPRs = personalRecords
+    .filter(pr => pr.isNew === true && ['distance', 'volume'].includes(pr.type))
+    .map(pr => ({ 
+      ...pr, 
+      date: new Date(),
+      type: pr.type as 'distance' | 'volume'
+    }));
+    
+  // Map PRs to monthly format (distance, volume, exercise, or consistency types)
+  const monthlyPRs = personalRecords
+    .filter(pr => pr.isNew === true && ['distance', 'volume'].includes(pr.type))
+    .map(pr => ({ 
+      ...pr, 
+      date: new Date(),
+      type: pr.type as 'distance' | 'volume'
+    }));
 
   const getTabInfo = () => {
     const tabs = [];
