@@ -312,15 +312,6 @@ export function XOptimizedShareCard({
             </div>
           )}
 
-          {/* Insight */}
-          {insight && (
-            <div className="text-center mb-12">
-              <p className="text-xl text-gray-700 dark:text-gray-300 leading-relaxed font-light italic">
-                "{insight}"
-              </p>
-            </div>
-          )}
-
           {/* Footer */}
           <div className="flex items-center justify-between">
             <div className="text-lg text-gray-400 font-mono">

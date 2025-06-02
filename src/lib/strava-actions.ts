@@ -319,3 +319,167 @@ export async function removeStravaWebhookAction(subscriptionId: number) {
   }
 }
 
+// New combined smart sync action
+export async function smartSyncStravaAction() {
+  try {
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    console.log(`[smartSyncStravaAction] Starting smart sync for user: ${userId}`)
+    
+    // Get user's Strava integration
+    const integration = await getStravaIntegration(userId)
+    if (!integration) {
+      throw new Error("Strava not connected")
+    }
+    
+    const { getValidAccessToken } = await import("./services/stravaService")
+    
+    // Ensure we have a valid access token
+    const validToken = await getValidAccessToken(userId)
+    if (!validToken) {
+      throw new Error("Failed to get valid Strava access token")
+    }
+    
+    // Step 1: Check for deleted activities that need to be removed
+    const { getCollection } = await import("@/lib/db/mongodb")
+    const { ObjectId } = await import("mongodb")
+    const workoutsCollection = await getCollection("workouts")
+    
+    // Get all Strava-synced workouts for this user (check recent ones)
+    const stravaWorkouts = await workoutsCollection.find({
+      userId: new ObjectId(userId),
+      stravaActivityId: { $exists: true, $ne: null }
+    }).sort({ date: -1 }).limit(20).toArray()
+    
+    let deletedCount = 0
+    
+    // Check if each workout still exists on Strava
+    for (const workout of stravaWorkouts) {
+      try {
+        const checkResponse = await fetch(
+          `https://www.strava.com/api/v3/activities/${workout.stravaActivityId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${validToken}`
+            }
+          }
+        )
+        
+        if (checkResponse.status === 404) {
+          // Activity was deleted on Strava, remove from our database
+          await workoutsCollection.deleteOne({ _id: workout._id })
+          deletedCount++
+          console.log(`[smartSyncStravaAction] Deleted workout ${workout._id} (Strava activity ${workout.stravaActivityId} no longer exists)`)
+        }
+      } catch (checkError) {
+        console.error(`[smartSyncStravaAction] Error checking activity ${workout.stravaActivityId}:`, checkError)
+        // Continue with other workouts
+      }
+    }
+    
+    // Step 2: Sync recent activities (last 10 to catch any new/updated ones)
+    const { getRecentStravaActivities } = await import("./strava")
+    const WorkoutModel = (await import("@/lib/db/models/workout")).default
+    const dbConnect = (await import("@/lib/db/mongodb")).default
+    
+    await dbConnect()
+    
+    const recentActivities = await getRecentStravaActivities(validToken)
+    const last10Activities = recentActivities.slice(0, 10)
+    
+    console.log(`[smartSyncStravaAction] Fetched ${last10Activities.length} recent activities from Strava`)
+    
+    let newCount = 0
+    let updatedCount = 0
+    let syncedCount = 0
+    
+    // Process each activity
+    for (const activity of last10Activities) {
+      try {
+        // Check if workout exists
+        const existingWorkout = await WorkoutModel.findOne({
+          userId: userId,
+          source: 'strava',
+          sourceId: activity.id.toString()
+        }).exec()
+
+        // Simple activity mapping
+        const distanceInMeters = typeof activity.distance === 'number' ? activity.distance : 0
+        const durationSeconds = activity.moving_time || activity.elapsed_time || 0
+        const workoutType = activity.type?.toLowerCase().includes('run') ? 'running' :
+                           activity.type?.toLowerCase().includes('ride') ? 'cycling' :
+                           activity.type?.toLowerCase().includes('swim') ? 'swimming' :
+                           activity.type?.toLowerCase().includes('walk') ? 'walking' : 'other'
+
+        const workoutData = {
+          userId: userId,
+          name: activity.name || `${activity.type} Activity`,
+          type: workoutType,
+          date: new Date(activity.start_date),
+          duration: durationSeconds,
+          distance: distanceInMeters,
+          intensity: 'Medium',
+          stravaLink: `https://www.strava.com/activities/${activity.id}`,
+          source: 'strava',
+          sourceId: activity.id.toString(),
+          importedFrom: 'strava-smart-sync',
+        }
+
+        if (existingWorkout) {
+          await WorkoutModel.findByIdAndUpdate(existingWorkout._id, { $set: workoutData }, { new: true })
+          updatedCount++
+        } else {
+          await WorkoutModel.create(workoutData)
+          newCount++
+        }
+        
+        syncedCount++
+        console.log(`[smartSyncStravaAction] Processed activity ${activity.id}: ${activity.name}`)
+      } catch (activityError) {
+        console.error(`[smartSyncStravaAction] Failed to sync activity ${activity.id}:`, activityError)
+        // Continue with other activities
+      }
+    }
+    
+    console.log(`[smartSyncStravaAction] Completed: ${newCount} new, ${updatedCount} updated, ${deletedCount} deleted, ${syncedCount} total processed`)
+    
+    // Update last synced timestamp
+    await updateStravaLastSynced(userId)
+    
+    // Revalidate relevant pages
+    revalidatePath("/workouts")
+    revalidatePath("/dashboard")
+    revalidatePath("/integrations")
+    revalidatePath("/calendar")
+    revalidatePath("/activity")
+    
+    // Create summary message
+    const changes = []
+    if (newCount > 0) changes.push(`${newCount} new`)
+    if (updatedCount > 0) changes.push(`${updatedCount} updated`)
+    if (deletedCount > 0) changes.push(`${deletedCount} deleted`)
+    
+    const message = changes.length > 0 
+      ? `Smart sync completed: ${changes.join(', ')} activities`
+      : "All activities are up to date"
+    
+    return {
+      success: true,
+      newCount,
+      updatedCount,
+      deletedCount,
+      syncedCount,
+      message
+    }
+  } catch (error) {
+    console.error("Error in smartSyncStravaAction:", error)
+    const errorMessage = error instanceof Error ? error.message : "Failed to perform smart sync"
+    return { success: false, error: errorMessage }
+  }
+}
+

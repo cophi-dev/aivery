@@ -146,8 +146,88 @@ export async function POST(request: NextRequest) {
              console.error(`Error marking webhook event as failed for activity ${activityId}:`, dbError);
           }
         }
+      } else if (aspectType === "delete") {
+        // Handle activity deletion
+        try {
+          // 1. Find the application user ID associated with the Strava athlete ID
+          const appUserId = await findUserByStravaAthleteId(athleteId);
+          console.log(`Found app user ID ${appUserId} for delete event of activity ${activityId}`);
+
+          // 2. Delete the workout from our database
+          const { getCollection } = await import("@/lib/db/mongodb");
+          const { ObjectId } = await import("mongodb");
+          const workoutsCollection = await getCollection("workouts");
+          
+          // Find and delete the workout by stravaActivityId
+          const deleteResult = await workoutsCollection.deleteOne({
+            userId: new ObjectId(appUserId),
+            stravaActivityId: activityId.toString()
+          });
+
+          if (deleteResult.deletedCount > 0) {
+            console.log(`Successfully deleted workout for Strava activity ${activityId} (user: ${appUserId})`);
+          } else {
+            console.log(`No workout found to delete for Strava activity ${activityId} (user: ${appUserId})`);
+          }
+
+          // 3. Update the webhook event record to mark as processed
+          try {
+            const webhookEventsCollection = await getCollection("webhook_events");
+            await webhookEventsCollection.updateOne(
+              { 
+                "event.object_id": activityId,
+                "event.owner_id": athleteId,
+                "event.aspect_type": aspectType,
+              },
+              { 
+                $set: { 
+                  processedAt: new Date(),
+                  status: "processed",
+                  appUserId: appUserId,
+                  deletedCount: deleteResult.deletedCount
+                } 
+              }
+            );
+            console.log(`Marked delete webhook event for activity ${activityId} as processed.`);
+            
+            // Revalidate the workouts path after deletion
+            try {
+              revalidatePath('/workouts');
+              revalidatePath('/dashboard');
+              console.log(`Revalidated paths after workout deletion`);
+            } catch (revalidateError) {
+              console.error(`Error revalidating paths after deletion:`, revalidateError);
+            }
+
+          } catch (updateError) {
+            console.error(`Error updating delete webhook event status for activity ${activityId}:`, updateError);
+          }
+
+        } catch (deleteError) {
+          console.error(`Error during delete process for activity ${activityId} (Athlete: ${athleteId}):`, deleteError);
+          // Update the DB record with an error status
+          try {
+             const { getCollection } = await import("@/lib/db/mongodb");
+             const webhookEventsCollection = await getCollection("webhook_events");
+             await webhookEventsCollection.updateOne(
+               { 
+                 "event.object_id": activityId,
+                 "event.owner_id": athleteId,
+                 "event.aspect_type": aspectType,
+                 processedAt: null // Target the unprocessed event
+               },
+               { 
+                 $set: { 
+                   status: "error",
+                   errorMessage: deleteError instanceof Error ? deleteError.message : "Unknown delete error"
+                 } 
+               }
+             );
+          } catch (dbError) {
+             console.error(`Error marking delete webhook event as failed for activity ${activityId}:`, dbError);
+          }
+        }
       }
-      // We don't handle "delete" events for now
     }
 
     // Always return 200 OK to acknowledge receipt of the webhook
