@@ -27,7 +27,6 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
   useEffect(() => {
     const generateMessage = () => {
       const hour = new Date().getHours();
-      const dayOfWeek = format(new Date(), 'EEEE');
       
       // Time-based greeting
       let greeting = '';
@@ -43,7 +42,7 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
       if (workoutCount === 0) {
         return {
           message: `${greeting}! Ready to start your fitness journey?`,
-          emoji: '🌟',
+          emoji: '✨',
           tone: 'welcome' as const
         };
       } else if (workoutCount >= 5) {
@@ -55,7 +54,7 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
         const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
         
         return {
-          message: `${randomEncouragement} ${workoutCount} sessions — you're building something amazing 🔥`,
+          message: `${randomEncouragement} ${workoutCount} sessions — you're building something amazing`,
           emoji: '🎉',
           tone: 'celebration' as const
         };
@@ -68,7 +67,7 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
         const randomMotivation = motivations[Math.floor(Math.random() * motivations.length)];
         
         return {
-          message: `${randomMotivation} ${workoutCount} sessions this week — keep the fire burning!`,
+          message: `${randomMotivation} ${workoutCount} sessions this week — keep the fire burning`,
           emoji: '🔥',
           tone: 'encouragement' as const
         };
@@ -81,7 +80,7 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
         const randomNudge = nudges[Math.floor(Math.random() * nudges.length)];
         
         return {
-          message: `${randomNudge} ${workoutCount > 0 ? `${workoutCount} session${workoutCount === 1 ? '' : 's'} down` : 'Ready for your first session'} — let's build on this!`,
+          message: `${randomNudge} ${workoutCount > 0 ? `${workoutCount} session${workoutCount === 1 ? '' : 's'} down` : 'Ready for your first session'} — let's build on this`,
           emoji: '💪',
           tone: 'motivation' as const
         };
@@ -91,73 +90,47 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
     setCheckInMessage(generateMessage());
   }, [workoutCount]);
 
-  const getGradientColors = () => {
-    switch (checkInMessage.tone) {
-      case 'celebration':
-        return 'from-yellow-50 to-orange-50 dark:from-yellow-950/20 dark:to-orange-950/10';
-      case 'encouragement':
-        return 'from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/10';
-      case 'motivation':
-        return 'from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/10';
-      default:
-        return 'from-blue-50 to-white dark:from-blue-950/20 dark:to-background';
-    }
-  };
-
-  const getBorderColors = () => {
-    switch (checkInMessage.tone) {
-      case 'celebration':
-        return 'border-yellow-200/50 dark:border-yellow-800/30';
-      case 'encouragement':
-        return 'border-green-200/50 dark:border-green-800/30';
-      case 'motivation':
-        return 'border-blue-200/50 dark:border-blue-800/30';
-      default:
-        return 'border-blue-200/50 dark:border-blue-800/30';
-    }
-  };
-
   return (
     <motion.section 
-      className={`mb-12 ${className}`}
+      className={`mb-8 ${className}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
     >
-      <Card className={`p-6 rounded-2xl bg-gradient-to-r ${getGradientColors()} border ${getBorderColors()} shadow-sm`}>
+      <Card className="apple-card p-8">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="flex items-start gap-4"
+          transition={{ delay: 0.1, duration: 0.3 }}
+          className="flex items-start gap-6"
         >
-          {/* Dynamic emoji */}
+          {/* Subtle emoji */}
           <motion.div 
-            className="text-3xl"
-            initial={{ scale: 0.8 }}
+            className="text-2xl"
+            initial={{ scale: 0.9 }}
             animate={{ scale: 1 }}
-            transition={{ delay: 0.3, type: "spring", stiffness: 200 }}
+            transition={{ delay: 0.2, duration: 0.2 }}
           >
             {checkInMessage.emoji}
           </motion.div>
           
           <div className="flex-1">
-            {/* Aivery says label */}
+            {/* Clean label */}
             <motion.p 
-              className="text-sm text-muted-foreground mb-2 font-medium"
+              className="apple-caption text-muted-foreground/60 mb-3"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.4, duration: 0.5 }}
+              transition={{ delay: 0.2, duration: 0.3 }}
             >
-              Aivery says:
+              Aivery
             </motion.p>
             
-            {/* Personalized message with user name */}
+            {/* Personalized message with clean typography */}
             <motion.h2 
-              className="text-xl font-semibold text-foreground mb-2"
+              className="apple-heading-lg text-foreground"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.5 }}
+              transition={{ delay: 0.3, duration: 0.3 }}
             >
               <UserNicknameDisplay fallback="champion" />, {checkInMessage.message.toLowerCase()}
             </motion.h2>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, Check, ChevronRight, Target, Flame } from 'lucide-react';
+import { Calendar, Check, ChevronRight, Target, Flame, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, addDays } from 'date-fns';
 
@@ -31,6 +31,7 @@ interface WeekPlanProps {
 }
 
 export default function WeekPlan({ metrics, className }: WeekPlanProps) {
+  const [expanded, setExpanded] = useState(false);
   const [todayPlan, setTodayPlan] = useState<DayPlan | null>(null);
   const [tomorrowPlan, setTomorrowPlan] = useState<DayPlan | null>(null);
   const [streak, setStreak] = useState(0);
@@ -229,11 +230,19 @@ export default function WeekPlan({ metrics, className }: WeekPlanProps) {
       transition={{ duration: 0.6, ease: "easeOut" }}
     >
       <Card className="border-0 bg-gradient-to-br from-slate-50/50 to-gray-50/30 dark:from-slate-950/50 dark:to-gray-950/30">
-        <CardHeader className="pb-4">
+        <CardHeader 
+          className="pb-4 cursor-pointer hover:bg-muted/20 transition-colors rounded-t-lg"
+          onClick={() => setExpanded(!expanded)}
+        >
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg font-medium text-foreground flex items-center gap-2">
               <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               This Week's Plan
+              {expanded ? (
+                <ChevronUp className="w-4 h-4 text-muted-foreground ml-1" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-muted-foreground ml-1" />
+              )}
             </CardTitle>
             {streak > 0 && (
               <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-900/30">
@@ -246,7 +255,14 @@ export default function WeekPlan({ metrics, className }: WeekPlanProps) {
           </div>
         </CardHeader>
         
-        <CardContent className="space-y-4">
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
+            <CardContent className="space-y-4">
           {/* Today's Plan */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -351,7 +367,9 @@ export default function WeekPlan({ metrics, className }: WeekPlanProps) {
               Your plan evolves as Aivery analyzes your training patterns
             </p>
           </div>
-        </CardContent>
+            </CardContent>
+          </motion.div>
+        )}
       </Card>
     </motion.section>
   );

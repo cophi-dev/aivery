@@ -44,33 +44,16 @@ import ProgressPulse from "@/components/dashboard/ProgressPulse";
 import { WeeklyShareCard } from "@/components/dashboard/WeeklyShareCard";
 import ShareMoments from "@/components/dashboard/ShareMoments";
 import InfoBoxes from "@/components/dashboard/InfoBoxes";
+import RecentWorkoutInsights from "@/components/dashboard/RecentWorkoutInsights";
+import ProgressChart from "@/components/dashboard/ProgressChart";
+import SmartSuggestions from "@/components/dashboard/SmartSuggestions";
+
 
 // 🎯 DESIGN MODE TOGGLE
 const MINIMAL_MODE = true;
 
-// Define a type for the metrics data
-interface DashboardMetrics {
-    strengthVolumeLast7Days: number;
-    cardioDurationLast7Days: number;
-    cardioDistanceLast7Days: number;
-    strengthVolumePrevious7Days: number;
-    cardioDurationPrevious7Days: number;
-    cardioDistancePrevious7Days: number;
-    // topPRs: any[]; // Keep commented out
-    exercisePRs: DashboardPREntry[];
-    randomPRs: DashboardPREntry[]; // <-- Add random PRs
-    overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs
-    workoutCount: number;
-    previousWorkoutCount: number;
-    // Added this field from the backend API 
-    hasAiPreferences?: boolean; 
-    runningDistanceLast7Days: number;
-    swimmingDistanceLast7Days: number;
-    bikingDistanceLast7Days: number;
-    runningDistancePrevious7Days: number;
-    swimmingDistancePrevious7Days: number;
-    bikingDistancePrevious7Days: number;
-}
+// Import dashboard metrics type
+import type { DashboardMetrics } from '@/types/dashboard';
 
 // Placeholder type/interface for a chat message
 interface ChatMessage {
@@ -233,24 +216,27 @@ export default function DashboardPage() {
     return (
         <div className="min-h-screen bg-background">
             {MINIMAL_MODE ? (
-                // 🎨 NEW SOPHISTICATED MINIMAL DESIGN
+                // 🎨 SOPHISTICATED APPLE-INSPIRED MINIMAL DESIGN
                 <DashboardWrapper>
-                    {/* Important Info Boxes - User guidance */}
+                    {/* Essential Info Boxes - Only when needed */}
                     <InfoBoxes />
                     
-                    {/* 1. Personalized Check-In - Journal-like greeting */}
+                    {/* 1. Personalized Check-In - Clean greeting */}
                     <PersonalizedCheckIn workoutCount={metrics?.workoutCount || 0} />
                     
-                    {/* 2. Key Metrics - Unified clean stats */}
+                    {/* 2. Key Metrics - Essential stats only */}
                     {metrics && <UnifiedKeyMetrics metrics={metrics} />}
                     
-                    {/* 3. Progress Insights - Digestible insights cards */}
-                    {metrics && <ProgressInsights metrics={metrics} />}
+                    {/* 3. Recent Workout Highlights - Core training moments */}
+                    <RecentWorkoutInsights />
                     
-                    {/* 4. Aivery's Weekly Suggestion - Proactive AI recommendations */}
-                    {metrics && <AiveryCard metrics={metrics} />}
+                    {/* 4. Progress Trends - Clean weekly charts */}
+                    <ProgressChart />
                     
-                    {/* 5. Hall of Progress - Gamified achievements */}
+                    {/* 5. Training Insights - Personalized guidance */}
+                    {metrics && <SmartSuggestions metrics={metrics} />}
+                    
+                    {/* 6. Recent Milestones - Clean achievements without XP clutter */}
                     {metrics && (
                         <AchievementsGrid 
                             exercisePRs={metrics.exercisePRs || []} 
@@ -258,10 +244,7 @@ export default function DashboardPage() {
                         />
                     )}
                     
-                    {/* 6. Weekly Plan – Today & Tomorrow */}
-                    {metrics && <WeekPlan metrics={metrics} />}
-                    
-                    {/* 7. Ask Aivery AI Companion - Above the fold */}
+                    {/* 7. AI Companion - Minimal interaction */}
                     <AskAiveryPrompt />
                 </DashboardWrapper>
             ) : (

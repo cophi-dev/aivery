@@ -6,8 +6,8 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from '@/lib/db/mongodb';
 import WorkoutModel, { IWorkout } from '@/lib/db/models/workout';
 import { ObjectId } from 'mongodb';
-import { formatDistance as formatDistanceUtil } from "@/lib/utils"; // Use existing formatter
-import { estimateBodyweightForExercise } from '@/lib/utils/estimateBodyweightForExercise';
+import { formatDistance as formatDistanceUtil, estimateBodyweightForExercise } from '@/lib/utils';
+import WorkoutExerciseModel from "@/lib/db/models/workoutExercise";
 // --- Enhanced Helper Functions ---
 
 // Helper function to generate distance comparison text
@@ -167,21 +167,26 @@ export async function GET(
 
     await dbConnect();
 
-    // Fetch the workout with populated exercise data
+    // Fetch the workout first
     const workout = await WorkoutModel.findOne({
         _id: new ObjectId(workoutId),
         userId: new ObjectId(userId)
-    }).populate({
-      path: 'workoutExercises',
-      populate: {
-        path: 'exerciseId',
-        model: 'Exercise'
-      }
-    }).lean() as any; // Use any type since we're populating additional fields
+    }).lean() as any;
 
     if (!workout) {
         return NextResponse.json({ error: "Workout not found or not authorized" }, { status: 404 });
     }
+
+    // Fetch workout exercises separately and populate exercise details
+    const workoutExercises = await WorkoutExerciseModel.find({
+        workoutId: new ObjectId(workoutId)
+    }).populate({
+        path: 'exerciseId',
+        model: 'Exercise'
+    }).lean();
+
+    // Add exercises to the workout object
+    workout.workoutExercises = workoutExercises;
 
     // Calculate workout intensity
     const intensity = calculateWorkoutIntensity(workout);

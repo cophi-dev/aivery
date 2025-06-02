@@ -108,6 +108,9 @@ export const publicPaths = [
   '/manifest.json', // PWA manifest
   '/icon.svg', // App icon
   '/favicon.ico', // Favicon
+  // Webhook endpoints (external services)
+  '/api/strava/webhook', // Strava webhook - no auth required
+  '/api/stripe/webhook', // Stripe webhook - no auth required
   // Static assets
   '/uploads/',
   '/icons/'
@@ -161,7 +164,10 @@ export function isPublicPath(pathname: string): boolean {
     '/auth-test',
     '/manifest.json',
     '/icon.svg',
-    '/favicon.ico'
+    '/favicon.ico',
+    // Webhook endpoints (external services)
+    '/api/strava/webhook',
+    '/api/stripe/webhook'
   ];
   
   // Check exact matches first

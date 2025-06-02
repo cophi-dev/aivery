@@ -44,12 +44,13 @@ import {
   HeartPulse
 } from "lucide-react"
 import { fetchWorkout, deleteWorkout } from "@/lib/workout-actions"
-import { formatDate, formatDuration, formatDistance, formatPace } from "@/lib/utils"
+import { formatDate, formatDuration, formatDistance, formatPace, estimateBodyweightForExercise } from "@/lib/utils"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
 import ReactMarkdown from "react-markdown"
 import { LoadingIndicator } from "@/components/ui/loading-indicator"
 import { cn } from "@/lib/utils"
 import ShareModal from '@/components/workout/ShareModal'
+import RunningInsights from '@/components/workout/RunningInsights'
 
 // Helper function to get icon based on workout type
 const getWorkoutIcon = (type: string) => {
@@ -95,19 +96,37 @@ const calculateWorkoutStats = (workout: any) => {
 
     workout.workoutExercises.forEach((exercise: any) => {
       if (exercise.sets && exercise.sets.length > 0) {
+        const exerciseName = exercise.exerciseId?.name || '';
         exercise.sets.forEach((set: any) => {
           stats.totalSets++;
           const reps = set.reps || 0;
-          const weight = set.weight || 0;
+          const externalWeight = set.weight || 0;
           
           stats.totalReps += reps;
-          stats.totalVolume += weight * reps;
           
-          if (weight > 0) {
-            totalWeight += weight;
+          // Calculate volume properly considering bodyweight exercises
+          if (reps > 0) {
+            // Get bodyweight contribution for this exercise
+            const estimatedBodyweight = estimateBodyweightForExercise(exerciseName);
+            
+            // Total weight = bodyweight estimate + external weight
+            let totalWeightForSet = estimatedBodyweight;
+            if (externalWeight > 0) {
+              totalWeightForSet += externalWeight;
+            }
+            
+            // Add to volume if we have any weight (bodyweight or external)
+            if (totalWeightForSet > 0) {
+              stats.totalVolume += totalWeightForSet * reps;
+            }
+          }
+          
+          // Track external weights for average/max calculations
+          if (externalWeight > 0) {
+            totalWeight += externalWeight;
             weightCount++;
-            if (weight > stats.maxWeight) {
-              stats.maxWeight = weight;
+            if (externalWeight > stats.maxWeight) {
+              stats.maxWeight = externalWeight;
             }
           }
         });
@@ -291,8 +310,32 @@ const StatsGrid = ({ workout, workoutStats, formattedDistance, formattedDuration
 // Enhanced Exercise Card Component
 const ExerciseCard = ({ exercise, index }: any) => {
   const exerciseSets = exercise.sets || [];
-  const exerciseVolume = exerciseSets.reduce((total: number, set: any) => 
-    total + ((set.weight || 0) * (set.reps || 0)), 0);
+  const exerciseName = exercise.exerciseId?.name || '';
+  
+  // Calculate volume properly considering bodyweight exercises
+  const exerciseVolume = exerciseSets.reduce((total: number, set: any) => {
+    const reps = set.reps || 0;
+    const externalWeight = set.weight || 0;
+    
+    if (reps > 0) {
+      // Get bodyweight contribution for this exercise
+      const estimatedBodyweight = estimateBodyweightForExercise(exerciseName);
+      
+      // Total weight = bodyweight estimate + external weight
+      let totalWeightForSet = estimatedBodyweight;
+      if (externalWeight > 0) {
+        totalWeightForSet += externalWeight;
+      }
+      
+      // Add to volume if we have any weight (bodyweight or external)
+      if (totalWeightForSet > 0) {
+        return total + (totalWeightForSet * reps);
+      }
+    }
+    
+    return total;
+  }, 0);
+  
   const exerciseReps = exerciseSets.reduce((total: number, set: any) => 
     total + (set.reps || 0), 0);
   
@@ -606,7 +649,7 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
 
           {/* Main Content Tabs */}
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-3 mb-8 bg-muted/50 backdrop-blur-sm">
+            <TabsList className={`grid w-full max-w-lg mx-auto ${(workout.type === 'running' || workout.cardioDetails?.distance) ? 'grid-cols-4' : 'grid-cols-3'} mb-8 bg-muted/50 backdrop-blur-sm`}>
               <TabsTrigger value="overview" className="data-[state=active]:bg-background">
                 <Eye className="h-4 w-4 mr-2" />
                 Overview
@@ -619,6 +662,12 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                 <Sparkles className="h-4 w-4 mr-2" />
                 Insights
               </TabsTrigger>
+              {(workout.type === 'running' || workout.cardioDetails?.distance) && (
+                <TabsTrigger value="running" className="data-[state=active]:bg-background">
+                  <LucideActivity className="h-4 w-4 mr-2" />
+                  Running
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {/* Overview Tab */}
@@ -747,6 +796,13 @@ export default function WorkoutDetailPage({ params }: { params: { id: string } }
                </Card>
               </motion.div>
             </TabsContent>
+
+            {/* Running Analysis Tab */}
+            {(workout.type === 'running' || workout.cardioDetails?.distance) && (
+              <TabsContent value="running" className="space-y-8">
+                <RunningInsights workout={workout} showTitle={false} />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </div>

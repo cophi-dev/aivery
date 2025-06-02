@@ -28,6 +28,7 @@ import { fetchWorkout, markWorkoutComplete } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
 import { ShareModal } from "@/components/workout/ShareModal"
 import { ShareCard } from "@/components/workout/ShareCard"
+import PostWorkoutInsights from "@/components/workout/PostWorkoutInsights"
 import type { WorkoutData, ExerciseData, Set, WorkoutExerciseData } from "@/types/db"
 import { Label } from "@/components/ui/label"
 import { toast } from "react-hot-toast"
@@ -45,6 +46,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
   const [isCompleting, setIsCompleting] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const [showCompletionCard, setShowCompletionCard] = useState(false)
+  const [showPostWorkoutInsights, setShowPostWorkoutInsights] = useState(false)
   const [workoutInsight, setWorkoutInsight] = useState<string>("")
 
   // Load workout data
@@ -199,14 +201,9 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
         const insight = generateWorkoutInsight(updatedWorkout, elapsedTime)
         setWorkoutInsight(insight)
         
-        // Show completion animation and then share modal
-        setShowCompletionCard(true)
+        // Show enhanced post-workout insights
+        setShowPostWorkoutInsights(true)
         toast.success("🎉 Workout completed! Great job!")
-        
-        // Show share modal after a short delay
-        setTimeout(() => {
-          setIsShareModalOpen(true)
-        }, 2000)
         
       } else {
         console.error("Failed to complete workout:", result.error)
@@ -370,61 +367,46 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
           </div>
         </div>
       </div>
-      {showCompletionCard && (
+      {showPostWorkoutInsights && workout && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowCompletionCard(false)}
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto"
+          onClick={() => setShowPostWorkoutInsights(false)}
         >
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 10 }}
+            initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ type: "spring", duration: 0.4, damping: 25 }}
-            className="bg-background/95 backdrop-blur-sm border border-border/20 rounded-lg shadow-lg max-w-sm w-full p-6 text-center"
+            transition={{ type: "spring", duration: 0.5, damping: 25 }}
+            className="bg-background/95 backdrop-blur-sm border border-border/20 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.1, type: "spring", duration: 0.5 }}
-              className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-100/80 to-green-100/80 dark:from-emerald-900/40 dark:to-green-900/40 flex items-center justify-center border border-emerald-200/30 dark:border-emerald-700/30"
-            >
-              <LucideCheckCircle className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
-            </motion.div>
-            
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <h3 className="text-lg font-medium text-foreground/90 mb-2">
-                Workout Complete
-              </h3>
-              <p className="text-muted-foreground text-sm mb-6">
-                Great job! You've finished your {workout?.type} session.
-              </p>
-              
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => {
-                    setShowCompletionCard(false);
-                    setIsShareModalOpen(true);
-                  }}
-                  className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 text-sm"
-                >
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share
-                </Button>
-                <Button
-                  onClick={() => setShowCompletionCard(false)}
-                  variant="outline"
-                  className="flex-1 text-sm"
-                >
-                  Close
-                </Button>
-              </div>
-            </motion.div>
+            <PostWorkoutInsights
+              workout={{
+                _id: workout._id,
+                name: workout.name,
+                type: workout.type,
+                date: typeof workout.date === 'string' ? workout.date : workout.date.toISOString(),
+                duration: elapsedTime, // Use elapsed time in seconds
+                distance: workout.cardioDetails?.distance,
+                calculatedVolume: workout.calculatedVolume,
+                intensity: workout.intensity as 'low' | 'moderate' | 'high' | undefined,
+                cardioDetails: workout.cardioDetails,
+                workoutExercises: workout.workoutExercises?.map(ex => ({
+                  exerciseId: {
+                    name: ex.exerciseId?.name || 'Unknown Exercise',
+                    category: ex.exerciseId?.category || ''
+                  },
+                  sets: (ex.sets || []).map(set => ({
+                    weight: set.weight,
+                    reps: set.reps,
+                    duration: set.duration
+                  }))
+                }))
+              }}
+              onClose={() => setShowPostWorkoutInsights(false)}
+              showShareButton={true}
+            />
           </motion.div>
         </motion.div>
       )}

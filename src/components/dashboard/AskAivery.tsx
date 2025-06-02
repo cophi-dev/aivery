@@ -49,14 +49,18 @@ const AskAivery = () => {
     setResponse('')
   }
 
-  const suggestedQuestions = [
+  const quickQuestions = Array.from(new Set([
+    "What's my best week so far?",
+    "Do I need a rest day?",
+    "Where do I improve most?",
+    "Am I overtraining?",
     "What's my most consistent workout day?",
     "How am I trending this month?",
     "What's my longest streak?",
     "Tips for improving my running pace?",
     "Should I focus more on strength or cardio?",
     "How can I stay consistent with my workouts?"
-  ]
+  ]))
 
   return (
     <motion.section 
@@ -173,7 +177,7 @@ const AskAivery = () => {
                     Try asking:
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {suggestedQuestions.map((suggestion, index) => (
+                    {quickQuestions.map((suggestion, index) => (
                       <motion.button
                         key={index}
                         onClick={() => setQuestion(suggestion)}

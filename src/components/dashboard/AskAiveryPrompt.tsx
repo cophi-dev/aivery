@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { MessageCircle, Send, Sparkles } from 'lucide-react';
+import { MessageCircle, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
@@ -14,12 +14,10 @@ interface AskAiveryPromptProps {
 }
 
 const SUGGESTED_PROMPTS = [
-  "How's my volume trend?",
-  "Do I need a rest day?", 
-  "Where do I improve most?",
   "What's my best week so far?",
-  "Am I overtraining?",
-  "Show me my progress"
+  "Do I need a rest day?",
+  "How's my progress?", 
+  "Show me trends"
 ];
 
 export default function AskAiveryPrompt({ className }: AskAiveryPromptProps) {
@@ -51,26 +49,21 @@ export default function AskAiveryPrompt({ className }: AskAiveryPromptProps) {
 
   return (
     <motion.section 
-      className={`mb-12 ${className}`}
+      className={cn("mb-8", className)}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
     >
-      <Card className="border-0 bg-gradient-to-br from-emerald-50/50 to-teal-50/30 dark:from-emerald-950/30 dark:to-teal-950/20 relative overflow-hidden">
-        {/* Background decoration */}
-        <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/10 to-transparent pointer-events-none" />
-        
-        <CardContent className="p-6 relative">
+      <Card className="apple-card">
+        <CardContent className="p-6">
           <div className="space-y-4">
             {/* Header */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-                <MessageCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
+            <div className="flex items-center gap-3">
+              <MessageCircle className="w-5 h-5 text-muted-foreground" />
               <div>
-                <h3 className="font-medium text-foreground">Ask Aivery</h3>
-                <p className="text-sm text-muted-foreground">
-                  Get insights about your training and progress
+                <h3 className="apple-heading-sm text-foreground">Ask Aivery</h3>
+                <p className="apple-body-sm text-muted-foreground">
+                  Get insights about your training
                 </p>
               </div>
             </div>
@@ -83,16 +76,16 @@ export default function AskAiveryPrompt({ className }: AskAiveryPromptProps) {
                 onKeyPress={handleKeyPress}
                 placeholder="What's my best week so far?"
                 disabled={isLoading}
-                className="pr-12 bg-background/80 backdrop-blur-sm border-border/50 focus:border-emerald-400 dark:focus:border-emerald-500"
+                className="pr-12 bg-background/50 border-border/50 focus:border-foreground/20 rounded-lg"
               />
               <Button
                 onClick={() => handleSubmit()}
                 disabled={!query.trim() || isLoading}
                 size="sm"
-                className="absolute right-1 top-1 h-8 w-8 p-0 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                className="absolute right-1 top-1 h-8 w-8 p-0 bg-foreground hover:bg-foreground/90 text-background rounded-md"
               >
                 {isLoading ? (
-                  <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-3 h-3 border border-background/30 border-t-background rounded-full animate-spin" />
                 ) : (
                   <Send className="w-3 h-3" />
                 )}
@@ -100,9 +93,9 @@ export default function AskAiveryPrompt({ className }: AskAiveryPromptProps) {
             </div>
 
             {/* Suggested prompts */}
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground font-medium">
-                Quick questions:
+            <div className="space-y-3">
+              <p className="apple-caption text-muted-foreground/60">
+                Quick questions
               </p>
               <div className="flex flex-wrap gap-2">
                 {SUGGESTED_PROMPTS.map((prompt, index) => (
@@ -110,42 +103,20 @@ export default function AskAiveryPrompt({ className }: AskAiveryPromptProps) {
                     key={prompt}
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: index * 0.05, duration: 0.3 }}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                    transition={{ delay: index * 0.05, duration: 0.2 }}
                     onClick={() => handleSubmit(prompt)}
                     disabled={isLoading}
                     className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-full transition-all duration-200",
-                      "bg-background/80 backdrop-blur-sm border border-border/40 hover:border-emerald-400/60",
-                      "text-muted-foreground hover:text-emerald-700 dark:hover:text-emerald-300",
-                      "hover:bg-emerald-50/80 dark:hover:bg-emerald-950/30",
+                      "px-3 py-2 apple-body-sm rounded-lg transition-all duration-200",
+                      "bg-secondary/50 border border-border/30 hover:border-border",
+                      "text-muted-foreground hover:text-foreground",
+                      "hover:bg-secondary/80",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
                   >
                     {prompt}
                   </motion.button>
                 ))}
-              </div>
-            </div>
-
-            {/* Call to action */}
-            <div className="pt-2 border-t border-border/20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-xs text-muted-foreground/80">
-                    AI-powered insights from your workout data
-                  </span>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => router.push('/chat')}
-                  className="text-xs h-auto py-1.5 px-3 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                >
-                  Open Chat
-                </Button>
               </div>
             </div>
           </div>

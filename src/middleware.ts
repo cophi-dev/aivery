@@ -23,6 +23,7 @@ export async function middleware(request: NextRequest) {
       pathname === '/api/stripe/webhook' ||
       pathname === '/api/stripe/create-checkout-session' ||
       pathname === '/api/stripe/create-portal-session' ||
+      pathname === '/api/strava/webhook' ||
       pathname === '/api/health' ||
       pathname === '/api/user' ||
       pathname === '/api/user/avatar' ||
@@ -193,7 +194,8 @@ export const config = {
      * - favicon.ico (favicon file)
      * - api/auth/ (NextAuth internal routes)
      * - api/stripe/webhook (Stripe webhook)
+     * - api/strava/webhook (Strava webhook)
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/auth|api/stripe/webhook).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/auth|api/stripe/webhook|api/strava/webhook).*)',
   ],
 } 
