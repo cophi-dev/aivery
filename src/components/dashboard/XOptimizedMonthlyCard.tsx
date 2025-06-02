@@ -241,160 +241,140 @@ export function XOptimizedMonthlyCard({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn("w-full mx-auto", className)}
-      style={{ maxWidth: `${CARD_WIDTH/2}px` }}
+      className={cn("w-full max-w-lg mx-auto", className)}
     >
       <Card 
         ref={cardRef}
         data-share-card
-        className="border-0 bg-gradient-to-br from-white to-purple-50 dark:from-gray-900 dark:to-purple-900/20 shadow-2xl overflow-hidden"
-        style={{ 
-          width: `${CARD_WIDTH}px`, 
-          height: `${CARD_HEIGHT}px`,
-          transform: 'scale(0.5)',
-          transformOrigin: 'top left'
-        }}
+        className="border-0 bg-white dark:bg-gray-900 shadow-2xl overflow-hidden"
       >
-        <CardContent className="p-16 h-full flex flex-col">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-16">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 p-4">
-                <Image
-                  src="/icons/aivery.svg"
-                  alt="Aivery"
-                  width={48}
-                  height={48}
-                  className="filter brightness-0 invert w-full h-full object-contain"
-                />
-              </div>
-              <div>
-                <h1 className="text-4xl font-light text-gray-900 dark:text-gray-100">
-                  {format(monthStart, 'MMMM yyyy')}
-                </h1>
-                <p className="text-lg text-gray-500 dark:text-gray-400 font-mono">
-                  Monthly Summary
-                </p>
-                {session?.user?.nickname || session?.user?.name && (
-                  <p className="text-base text-gray-400 font-mono">
-                    {session.user.nickname || session.user.name}
-                  </p>
-                )}
-              </div>
+        <CardContent className="p-12">
+          {/* Header with Simple Logo */}
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white border-2 border-purple-500 mb-6 p-3">
+              <Image
+                src="/icons/aivery.svg"
+                alt="Aivery"
+                width={32}
+                height={32}
+                className="object-contain"
+              />
             </div>
             
-            {/* Milestone/PR Badge */}
-            {(hasNewPRs || milestone) && (
-              <Badge className="bg-gradient-to-r from-purple-500 to-purple-600 text-white text-lg px-6 py-3 rounded-full border-0">
+            <h1 className="text-2xl font-normal text-gray-900 dark:text-gray-100 mb-2">
+              {format(monthStart, 'MMMM yyyy')}
+            </h1>
+            <p className="text-base text-gray-500 dark:text-gray-400 mb-1">
+              Monthly Summary
+            </p>
+            {session?.user?.nickname || session?.user?.name && (
+              <p className="text-sm text-gray-600 dark:text-gray-500">
+                {session.user.nickname || session.user.name}
+              </p>
+            )}
+          </div>
+
+          {/* PR Badge */}
+          {(hasNewPRs || milestone) && (
+            <div className="text-center mb-8">
+              <Badge className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-4 py-2 rounded-full border-0">
                 {hasNewPRs ? (
                   <>
-                    <Trophy className="h-5 w-5 mr-2" />
+                    <Trophy className="h-4 w-4 mr-1" />
                     {monthlyPRs.length} Monthly PR{monthlyPRs.length > 1 ? 's' : ''}
                   </>
                 ) : (
                   <>
-                    <Award className="h-5 w-5 mr-2" />
+                    <Award className="h-4 w-4 mr-1" />
                     Achievement
                   </>
                 )}
               </Badge>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Key Metrics Grid */}
-          <div className="grid grid-cols-3 gap-8 mb-16 flex-1">
+          {/* Simple Metrics */}
+          <div className="space-y-6 mb-12">
             {metrics.map((metric, index) => {
               const deltaFormatted = formatDelta(metric.delta);
               return (
-                <div 
-                  key={index} 
-                  className={cn(
-                    "text-center p-8 rounded-2xl border-2 transition-all",
-                    metric.highlight 
-                      ? "bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-300 dark:border-amber-700" 
-                      : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                  )}
-                >
-                  <div className="text-6xl mb-4">{metric.icon}</div>
-                  <div className={cn(
-                    "text-4xl font-light mb-2",
-                    metric.highlight ? "text-amber-700 dark:text-amber-400" : "text-gray-900 dark:text-gray-100"
-                  )}>
-                    {metric.value}
-                  </div>
-                  <div className="text-lg text-gray-600 dark:text-gray-400 font-mono">
+                <div key={index} className="flex items-center justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">
                     {metric.label}
-                    {metric.highlight && (
-                      <span className="ml-2 text-amber-600 dark:text-amber-400">
-                        <Star className="h-4 w-4 inline" />
-                      </span>
+                    {metric.highlight && <span className="text-amber-500 ml-1">★</span>}
+                  </span>
+                  <div className="text-right">
+                    <span className={cn(
+                      "text-xl font-light",
+                      metric.highlight ? "text-amber-600 dark:text-amber-400" : "text-gray-900 dark:text-gray-100"
+                    )}>
+                      {metric.value}
+                    </span>
+                    {deltaFormatted.show && (
+                      <div className={cn("text-sm", deltaFormatted.color)}>
+                        {deltaFormatted.text}
+                      </div>
                     )}
                   </div>
-                  {deltaFormatted.show && (
-                    <div className={cn("text-sm font-mono mt-2", deltaFormatted.color)}>
-                      {deltaFormatted.text}
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Monthly PRs or Milestone */}
-          {hasNewPRs ? (
-            <div className="bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 rounded-2xl p-8 mb-16">
-              <div className="flex items-center gap-4 mb-4">
-                <Trophy className="h-8 w-8 text-amber-600 dark:text-amber-400" />
-                <h3 className="text-2xl font-medium text-amber-800 dark:text-amber-300">
-                  Monthly Personal Records
-                </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {monthlyPRs.slice(0, 4).map((pr, index) => (
-                  <div key={index} className="text-lg text-amber-700 dark:text-amber-400">
-                    <strong>{pr.exercise || pr.achievement || `${pr.type} PR`}:</strong> {pr.value} {pr.unit}
+          {/* Monthly PRs */}
+          {monthlyPRs.length > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 mb-8 border border-amber-200 dark:border-amber-800">
+              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+                <Trophy className="h-4 w-4" />
+                Monthly Personal Records
+              </h3>
+              <div className="space-y-2">
+                {monthlyPRs.map((pr, index) => (
+                  <div key={index} className="text-sm text-amber-700 dark:text-amber-400">
+                    <strong>{pr.exercise || pr.achievement || `${pr.type.charAt(0).toUpperCase() + pr.type.slice(1)}`}:</strong> {pr.value} {pr.unit}
                   </div>
                 ))}
               </div>
             </div>
-          ) : milestone ? (
-            <div className="text-center mb-16 p-8 bg-gradient-to-r from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30 rounded-2xl">
-              <div className="text-4xl mb-4">🏆</div>
-              <p className="text-2xl text-purple-700 dark:text-purple-300 font-medium">
+          )}
+
+          {/* Milestone Achievement */}
+          {!hasNewPRs && milestone && (
+            <div className="text-center mb-8 p-6 bg-gradient-to-r from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30 rounded-2xl">
+              <div className="text-3xl mb-3">🏆</div>
+              <p className="text-lg text-purple-700 dark:text-purple-300 font-medium">
                 {milestone}
               </p>
-              <p className="text-lg text-purple-600 dark:text-purple-400 mt-2">
-                Incredible dedication this month - you're unstoppable!
+              <p className="text-sm text-purple-600 dark:text-purple-400 mt-1">
+                Incredible dedication this month!
               </p>
             </div>
-          ) : null}
+          )}
 
-          {/* Footer */}
+          {/* Simple Footer */}
           <div className="flex items-center justify-between">
-            <div className="text-lg text-gray-400 font-mono">
-              aivery.app
-            </div>
-            
-            <div className="flex gap-4">
+            <span className="text-sm text-gray-400">aivery</span>
+            <div className="flex gap-3">
               <Button
                 onClick={() => handleShare('x')}
                 disabled={isSharing}
-                size="lg"
-                className="bg-black hover:bg-gray-800 text-white px-8 py-3 text-lg font-mono"
+                size="sm"
+                variant="ghost"
+                className="text-gray-600"
               >
-                <XLogo className="h-5 w-5 mr-3" />
-                Share on X
+                <XLogo className="h-4 w-4 mr-1" />
+                Share
               </Button>
               
               <Button
                 onClick={() => handleShare('download')}
                 disabled={isSharing}
-                size="lg"
-                variant="outline"
-                className="px-8 py-3 text-lg font-mono border-2"
+                size="sm"
+                variant="ghost"
+                className="text-gray-600"
               >
-                <Download className="h-5 w-5 mr-3" />
-                Download
+                <Download className="h-4 w-4 mr-1" />
+                Save
               </Button>
             </div>
           </div>

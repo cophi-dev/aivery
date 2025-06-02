@@ -236,26 +236,26 @@ export function XOptimizedWeeklyCard({
       >
         <CardContent className="p-16 h-full flex flex-col">
           {/* Header */}
-          <div className="flex items-start justify-between mb-12">
+          <div className="flex items-start justify-between mb-16">
             <div className="flex items-center gap-6">
-              <div className="flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 p-4">
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-white border-2 border-blue-500 p-3">
                 <Image
                   src="/icons/aivery.svg"
                   alt="Aivery"
-                  width={48}
-                  height={48}
-                  className="filter brightness-0 invert w-full h-full object-contain"
+                  width={32}
+                  height={32}
+                  className="object-contain"
                 />
               </div>
               <div>
-                <h1 className="text-4xl font-light text-gray-900 dark:text-gray-100">
+                <h1 className="text-2xl font-normal text-gray-900 dark:text-gray-100">
                   Weekly Summary
                 </h1>
-                <p className="text-lg text-gray-500 dark:text-gray-400 font-mono">
+                <p className="text-base text-gray-500 dark:text-gray-400">
                   {format(weekStart, 'MMM d')} — {format(weekEnd, 'MMM d, yyyy')}
                 </p>
                 {session?.user?.nickname || session?.user?.name && (
-                  <p className="text-base text-gray-400 font-mono">
+                  <p className="text-sm text-gray-600 dark:text-gray-500">
                     {session.user.nickname || session.user.name}
                   </p>
                 )}
@@ -264,15 +264,15 @@ export function XOptimizedWeeklyCard({
             
             {/* PR Badge */}
             {hasNewPRs && (
-              <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg px-6 py-3 rounded-full border-0">
-                <Trophy className="h-5 w-5 mr-2" />
+              <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2 rounded-full border-0">
+                <Trophy className="h-4 w-4 mr-1" />
                 {weeklyPRs.length} Weekly PR{weeklyPRs.length > 1 ? 's' : ''}
               </Badge>
             )}
           </div>
 
           {/* Key Metrics Grid */}
-          <div className="grid grid-cols-3 gap-8 mb-12 flex-1">
+          <div className="grid grid-cols-3 gap-8 mb-16 flex-1">
             {metrics.map((metric, index) => {
               const deltaFormatted = formatDelta(metric.delta);
               return (
@@ -312,17 +312,15 @@ export function XOptimizedWeeklyCard({
 
           {/* Weekly PRs Highlight */}
           {weeklyPRs.length > 0 && (
-            <div className="bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 rounded-2xl p-8 mb-12">
-              <div className="flex items-center gap-4 mb-4">
-                <Trophy className="h-8 w-8 text-amber-600 dark:text-amber-400" />
-                <h3 className="text-2xl font-medium text-amber-800 dark:text-amber-300">
-                  This Week's Personal Records
-                </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {weeklyPRs.slice(0, 4).map((pr, index) => (
-                  <div key={index} className="text-lg text-amber-700 dark:text-amber-400">
-                    <strong>{pr.exercise || `${pr.type} PR`}:</strong> {pr.value} {pr.unit}
+            <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 mb-8 border border-amber-200 dark:border-amber-800">
+              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+                <Trophy className="h-4 w-4" />
+                This Week's Personal Records
+              </h3>
+              <div className="space-y-2">
+                {weeklyPRs.map((pr, index) => (
+                  <div key={index} className="text-sm text-amber-700 dark:text-amber-400">
+                    <strong>{pr.exercise || `${pr.type.charAt(0).toUpperCase() + pr.type.slice(1)}`}:</strong> {pr.value} {pr.unit}
                   </div>
                 ))}
               </div>

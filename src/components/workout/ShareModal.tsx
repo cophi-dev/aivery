@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ShareCard } from './ShareCard';
 import { cn } from '@/lib/utils';
+import { XOptimizedShareInterface } from '../share/XOptimizedShareInterface';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -28,19 +29,214 @@ interface ShareModalProps {
   insight?: string;
 }
 
+interface RealUserData {
+  workouts: Array<{
+    id: string;
+    type: string;
+    date: Date;
+    duration?: number;
+    distance?: number;
+    calculatedVolume?: number;
+    name?: string;
+  }>;
+  dailyWorkoutsByDate: Record<string, Array<{
+    id: string;
+    type: string;
+    date: Date;
+    duration?: number;
+    distance?: number;
+    calculatedVolume?: number;
+  }>>;
+  weeklyStatsByDate: Record<string, {
+    current: {
+      workouts: number;
+      distance: number;
+      volume: number;
+      duration: number;
+    };
+    previous: {
+      workouts: number;
+      distance: number;
+      volume: number;
+      duration: number;
+    };
+    deltas: {
+      workoutsDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+      distanceDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+      volumeDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+    };
+  }>;
+  monthlyStatsByDate: Record<string, {
+    current: {
+      workouts: number;
+      distance: number;
+      volume: number;
+      duration: number;
+      activeDays: number;
+    };
+    previous: {
+      workouts: number;
+      distance: number;
+      volume: number;
+      duration: number;
+      activeDays: number;
+    };
+    deltas: {
+      workoutsDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+      distanceDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+      volumeDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+    };
+  }>;
+  personalRecordsByDate: Record<string, Array<{
+    type: 'weight' | 'reps' | 'distance' | 'volume' | 'time';
+    exercise?: string;
+    value: number;
+    unit: string;
+    isNew?: boolean;
+  }>>;
+}
+
 export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProps) {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [realLifeComparison, setRealLifeComparison] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [step, setStep] = useState<'preview' | 'downloading' | 'ready'>('preview');
+  const [userData, setUserData] = useState<RealUserData | null>(null);
+  const [isLoadingUserData, setIsLoadingUserData] = useState(false);
 
-  // Generate real-life comparison and insights
+  // Fetch real user data when modal opens
   useEffect(() => {
     if (isOpen && workout) {
       generateRealLifeComparison();
+      fetchRealUserData();
       setStep('preview'); // Reset step when modal opens
     }
   }, [isOpen, workout]);
+
+  const fetchRealUserData = async () => {
+    try {
+      setIsLoadingUserData(true);
+      
+      // Fetch recent workouts (last 30)
+      const workoutsResponse = await fetch('/api/dashboard/recent-workouts');
+      const workoutsData = await workoutsResponse.json();
+      
+      // Fetch dashboard metrics for PRs and stats
+      const metricsResponse = await fetch('/api/dashboard/metrics');
+      const metricsData = await metricsResponse.json();
+      
+      // Transform the data into the format needed by XOptimizedShareInterface
+      const recentWorkouts = workoutsData.workouts || [];
+      
+      // Group workouts by date for daily view
+      const dailyWorkoutsByDate: Record<string, any[]> = {};
+      recentWorkouts.forEach((w: any) => {
+        const dateKey = new Date(w.date).toISOString().split('T')[0];
+        if (!dailyWorkoutsByDate[dateKey]) {
+          dailyWorkoutsByDate[dateKey] = [];
+        }
+        dailyWorkoutsByDate[dateKey].push({
+          id: w._id,
+          type: w.type,
+          date: new Date(w.date),
+          duration: w.duration,
+          distance: w.cardioDetails?.distance,
+          calculatedVolume: w.calculatedVolume
+        });
+      });
+
+      // Create sample weekly and monthly stats
+      // In a real implementation, you'd fetch these from your analytics API
+      const currentDate = new Date().toISOString().split('T')[0];
+      const weeklyStats = {
+        [currentDate]: {
+          current: {
+            workouts: metricsData.workoutCount || 0,
+            distance: metricsData.cardioDistanceLast7Days || 0,
+            volume: metricsData.strengthVolumeLast7Days || 0,
+            duration: 0 // You'd calculate this from workouts
+          },
+          previous: {
+            workouts: metricsData.previousWorkoutCount || 0,
+            distance: metricsData.cardioDistancePrevious7Days || 0,
+            volume: metricsData.strengthVolumePrevious7Days || 0,
+            duration: 0
+          },
+          deltas: {
+            workoutsDelta: { 
+              direction: (metricsData.workoutCount || 0) > (metricsData.previousWorkoutCount || 0) ? 'up' as const : 'down' as const, 
+              percentage: Math.round(((metricsData.workoutCount || 0) - (metricsData.previousWorkoutCount || 0)) / Math.max(metricsData.previousWorkoutCount || 1, 1) * 100)
+            },
+            distanceDelta: { 
+              direction: (metricsData.cardioDistanceLast7Days || 0) > (metricsData.cardioDistancePrevious7Days || 0) ? 'up' as const : 'down' as const,
+              percentage: Math.round(((metricsData.cardioDistanceLast7Days || 0) - (metricsData.cardioDistancePrevious7Days || 0)) / Math.max(metricsData.cardioDistancePrevious7Days || 1, 1) * 100)
+            },
+            volumeDelta: { 
+              direction: (metricsData.strengthVolumeLast7Days || 0) > (metricsData.strengthVolumePrevious7Days || 0) ? 'up' as const : 'down' as const,
+              percentage: Math.round(((metricsData.strengthVolumeLast7Days || 0) - (metricsData.strengthVolumePrevious7Days || 0)) / Math.max(metricsData.strengthVolumePrevious7Days || 1, 1) * 100)
+            }
+          }
+        }
+      };
+
+      // Create monthly stats (simplified - in real implementation you'd have proper monthly data)
+      const monthlyStats = {
+        [currentDate]: {
+          current: {
+            workouts: (metricsData.workoutCount || 0) * 4, // Rough monthly estimate
+            distance: (metricsData.cardioDistanceLast7Days || 0) * 4,
+            volume: (metricsData.strengthVolumeLast7Days || 0) * 4,
+            duration: 0,
+            activeDays: Math.min((metricsData.workoutCount || 0) * 2, 30)
+          },
+          previous: {
+            workouts: (metricsData.previousWorkoutCount || 0) * 4,
+            distance: (metricsData.cardioDistancePrevious7Days || 0) * 4,
+            volume: (metricsData.strengthVolumePrevious7Days || 0) * 4,
+            duration: 0,
+            activeDays: Math.min((metricsData.previousWorkoutCount || 0) * 2, 30)
+          },
+          deltas: weeklyStats[currentDate].deltas // Same calculation logic
+        }
+      };
+
+      // No PRs for share cards - only show real workout data without fake achievements
+      // PRs should only be shown if they're actually detected during workout completion
+      // This prevents showing historical data as "new" PRs
+      const personalRecordsByDate: Record<string, any[]> = {};
+
+      setUserData({
+        workouts: recentWorkouts.map((w: any) => ({
+          id: w._id,
+          type: w.type,
+          date: new Date(w.date),
+          duration: w.duration,
+          distance: w.cardioDetails?.distance,
+          calculatedVolume: w.calculatedVolume,
+          name: w.name
+        })),
+        dailyWorkoutsByDate,
+        weeklyStatsByDate: weeklyStats,
+        monthlyStatsByDate: monthlyStats,
+        personalRecordsByDate
+      });
+      
+    } catch (error) {
+      console.error('Failed to fetch user data:', error);
+      // Fallback to single workout mode
+      setUserData({
+        workouts: [workout],
+        dailyWorkoutsByDate: {
+          [workout.date.toISOString().split('T')[0]]: [workout]
+        },
+        weeklyStatsByDate: {},
+        monthlyStatsByDate: {},
+        personalRecordsByDate: {}
+      });
+    } finally {
+      setIsLoadingUserData(false);
+    }
+  };
 
   const generateRealLifeComparison = async () => {
     try {
@@ -251,7 +447,7 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
       <>
         {/* Share Card Preview */}
         <div className="relative">
-          {isLoading && (
+          {(isLoading || isLoadingUserData) && (
             <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <motion.div
@@ -261,17 +457,24 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
                 >
                   <Sparkles className="h-5 w-5" />
                 </motion.div>
-                <span className="text-sm">Generating insights...</span>
+                <span className="text-sm">
+                  {isLoadingUserData ? 'Loading your data...' : 'Generating insights...'}
+                </span>
               </div>
             </div>
           )}
           
-          <ShareCard
-            workout={workout}
-            insight={insight}
-            realLifeComparison={realLifeComparison}
-            className="mx-auto"
-          />
+          {userData && (
+            <XOptimizedShareInterface
+              workouts={userData.workouts}
+              dailyWorkoutsByDate={userData.dailyWorkoutsByDate}
+              weeklyStatsByDate={userData.weeklyStatsByDate}
+              monthlyStatsByDate={userData.monthlyStatsByDate}
+              personalRecordsByDate={userData.personalRecordsByDate}
+              insight={insight || realLifeComparison}
+              className="mx-auto"
+            />
+          )}
         </div>
 
         {/* Tweet Preview */}
@@ -291,7 +494,7 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
           {/* Primary Action */}
           <Button
             onClick={handleSmartShare}
-            disabled={isGeneratingImage || isLoading}
+            disabled={isGeneratingImage || isLoading || isLoadingUserData}
             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 h-12"
           >
             <Twitter className="h-4 w-4 mr-2" />
@@ -302,7 +505,7 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
           <div className="grid grid-cols-2 gap-3">
             <Button
               onClick={handleDownloadOnly}
-              disabled={isGeneratingImage || isLoading}
+              disabled={isGeneratingImage || isLoading || isLoadingUserData}
               variant="outline"
             >
               <Download className="h-4 w-4 mr-2" />
@@ -316,7 +519,7 @@ export function ShareModal({ isOpen, onClose, workout, insight }: ShareModalProp
                 window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`, '_blank');
               }}
               variant="outline"
-              disabled={isLoading}
+              disabled={isLoading || isLoadingUserData}
             >
               <Twitter className="h-4 w-4 mr-2" />
               Text Only

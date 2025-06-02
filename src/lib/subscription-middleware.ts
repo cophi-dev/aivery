@@ -105,6 +105,7 @@ export const publicPaths = [
   '/debug-token', // Debug page for testing
   '/debug-access', // Debug access page
   '/auth-test', // Auth test page
+  '/share-test', // Share test page - public for testing
   '/manifest.json', // PWA manifest
   '/icon.svg', // App icon
   '/favicon.ico', // Favicon

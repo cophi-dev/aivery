@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Trophy, Target, TrendingUp, Sparkles } from 'lucide-react';
+import { Calendar, Trophy, Target, TrendingUp, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { format, subDays, subWeeks, subMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 
 // Import the new X-optimized components
 import { XOptimizedShareCard } from '../workout/XOptimizedShareCard';
@@ -16,8 +17,8 @@ import { XOptimizedWeeklyCard } from '../dashboard/XOptimizedWeeklyCard';
 import { XOptimizedMonthlyCard } from '../dashboard/XOptimizedMonthlyCard';
 
 interface XOptimizedShareInterfaceProps {
-  // Workout data
-  workout?: {
+  // Workout data - now supports multiple workouts
+  workouts?: Array<{
     id: string;
     type: string;
     date: Date;
@@ -29,41 +30,41 @@ interface XOptimizedShareInterfaceProps {
       name?: string;
       image?: string;
     };
-  };
+  }>;
   
-  // Daily data
-  dailyWorkouts?: Array<{
+  // Daily data - now supports multiple days
+  dailyWorkoutsByDate?: Record<string, Array<{
     id: string;
     type: string;
     date: Date;
     duration?: number;
     distance?: number;
     calculatedVolume?: number;
+  }>>;
+  
+  // Weekly data - now supports multiple weeks
+  weeklyStatsByDate?: Record<string, {
+    current: {
+      workouts: number;
+      distance: number;
+      volume: number;
+      duration: number;
+    };
+    previous: {
+      workouts: number;
+      distance: number;
+      volume: number;
+      duration: number;
+    };
+    deltas: {
+      workoutsDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+      distanceDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+      volumeDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
+    };
   }>;
   
-  // Weekly data
-  weeklyStats?: {
-    current: {
-      workouts: number;
-      distance: number;
-      volume: number;
-      duration: number;
-    };
-    previous: {
-      workouts: number;
-      distance: number;
-      volume: number;
-      duration: number;
-    };
-    deltas: {
-      workoutsDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
-      distanceDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
-      volumeDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
-    };
-  };
-  
-  // Monthly data
-  monthlyStats?: {
+  // Monthly data - now supports multiple months
+  monthlyStatsByDate?: Record<string, {
     current: {
       workouts: number;
       distance: number;
@@ -83,16 +84,16 @@ interface XOptimizedShareInterfaceProps {
       distanceDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
       volumeDelta: { direction: 'up' | 'down' | 'same'; percentage: number };
     };
-  };
+  }>;
   
-  // PR data
-  personalRecords?: Array<{
+  // PR data by timeframe
+  personalRecordsByDate?: Record<string, Array<{
     type: 'weight' | 'reps' | 'distance' | 'volume' | 'time';
     exercise?: string;
     value: number;
     unit: string;
     isNew?: boolean;
-  }>;
+  }>>;
   
   // Insights
   insight?: string;
@@ -101,117 +102,148 @@ interface XOptimizedShareInterfaceProps {
 }
 
 export function XOptimizedShareInterface({
-  workout,
-  dailyWorkouts = [],
-  weeklyStats,
-  monthlyStats,
-  personalRecords = [],
+  workouts = [],
+  dailyWorkoutsByDate = {},
+  weeklyStatsByDate = {},
+  monthlyStatsByDate = {},
+  personalRecordsByDate = {},
   insight,
   className
 }: XOptimizedShareInterfaceProps) {
   const [activeTab, setActiveTab] = useState('workout');
   
-  // Ensure we have today's workouts for daily tab
-  const todayWorkouts = dailyWorkouts.length > 0 ? dailyWorkouts : (workout ? [workout] : []);
-  
-  // Create default stats if not provided (for testing)
-  const defaultWeeklyStats = weeklyStats || {
-    current: { workouts: 5, distance: 25, volume: 15000, duration: 300 },
-    previous: { workouts: 4, distance: 20, volume: 12000, duration: 240 },
-    deltas: {
-      workoutsDelta: { direction: 'up' as const, percentage: 25 },
-      distanceDelta: { direction: 'up' as const, percentage: 25 },
-      volumeDelta: { direction: 'up' as const, percentage: 25 }
-    }
-  };
-  
-  const defaultMonthlyStats = monthlyStats || {
-    current: { workouts: 20, distance: 100, volume: 60000, duration: 1200, activeDays: 15 },
-    previous: { workouts: 15, distance: 75, volume: 45000, duration: 900, activeDays: 12 },
-    deltas: {
-      workoutsDelta: { direction: 'up' as const, percentage: 33 },
-      distanceDelta: { direction: 'up' as const, percentage: 33 },
-      volumeDelta: { direction: 'up' as const, percentage: 33 }
-    }
-  };
-  
-  // Filter PRs by timeframe
-  const workoutPRs = personalRecords.filter(pr => pr.isNew === true);
-  const dailyPRs = personalRecords.filter(pr => pr.isNew === true).map(pr => ({ ...pr, isNew: true as const }));
-  
-  // Map PRs to weekly format (only distance, volume, or exercise types)
-  const weeklyPRs = personalRecords
-    .filter(pr => pr.isNew === true && ['distance', 'volume'].includes(pr.type))
-    .map(pr => ({ 
-      ...pr, 
-      date: new Date(),
-      type: pr.type as 'distance' | 'volume'
-    }));
-    
-  // Map PRs to monthly format (distance, volume, exercise, or consistency types)
-  const monthlyPRs = personalRecords
-    .filter(pr => pr.isNew === true && ['distance', 'volume'].includes(pr.type))
-    .map(pr => ({ 
-      ...pr, 
-      date: new Date(),
-      type: pr.type as 'distance' | 'volume'
-    }));
+  // Navigation indices for each tab
+  const [workoutIndex, setWorkoutIndex] = useState(0);
+  const [dailyIndex, setDailyIndex] = useState(0);
+  const [weeklyIndex, setWeeklyIndex] = useState(0);
+  const [monthlyIndex, setMonthlyIndex] = useState(0);
 
-  console.log('XOptimizedShareInterface Debug:', {
-    workout: !!workout,
-    dailyWorkouts: dailyWorkouts.length,
-    todayWorkouts: todayWorkouts.length,
-    weeklyStats: !!defaultWeeklyStats,
-    monthlyStats: !!defaultMonthlyStats,
-    personalRecords: personalRecords.length,
-    workoutPRs: workoutPRs.length,
-    dailyPRs: dailyPRs.length
-  });
+  // Get available dates for each timeframe
+  const availableDailyDates = Object.keys(dailyWorkoutsByDate).sort().reverse();
+  const availableWeeklyDates = Object.keys(weeklyStatsByDate).sort().reverse();
+  const availableMonthlyDates = Object.keys(monthlyStatsByDate).sort().reverse();
+
+  // Get current data based on indices
+  const currentWorkout = workouts[workoutIndex];
+  const currentDailyDate = availableDailyDates[dailyIndex];
+  const currentDailyWorkouts = currentDailyDate ? dailyWorkoutsByDate[currentDailyDate] : [];
+  const currentWeeklyDate = availableWeeklyDates[weeklyIndex];
+  const currentWeeklyStats = currentWeeklyDate ? weeklyStatsByDate[currentWeeklyDate] : undefined;
+  const currentMonthlyDate = availableMonthlyDates[monthlyIndex];
+  const currentMonthlyStats = currentMonthlyDate ? monthlyStatsByDate[currentMonthlyDate] : undefined;
+
+  // Get PRs for current timeframes
+  const getPersonalRecords = (dateKey?: string) => {
+    return dateKey ? (personalRecordsByDate[dateKey] || []) : [];
+  };
+
+  const workoutPRs = getPersonalRecords(currentWorkout?.date.toISOString().split('T')[0]);
+  const dailyPRs = getPersonalRecords(currentDailyDate);
+  const weeklyPRs = getPersonalRecords(currentWeeklyDate);
+  const monthlyPRs = getPersonalRecords(currentMonthlyDate);
+
+  // Navigation helpers
+  const NavigationControls = ({ 
+    current, 
+    total, 
+    onPrev, 
+    onNext, 
+    label,
+    formatDate 
+  }: {
+    current: number;
+    total: number;
+    onPrev: () => void;
+    onNext: () => void;
+    label: string;
+    formatDate?: (index: number) => string;
+  }) => {
+    if (total <= 1) return null;
+    
+    return (
+      <div className="flex items-center justify-between mb-4 px-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onPrev}
+          disabled={current >= total - 1}
+          className="flex items-center gap-1"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Previous
+        </Button>
+        
+        <div className="text-center">
+          <div className="text-sm font-medium">
+            {formatDate ? formatDate(current) : `${label} ${current + 1} of ${total}`}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {current + 1} of {total}
+          </div>
+        </div>
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onNext}
+          disabled={current <= 0}
+          className="flex items-center gap-1"
+        >
+          Next
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  };
 
   const getTabInfo = () => {
     const tabs = [];
     
-    // Workout tab - show if we have a specific workout
-    if (workout) {
+    // Workout tab - show if we have workouts
+    if (workouts.length > 0) {
       tabs.push({
         value: 'workout',
         label: 'Workout',
         icon: <Target className="h-4 w-4" />,
         badge: workoutPRs.length > 0 ? `${workoutPRs.length} PR${workoutPRs.length > 1 ? 's' : ''}` : null,
-        description: 'Share this specific workout'
+        description: 'Share specific workouts',
+        count: workouts.length
       });
     }
     
-    // Daily tab - show if we have workouts today
-    if (todayWorkouts.length > 0) {
+    // Daily tab - show if we have daily data
+    if (availableDailyDates.length > 0) {
       tabs.push({
         value: 'daily',
-        label: 'Today',
+        label: 'Daily',
         icon: <Calendar className="h-4 w-4" />,
         badge: dailyPRs.length > 0 ? `${dailyPRs.length} PR${dailyPRs.length > 1 ? 's' : ''}` : null,
-        description: 'Share today\'s progress'
+        description: 'Share daily progress',
+        count: availableDailyDates.length
       });
     }
     
-    // Weekly tab - show if we have weekly stats
-    if (defaultWeeklyStats) {
+    // Weekly tab - show if we have weekly data
+    if (availableWeeklyDates.length > 0) {
       tabs.push({
         value: 'weekly',
         label: 'Weekly',
         icon: <TrendingUp className="h-4 w-4" />,
         badge: weeklyPRs.length > 0 ? `${weeklyPRs.length} PR${weeklyPRs.length > 1 ? 's' : ''}` : null,
-        description: 'Share weekly summary'
+        description: 'Share weekly summaries',
+        count: availableWeeklyDates.length
       });
     }
     
-    // Monthly tab - show if we have monthly stats
-    if (defaultMonthlyStats) {
+    // Monthly tab - show if we have monthly data
+    if (availableMonthlyDates.length > 0) {
       tabs.push({
         value: 'monthly',
         label: 'Monthly',
         icon: <Trophy className="h-4 w-4" />,
         badge: monthlyPRs.length > 0 ? `${monthlyPRs.length} PR${monthlyPRs.length > 1 ? 's' : ''}` : null,
-        description: 'Share monthly achievements'
+        description: 'Share monthly achievements',
+        count: availableMonthlyDates.length
       });
     }
     
@@ -264,6 +296,11 @@ export function XOptimizedShareInterface({
                 >
                   {tab.icon}
                   <span className="hidden sm:inline">{tab.label}</span>
+                  {tab.count > 1 && (
+                    <Badge variant="outline" className="ml-1 text-xs">
+                      {tab.count}
+                    </Badge>
+                  )}
                   {tab.badge && (
                     <Badge 
                       variant="secondary" 
@@ -278,7 +315,7 @@ export function XOptimizedShareInterface({
 
             <AnimatePresence mode="wait">
               {/* Workout Tab */}
-              {workout && (
+              {workouts.length > 0 && (
                 <TabsContent value="workout" className="mt-0">
                   <motion.div
                     key="workout"
@@ -293,17 +330,29 @@ export function XOptimizedShareInterface({
                         Perfect for sharing immediately after your workout
                       </p>
                     </div>
-                    <XOptimizedShareCard
-                      workout={workout}
-                      insight={insight}
-                      personalRecords={workoutPRs}
+                    
+                    <NavigationControls
+                      current={workoutIndex}
+                      total={workouts.length}
+                      onPrev={() => setWorkoutIndex(prev => Math.min(prev + 1, workouts.length - 1))}
+                      onNext={() => setWorkoutIndex(prev => Math.max(prev - 1, 0))}
+                      label="Workout"
+                      formatDate={(index) => currentWorkout ? format(currentWorkout.date, 'MMM d, yyyy') : ''}
                     />
+                    
+                    {currentWorkout && (
+                      <XOptimizedShareCard
+                        workout={currentWorkout}
+                        insight={insight}
+                        personalRecords={workoutPRs.filter(pr => pr.isNew)}
+                      />
+                    )}
                   </motion.div>
                 </TabsContent>
               )}
 
               {/* Daily Tab */}
-              {todayWorkouts.length > 0 && (
+              {availableDailyDates.length > 0 && (
                 <TabsContent value="daily" className="mt-0">
                   <motion.div
                     key="daily"
@@ -315,20 +364,32 @@ export function XOptimizedShareInterface({
                     <div className="text-center mb-6">
                       <h3 className="text-lg font-medium">Daily Progress Card</h3>
                       <p className="text-sm text-muted-foreground">
-                        Showcase today's dedication and achievements
+                        Showcase daily dedication and achievements
                       </p>
                     </div>
-                    <XOptimizedDailyCard
-                      workouts={todayWorkouts}
-                      dailyPRs={dailyPRs}
-                      insight={insight}
+                    
+                    <NavigationControls
+                      current={dailyIndex}
+                      total={availableDailyDates.length}
+                      onPrev={() => setDailyIndex(prev => Math.min(prev + 1, availableDailyDates.length - 1))}
+                      onNext={() => setDailyIndex(prev => Math.max(prev - 1, 0))}
+                      label="Day"
+                      formatDate={(index) => currentDailyDate ? format(new Date(currentDailyDate), 'MMM d, yyyy') : ''}
                     />
+                    
+                    {currentDailyWorkouts.length > 0 && (
+                      <XOptimizedDailyCard
+                        workouts={currentDailyWorkouts}
+                        dailyPRs={dailyPRs.filter(pr => pr.isNew).map(pr => ({ ...pr, isNew: true as const }))}
+                        insight={insight}
+                      />
+                    )}
                   </motion.div>
                 </TabsContent>
               )}
 
               {/* Weekly Tab */}
-              {defaultWeeklyStats && (
+              {availableWeeklyDates.length > 0 && (
                 <TabsContent value="weekly" className="mt-0">
                   <motion.div
                     key="weekly"
@@ -343,16 +404,37 @@ export function XOptimizedShareInterface({
                         Celebrate a week of consistency and progress
                       </p>
                     </div>
-                    <XOptimizedWeeklyCard
-                      weeklyStats={defaultWeeklyStats}
-                      weeklyPRs={weeklyPRs}
+                    
+                    <NavigationControls
+                      current={weeklyIndex}
+                      total={availableWeeklyDates.length}
+                      onPrev={() => setWeeklyIndex(prev => Math.min(prev + 1, availableWeeklyDates.length - 1))}
+                      onNext={() => setWeeklyIndex(prev => Math.max(prev - 1, 0))}
+                      label="Week"
+                      formatDate={(index) => {
+                        if (!currentWeeklyDate) return '';
+                        const weekStart = startOfWeek(new Date(currentWeeklyDate));
+                        const weekEnd = endOfWeek(new Date(currentWeeklyDate));
+                        return `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d')}`;
+                      }}
                     />
+                    
+                    {currentWeeklyStats && (
+                      <XOptimizedWeeklyCard
+                        weeklyStats={currentWeeklyStats}
+                        weeklyPRs={weeklyPRs.filter(pr => pr.isNew && ['distance', 'volume'].includes(pr.type)).map(pr => ({ 
+                          ...pr, 
+                          date: new Date(),
+                          type: pr.type as 'distance' | 'volume'
+                        }))}
+                      />
+                    )}
                   </motion.div>
                 </TabsContent>
               )}
 
               {/* Monthly Tab */}
-              {defaultMonthlyStats && (
+              {availableMonthlyDates.length > 0 && (
                 <TabsContent value="monthly" className="mt-0">
                   <motion.div
                     key="monthly"
@@ -367,10 +449,26 @@ export function XOptimizedShareInterface({
                         Highlight your biggest accomplishments and milestones
                       </p>
                     </div>
-                    <XOptimizedMonthlyCard
-                      monthlyStats={defaultMonthlyStats}
-                      monthlyPRs={monthlyPRs}
+                    
+                    <NavigationControls
+                      current={monthlyIndex}
+                      total={availableMonthlyDates.length}
+                      onPrev={() => setMonthlyIndex(prev => Math.min(prev + 1, availableMonthlyDates.length - 1))}
+                      onNext={() => setMonthlyIndex(prev => Math.max(prev - 1, 0))}
+                      label="Month"
+                      formatDate={(index) => currentMonthlyDate ? format(new Date(currentMonthlyDate), 'MMMM yyyy') : ''}
                     />
+                    
+                    {currentMonthlyStats && (
+                      <XOptimizedMonthlyCard
+                        monthlyStats={currentMonthlyStats}
+                        monthlyPRs={monthlyPRs.filter(pr => pr.isNew && ['distance', 'volume'].includes(pr.type)).map(pr => ({ 
+                          ...pr, 
+                          date: new Date(),
+                          type: pr.type as 'distance' | 'volume'
+                        }))}
+                      />
+                    )}
                   </motion.div>
                 </TabsContent>
               )}
@@ -387,6 +485,7 @@ export function XOptimizedShareInterface({
                 <h4 className="font-medium mb-2">X-Optimized for Maximum Impact</h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
                   <li>• Perfect 16:9 aspect ratio (1200x675px) for X timeline</li>
+                  <li>• Navigate through different timeframes with arrow controls</li>
                   <li>• Automatic PR highlighting with golden accents</li>
                   <li>• Clean, minimalist design that stands out</li>
                   <li>• Smart share text with relevant hashtags</li>
