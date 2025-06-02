@@ -32,16 +32,18 @@ import { RecentExerciseCardClient } from './_components/RecentExerciseCardClient
 
 // Import New Minimal Dashboard Components
 import DashboardWrapper from "@/components/dashboard/DashboardWrapper";
-import DailyInsight from "@/components/dashboard/DailyInsight";
+import PersonalizedCheckIn from "@/components/dashboard/PersonalizedCheckIn";
+import UnifiedKeyMetrics from "@/components/dashboard/UnifiedKeyMetrics";
+import ProgressInsights from "@/components/dashboard/ProgressInsights";
+import AiveryCard from "@/components/dashboard/AiveryCard";
+import AchievementsGrid from "@/components/dashboard/AchievementsGrid";
+import WeekPlan from "@/components/dashboard/WeekPlan";
+import AskAiveryPrompt from "@/components/dashboard/AskAiveryPrompt";
 import LastWorkout from "@/components/dashboard/LastWorkout";
 import ProgressPulse from "@/components/dashboard/ProgressPulse";
-import AskAivery from "@/components/dashboard/AskAivery";
-import SmartNudges from "@/components/dashboard/SmartNudges";
 import { WeeklyShareCard } from "@/components/dashboard/WeeklyShareCard";
 import ShareMoments from "@/components/dashboard/ShareMoments";
 import InfoBoxes from "@/components/dashboard/InfoBoxes";
-import SmartProgressInsights from "@/components/dashboard/SmartProgressInsights";
-import WeeklyPlanner from "@/components/dashboard/WeeklyPlanner";
 
 // 🎯 DESIGN MODE TOGGLE
 const MINIMAL_MODE = true;
@@ -56,8 +58,10 @@ interface DashboardMetrics {
     cardioDistancePrevious7Days: number;
     // topPRs: any[]; // Keep commented out
     exercisePRs: DashboardPREntry[];
+    randomPRs: DashboardPREntry[]; // <-- Add random PRs
     overallPRs?: Partial<IUser['personalRecords']>; // <-- Add overall PRs
     workoutCount: number;
+    previousWorkoutCount: number;
     // Added this field from the backend API 
     hasAiPreferences?: boolean; 
     runningDistanceLast7Days: number;
@@ -234,29 +238,31 @@ export default function DashboardPage() {
                     {/* Important Info Boxes - User guidance */}
                     <InfoBoxes />
                     
-                    {/* Hero Section - Your Story Today */}
-                    <DailyInsight />
+                    {/* 1. Personalized Check-In - Journal-like greeting */}
+                    <PersonalizedCheckIn workoutCount={metrics?.workoutCount || 0} />
                     
-                    {/* Last Achievement - Share-worthy moment */}
-                    <LastWorkout />
+                    {/* 2. Key Metrics - Unified clean stats */}
+                    {metrics && <UnifiedKeyMetrics metrics={metrics} />}
                     
-                    {/* Progress Story - Week at a glance */}
-                    <ProgressPulse />
+                    {/* 3. Progress Insights - Digestible insights cards */}
+                    {metrics && <ProgressInsights metrics={metrics} />}
                     
-                    {/* Smart Progress Analysis - Actionable insights */}
-                    {metrics && <SmartProgressInsights metrics={metrics} />}
+                    {/* 4. Aivery's Weekly Suggestion - Proactive AI recommendations */}
+                    {metrics && <AiveryCard metrics={metrics} />}
                     
-                    {/* Weekly Planning - What to do next */}
-                    {metrics && <WeeklyPlanner metrics={metrics} />}
+                    {/* 5. Hall of Progress - Gamified achievements */}
+                    {metrics && (
+                        <AchievementsGrid 
+                            exercisePRs={metrics.exercisePRs || []} 
+                            randomPRs={metrics.randomPRs || []} 
+                        />
+                    )}
                     
-                    {/* Share Your Journey - Prominent placement */}
-                    <ShareMoments />
+                    {/* 6. Weekly Plan – Today & Tomorrow */}
+                    {metrics && <WeekPlan metrics={metrics} />}
                     
-                    {/* AI Companion - Always available */}
-                    <AskAivery />
-                    
-                    {/* Contextual Guidance - Subtle nudges */}
-                    <SmartNudges mode="multiple" maxNudges={2} title="Weekly Insights" />
+                    {/* 7. Ask Aivery AI Companion - Above the fold */}
+                    <AskAiveryPrompt />
                 </DashboardWrapper>
             ) : (
                 // 🏛️ LEGACY LAYOUT (SAFELY COLLAPSED)

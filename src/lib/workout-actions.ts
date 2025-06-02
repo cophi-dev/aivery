@@ -2342,4 +2342,116 @@ async function updateExerciseAveragesForWorkout(userId: string, exercises: Array
     }
   }
 }
+
+/**
+ * Fetches random exercise PRs for the dashboard to provide variety.
+ * Unlike fetchDashboardExercisePRs which returns highest values, this returns random PRs.
+ */
+export async function fetchRandomDashboardExercisePRs(limit = 4): Promise<DashboardPREntry[]> { 
+  console.log(`[fetchRandomDashboardExercisePRs] Fetching ${limit} random PRs...`);
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      console.warn("[fetchRandomDashboardExercisePRs] User not authenticated.");
+      return [];
+    }
+    const userId = user.id;
+
+    await dbConnect();
+
+    // Fetch random regular PRs (weight and single-set reps) using MongoDB's $sample
+    const regularPRsPromise = ExercisePRModel.aggregate([
+      { $match: { 
+        userId: new Types.ObjectId(userId),
+        type: { $in: ['weight', 'reps'] } 
+      }},
+      { $sample: { size: Math.floor(limit/2) } }, // Use $sample for random selection
+      {
+        $project: {
+          _id: 1,
+          exerciseName: 1,
+          value: 1,
+          unit: 1,
+          type: 1,
+          date: 1,
+          workoutId: 1,
+        }
+      }
+    ]).exec();
+    
+    // Fetch random daily total reps PRs
+    const dailyRepsPRsPromise = ExercisePRModel.aggregate([
+      { $match: { 
+        userId: new Types.ObjectId(userId),
+        type: 'daily_reps'
+      }},
+      { $sample: { size: Math.ceil(limit/2) } }, // Use $sample for random selection
+      {
+        $project: {
+          _id: 1,
+          exerciseName: 1,
+          value: 1,
+          unit: 1,
+          type: 1,
+          date: 1,
+          workoutId: 1,
+        }
+      }
+    ]).exec();
+    
+    // Wait for both queries to complete
+    const [regularPRs, dailyRepsPRs] = await Promise.all([regularPRsPromise, dailyRepsPRsPromise]);
+    
+    console.log(`[fetchRandomDashboardExercisePRs] Found ${regularPRs.length} regular PRs and ${dailyRepsPRs.length} daily reps PRs`);
+    
+    // Combine both types of PRs
+    const combinedPRs = [...regularPRs, ...dailyRepsPRs];
+    
+    // Post-process and validate the results
+    const serializedPRs: DashboardPREntry[] = combinedPRs
+      .map((pr: any) => {
+        // Perform runtime checks for required fields before creating the object
+        if (!pr?._id || !pr?.exerciseName || pr?.value === undefined || !pr?.unit || !pr?.date) {
+          console.warn("[fetchRandomDashboardExercisePRs] Skipping aggregated PR due to missing/invalid fields:", pr);
+          return null; // Mark as invalid
+        }
+        
+        // Ensure date is valid
+        const dateValue = pr.date instanceof Date ? pr.date : new Date(pr.date);
+        if (isNaN(dateValue.getTime())) {
+          console.warn("[fetchRandomDashboardExercisePRs] Invalid date in PR:", pr);
+          return null;
+        }
+        
+        // Format the PR value based on type
+        let displayValue = pr.value;
+        let displayUnit = pr.unit;
+        
+        if (pr.type === 'daily_reps') {
+          displayUnit = 'reps in a day'; // More user-friendly display
+        }
+        
+        // Construct the final object safely
+        return {
+          _id: pr._id.toString(),
+          exerciseName: pr.exerciseName,
+          value: displayValue,
+          unit: displayUnit,
+          type: pr.type, // Include type in the response
+          date: dateValue.toISOString(),
+          workoutId: pr?.workoutId?.toString() ?? null,
+        };
+      })
+      .filter((pr): pr is DashboardPREntry => pr !== null);
+
+    // Shuffle the final result to ensure randomness across calls
+    const shuffledPRs = serializedPRs.sort(() => Math.random() - 0.5);
+
+    // Limit the final result to the requested count
+    return shuffledPRs.slice(0, limit);
+  } catch (error) {
+    console.error("[fetchRandomDashboardExercisePRs] Error fetching random PRs:", error);
+    return [];
+  }
+}
     

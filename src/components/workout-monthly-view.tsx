@@ -26,6 +26,15 @@ const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 const CARDIO_TYPES = ['running', 'run', 'cycling', 'bike', 'ride', 'swimming', 'swim'];
 const STRENGTH_TYPES = ['strength', 'workout'];
 
+// Interface extending WorkoutData to include exercises (same as daily view)
+interface WorkoutWithExercises extends WorkoutData {
+    workoutExercises?: WorkoutExerciseData[];
+    aiHighlight?: string;
+    isExpanded?: boolean;
+    totalVolume?: number;
+    startTime?: string;
+}
+
 // Updated Chart data type (per week)
 interface WeeklyChartData {
     week: string; // e.g., 'W1', 'W2'
@@ -42,11 +51,11 @@ interface MonthlyWorkoutMetrics {
     totalDistance: number;
     totalVolume: number; // tons
     weeklyChartData: WeeklyChartData[];
-    allWorkoutsInMonth: WorkoutData[];
+    allWorkoutsInMonth: WorkoutWithExercises[];
 }
 
 // Updated Function to get metrics for a given month
-async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsInput: WorkoutData[]): Promise<MonthlyWorkoutMetrics> {
+async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsInput: WorkoutWithExercises[]): Promise<MonthlyWorkoutMetrics> {
     // console.log(`Calculating metrics for month: ${format(monthStart, 'yyyy-MM')}`);
     const workoutsInDateRange = allWorkoutsInput.filter(w => {
         if (!w.date) return false;
@@ -56,7 +65,7 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
 
     // Process workouts to normalize distance to KM
     const processedWorkouts = workoutsInDateRange
-        .filter((w): w is WorkoutData => w !== undefined)
+        .filter((w): w is WorkoutWithExercises => w !== undefined)
         .map(originalWorkout => {
             const workout = { ...originalWorkout }; // Shallow copy to allow modification
 
@@ -140,7 +149,7 @@ async function getMetricsForMonth(monthStart: Date, monthEnd: Date, allWorkoutsI
     };
 }
 
-const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
@@ -279,7 +288,7 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
     );
 };
 
-const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
@@ -433,7 +442,7 @@ const getHighlightIcon = (text: string): string => {
 
 export default function WorkoutMonthlyView() {
     const router = useRouter();
-    const [allWorkouts, setAllWorkouts] = useState<WorkoutData[]>([]);
+    const [allWorkouts, setAllWorkouts] = useState<WorkoutWithExercises[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedMonthStart, setSelectedMonthStart] = useState<Date>(startOfMonth(new Date()));
@@ -492,9 +501,38 @@ export default function WorkoutMonthlyView() {
                  const endDate = addMonths(new Date(), 3);
                  const startDate = subMonths(endDate, 15);
                 
-                 const response = await fetch(`/api/workouts?_=${Date.now()}`, { cache: 'no-store' });
-                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                 const data: WorkoutData[] = await response.json();
+                 console.log('[WorkoutMonthlyView] Fetching initial workouts with date range:', {
+                     startDate: startDate.toISOString(),
+                     endDate: endDate.toISOString()
+                 });
+                 
+                 // Fetch workouts with exercises and AI insights (same as daily view)
+                 const response = await fetch(`/api/workouts?includeExercises=true&_=${Date.now()}`, { 
+                     cache: 'no-store',
+                     headers: {
+                         'Cache-Control': 'no-cache, no-store, must-revalidate',
+                         'Pragma': 'no-cache',
+                         'Expires': '0',
+                     }
+                 });
+                 if (!response.ok) {
+                     throw new Error(`HTTP error! status: ${response.status}`);
+                 }
+                 const responseData = await response.json();
+                 console.log(`[WorkoutMonthlyView] Received response:`, responseData);
+                 
+                                   // Extract workouts array from response object (same as daily view)
+                  const data: WorkoutWithExercises[] = responseData.workouts || [];
+                 console.log(`[WorkoutMonthlyView] Received ${data ? data.length : 'undefined'} workouts from API`);
+                 
+                 // Safety check to ensure data is an array
+                 if (!Array.isArray(data)) {
+                     console.error('[WorkoutMonthlyView] Received data is not an array:', data);
+                     setAllWorkouts([]);
+                     setIsLoading(false);
+                     return;
+                 }
+                 
                  setAllWorkouts(data);
             } catch (err: any) {
                  console.error("[WorkoutMonthlyView] Error fetching initial workouts:", err);

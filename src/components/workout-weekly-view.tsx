@@ -32,6 +32,15 @@ const formatDateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
 const CARDIO_TYPES = ['running', 'run', 'cycling', 'bike', 'ride', 'swimming', 'swim'];
 const STRENGTH_TYPES = ['strength', 'workout'];
 
+// Interface extending WorkoutData to include exercises (same as daily view)
+interface WorkoutWithExercises extends WorkoutData {
+    workoutExercises?: WorkoutExerciseData[];
+    aiHighlight?: string;
+    isExpanded?: boolean;
+    totalVolume?: number;
+    startTime?: string;
+}
+
 // Updated Chart data type (Volume in Tons)
 interface DailyChartData {
     day: string; // e.g., 'Mon'
@@ -49,13 +58,13 @@ interface WeeklyWorkoutMetrics {
     totalDuration: number;
     totalDistance: number;
     totalVolume: number; // tons <--- CHANGED
-    workoutsByDay: { [day: string]: WorkoutData[] };
+    workoutsByDay: { [day: string]: WorkoutWithExercises[] };
     dailyChartData: DailyChartData[];
-    allWorkoutsInWeek: WorkoutData[];
+    allWorkoutsInWeek: WorkoutWithExercises[];
 }
 
 // Updated function to get metrics for a given week (Refactored Logic)
-async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts: WorkoutData[]): Promise<WeeklyWorkoutMetrics> {
+async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts: WorkoutWithExercises[]): Promise<WeeklyWorkoutMetrics> {
     
     // --- Step 1: Aggregate DAILY totals --- 
     const dailyTotalsMap: { 
@@ -66,7 +75,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
             strengthVolume: number; // tons <--- CHANGED
         } 
     } = {};
-    const workoutsByDay: { [day: string]: WorkoutData[] } = {};
+    const workoutsByDay: { [day: string]: WorkoutWithExercises[] } = {};
 
     const daysInWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
     const dayNamesInOrder = daysInWeek.map(day => format(day, 'eee'));
@@ -165,7 +174,7 @@ async function getMetricsForWeek(weekStart: Date, weekEnd: Date, weeklyWorkouts:
     return result;
 }
 
-const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+const RunningWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
@@ -304,7 +313,7 @@ const RunningWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
     );
 };
 
-const StrengthWorkoutCard = ({ workout }: { workout: WorkoutData }) => {
+const StrengthWorkoutCard = ({ workout }: { workout: WorkoutWithExercises }) => {
     const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     
@@ -457,7 +466,7 @@ const getHighlightIcon = (text: string): string => {
 
 export default function WorkoutWeeklyView() {
     const router = useRouter();
-    const [allWorkouts, setAllWorkouts] = useState<WorkoutData[]>([]);
+    const [allWorkouts, setAllWorkouts] = useState<WorkoutWithExercises[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedWeekStart, setSelectedWeekStart] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
@@ -533,9 +542,39 @@ export default function WorkoutWeeklyView() {
             try {
                 const endDate = addWeeks(new Date(), 4);
                 const startDate = subWeeks(endDate, 12);
-                const response = await fetch(`/api/workouts?_=${Date.now()}`, { cache: 'no-store' });
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data: WorkoutData[] = await response.json();
+                
+                console.log('[WorkoutWeeklyView] Fetching initial workouts with date range:', {
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString()
+                });
+                
+                // Fetch workouts with exercises and AI insights (same as daily view)
+                const response = await fetch(`/api/workouts?includeExercises=true&_=${Date.now()}`, { 
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0',
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const responseData = await response.json();
+                console.log(`[WorkoutWeeklyView] Received response:`, responseData);
+                
+                // Extract workouts array from response object (same as daily view)
+                const data: WorkoutWithExercises[] = responseData.workouts || [];
+                console.log(`[WorkoutWeeklyView] Received ${data ? data.length : 'undefined'} workouts from API`);
+                
+                // Safety check to ensure data is an array
+                if (!Array.isArray(data)) {
+                    console.error('[WorkoutWeeklyView] Received data is not an array:', data);
+                    setAllWorkouts([]);
+                    setIsLoading(false);
+                    return;
+                }
+                
                 setAllWorkouts(data);
             } catch (err: any) {
                 console.error("[WorkoutWeeklyView] Error fetching initial workouts:", err);
