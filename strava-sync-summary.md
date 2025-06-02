@@ -49,7 +49,13 @@ Your Strava runs weren't syncing due to multiple issues:
 1. **Refreshed expired Strava tokens** for all users
 2. **Fixed distance units** for 19+ workouts
 3. **Created missing exercises** (Strength, Running, Cycling, etc.)
-4. **Reprocessed pending webhooks** 
+4. **Reprocessed pending webhooks**
+
+### New Features Added:
+1. **"Resync Last 5" API endpoint** (`/api/strava/sync-last-5`)
+2. **Server action** for sync last 5 functionality
+3. **UI buttons** in both `/integrations` and `/strava-admin` pages
+4. **Recovery functionality** to handle temporary sync issues 
 
 ## 🧪 Testing
 
@@ -61,6 +67,9 @@ node debug-strava.js
 
 # Test webhook endpoint
 node test-webhook.js
+
+# Test the new sync last 5 feature
+node test-sync-last-5.js
 ```
 
 ## 🎯 Next Steps
@@ -69,6 +78,7 @@ node test-webhook.js
 2. **Test new activities** - try creating a new run in Strava
 3. **Monitor webhook events** - check `/webhook_events` collection for new events
 4. **Manual sync** - Use the app's manual sync feature if needed
+5. **Test "Resync Last 5"** - Use the new button to recover missing workouts
 
 ## 📊 Expected Results
 

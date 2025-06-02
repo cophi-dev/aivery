@@ -45,6 +45,8 @@ export default function StravaAdminPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [isSyncingLast5, setIsSyncingLast5] = useState(false);
+  const [syncLast5Result, setSyncLast5Result] = useState<any>(null);
   const [activities, setActivities] = useState<WorkoutListItem[]>([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   // State map for image generation: { [activityId]: ImageGenState }
@@ -122,6 +124,26 @@ export default function StravaAdminPage() {
       setIsSyncing(false);
     }
   };
+
+  const handleSyncLast5 = async () => {
+    setIsSyncingLast5(true);
+    setSyncLast5Result(null);
+    try {
+      const response = await fetch('/api/strava/sync-last-5', { method: 'POST' });
+      const data = await response.json();
+      setSyncLast5Result(data);
+      if (!response.ok) {
+        console.error("Sync last 5 failed:", data);
+      } else {
+        fetchActivities(); 
+      }
+    } catch (error) {
+      console.error("Error syncing last 5 workouts:", error);
+      setSyncLast5Result({ success: false, error: 'An unexpected error occurred during sync.' });
+    } finally {
+      setIsSyncingLast5(false);
+    }
+  };
   
   const handleGenerateImage = async (activityId: string) => {
     setImageGenStates(prev => ({ ...prev, [activityId]: { isLoading: true } }));
@@ -187,21 +209,37 @@ export default function StravaAdminPage() {
       {stravaStatus?.connected && (
         <div className="p-4 border rounded shadow-sm">
           <h2 className="text-xl font-semibold mb-2">Sync Status & Activities</h2>
-          <button 
-            onClick={handleSync}
-            disabled={isSyncing || isLoadingActivities} // Also disable if loading activities
-            className="mb-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
-          >
-            {isSyncing ? 'Syncing...' : 'Sync Recent Workouts'}
-          </button>
+          <div className="flex gap-2 mb-4">
+            <button 
+              onClick={handleSync}
+              disabled={isSyncing || isLoadingActivities} 
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+            >
+              {isSyncing ? 'Syncing...' : 'Sync Recent Workouts'}
+            </button>
+            <button 
+              onClick={handleSyncLast5}
+              disabled={isSyncingLast5 || isLoadingActivities} 
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+            >
+              {isSyncingLast5 ? 'Syncing...' : 'Resync Last 5'}
+            </button>
+          </div>
           
           {/* Display Sync Status/Result */}
-          {isSyncing && <p>Sync in progress...</p>}
+          {(isSyncing || isSyncingLast5) && <p>Sync in progress...</p>}
           {syncResult && (
             <p className={`mt-2 ${syncResult.success ? 'text-green-600' : 'text-red-600'}`}>
               {syncResult.success 
                 ? `Sync successful! ${syncResult.newActivitiesCount ?? 'Some'} new activities processed. ${syncResult.message || ''}` 
                 : `Sync failed: ${syncResult.error || 'Unknown reason'}`}
+            </p>
+          )}
+          {syncLast5Result && (
+            <p className={`mt-2 ${syncLast5Result.success ? 'text-green-600' : 'text-red-600'}`}>
+              {syncLast5Result.success 
+                ? `Last 5 sync successful! ${syncLast5Result.message || ''}` 
+                : `Last 5 sync failed: ${syncLast5Result.error || 'Unknown reason'}`}
             </p>
           )}
 

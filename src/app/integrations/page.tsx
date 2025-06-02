@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LucideCheck, LucideRefreshCw, LucideAlertCircle, LucideLoader } from "lucide-react"
-import { connectStravaAction, syncStravaWorkoutsAction, getStravaIntegrationAction } from "@/lib/strava-actions"
+import { connectStravaAction, syncStravaWorkoutsAction, getStravaIntegrationAction, syncStravaLast5Action } from "@/lib/strava-actions"
 import { StravaImport } from "@/components/strava-import"
 import { Separator } from "@/components/ui/separator"
 import { InlineSpinner } from "@/components/ui/inline-spinner"
@@ -17,6 +17,7 @@ export default function IntegrationsPage() {
   const [stravaIntegration, setStravaIntegration] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isSyncingLast5, setIsSyncingLast5] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null)
 
@@ -141,6 +142,36 @@ export default function IntegrationsPage() {
     }
   }
 
+  // Handle sync last 5 Strava workouts
+  const handleSyncLast5 = async () => {
+    setIsSyncingLast5(true)
+    setAlert(null)
+
+    try {
+      const { success, newCount, updatedCount, totalProcessed, error, message } = await syncStravaLast5Action()
+
+      if (success) {
+        setAlert({ 
+          type: "success", 
+          message: message || `Resynced last ${totalProcessed} activities: ${newCount} new, ${updatedCount} updated` 
+        });
+        
+        // Refresh Strava integration to update lastSynced
+        const result = await getStravaIntegrationAction()
+        if (result.success && result.integration) {
+          setStravaIntegration(result.integration)
+        }
+      } else {
+        setAlert({ type: "error", message: error || "Failed to resync last 5 workouts" })
+      }
+    } catch (error) {
+      console.error("Error resyncing last 5 workouts:", error)
+      setAlert({ type: "error", message: "An unexpected error occurred" })
+    } finally {
+      setIsSyncingLast5(false)
+    }
+  }
+
   // Format date for display
   const formatDate = (date: string | Date | undefined | null) => {
     if (!date) return "Never"
@@ -201,19 +232,39 @@ export default function IntegrationsPage() {
                     <div className="text-xs bg-muted p-2 rounded-md">
                       <p>Only running and swimming activities will be synced. Strength training workouts are not imported.</p>
                     </div>
-                    <Button onClick={handleSyncStrava} disabled={isSyncing} className="w-full">
-                      {isSyncing ? (
-                        <>
-                          <InlineSpinner size={16} className="mr-2" />
-                          Syncing...
-                        </>
-                      ) : (
-                        <>
-                          <LucideRefreshCw className="h-4 w-4 mr-2" />
-                          Sync Runs & Swims
-                        </>
-                      )}
-                    </Button>
+                    <div className="space-y-2">
+                      <Button onClick={handleSyncStrava} disabled={isSyncing || isSyncingLast5} className="w-full">
+                        {isSyncing ? (
+                          <>
+                            <InlineSpinner size={16} className="mr-2" />
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <LucideRefreshCw className="h-4 w-4 mr-2" />
+                            Sync Runs & Swims
+                          </>
+                        )}
+                      </Button>
+                      <Button 
+                        onClick={handleSyncLast5} 
+                        disabled={isSyncing || isSyncingLast5} 
+                        variant="outline" 
+                        className="w-full"
+                      >
+                        {isSyncingLast5 ? (
+                          <>
+                            <InlineSpinner size={16} className="mr-2" />
+                            Resyncing...
+                          </>
+                        ) : (
+                          <>
+                            <LucideRefreshCw className="h-4 w-4 mr-2" />
+                            Resync Last 5
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <Button onClick={handleConnectStrava} disabled={isConnecting} className="w-full">

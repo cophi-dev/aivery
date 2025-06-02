@@ -73,6 +73,104 @@ export async function syncStravaWorkoutsAction() {
   }
 }
 
+export async function syncStravaLast5Action() {
+  try {
+    // Get current user's ID from session
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      throw new Error("Not authenticated")
+    }
+    
+    const userId = session.user.id
+    console.log(`[syncStravaLast5Action] User ${userId} requesting last 5 sync`)
+    
+    // Since this is a server action, we'll make a simulated call to our sync logic
+    // by importing and using the same logic as the API endpoint
+    const { getValidAccessToken } = await import("./services/stravaService")
+    const { getRecentStravaActivities } = await import("./strava")
+    const WorkoutModel = (await import("@/lib/db/models/workout")).default
+    const dbConnect = (await import("@/lib/db/mongodb")).default
+    
+    await dbConnect()
+    
+    // Get valid access token
+    const accessToken = await getValidAccessToken(userId)
+    if (!accessToken) {
+      throw new Error("Failed to obtain valid Strava access token.")
+    }
+    
+    // Fetch recent activities
+    const recentActivities = await getRecentStravaActivities(accessToken)
+    const last5Activities = recentActivities.slice(0, 5)
+    
+    let syncedCount = 0
+    let updatedCount = 0
+    
+    // Process each activity
+    for (const activity of last5Activities) {
+      try {
+        // Check if workout exists
+        const existingWorkout = await WorkoutModel.findOne({
+          userId: userId,
+          source: 'strava',
+          sourceId: activity.id.toString()
+        }).exec()
+
+        // Simple activity mapping
+        const distanceInMeters = typeof activity.distance === 'number' ? activity.distance : 0
+        const durationSeconds = activity.moving_time || activity.elapsed_time || 0
+        const workoutType = activity.type?.toLowerCase().includes('run') ? 'running' :
+                           activity.type?.toLowerCase().includes('ride') ? 'cycling' :
+                           activity.type?.toLowerCase().includes('swim') ? 'swimming' :
+                           activity.type?.toLowerCase().includes('walk') ? 'walking' : 'other'
+
+        const workoutData = {
+          userId: userId,
+          name: activity.name || `${activity.type} Activity`,
+          type: workoutType,
+          date: new Date(activity.start_date),
+          duration: durationSeconds,
+          distance: distanceInMeters,
+          intensity: 'Medium',
+          stravaLink: `https://www.strava.com/activities/${activity.id}`,
+          source: 'strava',
+          sourceId: activity.id.toString(),
+          importedFrom: 'strava-sync-last-5',
+        }
+
+        if (existingWorkout) {
+          await WorkoutModel.findByIdAndUpdate(existingWorkout._id, { $set: workoutData }, { new: true })
+          updatedCount++
+        } else {
+          await WorkoutModel.create(workoutData)
+          syncedCount++
+        }
+      } catch (activityError) {
+        console.error(`Error processing activity ${activity.id}:`, activityError)
+      }
+    }
+
+    // Revalidate relevant pages
+    revalidatePath("/calendar")
+    revalidatePath("/activity") 
+    revalidatePath("/dashboard")
+    revalidatePath("/integrations")
+    revalidatePath("/workouts")
+    
+    return {
+      success: true,
+      newCount: syncedCount,
+      updatedCount: updatedCount,
+      totalProcessed: last5Activities.length,
+      message: `Processed ${last5Activities.length} recent activities: ${syncedCount} new, ${updatedCount} updated`
+    }
+  } catch (error) {
+    console.error("Error syncing last 5 Strava workouts:", error)
+    const errorMessage = error instanceof Error ? error.message : "Failed to sync last 5 Strava workouts"
+    return { success: false, error: errorMessage }
+  }
+}
+
 export async function getStravaIntegrationAction() {
   try {
     // Get current user's ID from session
