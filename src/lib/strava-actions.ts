@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { connectStrava, getStravaIntegration, updateStravaSyncPreferences, SUPPORTED_ACTIVITY_TYPES } from "./services/stravaService"
+import { connectStrava, getStravaIntegration, updateStravaSyncPreferences, updateStravaLastSynced, SUPPORTED_ACTIVITY_TYPES } from "./services/stravaService"
 import { syncStravaWorkouts } from "./services/integrationService"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "./auth"

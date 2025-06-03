@@ -869,6 +869,34 @@ export async function getStravaIntegration(userId: string) {
   }
 }
 
+export async function updateStravaLastSynced(userId: string) {
+  try {
+    const collection = await getCollection(INTEGRATIONS_COLLECTION);
+    const result = await collection.updateOne(
+      {
+        userId: new ObjectId(userId),
+        provider: "strava",
+      },
+      {
+        $set: {
+          lastSynced: new Date(),
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      throw new Error("Strava integration not found for user");
+    }
+
+    console.log(`Updated lastSynced timestamp for user ${userId}'s Strava integration`);
+    return { success: true };
+  } catch (error) {
+    console.error("Error updating Strava lastSynced:", error);
+    throw error;
+  }
+}
+
 // Function to fetch a single activity from Strava API
 async function fetchStravaActivity(accessToken: string, activityId: string) {
   console.log(`Fetching Strava activity ${activityId}`);
