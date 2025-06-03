@@ -1,13 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Card } from '@/components/ui/card';
-import { format } from 'date-fns';
+import { Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import UserNicknameDisplay from '@/components/UserNicknameDisplay';
 
 interface PersonalizedCheckInProps {
   workoutCount?: number;
+  cardioDistance?: number; // in km
+  strengthVolume?: number; // in kg
+  cardioDuration?: number; // in minutes
+  runningDistance?: number; // in km
   className?: string;
 }
 
@@ -17,12 +21,58 @@ interface CheckInMessage {
   tone: 'celebration' | 'motivation' | 'encouragement' | 'welcome';
 }
 
-export default function PersonalizedCheckIn({ workoutCount = 0, className }: PersonalizedCheckInProps) {
+// Vibrant color pool for random combinations
+const vibrantColors = [
+  '#4F46E5', // Indigo
+  '#7C3AED', // Violet
+  '#EC4899', // Pink
+  '#0EA5E9', // Sky
+  '#06B6D4', // Cyan
+  '#10B981', // Emerald
+  '#F59E0B', // Amber
+  '#EF4444', // Red
+  '#DC2626', // Red-600
+  '#EA580C', // Orange
+  '#059669', // Emerald-600
+  '#0D9488', // Teal
+  '#22C55E', // Green
+  '#8B5CF6', // Purple
+  '#A855F7', // Purple-500
+  '#D946EF', // Fuchsia
+  '#3B82F6', // Blue
+  '#6366F1', // Indigo-500
+  '#84CC16', // Lime
+  '#F97316', // Orange-500
+];
+
+// Generate random 2-color combination
+const generateRandomGradient = () => {
+  const shuffled = [...vibrantColors].sort(() => 0.5 - Math.random());
+  const color1 = shuffled[0];
+  const color2 = shuffled[1];
+  
+  return {
+    id: `random-${Date.now()}`,
+    colors: [color1, color2]
+  };
+};
+
+export default function PersonalizedCheckIn({ 
+  workoutCount = 0, 
+  cardioDistance = 0,
+  strengthVolume = 0,
+  cardioDuration = 0,
+  runningDistance = 0,
+  className 
+}: PersonalizedCheckInProps) {
   const [checkInMessage, setCheckInMessage] = useState<CheckInMessage>({
     message: 'Starting your journey...',
     emoji: '✨',
     tone: 'welcome'
   });
+  const [selectedGradient, setSelectedGradient] = useState(generateRandomGradient());
+  const [isDownloading, setIsDownloading] = useState(false);
+  const componentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const generateMessage = () => {
@@ -46,97 +96,276 @@ export default function PersonalizedCheckIn({ workoutCount = 0, className }: Per
           tone: 'welcome' as const
         };
       } else if (workoutCount >= 5) {
-        const encouragements = [
-          `You're absolutely crushing it this week!`,
-          `Your dedication is paying off beautifully!`,
-          `This momentum is unstoppable!`
-        ];
-        const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
+        // High activity - create variety in celebrations
+        const celebrationTypes = [];
+        
+        // Always include session-based celebration
+        celebrationTypes.push({
+          message: `You're absolutely crushing it! ${workoutCount} sessions in the last 7 days — you're building something amazing`,
+          emoji: '🎉'
+        });
+        
+        // Add distance-based celebrations if significant
+        if (cardioDistance >= 20) {
+          celebrationTypes.push({
+            message: `Your dedication is paying off beautifully! ${cardioDistance.toFixed(1)}km conquered in the last 7 days`,
+            emoji: '🏃‍♂️'
+          });
+        }
+        
+        if (runningDistance >= 15) {
+          celebrationTypes.push({
+            message: `This momentum is unstoppable! ${runningDistance.toFixed(1)}km of running — you're on fire`,
+            emoji: '🔥'
+          });
+        }
+        
+        // Add strength-based celebrations if significant
+        if (strengthVolume >= 5000) {
+          const volumeTons = (strengthVolume / 1000).toFixed(1);
+          celebrationTypes.push({
+            message: `Incredible strength gains! ${volumeTons} tons moved in the last 7 days — absolute beast mode`,
+            emoji: '💪'
+          });
+        }
+        
+        // Add duration-based celebrations if significant
+        if (cardioDuration >= 300) { // 5+ hours
+          const hours = Math.floor(cardioDuration / 60);
+          celebrationTypes.push({
+            message: `Amazing dedication! ${hours}+ hours of cardio work — your consistency is legendary`,
+            emoji: '⏱️'
+          });
+        }
+        
+        const randomCelebration = celebrationTypes[Math.floor(Math.random() * celebrationTypes.length)];
         
         return {
-          message: `${randomEncouragement} ${workoutCount} sessions — you're building something amazing`,
-          emoji: '🎉',
+          message: randomCelebration.message,
+          emoji: randomCelebration.emoji,
           tone: 'celebration' as const
         };
       } else if (workoutCount >= 3) {
-        const motivations = [
-          `Great momentum building!`,
-          `You're finding your rhythm!`,
-          `Consistency is your superpower!`
-        ];
-        const randomMotivation = motivations[Math.floor(Math.random() * motivations.length)];
+        // Moderate activity - mix of session and achievement highlights
+        const encouragementTypes = [];
+        
+        // Session-based encouragement
+        encouragementTypes.push({
+          message: `Great momentum building! ${workoutCount} sessions in the last 7 days — keep the fire burning`,
+          emoji: '🔥'
+        });
+        
+        // Distance achievements
+        if (cardioDistance >= 10) {
+          encouragementTypes.push({
+            message: `You're finding your rhythm! ${cardioDistance.toFixed(1)}km covered — every step counts`,
+            emoji: '🎯'
+          });
+        }
+        
+        // Strength achievements
+        if (strengthVolume >= 2000) {
+          const volumeTons = (strengthVolume / 1000).toFixed(1);
+          encouragementTypes.push({
+            message: `Consistency is your superpower! ${volumeTons} tons lifted — strength is building`,
+            emoji: '💪'
+          });
+        }
+        
+        const randomEncouragement = encouragementTypes[Math.floor(Math.random() * encouragementTypes.length)];
         
         return {
-          message: `${randomMotivation} ${workoutCount} sessions this week — keep the fire burning`,
-          emoji: '🔥',
+          message: randomEncouragement.message,
+          emoji: randomEncouragement.emoji,
           tone: 'encouragement' as const
         };
       } else {
-        const nudges = [
-          `Every step counts on your journey!`,
-          `Your next breakthrough is waiting!`,
-          `Small steps, big progress!`
-        ];
-        const randomNudge = nudges[Math.floor(Math.random() * nudges.length)];
+        // Low activity - focus on any positive achievements
+        const motivationTypes = [];
+        
+        // Default session-based motivation
+        if (workoutCount > 0) {
+          motivationTypes.push({
+            message: `Every step counts on your journey! ${workoutCount} session${workoutCount === 1 ? '' : 's'} in the last 7 days — let's build on this`,
+            emoji: '💪'
+          });
+        } else {
+          motivationTypes.push({
+            message: `Your next breakthrough is waiting! Ready for your first session — let's build on this`,
+            emoji: '💪'
+          });
+        }
+        
+        // Highlight any distance achievements
+        if (cardioDistance >= 5) {
+          motivationTypes.push({
+            message: `Small steps, big progress! ${cardioDistance.toFixed(1)}km moved — momentum is building`,
+            emoji: '🚀'
+          });
+        }
+        
+        // Highlight any strength work
+        if (strengthVolume >= 500) {
+          const volumeTons = (strengthVolume / 1000).toFixed(2);
+          motivationTypes.push({
+            message: `Your next breakthrough is waiting! ${volumeTons} tons moved — every rep builds strength`,
+            emoji: '💪'
+          });
+        }
+        
+        const randomMotivation = motivationTypes[Math.floor(Math.random() * motivationTypes.length)];
         
         return {
-          message: `${randomNudge} ${workoutCount > 0 ? `${workoutCount} session${workoutCount === 1 ? '' : 's'} down` : 'Ready for your first session'} — let's build on this`,
-          emoji: '💪',
+          message: randomMotivation.message,
+          emoji: randomMotivation.emoji,
           tone: 'motivation' as const
         };
       }
     };
 
     setCheckInMessage(generateMessage());
-  }, [workoutCount]);
+  }, [workoutCount, cardioDistance, strengthVolume, cardioDuration, runningDistance]);
+
+  const handleDownload = async () => {
+    if (!componentRef.current) return;
+    
+    setIsDownloading(true);
+    
+    try {
+      // Wait for fonts to load
+      await document.fonts.ready;
+      
+      // Wait a bit longer for any animations to settle and fonts to render
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Temporarily add a background for capture
+      const originalStyle = componentRef.current.style.cssText;
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      componentRef.current.style.background = isDarkMode ? '#0a0a0a' : '#ffffff';
+      
+      const canvas = await html2canvas(componentRef.current, {
+        useCORS: true,
+        allowTaint: true
+      });
+
+      // Restore original style
+      componentRef.current.style.cssText = originalStyle;
+
+      // Create download link
+      const link = document.createElement('a');
+      link.download = `aivery-progress-${new Date().toISOString().split('T')[0]}.png`;
+      link.href = canvas.toDataURL('image/png', 0.95);
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      // You could add a toast notification here
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <motion.section 
-      className={`mb-8 ${className}`}
+      ref={componentRef}
+      className={`mb-12 relative py-16 bg-background border border-border/20 rounded-lg overflow-hidden ${className}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
     >
-      <Card className="apple-card p-8">
+      {/* Download Button - Theme-aware positioning and styling */}
+      <motion.button
+        onClick={handleDownload}
+        disabled={isDownloading}
+        className="absolute top-4 right-4 z-20 p-3 rounded-full bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm border border-foreground/20 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.8, duration: 0.3 }}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        title="Download and share your progress"
+      >
+        <Download 
+          className={`w-4 h-4 text-foreground/80 group-hover:text-foreground transition-colors ${isDownloading ? 'animate-pulse' : ''}`} 
+        />
+      </motion.button>
+
+      {/* Dynamic Colored Aura Circle Background - Bigger */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.3 }}
-          className="flex items-start gap-6"
+          initial={{ scale: 0.7, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.1, duration: 0.8, ease: "easeOut" }}
+          className="relative"
         >
-          {/* Subtle emoji */}
-          <motion.div 
-            className="text-2xl"
-            initial={{ scale: 0.9 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.2 }}
+          {/* Aivery Circle - Two colors with complete fade-out - Responsive */}
+          <svg 
+            className="w-96 h-96 sm:w-[450px] sm:h-[450px] md:w-[550px] md:h-[550px] lg:w-[650px] lg:h-[650px] opacity-40 dark:opacity-45" 
+            viewBox="0 0 512 512" 
           >
-            {checkInMessage.emoji}
-          </motion.div>
-          
-          <div className="flex-1">
-            {/* Clean label */}
-            <motion.p 
-              className="apple-caption text-muted-foreground/60 mb-3"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2, duration: 0.3 }}
-            >
-              Aivery
-            </motion.p>
-            
-            {/* Personalized message with clean typography */}
-            <motion.h2 
-              className="apple-heading-lg text-foreground"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.3 }}
-            >
-              <UserNicknameDisplay fallback="champion" />, {checkInMessage.message.toLowerCase()}
-            </motion.h2>
-          </div>
+            <defs>
+              <radialGradient id={`aura-${selectedGradient.id}`} cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                <stop offset="0%" stopColor={selectedGradient.colors[0]}/>
+                <stop offset="30%" stopColor={selectedGradient.colors[0]}/>
+                <stop offset="50%" stopColor={selectedGradient.colors[0]} stopOpacity="0.7"/>
+                <stop offset="70%" stopColor={selectedGradient.colors[1]} stopOpacity="0.4"/>
+                <stop offset="85%" stopColor={selectedGradient.colors[1]} stopOpacity="0.25"/>
+                <stop offset="95%" stopColor={selectedGradient.colors[1]} stopOpacity="0.1"/>
+                <stop offset="100%" stopColor={selectedGradient.colors[1]} stopOpacity="0"/>
+              </radialGradient>
+            </defs>
+            {/* Single circle with two colors and fade-out effect */}
+            <circle cx="256" cy="256" r="200" fill={`url(#aura-${selectedGradient.id})`} />
+          </svg>
         </motion.div>
-      </Card>
+      </div>
+
+      {/* Content Overlay - No card wrapper, wider than circle */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.5 }}
+        className="relative z-10 max-w-4xl mx-auto text-center px-8 py-12"
+      >
+        {/* Clean label */}
+        <motion.p 
+          className="text-sm font-serif text-muted-foreground/80 mb-8 tracking-widest"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.4 }}
+        >
+          aivery
+        </motion.p>
+        
+        {/* Personalized message with bold typography - wider than the circle */}
+        <motion.h1 
+          className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold text-foreground leading-relaxed px-4 mb-8"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.4 }}
+          style={{ 
+            textShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            lineHeight: '1.4',
+            fontSize: 'clamp(1.5rem, 4vw, 3rem)' // Responsive but consistent
+          }}
+        >
+          <UserNicknameDisplay fallback="Champion" />, {checkInMessage.message.toLowerCase()}
+        </motion.h1>
+
+        {/* Subtle emoji positioned elegantly */}
+        <motion.div 
+          className="text-5xl md:text-6xl mt-6 opacity-80"
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 0.8 }}
+          transition={{ delay: 0.6, duration: 0.3 }}
+        >
+          {checkInMessage.emoji}
+        </motion.div>
+      </motion.div>
     </motion.section>
   );
 } 

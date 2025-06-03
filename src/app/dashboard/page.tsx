@@ -222,7 +222,13 @@ export default function DashboardPage() {
                     <InfoBoxes />
                     
                     {/* 1. Personalized Check-In - Clean greeting */}
-                    <PersonalizedCheckIn workoutCount={metrics?.workoutCount || 0} />
+                    <PersonalizedCheckIn 
+                        workoutCount={metrics?.workoutCount || 0}
+                        cardioDistance={metrics?.cardioDistanceLast7Days || 0}
+                        strengthVolume={metrics?.strengthVolumeLast7Days || 0}
+                        cardioDuration={metrics?.cardioDurationLast7Days || 0}
+                        runningDistance={metrics?.runningDistanceLast7Days || 0}
+                    />
                     
                     {/* 2. Key Metrics - Essential stats only */}
                     {metrics && <UnifiedKeyMetrics metrics={metrics} />}

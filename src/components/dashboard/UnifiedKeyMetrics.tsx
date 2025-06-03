@@ -150,7 +150,7 @@ export default function UnifiedKeyMetrics({ metrics, className }: UnifiedKeyMetr
     >
       <Card className="border-0 bg-gradient-to-br from-slate-50/50 to-gray-50/30 dark:from-slate-950/50 dark:to-gray-950/30">
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-medium text-foreground">Weekly Progress</CardTitle>
+          <CardTitle className="text-lg font-medium text-foreground">Last 7 Days</CardTitle>
         </CardHeader>
         <CardContent>
           <div className={cn(
@@ -192,7 +192,7 @@ export default function UnifiedKeyMetrics({ metrics, className }: UnifiedKeyMetr
           
           {/* Small disclaimer */}
           <p className="text-xs text-muted-foreground/60 text-center mt-4">
-            Compared to previous week
+            Compared to previous 7 days
           </p>
         </CardContent>
       </Card>
