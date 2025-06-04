@@ -41,7 +41,7 @@ import WeekPlan from "@/components/dashboard/WeekPlan";
 import AskAiveryPrompt from "@/components/dashboard/AskAiveryPrompt";
 import LastWorkout from "@/components/dashboard/LastWorkout";
 import ProgressPulse from "@/components/dashboard/ProgressPulse";
-import { WeeklyShareCard } from "@/components/dashboard/WeeklyShareCard";
+
 import ShareMoments from "@/components/dashboard/ShareMoments";
 import InfoBoxes from "@/components/dashboard/InfoBoxes";
 import RecentWorkoutInsights from "@/components/dashboard/RecentWorkoutInsights";
@@ -66,50 +66,7 @@ interface ChatMessage {
 // TODO: Replace this with your actual chat context/state management hook/import
 declare function addMessageToChat(message: ChatMessage): void;
 
-// WeeklyShareCard wrapper component that fetches its own data
-function WeeklyShareCardWrapper() {
-  const [weeklyStats, setWeeklyStats] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [featureEnabled, setFeatureEnabled] = useState(false);
 
-  useEffect(() => {
-    // Check feature flag
-    const shareableEnabled = process.env.NEXT_PUBLIC_ENABLE_SHAREABLE_MOMENTS === 'true' || 
-                            localStorage.getItem('enable_shareable_moments') === 'true';
-    setFeatureEnabled(shareableEnabled);
-
-    if (!shareableEnabled) {
-      setIsLoading(false);
-      return;
-    }
-
-    const fetchWeeklyStats = async () => {
-      try {
-        const response = await fetch('/api/dashboard/progress');
-        if (response.ok) {
-          const data = await response.json();
-          // Structure the data to match WeeklyShareCard expectations
-          if (data.stats && data.stats.current) {
-            setWeeklyStats(data.stats);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch weekly stats:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchWeeklyStats();
-  }, []);
-
-  if (!featureEnabled || isLoading || !weeklyStats) return null;
-
-  // Only show if there are workouts to share
-  if (!weeklyStats.current || weeklyStats.current.workouts === 0) return null;
-
-  return <WeeklyShareCard weeklyStats={weeklyStats} />;
-}
 
 // --- Main Dashboard Page Component (Client Component) ---
 export default function DashboardPage() {

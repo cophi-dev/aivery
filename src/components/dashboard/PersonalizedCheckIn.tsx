@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Download } from 'lucide-react';
-import html2canvas from 'html2canvas';
 import UserNicknameDisplay from '@/components/UserNicknameDisplay';
 
 interface PersonalizedCheckInProps {
@@ -71,7 +69,6 @@ export default function PersonalizedCheckIn({
     tone: 'welcome'
   });
   const [selectedGradient, setSelectedGradient] = useState(generateRandomGradient());
-  const [isDownloading, setIsDownloading] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -226,48 +223,7 @@ export default function PersonalizedCheckIn({
     setCheckInMessage(generateMessage());
   }, [workoutCount, cardioDistance, strengthVolume, cardioDuration, runningDistance]);
 
-  const handleDownload = async () => {
-    if (!componentRef.current) return;
-    
-    setIsDownloading(true);
-    
-    try {
-      // Wait for fonts to load
-      await document.fonts.ready;
-      
-      // Wait a bit longer for any animations to settle and fonts to render
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Temporarily add a background for capture
-      const originalStyle = componentRef.current.style.cssText;
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      componentRef.current.style.background = isDarkMode ? '#0a0a0a' : '#ffffff';
-      
-      const canvas = await html2canvas(componentRef.current, {
-        useCORS: true,
-        allowTaint: true
-      });
 
-      // Restore original style
-      componentRef.current.style.cssText = originalStyle;
-
-      // Create download link
-      const link = document.createElement('a');
-      link.download = `aivery-progress-${new Date().toISOString().split('T')[0]}.png`;
-      link.href = canvas.toDataURL('image/png', 0.95);
-      
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-    } catch (error) {
-      console.error('Error downloading image:', error);
-      // You could add a toast notification here
-    } finally {
-      setIsDownloading(false);
-    }
-  };
 
   return (
     <motion.section 
@@ -277,23 +233,6 @@ export default function PersonalizedCheckIn({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
     >
-      {/* Download Button - Theme-aware positioning and styling */}
-      <motion.button
-        onClick={handleDownload}
-        disabled={isDownloading}
-        className="absolute top-4 right-4 z-20 p-3 rounded-full bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm border border-foreground/20 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.8, duration: 0.3 }}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        title="Download and share your progress"
-      >
-        <Download 
-          className={`w-4 h-4 text-foreground/80 group-hover:text-foreground transition-colors ${isDownloading ? 'animate-pulse' : ''}`} 
-        />
-      </motion.button>
-
       {/* Dynamic Colored Aura Circle Background - Bigger */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <motion.div

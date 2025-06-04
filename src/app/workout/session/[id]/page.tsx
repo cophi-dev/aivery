@@ -26,8 +26,7 @@ import {
 } from "lucide-react"
 import { fetchWorkout, markWorkoutComplete } from "@/lib/workout-actions"
 import { WorkoutAnalysis } from "@/components/workout-analysis"
-import { ShareModal } from "@/components/workout/ShareModal"
-import { ShareCard } from "@/components/workout/ShareCard"
+
 import PostWorkoutInsights from "@/components/workout/PostWorkoutInsights"
 import type { WorkoutData, ExerciseData, Set, WorkoutExerciseData } from "@/types/db"
 import { Label } from "@/components/ui/label"
@@ -44,7 +43,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
   const [elapsedTime, setElapsedTime] = useState(0)
   const [isTimerRunning, setIsTimerRunning] = useState(true)
   const [isCompleting, setIsCompleting] = useState(false)
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+
   const [showCompletionCard, setShowCompletionCard] = useState(false)
   const [showPostWorkoutInsights, setShowPostWorkoutInsights] = useState(false)
   const [workoutInsight, setWorkoutInsight] = useState<string>("")
@@ -410,22 +409,7 @@ export default function WorkoutSessionPage({ params }: { params: { id: string } 
           </motion.div>
         </motion.div>
       )}
-      {isShareModalOpen && (
-        <ShareModal
-          isOpen={isShareModalOpen}
-          onClose={() => setIsShareModalOpen(false)}
-          workout={{
-            id: workout._id,
-            type: workout.type,
-            date: new Date(workout.date),
-            duration: elapsedTime, // Use elapsed time in seconds
-            distance: workout.cardioDetails?.distance,
-            calculatedVolume: workout.calculatedVolume,
-            name: workout.name
-          }}
-          insight={workoutInsight}
-        />
-      )}
+
     </>
   )
 }

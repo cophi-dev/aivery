@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { WeeklyShareCard } from './WeeklyShareCard';
+
 
 interface ShareMomentsProps {
   className?: string;
@@ -16,7 +16,7 @@ interface ShareMomentsProps {
 export function ShareMoments({ className }: ShareMomentsProps) {
   const [weeklyStats, setWeeklyStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showShareCard, setShowShareCard] = useState(false);
+
 
   useEffect(() => {
     const fetchWeeklyStats = async () => {
@@ -78,10 +78,10 @@ export function ShareMoments({ className }: ShareMomentsProps) {
                     Start Your Journey
                   </Button>
                 </Link>
-                <Link href="/share">
+                <Link href="/workouts">
                   <Button variant="outline" size="lg" className="border-purple-200 dark:border-purple-800">
                     <ExternalLink className="h-4 w-4 mr-2" />
-                    Explore Examples
+                    View Your Workouts
                   </Button>
                 </Link>
               </div>
@@ -142,35 +142,7 @@ export function ShareMoments({ className }: ShareMomentsProps) {
     };
   };
 
-  if (showShareCard) {
-    return (
-      <motion.div 
-        className={className}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-serif tracking-tight text-foreground mb-1">
-              Your Share Card
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Ready to inspire your community
-            </p>
-          </div>
-          <Button 
-            variant="ghost" 
-            onClick={() => setShowShareCard(false)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            ← Back to overview
-          </Button>
-        </div>
-        <WeeklyShareCard weeklyStats={weeklyStats} className="max-w-md" />
-      </motion.div>
-    );
-  }
+
 
   const highlight = getShareableHighlight();
   const IconComponent = highlight.icon;
@@ -246,17 +218,18 @@ export function ShareMoments({ className }: ShareMomentsProps) {
 
           {/* Action Buttons */}
           <div className="flex gap-3">
-            <Button 
-              onClick={() => setShowShareCard(true)}
-              className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white border-0 shadow-lg font-medium"
-            >
-              <Share2 className="h-4 w-4 mr-2" />
-              Create Share Card
-            </Button>
-            <Link href="/share">
+            <Link href="/workouts/new">
+              <Button 
+                className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white border-0 shadow-lg font-medium"
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                Create More Moments
+              </Button>
+            </Link>
+            <Link href="/workouts">
               <Button variant="outline" className="border-blue-200 dark:border-blue-800 text-muted-foreground hover:text-foreground">
                 <ExternalLink className="h-4 w-4 mr-1" />
-                Explore
+                View Workouts
               </Button>
             </Link>
           </div>
