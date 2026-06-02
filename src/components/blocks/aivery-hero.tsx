@@ -13,17 +13,17 @@ export function AiveryHero() {
   return (
     <HeroSection
       badge={{
-        text: "AI-Powered Fitness Analytics",
+        text: "Less noise. More signal.",
         action: {
-          text: "Learn more",
+          text: "How it works",
           href: "#features",
         },
       }}
-      title="Elevate Your Training with AI-Powered Insights"
-      description="Aivery transforms workout data into actionable intelligence. Track, analyze, and improve with personalized AI coaching."
+      title="Your workouts, translated into calm, useful insight"
+      description="Connect Strava, log training, and get short AI coaching that respects your data — no dashboard clutter, no hype."
       actions={[
         {
-          text: "Start Your Journey",
+          text: "Get started free",
           href: "/register",
           variant: "default",
         },

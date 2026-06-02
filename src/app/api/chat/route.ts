@@ -19,7 +19,8 @@ import {
 import { getServerSession } from "next-auth"; // RE-ADD import
 import mongoose from 'mongoose'; // Import mongoose
 import { getRecentWorkouts } from "@/lib/db/repositories/workoutRepository";
-import { callLLM, LLMProvider } from '@/lib/services/llm';
+import { callLLM } from '@/lib/services/llm';
+import { resolveLLMConfig } from '@/lib/services/llm-settings';
 import ExerciseAverageModel from '@/lib/db/models/exerciseAverage';
 import ExerciseModel from '@/lib/db/models/exercise';
 
@@ -245,11 +246,9 @@ export async function POST(req: Request) {
     }
 
     // Main chat LLM call
-    const provider = (process.env.LLM_PROVIDER_CHAT as LLMProvider) || 'grok';
-    const model = process.env.LLM_MODEL_CHAT || 'grok-3-mini-latest';
+    const { model } = resolveLLMConfig('chat');
     const data = await callLLM({
-      provider,
-      model,
+      task: 'chat',
       messages: [
         { role: 'system', content: `You are Aivery, ${userName}'s fitness buddy and inner voice. You're that friend who knows their workout history, celebrates their wins, and gives them the nudge they need. You're supportive but real, insightful but never preachy.
 

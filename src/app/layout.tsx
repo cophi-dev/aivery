@@ -152,7 +152,7 @@ export default async function RootLayout({
         <meta name="build-time" content={getTimestamp()} />
         <meta name="build-id" content={VERSION} />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="theme-color" content="#4B9EFF" />
+        <meta name="theme-color" content="#2d6a5f" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#080808" />
         <meta name="color-scheme" content="light dark" />
         <link rel="manifest" href="/manifest.json" />
@@ -193,35 +193,10 @@ export default async function RootLayout({
             `,
           }}
         />
-        <script 
-          dangerouslySetInnerHTML={{ 
-            __html: `
-            window.APP_VERSION="${VERSION}";
-            window.BUILD_TIME="${getTimestamp()}";
-            console.log("🔄 App Version:", window.APP_VERSION);
-            // Immediately clear any caches on page load
-            if ('caches' in window) {
-              caches.keys().then(cacheNames => {
-                cacheNames.forEach(cacheName => {
-                  caches.delete(cacheName);
-                  console.log("Cleared cache:", cacheName);
-                });
-              });
-            }
-            
-            // Force PWA to update icons by registering a new service worker
-            if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.getRegistrations().then(registrations => {
-                for (let registration of registrations) {
-                  registration.update();
-                }
-              });
-            }
-            
-            // Add unique timestamp to prevent edge caching
-            window.CACHE_BUSTER = Date.now();
-            ` 
-          }} 
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.APP_VERSION="${VERSION}";window.BUILD_TIME="${getTimestamp()}";`,
+          }}
         />
         {/* Apple Touch Icon */}
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-icon-180x180.png" />
@@ -271,7 +246,7 @@ export default async function RootLayout({
               {/* Wrap content with PRNotificationProvider */}
               <PRNotificationProvider>
                 <div className="flex flex-col min-h-screen">
-                  <main className="flex-1 flex flex-col">{children}</main>
+                  <main className="flex-1 flex flex-col pb-20 lg:pb-0">{children}</main>
                   <footer>
                     <LegalFooter />
                   </footer>

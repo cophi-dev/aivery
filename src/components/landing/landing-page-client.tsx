@@ -8,7 +8,6 @@ import { useState, useEffect, useRef } from 'react';
 import React from 'react';
 import { AiveryHero } from "../blocks/aivery-hero";
 import { ThemeSwitch } from "@/components/ui/theme-switch-button";
-import { PricingSectionBasic } from "@/components/blocks/PricingSectionBasic";
 import { SvgPatternBackground, LogoWavyBackground } from "@/components/ui/svg-pattern-background";
 import {
   Stepper,
@@ -503,9 +502,6 @@ export default function LandingPageClient() {
          </section>
 
 
-         {/* Pricing Section */}
-         <PricingSectionBasic />
-
          {/* CTA Section */}
          <section className="w-full py-16 md:py-20 bg-white dark:bg-gray-950 relative overflow-hidden">
            {/* Add small animated SVG logos in the background */}
@@ -557,15 +553,15 @@ export default function LandingPageClient() {
              </div>
            </div>
            <div className="container px-4 md:px-6 max-w-4xl mx-auto text-center relative z-10">
-             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-6">Start Your Premium Fitness Journey</h2>
+             <h2 className="text-xl sm:text-2xl md:text-3xl font-medium mb-6">Start training with clearer insight</h2>
              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
-               Aivery is a premium-only platform. Join today for unlimited AI insights, advanced analytics, and personalized coaching.
+               Free for everyone with an account. Connect Strava, log workouts, and get calm AI feedback on your progress.
              </p>
              <Button
                asChild
-               className="rounded-md px-8 py-3 text-white bg-brand-accent hover:bg-brand-accent-hover shadow-md transition-colors duration-200"
+               className="rounded-md px-8 py-3 shadow-md transition-colors duration-200"
              >
-               <Link href="/register">Join Premium Now</Link>
+               <Link href="/register">Create free account</Link>
              </Button>
            </div>
          </section>

@@ -47,12 +47,9 @@ export default function LoginPage() {
       window.history.replaceState({}, "", url)
     }
 
-    // Check for registration success with premium flag
+    // Check for registration success
     const registeredParam = searchParams?.get("registered")
-    const premiumParam = searchParams?.get("premium")
-    if (registeredParam === "true" && premiumParam === "true") {
-      setSuccess("Account created successfully! Please sign in to start your premium subscription.")
-    } else if (registeredParam === "true") {
+    if (registeredParam === "true") {
       setSuccess("Account created successfully! Please sign in.")
     }
   }, [searchParams])
@@ -127,11 +124,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="mx-auto w-full max-w-md p-6 bg-background rounded-lg shadow-lg">
+    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12 bg-gradient-to-b from-background via-background to-accent/30">
+      <div className="mx-auto w-full max-w-md p-8 bg-card rounded-2xl border border-border/60 shadow-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold">Welcome back</h1>
-          <p className="text-muted-foreground mt-2">Sign in to your account</p>
+          <p className="text-sm font-medium text-primary mb-2">Aivery</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
+          <p className="text-muted-foreground mt-2 text-sm">Sign in to pick up where you left off</p>
         </div>
         
         {error && (

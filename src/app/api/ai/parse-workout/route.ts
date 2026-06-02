@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { type NextRequest } from 'next/server';
-import { callLLM, LLMProvider } from '@/lib/services/llm';
+import { callLLM } from '@/lib/services/llm';
+import { resolveLLMConfig } from '@/lib/services/llm-settings';
 
 // Placeholder type for the structured data we expect from the AI
 // TODO: Refine this based on the actual AI output format and form state needs
@@ -170,12 +171,10 @@ EXPECTED JSON OUTPUT 3:
     // --- END NEW ---
 
     // Use env vars for provider/model
-    const provider = (process.env.LLM_PROVIDER_PARSE as LLMProvider) || 'grok';
-    const model = process.env.LLM_MODEL_PARSE || 'grok-3-mini';
-    console.log(`[AI Parse Workout] Using provider: ${provider}, model: ${model}`);
+    const { model } = resolveLLMConfig('parse');
+    console.log(`[AI Parse Workout] Using Grok model: ${model}`);
     const data = await callLLM({
-      provider,
-      model,
+      task: 'parse',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: cleanedLogText }

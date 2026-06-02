@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 
 interface InfoBoxData {
-  isSubscribed: boolean;
   hasAiPreferences: boolean;
   workoutCount: number;
   isLoading: boolean;
@@ -32,10 +31,9 @@ interface InfoBoxesProps {
 export default function InfoBoxes({ className }: InfoBoxesProps) {
   const { data: session, status } = useSession();
   const [infoData, setInfoData] = useState<InfoBoxData>({
-    isSubscribed: true, // Default to true to avoid showing upgrade until we know for sure
-    hasAiPreferences: true, // Default to true to avoid showing until we know for sure
-    workoutCount: 1, // Default to 1 to avoid showing until we know for sure
-    isLoading: true
+    hasAiPreferences: true,
+    workoutCount: 1,
+    isLoading: true,
   });
 
   useEffect(() => {
@@ -46,13 +44,6 @@ export default function InfoBoxes({ className }: InfoBoxesProps) {
 
   const fetchInfoData = async () => {
     try {
-      // Fetch user subscription data
-      const userResponse = await fetch('/api/user');
-      if (!userResponse.ok) {
-        throw new Error(`User API failed with status: ${userResponse.status}`);
-      }
-      const userData = await userResponse.json();
-      
       // Fetch dashboard metrics for workout count and AI preferences
       const metricsResponse = await fetch('/api/dashboard/metrics');
       if (!metricsResponse.ok) {
@@ -60,17 +51,10 @@ export default function InfoBoxes({ className }: InfoBoxesProps) {
       }
       const metricsData = await metricsResponse.json();
       
-      console.log('InfoBoxes data fetched:', {
-        userTier: userData.user?.tier,
-        hasAiPreferences: metricsData.hasAiPreferences,
-        workoutCount: metricsData.workoutCount
-      });
-      
       setInfoData({
-        isSubscribed: userData.user?.tier !== 'free',
         hasAiPreferences: metricsData.hasAiPreferences || false,
         workoutCount: metricsData.workoutCount || 0,
-        isLoading: false
+        isLoading: false,
       });
     } catch (error) {
       console.error('Failed to fetch info data:', error);
@@ -180,10 +164,6 @@ export default function InfoBoxes({ className }: InfoBoxesProps) {
       </motion.div>
     );
   }
-
-  // Note: In premium-only mode, non-subscribers should not be able to access the dashboard
-  // This component should primarily focus on AI preferences and getting started flows
-  // Subscription enforcement is handled at the middleware level
 
   // Don't render if no info boxes to show
   if (infoBoxes.length === 0) {

@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 // import Anthropic from "@anthropic-ai/sdk"; // REMOVED
 import { getTextFromResponse } from "@/lib/utils";
-import { callLLM, LLMProvider } from '@/lib/services/llm';
+import { callLLM } from '@/lib/services/llm';
+import { resolveLLMConfig } from '@/lib/services/llm-settings';
 
 // Initialize Anthropic client // REMOVED
 // const anthropic = new Anthropic({ // REMOVED
@@ -77,12 +78,10 @@ export async function POST(request: Request) {
     }
 
     // Use env vars for provider/model
-    const provider = (process.env.LLM_PROVIDER_OPTIMIZE as LLMProvider) || 'grok';
-    const model = process.env.LLM_MODEL_OPTIMIZE || 'grok-3-mini-latest';
-    console.log(`[optimize-text] Using provider: ${provider}, model: ${model}`);
+    const { model } = resolveLLMConfig('optimize');
+    console.log(`[optimize-text] Using Grok model: ${model}`);
     const apiResponseData = await callLLM({
-      provider,
-      model,
+      task: 'optimize',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }

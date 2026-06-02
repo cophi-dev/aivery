@@ -8,7 +8,8 @@ import type { WorkoutData, DailyInsightData } from '@/types/db'; // Import Worko
 import { getUserById } from '@/lib/db/repositories/userRepository';
 import { getToken } from "next-auth/jwt";
 import { startOfWeek, endOfWeek, subWeeks } from 'date-fns';
-import { callLLM, LLMProvider } from '@/lib/services/llm'; // Import centralized LLM service
+import { callLLM } from '@/lib/services/llm';
+import { resolveLLMConfig } from '@/lib/services/llm-settings';
 
 // Ensure the route is always dynamic and not cached
 export const dynamic = 'force-dynamic';
@@ -369,14 +370,11 @@ ${workoutDataString}
 Based on this data, give me one encouraging and insightful comment about their fitness progress or what they should focus on. Keep it conversational and supportive, like you're speaking directly to them. 1-2 sentences max.`;
 
       // Use centralized LLM service with environment configuration
-      const provider = (process.env.LLM_PROVIDER_INSIGHT as LLMProvider) || (process.env.LLM_PROVIDER as LLMProvider) || 'openai';
-      const model = process.env.LLM_MODEL_INSIGHT || 'gpt-4.1-mini-2025-04-14';
-      
-      console.log(`[Daily Insight] Using provider: ${provider}, model: ${model}`);
-      
+      const { model } = resolveLLMConfig('insight');
+      console.log(`[Daily Insight] Using Grok model: ${model}`);
+
       const data = await callLLM({
-        provider,
-        model,
+        task: 'insight',
         messages: [
           { role: 'user', content: prompt }
         ],

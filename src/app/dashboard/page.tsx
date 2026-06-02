@@ -11,7 +11,6 @@ import { ArrowRight, Upload, Edit3, Sparkles, Activity } from "lucide-react"; //
 import { cn } from '@/lib/utils';
 
 // Import Client Components
-import { SubscriptionStatus } from "./_components/SubscriptionStatusClient"; 
 import { DashboardHeader } from "./_components/DashboardHeaderClient"; 
 import { LogWorkoutButton } from "./_components/LogWorkoutButtonClient"; 
 import { ProgressCards } from "./_components/ProgressCardsClient"; 
@@ -297,13 +296,8 @@ export default function DashboardPage() {
                                 // Dashboard with Data
                                 <div className="space-y-16">
                                     {/* Quick Actions Row */}
-                                    <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                                        <div className="lg:col-span-3">
-                                            <LogWorkoutButton />
-                                        </div>
-                                        <div>
-                                            <SubscriptionStatus />
-                                        </div>
+                                    <section>
+                                        <LogWorkoutButton />
                                     </section>
 
                                     {/* Feature Highlights */}

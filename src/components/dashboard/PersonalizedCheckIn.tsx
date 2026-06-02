@@ -19,40 +19,10 @@ interface CheckInMessage {
   tone: 'celebration' | 'motivation' | 'encouragement' | 'welcome';
 }
 
-// Vibrant color pool for random combinations
-const vibrantColors = [
-  '#4F46E5', // Indigo
-  '#7C3AED', // Violet
-  '#EC4899', // Pink
-  '#0EA5E9', // Sky
-  '#06B6D4', // Cyan
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
-  '#EF4444', // Red
-  '#DC2626', // Red-600
-  '#EA580C', // Orange
-  '#059669', // Emerald-600
-  '#0D9488', // Teal
-  '#22C55E', // Green
-  '#8B5CF6', // Purple
-  '#A855F7', // Purple-500
-  '#D946EF', // Fuchsia
-  '#3B82F6', // Blue
-  '#6366F1', // Indigo-500
-  '#84CC16', // Lime
-  '#F97316', // Orange-500
-];
-
-// Generate random 2-color combination
-const generateRandomGradient = () => {
-  const shuffled = [...vibrantColors].sort(() => 0.5 - Math.random());
-  const color1 = shuffled[0];
-  const color2 = shuffled[1];
-  
-  return {
-    id: `random-${Date.now()}`,
-    colors: [color1, color2]
-  };
+/** Calm brand aura — matches design tokens */
+const BRAND_AURA = {
+  id: 'brand',
+  colors: ['hsl(168 42% 42%)', 'hsl(168 35% 72%)'],
 };
 
 export default function PersonalizedCheckIn({ 
@@ -68,7 +38,6 @@ export default function PersonalizedCheckIn({
     emoji: '✨',
     tone: 'welcome'
   });
-  const [selectedGradient, setSelectedGradient] = useState(generateRandomGradient());
   const componentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -228,7 +197,7 @@ export default function PersonalizedCheckIn({
   return (
     <motion.section 
       ref={componentRef}
-      className={`mb-12 relative py-16 bg-background border border-border/20 rounded-lg overflow-hidden ${className}`}
+      className={`mb-8 relative py-12 md:py-16 bg-card/50 border border-border/40 rounded-2xl overflow-hidden ${className}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
@@ -243,22 +212,17 @@ export default function PersonalizedCheckIn({
         >
           {/* Aivery Circle - Two colors with complete fade-out - Responsive */}
           <svg 
-            className="w-96 h-96 sm:w-[450px] sm:h-[450px] md:w-[550px] md:h-[550px] lg:w-[650px] lg:h-[650px] opacity-40 dark:opacity-45" 
+            className="w-72 h-72 sm:w-96 sm:h-96 md:w-[420px] md:h-[420px] opacity-25 dark:opacity-30" 
             viewBox="0 0 512 512" 
           >
             <defs>
-              <radialGradient id={`aura-${selectedGradient.id}`} cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
-                <stop offset="0%" stopColor={selectedGradient.colors[0]}/>
-                <stop offset="30%" stopColor={selectedGradient.colors[0]}/>
-                <stop offset="50%" stopColor={selectedGradient.colors[0]} stopOpacity="0.7"/>
-                <stop offset="70%" stopColor={selectedGradient.colors[1]} stopOpacity="0.4"/>
-                <stop offset="85%" stopColor={selectedGradient.colors[1]} stopOpacity="0.25"/>
-                <stop offset="95%" stopColor={selectedGradient.colors[1]} stopOpacity="0.1"/>
-                <stop offset="100%" stopColor={selectedGradient.colors[1]} stopOpacity="0"/>
+              <radialGradient id={`aura-${BRAND_AURA.id}`} cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+                <stop offset="0%" stopColor={BRAND_AURA.colors[0]}/>
+                <stop offset="50%" stopColor={BRAND_AURA.colors[0]} stopOpacity="0.5"/>
+                <stop offset="100%" stopColor={BRAND_AURA.colors[1]} stopOpacity="0"/>
               </radialGradient>
             </defs>
-            {/* Single circle with two colors and fade-out effect */}
-            <circle cx="256" cy="256" r="200" fill={`url(#aura-${selectedGradient.id})`} />
+            <circle cx="256" cy="256" r="200" fill={`url(#aura-${BRAND_AURA.id})`} />
           </svg>
         </motion.div>
       </div>
@@ -282,22 +246,17 @@ export default function PersonalizedCheckIn({
         
         {/* Personalized message with bold typography - wider than the circle */}
         <motion.h1 
-          className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold text-foreground leading-relaxed px-4 mb-8"
+          className="text-xl md:text-2xl lg:text-3xl font-semibold text-foreground leading-snug px-4 mb-6 max-w-2xl mx-auto"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5, duration: 0.4 }}
-          style={{ 
-            textShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            lineHeight: '1.4',
-            fontSize: 'clamp(1.5rem, 4vw, 3rem)' // Responsive but consistent
-          }}
         >
           <UserNicknameDisplay fallback="Champion" />, {checkInMessage.message.toLowerCase()}
         </motion.h1>
 
         {/* Subtle emoji positioned elegantly */}
         <motion.div 
-          className="text-5xl md:text-6xl mt-6 opacity-80"
+          className="text-3xl md:text-4xl mt-4 opacity-70"
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 0.8 }}
           transition={{ delay: 0.6, duration: 0.3 }}

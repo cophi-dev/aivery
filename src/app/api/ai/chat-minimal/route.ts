@@ -5,7 +5,7 @@ import dbConnect from '@/lib/db/mongodb';
 import User from '@/lib/db/models/user';
 import ExercisePRModel from '@/lib/db/models/exercisePR';
 import { getRecentWorkouts, getUserWorkoutsByDateRange } from '@/lib/db/repositories/workoutRepository';
-import { callLLM, LLMProvider } from '@/lib/services/llm';
+import { callLLM } from '@/lib/services/llm';
 import { format, parseISO, startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, subWeeks, subDays } from "date-fns";
 
 export const dynamic = 'force-dynamic';
@@ -259,11 +259,8 @@ BE THEIR FITNESS BUDDY:
   }
 
   // 9. Call the LLM
-  const provider = process.env.LLM_PROVIDER || 'grok';
-  const model = process.env.LLM_MODEL_PLAN || 'grok-3-mini';
   const data = await callLLM({
-    provider: provider as LLMProvider,
-    model,
+    task: 'plan',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: query }

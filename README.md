@@ -11,7 +11,7 @@ Minimalist, AI-powered fitness app for consistent training. Connects to **Strava
 - **Frontend & Backend**: Next.js (App Router)
 - **Database**: MongoDB Atlas
 - **Authentication & Data Sync**: Strava API
-- **AI Services**: OpenAI (gpt-4.1-mini-2025-04-14)
+- **AI Services**: Grok (xAI) — configurable via `GROK_MODEL` / `LLM_MODEL_*` env vars
 - **Payments**: Stripe
 
 ---
@@ -51,6 +51,6 @@ git clone https://github.com/cophi-dev/aivery.git
 cd aivery
 npm install
 
-# Configure environment variables (standardize on gpt-4.1-mini-2025-04-14)
-./scripts/dev/update-llm-env.js
-# Then edit .env.local to add your OpenAI API key
+# Copy and edit environment variables (Grok-only)
+cp .env.local.example .env.local 2>/dev/null || true
+# Set GROK_API_KEY, MONGODB_URI, Strava credentials, NEXTAUTH_SECRET in .env.local

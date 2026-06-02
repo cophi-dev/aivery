@@ -116,7 +116,7 @@ export const authOptions: NextAuthOptions = {
               console.log(`[AUTH] Added nickname to token: ${token.nickname}`);
             }
             
-            // Add tier to token for premium access checks
+            // Add tier to token (legacy field; app access is auth-only)
             token.tier = (userData as any).tier || 'free';
             console.log(`[AUTH] Added tier to token: ${token.tier}`);
           }

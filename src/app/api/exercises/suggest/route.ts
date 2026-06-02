@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { callLLM, LLMProvider } from '@/lib/services/llm';
+import { callLLM } from '@/lib/services/llm';
+import { resolveLLMConfig } from '@/lib/services/llm-settings';
 // import Anthropic from "@anthropic-ai/sdk"; // REMOVED
 
 // Helper function to safely extract text from Claude response content
@@ -87,9 +88,8 @@ const COMMON_EXERCISES: Record<string, ExerciseDetails> = {
 
 // Infer exercise details using AI (Now using Grok)
 async function inferExerciseDetails(exerciseName: string): Promise<ExerciseDetails | null> { // Adjusted return type
-  const provider = (process.env.LLM_PROVIDER_EXERCISE as LLMProvider) || 'grok';
-  const model = process.env.LLM_MODEL_EXERCISE || 'grok-3-mini';
-  if (!process.env.GROK_API_KEY && provider === 'grok') {
+  const { model } = resolveLLMConfig('exercise');
+  if (!process.env.GROK_API_KEY) {
     console.log("[inferExerciseDetails] GROK_API_KEY not configured");
     return null;
   }
@@ -108,10 +108,9 @@ OUTPUT ONLY THE FOLLOWING JSON STRUCTURE, NOTHING ELSE:
 
     const userPrompt = `Exercise: ${exerciseName}`;
 
-    console.log(`[inferExerciseDetails] Using provider: ${provider}, model: ${model} for: "${exerciseName}"`);
+    console.log(`[inferExerciseDetails] Using Grok model: ${model} for: "${exerciseName}"`);
     const data = await callLLM({
-      provider,
-      model,
+      task: 'exercise',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }

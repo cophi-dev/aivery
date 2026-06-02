@@ -48,84 +48,72 @@
 
 @layer base {
   :root {
-    /* 90s Apple-inspired Minimalist Color Palette */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 8%; /* Deeper, more sophisticated black */
+    /* Calm fitness palette — clarity over noise */
+    --background: 40 20% 98%;
+    --foreground: 168 18% 12%;
 
-    --card: 0 0% 100%; /* Pure white for that clean Apple aesthetic */
-    --card-foreground: 0 0% 12%; /* Rich charcoal */
- 
+    --card: 0 0% 100%;
+    --card-foreground: 168 18% 14%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 12%;
- 
-    /* Refined Brand Colors - Inspired by 90s Apple */
-    --primary: 220 13% 18%; /* Deep charcoal blue - sophisticated */
-    --primary-foreground: 0 0% 98%; /* Off-white */
- 
-    /* Ultra-minimalist secondary colors */
-    --secondary: 0 0% 96%; /* Subtle grey */
-    --secondary-foreground: 0 0% 25%; /* Rich dark grey */
- 
-    --muted: 0 0% 96%; /* Clean light grey */
-    --muted-foreground: 0 0% 40%; /* Medium grey with character */
- 
-    --accent: 215 25% 27%; /* Muted blue-grey - very Apple-like */
-    --accent-foreground: 0 0% 100%; /* Pure white */
- 
-    --destructive: 0 70% 50%; /* Refined red */
+    --popover-foreground: 168 18% 14%;
+
+    --primary: 168 42% 32%;
+    --primary-foreground: 0 0% 99%;
+
+    --secondary: 40 15% 94%;
+    --secondary-foreground: 168 14% 28%;
+
+    --muted: 40 12% 93%;
+    --muted-foreground: 168 8% 42%;
+
+    --accent: 168 35% 90%;
+    --accent-foreground: 168 42% 22%;
+
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Ultra-clean borders inspired by early Apple */
-    --border: 0 0% 92%; /* Softer, more refined */
-    --input: 0 0% 94%; /* Clean input styling */
-    --ring: 220 13% 18%; /* Match primary */
- 
-    --radius: 6px; /* Smaller, more precise radius */
+    --border: 40 10% 88%;
+    --input: 40 10% 90%;
+    --ring: 168 42% 32%;
 
-    /* Signature Apple accent colors */
-    --brand: 220 13% 18%;
-    --brand-foreground: 0 0% 98%;
+    --radius: 0.625rem;
+
+    --brand: 168 42% 32%;
+    --brand-foreground: 0 0% 99%;
   }
  
   .dark {
-    /* 90s Apple Dark Mode - Deep, sophisticated blacks */
-    --background: 0 0% 2%; /* Ultra-deep black for sophistication */
-    --foreground: 0 0% 98%; /* Clean, crisp white */
- 
-    /* Elevated surfaces with subtle distinction */
-    --card: 0 0% 4%; /* Subtle elevation from background */
-    --card-foreground: 0 0% 96%; /* Clean light text */
- 
-    /* Sophisticated popover styling */
-    --popover: 0 0% 3%; /* Very dark, refined */
-    --popover-foreground: 0 0% 96%; /* Clean white */
- 
-    /* Refined dark primary colors */
-    --primary: 0 0% 98%; /* Inverted - clean white */
-    --primary-foreground: 0 0% 8%; /* Deep dark */
- 
-    /* Sophisticated neutral palette */
-    --secondary: 0 0% 8%; /* Deep charcoal */
-    --secondary-foreground: 0 0% 85%; /* Refined light grey */
- 
-    --muted: 0 0% 6%; /* Very dark, subtle */
-    --muted-foreground: 0 0% 75%; /* Elegant light grey */
- 
-    /* Minimal accent - very subtle */
-    --accent: 220 8% 85%; /* Subtle light grey */
-    --accent-foreground: 0 0% 10%; /* Deep dark */
- 
-    --destructive: 0 65% 60%; /* Refined red */
-    --destructive-foreground: 0 0% 100%; /* Pure white */
+    --background: 168 15% 6%;
+    --foreground: 40 15% 96%;
 
-    /* Ultra-refined border system */
-    --border: 0 0% 12%; /* Subtle, elegant borders */
-    --input: 0 0% 14%; /* Slightly lighter for inputs */
-    --ring: 0 0% 98%; /* Clean white ring */
+    --card: 168 12% 9%;
+    --card-foreground: 40 15% 94%;
 
-    /* Minimal brand colors for dark sophistication */
-    --brand: 0 0% 98%;
-    --brand-foreground: 0 0% 8%;
+    --popover: 168 12% 8%;
+    --popover-foreground: 40 15% 94%;
+
+    --primary: 168 45% 48%;
+    --primary-foreground: 168 20% 8%;
+
+    --secondary: 168 10% 14%;
+    --secondary-foreground: 40 10% 82%;
+
+    --muted: 168 8% 12%;
+    --muted-foreground: 168 6% 62%;
+
+    --accent: 168 25% 18%;
+    --accent-foreground: 168 40% 75%;
+
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 168 10% 16%;
+    --input: 168 10% 18%;
+    --ring: 168 45% 48%;
+
+    --brand: 168 45% 48%;
+    --brand-foreground: 168 20% 8%;
   }
 }
 

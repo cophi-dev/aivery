@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { UserNavigation } from "./user-navigation"
 import { ThemeSwitch } from "@/components/ui/theme-switch-button"
+import { MobileTabBar } from "@/components/mobile-tab-bar"
 
 export function MainHeader() {
   const pathname = usePathname()
@@ -193,21 +194,19 @@ export function MainHeader() {
   }
 
   return (
+    <>
     <motion.header
       className={cn(
-        "sticky top-0 z-50 w-full",
+        "sticky top-0 z-50 w-full border-b border-border/60",
         isLandingPage
-          ? "bg-gradient-to-r from-background via-background to-background/95 border-b border-blue-100/50 dark:border-blue-900/30"
-          : "border-b border-blue-200/30 dark:border-blue-800/30 bg-gradient-to-r from-background/95 via-background/98 to-background/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background/80"
+          ? "bg-background/95"
+          : "bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75"
       )}
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
     >
-      {/* Subtle top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500/20 via-indigo-500/30 to-blue-500/20" />
-      
-      <div className="container mx-auto px-4 py-0 h-16 flex items-center justify-between">
+      <div className="container mx-auto px-4 py-0 h-14 md:h-16 flex items-center justify-between">
         {/* Left Section (Logo + Desktop Nav) */}
         <div className="flex items-center gap-6">
           <motion.div
@@ -568,5 +567,7 @@ export function MainHeader() {
         </motion.div>
       </div>
     </motion.header>
+    {isAuthenticated && !isLandingPage && <MobileTabBar />}
+    </>
   )
 } 

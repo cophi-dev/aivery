@@ -76,8 +76,7 @@ export async function POST(req: Request) {
 
     // Call Grok API with correct model name
     const response = await callLLM({
-      provider: 'grok',
-      model: 'grok-2-1212',
+      task: 'chat',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 500,
       temperature: 0.7,

@@ -5,7 +5,8 @@ import dbConnect from '@/lib/db/mongodb';
 import User from '@/lib/db/models/user';
 import ExercisePRModel from '@/lib/db/models/exercisePR';
 import { getRecentWorkouts, getUserWorkoutsByDateRange } from '@/lib/db/repositories/workoutRepository';
-import { callLLM, LLMProvider } from '@/lib/services/llm';
+import { callLLM } from '@/lib/services/llm';
+import { resolveLLMConfig } from '@/lib/services/llm-settings';
 import { format, parseISO, startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, subWeeks, subDays } from "date-fns";
 
 export const dynamic = 'force-dynamic';
@@ -266,13 +267,11 @@ FORMAT YOUR RESPONSE:
 - Keep it scannable - they might be reading this between sets!`;
 
   // 8. Call the LLM with enhanced context
-  const provider = process.env.LLM_PROVIDER || 'grok';
-  const model = process.env.LLM_MODEL_PLAN || 'grok-3-mini';
-  
+  const { model } = resolveLLMConfig('plan');
+
   try {
     const data = await callLLM({
-      provider: provider as LLMProvider,
-      model,
+      task: 'plan',
       messages: [
         { role: 'system', content: systemPrompt },
         ...history.map((msg: any) => ({ role: msg.role, content: msg.content })),
