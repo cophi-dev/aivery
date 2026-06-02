@@ -2,7 +2,7 @@
 
 Minimalist, AI-powered fitness app for consistent training. Connects to **Strava**, surfaces calm generative feedback on workouts, and keeps the UI focused on insight over noise.
 
-**Live:** [aivery.app](https://aivery.app) *(configure DNS / Vercel domain as needed)*
+**Live:** [aivery-five.vercel.app](https://aivery-five.vercel.app)
 
 ---
 
