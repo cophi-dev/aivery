@@ -1,6 +1,8 @@
-# 🧠 Aivery
+# Aivery
 
-*Aivery is a minimalist, AI-powered fitness app for consistent, real-world training. It connects to Strava, delivers lightweight feedback via generative AI, and offers a mindful approach to training — built for people who want less noise and more insight.*
+Minimalist, AI-powered fitness app for consistent training. Connects to **Strava**, surfaces calm generative feedback on workouts, and keeps the UI focused on insight over noise.
+
+**Live:** [aivery.app](https://aivery.app) *(configure DNS / Vercel domain as needed)*
 
 ---
 
@@ -45,7 +47,7 @@
 ## 🚀 Getting Started
 
 ```bash
-git clone https://github.com/yourname/aivery.git
+git clone https://github.com/cophi-dev/aivery.git
 cd aivery
 npm install
 
